@@ -74,7 +74,7 @@ const AuthPage = () => {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                                    placeholder="name@company.com"
+                                    placeholder="Enter ID"
                                     required
                                 />
                             </div>

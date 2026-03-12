@@ -6,9 +6,14 @@ const bcrypt = require('bcrypt');
 // Mock user for now, will integrate with Notion later
 const MOCK_USERS = [
     {
-        email: 'test',
-        password: '$2b$10$qajzsz5pVoAmuyzGZ8PJPOkt0yoWRWRURnQsh.TA.y6K0lXkah5WW',
+        email: 'admin',
+        password: '$2b$10$Dz6xKlXGlkQr8tAvUaQlouZOEbUvgmoG5MgtFJ4.v3uqfwHEwcmsm',
         role: 'admin'
+    },
+    {
+        email: 'user',
+        password: '$2b$10$Dz6xKlXGlkQr8tAvUaQlouZOEbUvgmoG5MgtFJ4.v3uqfwHEwcmsm',
+        role: 'customer'
     }
 ];
 
