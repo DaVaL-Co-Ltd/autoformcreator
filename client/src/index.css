@@ -1,16 +1,25 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #000000;
-  --color-background: #F0F2F5;
-  --color-waiting: #FACC15;
-  --color-developing: #A855F7;
-  --color-completed: #22C55E;
+  --color-primary: #6366F1;
+  --color-primary-dark: #4F46E5;
+  --color-primary-light: #818CF8;
+  --color-background: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-surface-light: #F1F5F9;
+  --color-border: #E2E8F0;
+  --color-text: #1E293B;
+  --color-text-muted: #64748B;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-info: #3B82F6;
 }
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  background-color: #F0F2F5;
+  font-family: 'Pretendard', Inter, system-ui, -apple-system, sans-serif;
+  background-color: #F8FAFC;
+  color: #1E293B;
 }
 
 html {
@@ -20,4 +29,28 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* File drop zone animation */
+@keyframes border-pulse {
+  0%, 100% { border-color: #6366F1; }
+  50% { border-color: #818CF8; }
+}
+.drop-active {
+  animation: border-pulse 1.5s ease-in-out infinite;
 }

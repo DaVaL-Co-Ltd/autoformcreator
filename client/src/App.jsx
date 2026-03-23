@@ -1,52 +1,31 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import AuthPage from './pages/AuthPage';
-import LandingPage from './pages/LandingPage';
-import DashboardPage from './pages/DashboardPage';
-import ContentListPage from './pages/ContentListPage';
-import ContentCreatePage from './pages/ContentCreatePage';
-import ContentDetailPage from './pages/ContentDetailPage';
-import ContentEditPage from './pages/ContentEditPage';
-import DistributionPage from './pages/DistributionPage';
-import SubscriberPage from './pages/SubscriberPage';
-import NotificationPage from './pages/NotificationPage';
-import PlatformPage from './pages/PlatformPage';
-import SettingsPage from './pages/SettingsPage';
-import ProtectedRoute from './components/ProtectedRoute';
-import Layout from './components/Layout';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Sidebar from './components/Sidebar'
+import Header from './components/Header'
+import DashboardPage from './pages/DashboardPage'
+import ExtractionPage from './pages/ExtractionPage'
+import ExtractionResultPage from './pages/ExtractionResultPage'
+import ContentPage from './pages/ContentPage'
+import SettingsPage from './pages/SettingsPage'
 
-const AdminRoute = ({ children }) => (
-  <ProtectedRoute>
-    <Layout>{children}</Layout>
-  </ProtectedRoute>
-);
-
-function App() {
+export default function App() {
   return (
-    <Router>
-      <div className="min-h-screen bg-background">
-        <Routes>
-          {/* Public */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/auth" element={<AuthPage />} />
-
-          {/* Admin - Protected */}
-          <Route path="/dashboard" element={<AdminRoute><DashboardPage /></AdminRoute>} />
-          <Route path="/content" element={<AdminRoute><ContentListPage /></AdminRoute>} />
-          <Route path="/content/create" element={<AdminRoute><ContentCreatePage /></AdminRoute>} />
-          <Route path="/content/:id" element={<AdminRoute><ContentDetailPage /></AdminRoute>} />
-          <Route path="/content/:id/edit" element={<AdminRoute><ContentEditPage /></AdminRoute>} />
-          <Route path="/distribution" element={<AdminRoute><DistributionPage /></AdminRoute>} />
-          <Route path="/subscribers" element={<AdminRoute><SubscriberPage /></AdminRoute>} />
-          <Route path="/notifications" element={<AdminRoute><NotificationPage /></AdminRoute>} />
-          <Route path="/platforms" element={<AdminRoute><PlatformPage /></AdminRoute>} />
-          <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
-
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+    <BrowserRouter>
+      <div className="flex h-screen overflow-hidden bg-background">
+        <Sidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-y-auto p-6">
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/extraction" element={<ExtractionPage />} />
+              <Route path="/extraction/result" element={<ExtractionResultPage />} />
+              <Route path="/content" element={<ContentPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
       </div>
-    </Router>
-  );
+    </BrowserRouter>
+  )
 }
-
-export default App;

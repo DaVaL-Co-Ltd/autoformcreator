@@ -1,190 +1,155 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
-import {
-  Users, FileText, Send, Bell, Plus, ArrowRight, Loader2, Sparkles, Clock
-} from 'lucide-react';
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FolderOpen, FileText, Layers, Sparkles } from 'lucide-react'
+import { getExtractions } from '../services/storage'
 
-const StatCard = ({ title, value, icon: Icon, colorClass }) => (
-  <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-    <div className="flex justify-between items-start mb-4">
-      <div className={`p-3 rounded-xl ${colorClass}`}>
-        <Icon size={22} className="text-white" />
-      </div>
-    </div>
-    <div className="text-3xl font-black text-primary mb-1">{value}</div>
-    <div className="text-sm font-medium text-gray-400">{title}</div>
-  </div>
-);
+const channelLabels = {
+  blog: '블로그',
+  instagram: '인스타그램',
+  newsletter: '뉴스레터',
+  shorts: '숏폼',
+  longform: '롱폼',
+}
 
-const DashboardPage = () => {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const [stats, setStats] = useState({ subscribers: 0, contents: 0, distributions: 0, notifications: 0 });
-  const [recentContent, setRecentContent] = useState([]);
-  const [recentSubscribers, setRecentSubscribers] = useState([]);
-  const [loading, setLoading] = useState(true);
+const channelColors = {
+  blog: 'bg-primary',
+  instagram: 'bg-pink-500',
+  newsletter: 'bg-success',
+  shorts: 'bg-warning',
+  longform: 'bg-info',
+}
+
+export default function DashboardPage() {
+  const navigate = useNavigate()
+  const [extractions, setExtractions] = useState([])
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [contentRes, subRes, distRes, notiRes] = await Promise.allSettled([
-          axios.get('/api/content'),
-          axios.get('/api/subscribers'),
-          axios.get('/api/distribution'),
-          axios.get('/api/notifications'),
-        ]);
+    setExtractions(getExtractions())
+  }, [])
 
-        const contents = contentRes.status === 'fulfilled' ? contentRes.value.data : [];
-        const subscribers = subRes.status === 'fulfilled' ? subRes.value.data : [];
-        const distributions = distRes.status === 'fulfilled' ? distRes.value.data : [];
-        const notifications = notiRes.status === 'fulfilled' ? notiRes.value.data : [];
+  // 통계 계산
+  const sourceFiles = [...new Set(extractions.map(e => e.fileName))]
+  const allContents = extractions.flatMap(ext => ext.channels)
+  const channelCounts = allContents.reduce((acc, ch) => {
+    acc[ch.channel] = (acc[ch.channel] || 0) + 1
+    return acc
+  }, {})
+  const maxCount = Math.max(...Object.values(channelCounts), 1)
 
-        setStats({
-          subscribers: subscribers.length,
-          contents: contents.length,
-          distributions: distributions.length,
-          notifications: notifications.length,
-        });
-        setRecentContent(contents.slice(0, 5));
-        setRecentSubscribers(subscribers.slice(0, 5));
-      } catch (err) {
-        console.error('Dashboard fetch error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+  // 최근 콘텐츠 (최신 5개)
+  const recentContents = extractions.flatMap(ext =>
+    ext.channels.map(ch => ({
+      extractionId: ext.id,
+      title: ch.title,
+      channel: ch.channel,
+      date: new Date(ext.createdAt).toLocaleDateString('ko-KR'),
+      data: ext.data,
+    }))
+  ).slice(0, 5)
 
-  const getStatusBadge = (status) => {
-    const map = {
-      'uploaded': { label: '업로드됨', cls: 'bg-gray-100 text-gray-600' },
-      'analyzing': { label: '분석중', cls: 'bg-yellow-100 text-yellow-700' },
-      'analyzed': { label: '분석완료', cls: 'bg-blue-100 text-blue-700' },
-      'generated': { label: '콘텐츠생성됨', cls: 'bg-purple-100 text-purple-700' },
-      'published': { label: '배포됨', cls: 'bg-green-100 text-green-700' },
-    };
-    const s = map[status] || { label: status, cls: 'bg-gray-100 text-gray-600' };
-    return <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${s.cls}`}>{s.label}</span>;
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="animate-spin text-gray-400" size={40} />
-      </div>
-    );
-  }
+  const stats = [
+    { label: '원본 자료', value: sourceFiles.length, icon: FolderOpen, color: 'text-primary-light', bg: 'bg-primary/15' },
+    { label: '생성된 콘텐츠', value: allContents.length, icon: FileText, color: 'text-success', bg: 'bg-success/15' },
+    { label: '채널 수', value: Object.keys(channelCounts).length, icon: Layers, color: 'text-info', bg: 'bg-info/15' },
+  ]
 
   return (
-    <div>
-      {/* Welcome */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-black text-primary tracking-tight">
-          안녕하세요, {user?.email?.split('@')[0]}님
-        </h1>
-        <p className="text-gray-500 mt-1">오늘의 크리에이터 활동을 확인하세요.</p>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="flex gap-3 mb-8">
-        <button
-          onClick={() => navigate('/content/create')}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-800 transition-colors"
-        >
-          <Plus size={18} />
-          새 콘텐츠 만들기
-        </button>
-        <button
-          onClick={() => navigate('/notifications')}
-          className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-5 py-2.5 rounded-xl font-bold text-sm hover:bg-gray-50 transition-colors"
-        >
-          <Bell size={18} />
-          알림 발송
-        </button>
-      </div>
-
+    <div className="space-y-6 max-w-7xl">
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-        <StatCard title="총 구독자" value={stats.subscribers} icon={Users} colorClass="bg-blue-500" />
-        <StatCard title="총 콘텐츠" value={stats.contents} icon={FileText} colorClass="bg-purple-500" />
-        <StatCard title="배포 현황" value={stats.distributions} icon={Send} colorClass="bg-green-500" />
-        <StatCard title="알림 발송" value={stats.notifications} icon={Bell} colorClass="bg-amber-500" />
+      <div className="grid grid-cols-3 gap-4">
+        {stats.map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className="bg-surface rounded-xl border border-border p-5 hover:border-primary/30 transition-colors">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-text-muted">{label}</span>
+              <div className={`p-2 rounded-lg ${bg}`}>
+                <Icon size={16} className={color} />
+              </div>
+            </div>
+            <p className="text-2xl font-bold text-text">{value}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Content Grid */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Recent Content */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-          <div className="p-6 border-b border-gray-50 flex justify-between items-center">
-            <h2 className="text-lg font-bold text-primary flex items-center gap-2">
-              <FileText size={18} /> 최근 콘텐츠
-            </h2>
-            <button onClick={() => navigate('/content')} className="text-sm font-medium text-gray-400 hover:text-primary transition-colors flex items-center gap-1">
-              전체보기 <ArrowRight size={14} />
-            </button>
+      <div className="grid grid-cols-2 gap-6">
+        {/* 최근 원본 자료 */}
+        <div className="bg-surface rounded-xl border border-border">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h3 className="font-semibold text-text">최근 원본 자료</h3>
+            <a href="/content" className="text-xs text-primary hover:text-primary-light">전체보기</a>
           </div>
-          <div className="divide-y divide-gray-50">
-            {recentContent.length > 0 ? recentContent.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => navigate(`/content/${c.id}`)}
-                className="p-5 flex items-center justify-between hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                <div className="min-w-0">
-                  <div className="font-semibold text-sm text-primary truncate">{c.title}</div>
-                  <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                    <Clock size={12} /> {new Date(c.createdAt).toLocaleDateString('ko-KR')}
+          {extractions.length > 0 ? (
+            <div className="divide-y divide-border">
+              {extractions.slice(0, 4).map(ext => (
+                <div key={ext.id} className="flex items-center justify-between p-4 hover:bg-surface-light/50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-text truncate">{ext.fileName}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{new Date(ext.createdAt).toLocaleDateString('ko-KR')}</p>
                   </div>
+                  <span className="text-xs text-text-muted ml-4">{ext.channels.length}개 콘텐츠</span>
                 </div>
-                {getStatusBadge(c.status)}
-              </div>
-            )) : (
-              <div className="p-10 text-center text-gray-400">
-                <Sparkles size={32} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">아직 콘텐츠가 없습니다.</p>
-                <button onClick={() => navigate('/content/create')} className="text-sm text-primary font-bold mt-2 hover:underline">
-                  첫 콘텐츠 만들기
-                </button>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-text-muted text-sm">아직 데이터가 없습니다.</div>
+          )}
         </div>
 
-        {/* Recent Subscribers */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
-          <div className="p-6 border-b border-gray-50 flex justify-between items-center">
-            <h2 className="text-lg font-bold text-primary flex items-center gap-2">
-              <Users size={18} /> 최근 구독자
-            </h2>
-            <button onClick={() => navigate('/subscribers')} className="text-sm font-medium text-gray-400 hover:text-primary transition-colors flex items-center gap-1">
-              전체보기 <ArrowRight size={14} />
-            </button>
+        {/* 최근 콘텐츠 */}
+        <div className="bg-surface rounded-xl border border-border">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h3 className="font-semibold text-text">최근 콘텐츠</h3>
+            <a href="/content" className="text-xs text-primary hover:text-primary-light">전체보기</a>
           </div>
-          <div className="divide-y divide-gray-50">
-            {recentSubscribers.length > 0 ? recentSubscribers.map((s) => (
-              <div key={s.id} className="p-5 flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-sm text-primary">{s.name}</div>
-                  <div className="text-xs text-gray-400 mt-0.5">{s.email}</div>
+          {recentContents.length > 0 ? (
+            <div className="divide-y divide-border">
+              {recentContents.map((item, i) => (
+                <div
+                  key={i}
+                  onClick={() => navigate('/extraction/result', { state: { ...item.data } })}
+                  className="flex items-center justify-between p-4 hover:bg-surface-light/50 transition-colors cursor-pointer"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-text truncate">{item.title}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{channelLabels[item.channel] || item.channel}</p>
+                  </div>
+                  <span className="text-xs text-text-muted ml-4">{item.date}</span>
                 </div>
-                <div className="text-xs text-gray-400">
-                  {new Date(s.createdAt).toLocaleDateString('ko-KR')}
-                </div>
-              </div>
-            )) : (
-              <div className="p-10 text-center text-gray-400">
-                <Users size={32} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">아직 구독자가 없습니다.</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-8 text-center text-text-muted text-sm">아직 데이터가 없습니다.</div>
+          )}
         </div>
+      </div>
+
+      {/* 채널별 콘텐츠 현황 */}
+      <div className="bg-surface rounded-xl border border-border p-5">
+        <h3 className="font-semibold text-text mb-4">채널별 콘텐츠 현황</h3>
+        {allContents.length > 0 ? (
+          <div className="grid grid-cols-5 gap-4">
+            {['blog', 'instagram', 'newsletter', 'shorts', 'longform'].map(ch => {
+              const count = channelCounts[ch] || 0
+              return (
+                <div key={ch} className="text-center">
+                  <div className="h-32 bg-surface-light rounded-lg flex items-end justify-center p-2 mb-2">
+                    <div
+                      className={`${channelColors[ch]} rounded w-12 transition-all duration-500`}
+                      style={{ height: count > 0 ? `${(count / maxCount) * 100}%` : '4px' }}
+                    />
+                  </div>
+                  <p className="text-xs text-text-muted">{channelLabels[ch]}</p>
+                  <p className="text-lg font-bold text-text">{count}</p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-40 text-center">
+            <Sparkles size={28} className="text-text-muted/30 mb-3" />
+            <p className="text-sm text-text-muted">콘텐츠 추출을 시작하면 채널별 현황이 표시됩니다.</p>
+          </div>
+        )}
       </div>
     </div>
-  );
-};
-
-export default DashboardPage;
+  )
+}
