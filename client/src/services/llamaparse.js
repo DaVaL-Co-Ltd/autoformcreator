@@ -1,7 +1,7 @@
 import { callGeminiWithFallback } from './gemini-core'
 
 const LLAMAPARSE_API_KEY = import.meta.env.VITE_LLAMAPARSE_API_KEY
-const LLAMAPARSE_PROXY = 'http://localhost:3001/api/llamaparse'
+const LLAMAPARSE_PROXY = '/api/llamaparse'
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GEMINI_UPLOAD_URL = 'https://generativelanguage.googleapis.com/upload/v1beta/files'

@@ -1,5 +1,5 @@
 const API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY
-const PROXY_URL = 'http://localhost:3001/api/elevenlabs'
+const PROXY_URL = '/api/elevenlabs'
 
 // 기본 한국어 음성 ID (Rachel - multilingual)
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'

@@ -3,35 +3,214 @@ import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight, Film, Video, Mic,
-  XCircle, AlertTriangle, RefreshCw
+  XCircle, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
 import {
+  generateAllContent, retryFailedChannels,
   generateBlogContent, generateNewsletterContent, generateInstagramContent,
   generateShortsScript, generateLongformScript
-} from '../services/claude'
+} from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
-// storage import removed - 저장은 ExtractionResultPage에서 자동 수행
 import { generateNarrationForScenes, generateFullNarration } from '../services/elevenlabs'
 import { generateLongformVideo } from '../services/creatomate'
+import { generateShortsVideos } from '../services/luma'
 
 const steps = [
   { id: 1, label: 'PDF 업로드', icon: Upload, desc: '분석할 PDF 파일을 업로드하세요' },
-  { id: 2, label: '문서 분석', icon: Brain, desc: 'Gemini 멀티모달 PDF 분석 + 검증' },
-  { id: 3, label: '핵심 요약', icon: FileText, desc: 'Gemini 2.5 Flash 요약' },
-  { id: 4, label: '콘텐츠 생성', icon: PenTool, desc: 'Gemini 2.5 Flash 텍스트 + 대본' },
-  { id: 5, label: '미디어 생성', icon: ImageIcon, desc: 'Flux 이미지 + ElevenLabs 나레이션 + Creatomate 영상' },
+  { id: 2, label: '문서 분석', icon: Brain, desc: 'PDF 텍스트 추출 및 데이터 검증' },
+  { id: 3, label: '핵심 요약', icon: FileText, desc: '핵심 데이터 요약 및 인사이트 도출' },
+  { id: 4, label: '콘텐츠 생성', icon: PenTool, desc: '콘텐츠 텍스트 생성' },
+  { id: 5, label: '미디어 생성', icon: ImageIcon, desc: '이미지/나레이션/영상 생성' },
 ]
 
-// AI 서비스별 아이콘/색상 매핑
+// AI 서비스별 색상 매핑
 const aiServiceInfo = {
   llamaparse: { name: 'LlamaParse', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
-  gemini: { name: 'Gemini 2.5 Flash', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
-  claude: { name: 'Claude 3.5 Sonnet', color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/20' },
+  gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
   flux: { name: 'Flux', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
   elevenlabs: { name: 'ElevenLabs', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
   creatomate: { name: 'Creatomate', color: 'text-cyan-400', bg: 'bg-cyan-400/10 border-cyan-400/20' },
+  luma: { name: 'Luma', color: 'text-rose-400', bg: 'bg-rose-400/10 border-rose-400/20' },
+}
+
+// 데모 모드용 목업 데이터
+const MOCK_DELAY = 800
+
+const mockParsedText = `[데모 모드] 2024년 글로벌 AI 시장 분석 보고서
+
+1. 시장 규모
+- 2024년 글로벌 AI 시장 규모: $184.0B (전년 대비 +32.4%)
+- 2030년 예상 시장 규모: $826.7B (CAGR 28.5%)
+
+2. 주요 분야별 성장률
+- 생성형 AI: +67.2%
+- 자연어처리(NLP): +41.8%
+- 컴퓨터 비전: +29.3%
+- 로보틱스: +22.1%
+
+3. 지역별 시장 점유율
+- 북미: 38.2%
+- 아시아태평양: 31.5%
+- 유럽: 22.8%
+- 기타: 7.5%
+
+4. 주요 트렌드
+- 멀티모달 AI 모델의 급부상
+- 엔터프라이즈 AI 도입 가속화
+- AI 규제 프레임워크 구체화
+- 오픈소스 AI 생태계 확대`
+
+const mockVerification = {
+  isValid: true,
+  confidence: 0.95,
+  issues: [],
+  correctedText: null,
+}
+
+const mockSummary = {
+  title: '2024년 글로벌 AI 시장 분석 보고서 요약',
+  summary: '글로벌 AI 시장은 2024년 $184.0B 규모로 전년 대비 32.4% 성장했으며, 2030년까지 $826.7B에 도달할 전망입니다.',
+  keyData: [
+    { label: '2024 시장 규모', value: '$184.0B', context: '전년 대비 +32.4%' },
+    { label: '2030 예상 규모', value: '$826.7B', context: 'CAGR 28.5%' },
+    { label: '최고 성장 분야', value: '생성형 AI', context: '+67.2% 성장' },
+    { label: '최대 시장', value: '북미 38.2%', context: '아태 31.5% 추격' },
+  ],
+  insights: [
+    '생성형 AI가 전체 AI 시장 성장을 견인하고 있으며, 67.2%의 최고 성장률을 기록',
+    '아시아태평양 지역이 빠르게 북미를 추격하며 시장 점유율 31.5% 달성',
+    '엔터프라이즈 AI 도입이 가속화되면서 B2B AI 솔루션 수요 급증',
+  ],
+  keywords: ['AI 시장', '생성형 AI', 'NLP', '컴퓨터 비전', '엔터프라이즈 AI'],
+}
+
+const mockBlogContent = {
+  title: '[데모] 2024 AI 시장 트렌드: $184B 시장의 핵심 인사이트',
+  metaDescription: '2024년 글로벌 AI 시장 분석 - 생성형 AI 67.2% 성장, $826.7B 전망',
+  sections: [
+    { heading: '시장 개요', content: '2024년 글로벌 AI 시장이 $184.0B를 달성했습니다.', imagePrompt: 'futuristic AI market growth chart' },
+    { heading: '분야별 성장', content: '생성형 AI가 67.2%로 가장 높은 성장률을 기록했습니다.', imagePrompt: 'generative AI technology illustration' },
+  ],
+  tags: ['AI', '생성형AI', '시장분석'],
+  summary: '글로벌 AI 시장 $184.0B 달성, 2030년 $826.7B 전망',
+}
+
+const mockNewsletterContent = {
+  subject: '[데모] AI 시장 $184B 돌파 - 주간 AI 브리핑',
+  preheader: '생성형 AI 67.2% 성장, 글로벌 시장 분석',
+  greeting: '안녕하세요, AI 트렌드 구독자 여러분!',
+  headline: '2024 AI 시장, 사상 최대 규모 달성',
+  keyPoints: ['시장 규모 $184.0B 달성', '생성형 AI 67.2% 성장', '2030년 $826.7B 전망'],
+  body: '올해 글로벌 AI 시장이 전례 없는 성장을 기록했습니다.',
+  dataHighlights: [{ label: '시장 규모', value: '$184.0B' }, { label: '성장률', value: '+32.4%' }],
+  cta: { text: '전체 보고서 보기', description: '상세 분석 확인하기' },
+  closingNote: '다음 주에도 최신 AI 트렌드로 찾아뵙겠습니다.',
+}
+
+const mockInstagramContent = {
+  cards: [
+    { cardNumber: 1, headline: 'AI 시장 $184B', body: '2024년 역대 최대 규모', dataPoint: '$184.0B', imagePrompt: 'AI market infographic', backgroundColor: '#6366f1' },
+    { cardNumber: 2, headline: '생성형 AI 폭발', body: '전년 대비 67.2% 성장', dataPoint: '+67.2%', imagePrompt: 'generative AI growth', backgroundColor: '#8b5cf6' },
+    { cardNumber: 3, headline: '2030년 전망', body: 'AI 시장 $826.7B 예상', dataPoint: '$826.7B', imagePrompt: 'future AI prediction', backgroundColor: '#a855f7' },
+  ],
+  caption: '2024 글로벌 AI 시장 핵심 분석',
+  hashtags: ['#AI', '#인공지능', '#생성형AI', '#시장분석'],
+}
+
+const mockShortsScript = {
+  title: '[데모] AI 시장 184조, 진짜 어디까지 커지는 거야?',
+  duration: '30',
+  hook: '여러분, AI 시장이 올해 얼마나 커졌는지 아세요?',
+  scenes: [
+    { sceneNumber: 1, duration: '5', narration: 'AI 시장이 올해 184조를 돌파했습니다.', visualDescription: 'dramatic number reveal', textOverlay: '$184.0B' },
+    { sceneNumber: 2, duration: '8', narration: '특히 생성형 AI는 무려 67% 성장했죠.', visualDescription: 'growth chart animation', textOverlay: '+67.2%' },
+  ],
+  cta: '더 자세한 분석은 프로필 링크에서!',
+  thumbnailPrompt: 'AI market growth dramatic thumbnail',
+}
+
+const mockLongformScript = {
+  title: '[데모] 2024 AI 시장 완전 분석',
+  estimatedDuration: '8:30',
+  intro: { hook: 'AI 시장이 역대 최대를 기록했습니다', narration: '안녕하세요, 오늘은 2024년 AI 시장을 분석합니다.', visualDescription: 'intro animation' },
+  sections: [
+    { sectionNumber: 1, title: '시장 규모', duration: '120', narration: '2024년 글로벌 AI 시장은 $184.0B를 달성했습니다.', dataPoints: ['$184.0B', '+32.4%'], visualElements: [{ type: 'chart', description: 'bar chart', data: '$184.0B' }], transition: '다음으로' },
+  ],
+  outro: { summary: 'AI 시장 핵심 요약', narration: '지금까지 2024 AI 시장 분석이었습니다.', cta: '구독과 좋아요 부탁드립니다.' },
+  fullNarrationText: '안녕하세요, 오늘은 2024년 AI 시장을 분석합니다. 2024년 글로벌 AI 시장은 $184.0B를 달성했습니다.',
+}
+
+const mockBlogImages = [
+  { imageUrl: 'https://placehold.co/800x400/6366f1/white?text=Blog+Image+1', prompt: 'AI market' },
+  { imageUrl: 'https://placehold.co/800x400/8b5cf6/white?text=Blog+Image+2', prompt: 'generative AI' },
+]
+
+const mockInstagramImages = [
+  { imageUrl: 'https://placehold.co/1080x1080/6366f1/white?text=Card+1', prompt: 'AI market' },
+  { imageUrl: 'https://placehold.co/1080x1080/8b5cf6/white?text=Card+2', prompt: 'growth' },
+  { imageUrl: 'https://placehold.co/1080x1080/a855f7/white?text=Card+3', prompt: 'future' },
+]
+
+const delay = (ms) => new Promise(r => setTimeout(r, ms))
+
+// 에러 경고 팝업
+function ErrorAlert({ message, onClose }) {
+  if (!message) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-surface rounded-xl border border-danger/30 shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+        <div className="flex items-center gap-3 p-4 bg-danger/10 border-b border-danger/20">
+          <AlertCircle size={20} className="text-danger shrink-0" />
+          <h3 className="font-semibold text-danger text-sm">작업 오류 발생</h3>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-text leading-relaxed">{message}</p>
+        </div>
+        <div className="flex justify-end p-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-lg hover:bg-danger/20 transition-all"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 결과 확인 경고 팝업
+function ConfirmDialog({ message, onConfirm, onCancel }) {
+  if (!message) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-surface rounded-xl border border-warning/30 shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+        <div className="flex items-center gap-3 p-4 bg-warning/10 border-b border-warning/20">
+          <AlertTriangle size={20} className="text-warning shrink-0" />
+          <h3 className="font-semibold text-warning text-sm">일부 작업 실패</h3>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-text leading-relaxed whitespace-pre-line">{message}</p>
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t border-border">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-4 py-2 bg-warning/10 text-warning text-sm font-medium rounded-lg hover:bg-warning/20 transition-all"
+          >
+            그래도 결과 확인
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function ErrorPanel({ errors, onRetry, retrying }) {
@@ -80,6 +259,11 @@ export default function ExtractionPage() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
+  const [demoMode, setDemoMode] = useState(false)
+
+  // Popup states
+  const [errorAlert, setErrorAlert] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState(null)
 
   // Data states
   const [parsedText, setParsedText] = useState('')
@@ -93,10 +277,17 @@ export default function ExtractionPage() {
   const [blogImages, setBlogImages] = useState(null)
   const [instagramImages, setInstagramImages] = useState(null)
   const [shortsNarration, setShortsNarration] = useState(null)
+  const [shortsVideo, setShortsVideo] = useState(null)
   const [longformNarration, setLongformNarration] = useState(null)
   const [longformVideo, setLongformVideo] = useState(null)
 
-  const [retrying, setRetrying] = useState(null) // 'service-channel' 형태
+  // step 5까지 실행 완료 여부
+  const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
+
+  // 미디어 항목별 로딩 상태
+  const [mediaItemLoading, setMediaItemLoading] = useState({})
+
+  const [retrying, setRetrying] = useState(null)
 
   const setStepLoading = (step, val) => setLoading(p => ({ ...p, [step]: val }))
   const addStepErrors = (step, errs) => setStepErrors(p => ({ ...p, [step]: errs }))
@@ -106,6 +297,11 @@ export default function ExtractionPage() {
       ...p,
       [step]: (p[step] || []).filter(e => !(e.service === service && e.channel === channel))
     }))
+  }
+
+  // 에러 발생 시 팝업 표시
+  const showErrorAlert = (serviceName, detail) => {
+    setErrorAlert(`${serviceName} 서비스에서 오류가 발생했습니다.\n\n${detail}\n\n해당 작업의 재시도 버튼을 눌러 다시 시도할 수 있습니다.`)
   }
 
   const handleFile = (f) => {
@@ -128,13 +324,22 @@ export default function ExtractionPage() {
     if (e.target.files[0]) handleFile(e.target.files[0])
   }
 
-  // Step 2: LlamaParse + Gemini 병렬 분석 → 통합 → Gemini 검증
+  // Step 2: 문서 분석
   const runAnalysis = async () => {
     setStepLoading('analysis', true)
     clearStepErrors('analysis')
     const errors = []
 
-    // Phase 1: LlamaParse + Gemini 병렬 분석 → 자동 통합
+    if (demoMode) {
+      await delay(MOCK_DELAY)
+      setParsedText(mockParsedText)
+      await delay(MOCK_DELAY)
+      setVerification(mockVerification)
+      setCurrentStep(3)
+      setStepLoading('analysis', false)
+      return
+    }
+
     let text = ''
     try {
       text = await parsePDF(file)
@@ -143,17 +348,18 @@ export default function ExtractionPage() {
       errors.push({ service: 'gemini', message: `PDF 분석 실패 - ${err.message}` })
       addStepErrors('analysis', errors)
       setStepLoading('analysis', false)
+      showErrorAlert('PDF 분석', err.message)
       return
     }
 
-    // Phase 2: Gemini 검증
     try {
       const verified = await verifyParsedContent(text)
       setVerification(verified)
       setParsedText(verified.correctedText || text)
     } catch (err) {
       errors.push({ service: 'gemini', message: `데이터 검증 실패 - ${err.message}` })
-      setVerification({ isValid: false, issues: ['Gemini 검증을 건너뛰었습니다.'], confidence: 0 })
+      setVerification({ isValid: false, issues: ['검증을 건너뛰었습니다.'], confidence: 0 })
+      showErrorAlert('데이터 검증', err.message)
     }
 
     if (errors.length > 0) addStepErrors('analysis', errors)
@@ -161,82 +367,205 @@ export default function ExtractionPage() {
     setStepLoading('analysis', false)
   }
 
-  // Step 3: Summarize (Gemini)
+  // Step 3: 핵심 요약
   const runSummary = async () => {
     setStepLoading('summary', true)
     clearStepErrors('summary')
+
+    if (demoMode) {
+      await delay(MOCK_DELAY)
+      setSummary(mockSummary)
+      setCurrentStep(4)
+      setStepLoading('summary', false)
+      return
+    }
+
     try {
       const result = await summarizeContent(parsedText)
       setSummary(result)
       setCurrentStep(4)
     } catch (err) {
       addStepErrors('summary', [{ service: 'gemini', message: `요약 생성 실패 - ${err.message}` }])
+      showErrorAlert('핵심 요약', err.message)
     } finally {
       setStepLoading('summary', false)
     }
   }
 
-  // Step 4: Generate all text content (Claude - 5채널 개별 추적)
+  // Step 4: 콘텐츠 생성
   const runContentGeneration = async () => {
     setStepLoading('content', true)
     clearStepErrors('content')
 
-    const tasks = [
-      { key: 'blog', label: '블로그', fn: () => generateBlogContent(summary, parsedText), setter: setBlogContent },
-      { key: 'newsletter', label: '뉴스레터', fn: () => generateNewsletterContent(summary, parsedText), setter: setNewsletterContent },
-      { key: 'instagram', label: '인스타그램', fn: () => generateInstagramContent(summary, parsedText), setter: setInstagramContent },
-      { key: 'shorts', label: '숏폼 대본', fn: () => generateShortsScript(summary, parsedText), setter: setShortsScript },
-      { key: 'longform', label: '롱폼 대본', fn: () => generateLongformScript(summary, parsedText), setter: setLongformScript },
+    if (demoMode) {
+      const demoErrors = []
+      await delay(MOCK_DELAY)
+      setBlogContent(mockBlogContent)
+      await delay(300)
+      setNewsletterContent(mockNewsletterContent)
+      await delay(300)
+      // 인스타그램 실패 시뮬레이션
+      demoErrors.push({ service: 'gemini', channel: '인스타그램', message: '[데모] Gemini API 응답 시간 초과 - Rate limit exceeded' })
+      await delay(300)
+      setShortsScript(mockShortsScript)
+      await delay(300)
+      setLongformScript(mockLongformScript)
+      if (demoErrors.length > 0) {
+        addStepErrors('content', demoErrors)
+        const failedChannels = demoErrors.map(e => e.channel).join(', ')
+        showErrorAlert('콘텐츠 생성', `다음 채널 생성에 실패했습니다: ${failedChannels}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
+      }
+      setCurrentStep(5)
+      setStepLoading('content', false)
+      return
+    }
+
+    const errors = []
+    const channelMap = [
+      { key: 'blog', label: '블로그', setter: setBlogContent },
+      { key: 'newsletter', label: '뉴스레터', setter: setNewsletterContent },
+      { key: 'instagram', label: '인스타그램', setter: setInstagramContent },
+      { key: 'shorts', label: '숏폼 대본', setter: setShortsScript },
+      { key: 'longform', label: '롱폼 대본', setter: setLongformScript },
     ]
 
-    // 순차 실행 (Gemini 무료 티어 분당 2회 제한 대응)
-    const errors = []
-    let anySuccess = false
-    const generated = {}
+    try {
+      // 1회 API 호출로 5개 채널 통합 생성
+      const allContent = await generateAllContent(summary, parsedText)
 
-    for (const task of tasks) {
-      try {
-        const result = await task.fn()
-        task.setter(result)
-        generated[task.key] = result
-        anySuccess = true
-      } catch (err) {
-        errors.push({ service: 'gemini', channel: task.label, message: err.message || '생성 실패' })
+      let anySuccess = false
+      for (const ch of channelMap) {
+        if (allContent[ch.key]) {
+          ch.setter(allContent[ch.key])
+          anySuccess = true
+        } else {
+          errors.push({ service: 'gemini', channel: ch.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' })
+        }
       }
-    }
 
-    if (errors.length > 0) addStepErrors('content', errors)
-    if (anySuccess) {
-      setCurrentStep(5)
+      if (errors.length > 0) {
+        addStepErrors('content', errors)
+        const failedChannels = errors.map(e => e.channel).join(', ')
+        showErrorAlert('콘텐츠 생성', `다음 채널이 누락되었습니다: ${failedChannels}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
+      }
+      if (anySuccess) setCurrentStep(5)
+    } catch (err) {
+      // 통합 생성 자체가 실패한 경우 모든 채널에 에러 표시
+      for (const ch of channelMap) {
+        errors.push({ service: 'gemini', channel: ch.label, message: err.message || '생성 실패' })
+      }
+      addStepErrors('content', errors)
+      showErrorAlert('콘텐츠 생성', `API 호출에 실패했습니다: ${err.message}`)
     }
-
     setStepLoading('content', false)
   }
 
-  // Step 4 재시도: 실패한 채널만 다시 생성
-  const retryContentChannel = async (err) => {
-    const retryKey = `${err.service}-${err.channel}`
-    setRetrying(retryKey)
+  // 라벨 → API 키 매핑
+  const labelToKey = { '블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts', '롱폼 대본': 'longform' }
+  const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript, longform: setLongformScript }
 
-    const channelMap = {
-      '블로그': { key: 'blog', fn: () => generateBlogContent(summary, parsedText), setter: setBlogContent },
-      '뉴스레터': { key: 'newsletter', fn: () => generateNewsletterContent(summary, parsedText), setter: setNewsletterContent },
-      '인스타그램': { key: 'instagram', fn: () => generateInstagramContent(summary, parsedText), setter: setInstagramContent },
-      '숏폼 대본': { key: 'shorts', fn: () => generateShortsScript(summary, parsedText), setter: setShortsScript },
-      '롱폼 대본': { key: 'longform', fn: () => generateLongformScript(summary, parsedText), setter: setLongformScript },
+  // Step 4 재시도 — 실패한 채널을 모아서 1회 API 호출
+  const retryAllFailedContent = async () => {
+    const failedErrors = stepErrors.content || []
+    if (failedErrors.length === 0) return
+
+    if (demoMode) {
+      const mockMap = {
+        '블로그': { data: mockBlogContent, setter: setBlogContent },
+        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
+        '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
+        '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
+        '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },
+      }
+      setRetrying('content-all')
+      for (const err of failedErrors) {
+        const mock = mockMap[err.channel]
+        if (mock) {
+          await delay(300)
+          mock.setter(mock.data)
+        }
+      }
+      clearStepErrors('content')
+      if (currentStep < 5) setCurrentStep(5)
+      setRetrying(null)
+      return
     }
 
-    const task = channelMap[err.channel]
-    if (!task) { setRetrying(null); return }
+    // 실패 채널 키 수집
+    const failedKeys = failedErrors.map(e => labelToKey[e.channel]).filter(Boolean)
+    if (failedKeys.length === 0) return
 
+    setRetrying('content-all')
     try {
-      const result = await task.fn()
-      task.setter(result)
-      removeStepError('content', err.service, err.channel)
-      // 성공하면 다음 단계로
+      const results = await retryFailedChannels(failedKeys, summary, parsedText)
+
+      const newErrors = []
+      for (const key of failedKeys) {
+        if (results[key]) {
+          keyToSetter[key](results[key])
+        } else {
+          const label = failedErrors.find(e => labelToKey[e.channel] === key)?.channel || key
+          newErrors.push({ service: 'gemini', channel: label, message: '재생성에서도 해당 채널이 누락되었습니다.' })
+        }
+      }
+
+      if (newErrors.length > 0) {
+        addStepErrors('content', newErrors)
+      } else {
+        clearStepErrors('content')
+      }
       if (currentStep < 5) setCurrentStep(5)
     } catch (retryErr) {
-      // 에러 메시지 업데이트
+      // 전체 실패 — 에러 메시지 업데이트
+      setStepErrors(p => ({
+        ...p,
+        content: (p.content || []).map(e => ({ ...e, message: retryErr.message || '재시도 실패' }))
+      }))
+    } finally {
+      setRetrying(null)
+    }
+  }
+
+  // Step 4 개별 채널 재시도 (카드 내 재시도 버튼)
+  const retryContentChannel = async (err) => {
+    if (demoMode) {
+      const mockMap = {
+        '블로그': { data: mockBlogContent, setter: setBlogContent },
+        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
+        '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
+        '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
+        '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },
+      }
+      const mock = mockMap[err.channel]
+      if (mock) {
+        setRetrying(`${err.service}-${err.channel}`)
+        await delay(MOCK_DELAY)
+        mock.setter(mock.data)
+        removeStepError('content', err.service, err.channel)
+        if (currentStep < 5) setCurrentStep(5)
+        setRetrying(null)
+      }
+      return
+    }
+
+    // 1개만 실패한 경우 개별 호출, 여러 개면 통합 호출
+    const failedCount = (stepErrors.content || []).length
+    if (failedCount > 1) {
+      return retryAllFailedContent()
+    }
+
+    const key = labelToKey[err.channel]
+    if (!key) return
+
+    setRetrying(`${err.service}-${err.channel}`)
+    try {
+      const results = await retryFailedChannels([key], summary, parsedText)
+      if (results[key]) {
+        keyToSetter[key](results[key])
+        removeStepError('content', err.service, err.channel)
+        if (currentStep < 5) setCurrentStep(5)
+      }
+    } catch (retryErr) {
       setStepErrors(p => ({
         ...p,
         content: (p.content || []).map(e =>
@@ -250,52 +579,130 @@ export default function ExtractionPage() {
     }
   }
 
-  // Step 5: Generate media (Flux + ElevenLabs + Creatomate 개별 추적)
+  // Step 5: 미디어 생성
   const runMediaGeneration = async () => {
     setStepLoading('media', true)
     clearStepErrors('media')
+
+    if (demoMode) {
+      const demoErrors = []
+      // 블로그 이미지 생성
+      setMediaItemLoading(p => ({ ...p, '블로그 이미지': true }))
+      await delay(MOCK_DELAY)
+      setBlogImages(mockBlogImages)
+      setMediaItemLoading(p => ({ ...p, '블로그 이미지': false }))
+      // 인스타 이미지 생성
+      setMediaItemLoading(p => ({ ...p, '인스타 이미지': true }))
+      await delay(MOCK_DELAY)
+      setInstagramImages(mockInstagramImages)
+      setMediaItemLoading(p => ({ ...p, '인스타 이미지': false }))
+      // 숏폼 영상 (Luma) 성공 시뮬레이션
+      setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
+      await delay(MOCK_DELAY)
+      setShortsVideo([
+        { sceneNumber: 1, videoUrl: 'demo://shorts-scene-1.mp4', thumbnailUrl: null },
+        { sceneNumber: 2, videoUrl: 'demo://shorts-scene-2.mp4', thumbnailUrl: null },
+      ])
+      setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
+      // 숏폼 나레이션 실패 시뮬레이션
+      setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': true }))
+      await delay(600)
+      demoErrors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '[데모] ElevenLabs API 인증 실패 - Invalid API key' })
+      setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': false }))
+      // 롱폼 나레이션
+      setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': true }))
+      await delay(600)
+      demoErrors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: '[데모] ElevenLabs 무료 플랜 음성 생성 한도 초과' })
+      setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': false }))
+      // 롱폼 영상
+      setMediaItemLoading(p => ({ ...p, '롱폼 영상': true }))
+      await delay(600)
+      demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 템플릿 설정 필요 - 템플릿 ID 미지정' })
+      setMediaItemLoading(p => ({ ...p, '롱폼 영상': false }))
+
+      if (demoErrors.length > 0) {
+        addStepErrors('media', demoErrors)
+        const retryable = demoErrors.filter(e => !e.noRetry)
+        if (retryable.length > 0) {
+          showErrorAlert('미디어 생성', `다음 항목 생성에 실패했습니다: ${retryable.map(e => e.channel).join(', ')}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
+        }
+      }
+      setMediaGenerationDone(true)
+      setStepLoading('media', false)
+      return
+    }
+
     const errors = []
+    const tasks = []
 
-    // 이미지 생성 (Flux만 실행 - ElevenLabs/Creatomate는 유료 플랜 필요)
-    const tasks = [
-      {
-        key: 'blogImg', service: 'gemini', channel: '블로그 이미지',
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]),
-      },
-      {
-        key: 'instaImg', service: 'gemini', channel: '인스타 이미지',
-        fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]),
-      },
-    ]
+    const fluxKey = import.meta.env.VITE_FLUX_API_KEY
+    const lumaKey = import.meta.env.VITE_LUMA_API_KEY
 
-    // ElevenLabs/Creatomate 안내 메시지 (재시도 불가)
-    errors.push({ service: 'elevenlabs', channel: '나레이션', message: '무료 플랜에서는 API 음성 사용 불가 - 유료 플랜 업그레이드 필요', noRetry: true })
+    if (fluxKey) {
+      tasks.push(
+        { key: 'blogImg', service: 'flux', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]), setter: setBlogImages },
+        { key: 'instaImg', service: 'flux', channel: '인스타 이미지', fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]), setter: setInstagramImages },
+      )
+    } else {
+      errors.push({ service: 'flux', channel: '블로그 이미지', message: 'Flux API 키가 설정되지 않았습니다.', noRetry: true })
+      errors.push({ service: 'flux', channel: '인스타 이미지', message: 'Flux API 키가 설정되지 않았습니다.', noRetry: true })
+    }
+
+    if (lumaKey) {
+      tasks.push(
+        { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes) : Promise.resolve([]), setter: setShortsVideo },
+      )
+    } else {
+      errors.push({ service: 'luma', channel: '숏폼 영상', message: 'Luma API 키가 설정되지 않았습니다.', noRetry: true })
+    }
+
     errors.push({ service: 'creatomate', channel: '롱폼 영상', message: '템플릿 설정 필요 - Creatomate 대시보드에서 템플릿 생성 후 사용 가능', noRetry: true })
 
-    const results = await Promise.allSettled(tasks.map(t => t.fn()))
-
-    results.forEach((r, i) => {
-      const task = tasks[i]
-      if (r.status === 'fulfilled') {
-        const setters = {
-          blogImg: setBlogImages,
-          instaImg: setInstagramImages,
-          shortsNarr: setShortsNarration,
-          longformNarr: setLongformNarration,
-          longformVid: setLongformVideo,
-        }
-        setters[task.key](r.value)
-      } else {
-        errors.push({ service: task.service, channel: task.channel, message: r.reason?.message || '생성 실패' })
+    // 순차 실행으로 항목별 로딩 표시
+    for (const task of tasks) {
+      setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
+      try {
+        const result = await task.fn()
+        task.setter(result)
+      } catch (err) {
+        errors.push({ service: task.service, channel: task.channel, message: err.reason?.message || err.message || '생성 실패' })
       }
-    })
+      setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
+    }
+
+    const retryableErrors = errors.filter(e => !e.noRetry)
+    if (retryableErrors.length > 0) {
+      const failedItems = retryableErrors.map(e => e.channel).join(', ')
+      showErrorAlert('미디어 생성', `다음 항목 생성에 실패했습니다: ${failedItems}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
+    }
 
     if (errors.length > 0) addStepErrors('media', errors)
+    setMediaGenerationDone(true)
     setStepLoading('media', false)
   }
 
-  // Step 5 재시도: 실패한 미디어만 다시 생성
+  // Step 5 재시도
   const retryMediaItem = async (err) => {
+    if (demoMode) {
+      const mockMap = {
+        '블로그 이미지': { data: mockBlogImages, setter: setBlogImages },
+        '인스타 이미지': { data: mockInstagramImages, setter: setInstagramImages },
+        '숏폼 영상': { data: [{ sceneNumber: 1, videoUrl: 'demo://shorts-1.mp4' }, { sceneNumber: 2, videoUrl: 'demo://shorts-2.mp4' }], setter: setShortsVideo },
+        '숏폼 나레이션': { data: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }], setter: setShortsNarration },
+        '롱폼 나레이션': { data: { audioUrl: 'demo://longform-narration.mp3', duration: 510 }, setter: setLongformNarration },
+        '롱폼 영상': { data: { videoUrl: 'demo://longform-video.mp4', duration: 510 }, setter: setLongformVideo },
+      }
+      const mock = mockMap[err.channel]
+      if (mock) {
+        setRetrying(`${err.service}-${err.channel}`)
+        await delay(MOCK_DELAY)
+        mock.setter(mock.data)
+        removeStepError('media', err.service, err.channel)
+        setRetrying(null)
+      }
+      return
+    }
+
     const retryKey = `${err.service}-${err.channel}`
     setRetrying(retryKey)
 
@@ -307,6 +714,10 @@ export default function ExtractionPage() {
       '인스타 이미지': {
         fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]),
         setter: setInstagramImages,
+      },
+      '숏폼 영상': {
+        fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes) : Promise.resolve([]),
+        setter: setShortsVideo,
       },
       '숏폼 나레이션': {
         fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null),
@@ -365,7 +776,30 @@ export default function ExtractionPage() {
     reader.readAsDataURL(f)
   })
 
+  // 결과 확인에 사용할 실패 목록 수집
+  const getFailedItems = () => {
+    const failed = []
+    const contentErrors = stepErrors.content || []
+    const mediaErrors = (stepErrors.media || []).filter(e => !e.noRetry)
+    contentErrors.forEach(e => failed.push(e.channel))
+    mediaErrors.forEach(e => failed.push(e.channel))
+    return failed
+  }
+
   const viewResults = async () => {
+    const failed = getFailedItems()
+
+    if (failed.length > 0) {
+      setConfirmDialog(
+        `다음 작업이 실패하여 해당 결과를 확인할 수 없습니다:\n\n${failed.map(f => `  - ${f}`).join('\n')}\n\n그래도 결과를 확인하시겠습니까?`
+      )
+      return
+    }
+
+    await navigateToResults()
+  }
+
+  const navigateToResults = async () => {
     let fileBase64 = null
     if (file) {
       try { fileBase64 = await fileToBase64(file) } catch {}
@@ -376,25 +810,52 @@ export default function ExtractionPage() {
         blogContent, newsletterContent, instagramContent,
         shortsScript, longformScript,
         blogImages, instagramImages,
-        shortsNarration, longformNarration,
+        shortsVideo, shortsNarration, longformNarration,
         longformVideo,
-        fileName: file?.name,
+        fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
         fileBase64,
       }
     })
   }
 
   const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript || longformScript
-  const hasAnyResult = parsedText || summary || hasAnyContent
 
   return (
     <div className="space-y-6 max-w-5xl">
+      {/* Error Alert Popup */}
+      <ErrorAlert message={errorAlert} onClose={() => setErrorAlert(null)} />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        message={confirmDialog}
+        onConfirm={() => { setConfirmDialog(null); navigateToResults() }}
+        onCancel={() => setConfirmDialog(null)}
+      />
+
       {/* Step Progress */}
       <div className="bg-surface rounded-xl border border-border p-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-text">콘텐츠 추출 파이프라인</h3>
-          <span className="text-xs text-text-muted">Step {currentStep} / 5</span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setDemoMode(!demoMode)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                demoMode
+                  ? 'bg-warning/10 border-warning/30 text-warning'
+                  : 'bg-surface-light border-border text-text-muted hover:border-warning/30 hover:text-warning'
+              }`}
+            >
+              {demoMode ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+              {demoMode ? 'Demo ON' : 'Demo OFF'}
+            </button>
+            <span className="text-xs text-text-muted">Step {currentStep} / 5</span>
+          </div>
         </div>
+        {demoMode && (
+          <div className="mb-4 p-3 rounded-lg bg-warning/5 border border-warning/20">
+            <p className="text-xs text-warning font-medium">데모 모드 활성화 - AI 크레딧을 사용하지 않고 목업 데이터로 UI를 테스트합니다.</p>
+          </div>
+        )}
         <div className="flex items-center gap-1 mt-4">
           {steps.map((step, i) => {
             const Icon = step.icon
@@ -413,9 +874,10 @@ export default function ExtractionPage() {
                      isDone && hasError ? <AlertTriangle size={18} /> :
                      <Icon size={18} />}
                   </div>
-                  <span className={`text-xs mt-2 font-medium ${isActive ? 'text-primary-light' : isDone ? (hasError ? 'text-warning' : 'text-success') : 'text-text-muted'}`}>
+                  <span className={`text-xs mt-2 font-medium text-center ${isActive ? 'text-primary-light' : isDone ? (hasError ? 'text-warning' : 'text-success') : 'text-text-muted'}`}>
                     {step.label}
                   </span>
+                  <span className="text-[10px] text-text-muted mt-0.5 text-center hidden sm:block">{step.desc}</span>
                 </div>
                 {i < steps.length - 1 && (
                   <ChevronRight size={14} className={`mx-1 shrink-0 ${isDone ? 'text-success' : 'text-border'}`} />
@@ -442,19 +904,36 @@ export default function ExtractionPage() {
         </div>
         <div className="p-5">
           {!file ? (
-            <div
-              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
-                ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf" onChange={handleFileInput} />
-              <Upload size={28} className="mx-auto mb-3 text-text-muted" />
-              <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
-              <p className="text-xs text-text-muted mt-1">PDF 파일만 지원</p>
-            </div>
+            <>
+              {demoMode ? (
+                <div className="flex flex-col items-center gap-3 p-10">
+                  <p className="text-sm text-text-muted">데모 모드에서는 파일 업로드 없이 진행합니다.</p>
+                  <button
+                    onClick={() => {
+                      setFile({ name: 'demo_report.pdf', size: 2048000, type: 'application/pdf' })
+                      setCurrentStep(2)
+                    }}
+                    className="px-4 py-2 bg-warning/10 text-warning text-sm font-medium rounded-lg hover:bg-warning/20 transition-all"
+                  >
+                    데모 파일로 시작
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
+                    ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf" onChange={handleFileInput} />
+                  <Upload size={28} className="mx-auto mb-3 text-text-muted" />
+                  <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
+                  <p className="text-xs text-text-muted mt-1">PDF 파일만 지원</p>
+                </div>
+              )}
+            </>
           ) : (
             <div className="flex items-center gap-4 p-4 bg-success/5 rounded-lg border border-success/20">
               <FileText size={24} className="text-success" />
@@ -480,7 +959,7 @@ export default function ExtractionPage() {
             </div>
             <div>
               <h3 className="font-semibold text-text text-sm">Step 2. 문서 분석</h3>
-              <p className="text-xs text-text-muted">Gemini 2.5 Flash 멀티모달로 PDF 직접 분석 → 데이터 검증</p>
+              <p className="text-xs text-text-muted">PDF 텍스트 추출 및 데이터 검증</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -503,18 +982,13 @@ export default function ExtractionPage() {
         </div>
         {(parsedText || verification) && (
           <div className="p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs px-2 py-1 rounded-full font-medium text-orange-400 bg-orange-400/10">LlamaParse</span>
-              <span className="text-xs text-text-muted">+</span>
-              <span className="text-xs px-2 py-1 rounded-full font-medium text-blue-400 bg-blue-400/10">Gemini OCR</span>
-              <span className="text-xs text-text-muted">→</span>
-              <span className="text-xs px-2 py-1 rounded-full font-medium text-primary-light bg-primary/10">통합 결과</span>
-              {verification && (
+            {verification && (
+              <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${verification.isValid ? 'text-success bg-success/10' : 'text-warning bg-warning/10'}`}>
                   검증 {verification.isValid ? '통과' : '일부 수정'}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
 
             {verification?.issues?.length > 0 && (
               <div className="bg-warning/5 border border-warning/20 rounded-lg p-3">
@@ -542,7 +1016,7 @@ export default function ExtractionPage() {
             </div>
             <div>
               <h3 className="font-semibold text-text text-sm">Step 3. 핵심 요약</h3>
-              <p className="text-xs text-text-muted">Gemini 2.5 Flash가 핵심 데이터를 정확하게 요약</p>
+              <p className="text-xs text-text-muted">핵심 데이터 요약 및 인사이트 도출</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -612,7 +1086,7 @@ export default function ExtractionPage() {
             </div>
             <div>
               <h3 className="font-semibold text-text text-sm">Step 4. 콘텐츠 생성</h3>
-              <p className="text-xs text-text-muted">Gemini 2.5 Flash - 블로그/뉴스레터/인스타 텍스트 + 숏폼/롱폼 대본</p>
+              <p className="text-xs text-text-muted">컨텐츠에 적합한 문구 생성</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -644,9 +1118,10 @@ export default function ExtractionPage() {
                 { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript?.estimatedDuration },
               ].map((ch, i) => {
                 const Icon = ch.icon
-                const failed = !ch.data && stepErrors.content?.some(e => e.channel === ch.label)
+                const errObj = stepErrors.content?.find(e => e.channel === ch.label)
+                const failed = !ch.data && !!errObj
                 return (
-                  <div key={i} className={`rounded-lg p-3 border ${failed ? 'bg-danger/5 border-danger/20' : 'bg-surface-light border-border'}`}>
+                  <div key={i} className={`rounded-lg p-3 border ${failed ? 'bg-danger/5 border-danger/20' : ch.data ? 'bg-success/5 border-success/20' : 'bg-surface-light border-border'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`p-1 rounded ${ch.color}`}><Icon size={14} /></span>
                       <span className="text-xs font-medium text-text">{ch.label}</span>
@@ -654,20 +1129,55 @@ export default function ExtractionPage() {
                     {ch.data ? (
                       <>
                         <p className="text-xs text-text-muted line-clamp-2">{ch.detail}</p>
-                        <CheckCircle size={12} className="text-success mt-2" />
+                        <div className="flex items-center gap-1 mt-2">
+                          <CheckCircle size={12} className="text-success" />
+                          <span className="text-xs text-success">완료</span>
+                        </div>
                       </>
                     ) : failed ? (
+                      <div className="space-y-1.5 mt-1">
+                        <div className="flex items-center gap-1">
+                          <XCircle size={12} className="text-danger shrink-0" />
+                          <span className="text-xs text-danger">실패</span>
+                        </div>
+                        <p className="text-[10px] text-danger/70 line-clamp-2">{errObj.message}</p>
+                        <button
+                          onClick={() => retryContentChannel(errObj)}
+                          disabled={retrying === `${errObj.service}-${errObj.channel}`}
+                          className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary-light text-[10px] font-medium transition-all"
+                        >
+                          {retrying === `${errObj.service}-${errObj.channel}`
+                            ? <><Loader2 size={10} className="animate-spin" /> 재시도중</>
+                            : <><RefreshCw size={10} /> 재시도</>
+                          }
+                        </button>
+                      </div>
+                    ) : loading.content ? (
                       <div className="flex items-center gap-1 mt-1">
-                        <XCircle size={12} className="text-danger" />
-                        <span className="text-xs text-danger">실패</span>
+                        <Loader2 size={12} className="text-text-muted animate-spin" />
+                        <span className="text-xs text-text-muted">대기중...</span>
                       </div>
                     ) : (
-                      <span className="text-xs text-text-muted">대기중</span>
+                      <span className="text-xs text-text-muted">-</span>
                     )}
                   </div>
                 )
               })}
             </div>
+          </div>
+        )}
+        {stepErrors.content?.length > 1 && (
+          <div className="mx-5 mb-4">
+            <button
+              onClick={retryAllFailedContent}
+              disabled={retrying === 'content-all'}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all border border-primary/20 disabled:opacity-50"
+            >
+              {retrying === 'content-all'
+                ? <><Loader2 size={14} className="animate-spin" /> 실패 항목 재생성 중...</>
+                : <><RefreshCw size={14} /> 실패한 {stepErrors.content.length}개 채널 한번에 재시도</>
+              }
+            </button>
           </div>
         )}
         <ErrorPanel errors={stepErrors.content} onRetry={retryContentChannel} retrying={retrying} />
@@ -682,17 +1192,17 @@ export default function ExtractionPage() {
             </div>
             <div>
               <h3 className="font-semibold text-text text-sm">Step 5. 미디어 생성</h3>
-              <p className="text-xs text-text-muted">Flux 이미지 + ElevenLabs 나레이션 + Creatomate 영상</p>
+              <p className="text-xs text-text-muted">이미지/나레이션/영상 생성</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {blogImages && (
+            {mediaGenerationDone && (
               <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.media?.length ? 'text-warning' : 'text-success'}`}>
                 {stepErrors.media?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
                 {stepErrors.media?.length ? '부분 완료' : '생성 완료'}
               </span>
             )}
-            {currentStep === 5 && !blogImages && (
+            {currentStep === 5 && !mediaGenerationDone && (
               <button
                 onClick={runMediaGeneration}
                 disabled={loading.media}
@@ -703,24 +1213,29 @@ export default function ExtractionPage() {
             )}
           </div>
         </div>
-        {(blogImages || instagramImages || shortsNarration || longformNarration || longformVideo) && (
+        {(loading.media || blogImages || instagramImages || shortsVideo || shortsNarration || longformNarration || longformVideo || mediaGenerationDone) && (
           <div className="p-5 space-y-3">
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {[
                 {
-                  label: '블로그 이미지', service: 'gemini', icon: ImageIcon, iconColor: 'text-purple-400',
+                  label: '블로그 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
                   status: blogImages ? `${blogImages.filter(i => i.imageUrl).length}개 생성` : null,
                   ok: blogImages?.some(i => i.imageUrl),
                 },
                 {
-                  label: '인스타 이미지', service: 'gemini', icon: ImageIcon, iconColor: 'text-purple-400',
+                  label: '인스타 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
                   status: instagramImages ? `${instagramImages.filter(i => i.imageUrl).length}개 생성` : null,
                   ok: instagramImages?.some(i => i.imageUrl),
                 },
                 {
+                  label: '숏폼 영상', service: 'luma', icon: Film, iconColor: 'text-rose-400',
+                  status: shortsVideo ? `${Array.isArray(shortsVideo) ? shortsVideo.filter(v => v.videoUrl).length : 0}개 생성` : null,
+                  ok: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
+                },
+                {
                   label: '숏폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',
-                  status: shortsNarration ? `${shortsNarration.filter(n => n.audioUrl).length}개 생성` : null,
-                  ok: shortsNarration?.some(n => n.audioUrl),
+                  status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '개' : ''} 생성 완료` : null,
+                  ok: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
                 },
                 {
                   label: '롱폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-info',
@@ -735,21 +1250,45 @@ export default function ExtractionPage() {
               ].map((item, i) => {
                 const Icon = item.icon
                 const failed = stepErrors.media?.some(e => e.channel === item.label)
+                const isLoading = mediaItemLoading[item.label]
+                const isWaiting = !mediaGenerationDone && !isLoading && !item.ok && !failed
+                const isSkipped = mediaGenerationDone && !item.ok && !failed
                 return (
-                  <div key={i} className={`rounded-lg p-3 border ${failed ? 'bg-danger/5 border-danger/20' : 'bg-surface-light border-border'}`}>
+                  <div key={i} className={`rounded-lg p-3 border ${
+                    isLoading ? 'bg-primary/5 border-primary/20' :
+                    failed ? 'bg-danger/5 border-danger/20' :
+                    item.ok ? 'bg-success/5 border-success/20' :
+                    isSkipped ? 'bg-surface-light border-border opacity-50' :
+                    'bg-surface-light border-border'
+                  }`}>
                     <div className="flex items-center gap-1 mb-1">
                       <Icon size={12} className={item.iconColor} />
                       <p className="text-xs font-medium text-text">{item.label}</p>
                     </div>
-                    {item.ok ? (
-                      <p className="text-xs text-success">{item.status}</p>
+                    {isLoading ? (
+                      <div className="flex items-center gap-1">
+                        <Loader2 size={10} className="text-primary animate-spin" />
+                        <span className="text-xs text-primary">생성중...</span>
+                      </div>
+                    ) : item.ok ? (
+                      <div className="flex items-center gap-1">
+                        <CheckCircle size={10} className="text-success" />
+                        <p className="text-xs text-success">{item.status}</p>
+                      </div>
                     ) : failed ? (
                       <div className="flex items-center gap-1">
                         <XCircle size={10} className="text-danger" />
                         <span className="text-xs text-danger">실패</span>
                       </div>
+                    ) : loading.media ? (
+                      <div className="flex items-center gap-1">
+                        <Loader2 size={10} className="text-text-muted animate-spin" />
+                        <span className="text-xs text-text-muted">대기중...</span>
+                      </div>
+                    ) : isSkipped ? (
+                      <span className="text-xs text-text-muted">건너뜀</span>
                     ) : (
-                      <p className="text-xs text-text-muted">대기중</p>
+                      <span className="text-xs text-text-muted">-</span>
                     )}
                   </div>
                 )
@@ -760,19 +1299,22 @@ export default function ExtractionPage() {
         <ErrorPanel errors={stepErrors.media} onRetry={retryMediaItem} retrying={retrying} />
       </div>
 
-      {/* View Results Button */}
-      {hasAnyResult && (
-        <div className="flex justify-end">
-          <button
-            onClick={viewResults}
-            className="px-6 py-3 bg-primary text-white font-medium rounded-xl hover:bg-primary-dark transition-all flex items-center gap-2 shadow-lg shadow-primary/20"
-          >
-            <Eye size={18} />
-            {hasAnyContent ? '결과 상세 보기' : summary ? '요약 결과 보기' : '분석 결과 보기'}
-            <ArrowRight size={16} />
-          </button>
-        </div>
-      )}
+      {/* View Results Button - Step 5 완료 후에만 활성화 */}
+      <div className="flex justify-end">
+        <button
+          onClick={viewResults}
+          disabled={!mediaGenerationDone}
+          className={`px-6 py-3 font-medium rounded-xl transition-all flex items-center gap-2 ${
+            mediaGenerationDone
+              ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
+              : 'bg-surface-light text-text-muted border border-border cursor-not-allowed'
+          }`}
+        >
+          <Eye size={18} />
+          결과 확인
+          <ArrowRight size={16} />
+        </button>
+      </div>
     </div>
   )
 }

@@ -65,27 +65,6 @@ app.get('/api/llamaparse/job/:jobId/result/markdown', async (req, res) => {
   }
 })
 
-// Claude API Proxy
-app.post('/api/claude', async (req, res) => {
-  const { api_key, ...body } = req.body
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': api_key,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(body),
-    })
-    const data = await response.json()
-    if (!response.ok) return res.status(response.status).json(data)
-    res.json(data)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
 // ElevenLabs Proxy - TTS
 app.post('/api/elevenlabs/tts/:voiceId', async (req, res) => {
   try {
@@ -133,6 +112,39 @@ app.get('/api/flux/result/:taskId', async (req, res) => {
   try {
     const response = await fetch(`https://api.bfl.ml/v1/get_result?id=${req.params.taskId}`, {
       headers: { 'x-key': req.headers['x-api-key'] },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Luma Proxy - Create Generation
+app.post('/api/luma/generations', async (req, res) => {
+  try {
+    const response = await fetch('https://api.lumalabs.ai/dream-machine/v1/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${req.headers['x-api-key']}`,
+      },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Luma Proxy - Get Generation Status
+app.get('/api/luma/generations/:id', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.lumalabs.ai/dream-machine/v1/generations/${req.params.id}`, {
+      headers: { Authorization: `Bearer ${req.headers['x-api-key']}` },
     })
     const data = await response.json()
     if (!response.ok) return res.status(response.status).json(data)
