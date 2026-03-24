@@ -34,6 +34,7 @@ export default function ContentPage() {
       title: ch.title,
       source: ext.fileName,
       date: new Date(ext.createdAt).toLocaleDateString('ko-KR'),
+      time: new Date(ext.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       cards: ch.channel === 'instagram' ? ext.data?.instagramContent?.cards?.length : null,
       duration: ch.channel === 'shorts' ? ext.data?.shortsScript?.duration : ch.channel === 'longform' ? ext.data?.longformScript?.estimatedDuration : null,
       data: ext.data,
@@ -143,7 +144,7 @@ export default function ContentPage() {
                   <p className="text-xs text-text-muted mb-3 truncate">{item.source}</p>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-text-muted">{item.date}</span>
+                    <span className="text-xs text-text-muted">{item.date} {item.time}</span>
                     <button
                       onClick={(e) => { e.stopPropagation(); setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title }) }}
                       className="p-1.5 rounded-lg hover:bg-surface-light text-text-muted hover:text-danger transition-colors"

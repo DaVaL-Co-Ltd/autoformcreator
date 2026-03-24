@@ -6,7 +6,6 @@ import { Loader2, LogIn, AlertCircle } from 'lucide-react'
 export default function LoginPage() {
   const navigate = useNavigate()
   const { login } = useAuth()
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -18,7 +17,7 @@ export default function LoginPage() {
 
     await new Promise(r => setTimeout(r, 500))
 
-    const result = login(email, password)
+    const result = login(password)
     if (result.success) {
       navigate('/', { replace: true })
     } else {
@@ -42,7 +41,7 @@ export default function LoginPage() {
 
         <div className="bg-surface rounded-xl border border-border p-6">
           <h2 className="text-lg font-semibold text-text mb-1">로그인</h2>
-          <p className="text-xs text-text-muted mb-6">인증된 계정으로 로그인하세요.</p>
+          <p className="text-xs text-text-muted mb-6">비밀번호를 입력하세요.</p>
 
           {error && (
             <div className="flex items-center gap-2 p-3 mb-4 rounded-lg bg-danger/10 border border-danger/20">
@@ -52,18 +51,6 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-text-muted mb-1.5">이메일</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="example@daval.co"
-                required
-                className="w-full px-3 py-2.5 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
-              />
-            </div>
-
             <div>
               <label className="block text-xs font-medium text-text-muted mb-1.5">비밀번호</label>
               <input

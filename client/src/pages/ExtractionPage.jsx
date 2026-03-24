@@ -14,11 +14,11 @@ import {
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
 import { generateNarrationForScenes, generateFullNarration } from '../services/elevenlabs'
-import { generateLongformVideo } from '../services/creatomate'
+import { renderVideoAndWait } from '../services/creatomate'
 import { generateShortsVideos } from '../services/luma'
 
 const steps = [
-  { id: 1, label: 'PDF 업로드', icon: Upload, desc: '분석할 PDF 파일을 업로드하세요' },
+  { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
   { id: 2, label: '문서 분석', icon: Brain, desc: 'PDF 텍스트 추출 및 데이터 검증' },
   { id: 3, label: '핵심 요약', icon: FileText, desc: '핵심 데이터 요약 및 인사이트 도출' },
   { id: 4, label: '콘텐츠 생성', icon: PenTool, desc: '콘텐츠 텍스트 생성' },
@@ -260,6 +260,12 @@ export default function ExtractionPage() {
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
   const [demoMode, setDemoMode] = useState(false)
+  const [emphasisText, setEmphasisText] = useState('')
+  const [emphasisConfirmed, setEmphasisConfirmed] = useState(false)
+  const [editingText, setEditingText] = useState(false)
+  const [editedText, setEditedText] = useState('')
+  const [fixingIssues, setFixingIssues] = useState(false)
+  const abortRef = useRef(null)
 
   // Popup states
   const [errorAlert, setErrorAlert] = useState(null)
@@ -288,6 +294,15 @@ export default function ExtractionPage() {
   const [mediaItemLoading, setMediaItemLoading] = useState({})
 
   const [retrying, setRetrying] = useState(null)
+  const [shortsProgress, setShortsProgress] = useState(null)
+  const abortedRef = useRef(false)
+
+  const stopGeneration = () => {
+    abortedRef.current = true
+    setMediaGenerationDone(true)
+    setLoading(p => ({ ...p, media: false }))
+    setMediaItemLoading({})
+  }
 
   const setStepLoading = (step, val) => setLoading(p => ({ ...p, [step]: val }))
   const addStepErrors = (step, errs) => setStepErrors(p => ({ ...p, [step]: errs }))
@@ -305,12 +320,14 @@ export default function ExtractionPage() {
   }
 
   const handleFile = (f) => {
-    if (f && f.type === 'application/pdf') {
+    const supportedExts = ['.pdf', '.hwp', '.hwpx', '.docx', '.doc', '.pptx', '.ppt']
+    const ext = f?.name?.toLowerCase().match(/\.[^.]+$/)?.[0]
+    if (f && ext && supportedExts.includes(ext)) {
       setFile(f)
       setCurrentStep(2)
       clearStepErrors('upload')
     } else {
-      addStepErrors('upload', [{ service: 'upload', message: 'PDF 파일만 업로드 가능합니다.' }])
+      addStepErrors('upload', [{ service: 'upload', message: '지원되는 파일 형식: PDF, HWP, DOCX, PPTX' }])
     }
   }
 
@@ -431,7 +448,7 @@ export default function ExtractionPage() {
 
     try {
       // 1회 API 호출로 5개 채널 통합 생성
-      const allContent = await generateAllContent(summary, parsedText)
+      const allContent = await generateAllContent(summary, parsedText, emphasisText)
 
       let anySuccess = false
       for (const ch of channelMap) {
@@ -497,7 +514,7 @@ export default function ExtractionPage() {
 
     setRetrying('content-all')
     try {
-      const results = await retryFailedChannels(failedKeys, summary, parsedText)
+      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText)
 
       const newErrors = []
       for (const key of failedKeys) {
@@ -559,7 +576,7 @@ export default function ExtractionPage() {
 
     setRetrying(`${err.service}-${err.channel}`)
     try {
-      const results = await retryFailedChannels([key], summary, parsedText)
+      const results = await retryFailedChannels([key], summary, parsedText, emphasisText)
       if (results[key]) {
         keyToSetter[key](results[key])
         removeStepError('content', err.service, err.channel)
@@ -617,7 +634,7 @@ export default function ExtractionPage() {
       // 롱폼 영상
       setMediaItemLoading(p => ({ ...p, '롱폼 영상': true }))
       await delay(600)
-      demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 템플릿 설정 필요 - 템플릿 ID 미지정' })
+      demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 렌더링 대기 중' })
       setMediaItemLoading(p => ({ ...p, '롱폼 영상': false }))
 
       if (demoErrors.length > 0) {
@@ -635,36 +652,79 @@ export default function ExtractionPage() {
     const errors = []
     const tasks = []
 
-    const fluxKey = import.meta.env.VITE_FLUX_API_KEY
-    const lumaKey = import.meta.env.VITE_LUMA_API_KEY
+    const fluxKey = import.meta.env.VITE_FAL_API_KEY
+    const lumaKey = import.meta.env.VITE_FAL_API_KEY
 
-    if (fluxKey) {
-      tasks.push(
-        { key: 'blogImg', service: 'flux', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]), setter: setBlogImages },
-        { key: 'instaImg', service: 'flux', channel: '인스타 이미지', fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]), setter: setInstagramImages },
-      )
-    } else {
-      errors.push({ service: 'flux', channel: '블로그 이미지', message: 'Flux API 키가 설정되지 않았습니다.', noRetry: true })
-      errors.push({ service: 'flux', channel: '인스타 이미지', message: 'Flux API 키가 설정되지 않았습니다.', noRetry: true })
+    // 이미 성공한 항목은 건너뜀
+    const alreadyDone = {
+      blogImg: blogImages?.some(i => i.imageUrl),
+      shortsVid: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
+      shortsNar: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
+      longformNar: !!longformNarration?.audioUrl,
+      longformVid: !!longformVideo && longformVideo.endsWith('.mp4'),
     }
 
-    if (lumaKey) {
-      tasks.push(
-        { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes) : Promise.resolve([]), setter: setShortsVideo },
-      )
-    } else {
-      errors.push({ service: 'luma', channel: '숏폼 영상', message: 'Luma API 키가 설정되지 않았습니다.', noRetry: true })
-    }
+    // TODO: 블로그 이미지 임시 비활성화
+    // if (fluxKey) {
+    //   if (!alreadyDone.blogImg) {
+    //     tasks.push(
+    //       { key: 'blogImg', service: 'flux', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]), setter: setBlogImages },
+    //     )
+    //   }
+    // }
 
-    errors.push({ service: 'creatomate', channel: '롱폼 영상', message: '템플릿 설정 필요 - Creatomate 대시보드에서 템플릿 생성 후 사용 가능', noRetry: true })
+    // TODO: 숏폼 영상 임시 비활성화
+    // const lumaDirectKey = import.meta.env.VITE_LUMA_API_KEY
+    // if (lumaDirectKey && !alreadyDone.shortsVid) {
+    //   tasks.push(
+    //     { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes, setShortsProgress) : Promise.resolve([]), setter: setShortsVideo },
+    //   )
+    // }
+
+    // TODO: ElevenLabs 나레이션 임시 비활성화
+    // const elevenlabsKey = import.meta.env.VITE_ELEVENLABS_API_KEY
+    // if (elevenlabsKey) {
+    //   if (!alreadyDone.shortsNar) {
+    //     tasks.push(
+    //       { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null), setter: setShortsNarration },
+    //     )
+    //   }
+    //   if (!alreadyDone.longformNar) {
+    //     tasks.push(
+    //       { key: 'longformNar', service: 'elevenlabs', channel: '롱폼 나레이션', fn: () => {
+    //         if (longformScript?.fullNarrationText) return generateFullNarration(longformScript.fullNarrationText)
+    //         if (longformScript?.sections) return generateFullNarration(longformScript.sections.map(s => s.narration).join('\n\n'))
+    //         return Promise.resolve(null)
+    //       }, setter: setLongformNarration },
+    //     )
+    //   }
+    // } else {
+    //   if (!alreadyDone.shortsNar) errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
+    //   if (!alreadyDone.longformNar) errors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
+    // }
+
+    // 롱폼 영상 (Creatomate)
+    const creatomateKey = import.meta.env.VITE_CREATOMATE_API_KEY
+    if (creatomateKey) {
+      if (!alreadyDone.longformVid) {
+        tasks.push(
+          { key: 'longformVid', service: 'creatomate', channel: '롱폼 영상', fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null), setter: setLongformVideo },
+        )
+      }
+    } else {
+      if (!alreadyDone.longformVid) errors.push({ service: 'creatomate', channel: '롱폼 영상', message: 'Creatomate API 키가 설정되지 않았습니다.', noRetry: true })
+    }
 
     // 순차 실행으로 항목별 로딩 표시
+    abortedRef.current = false
     for (const task of tasks) {
+      if (abortedRef.current) break
       setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
       try {
         const result = await task.fn()
         task.setter(result)
       } catch (err) {
+        if (abortedRef.current) break
         errors.push({ service: task.service, channel: task.channel, message: err.reason?.message || err.message || '생성 실패' })
       }
       setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
@@ -732,7 +792,7 @@ export default function ExtractionPage() {
         setter: setLongformNarration,
       },
       '롱폼 영상': {
-        fn: () => longformScript ? generateLongformVideo(longformScript) : Promise.resolve(null),
+        fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null),
         setter: setLongformVideo,
       },
     }
@@ -762,6 +822,43 @@ export default function ExtractionPage() {
   const retryAnalysis = async () => {
     clearStepErrors('analysis')
     await runAnalysis()
+  }
+
+  // AI 이슈 자동 수정
+  const fixIssuesWithAI = async () => {
+    if (!verification?.issues?.length || !parsedText) return
+    setFixingIssues(true)
+    try {
+      const { callGeminiWithFallback } = await import('../services/gemini-core')
+      const fixed = await callGeminiWithFallback(`아래 텍스트에서 발견된 이슈를 수정해주세요.
+
+## 발견된 이슈
+${verification.issues.map(i => `- ${i}`).join('\n')}
+
+## 원본 텍스트
+${parsedText}
+
+## 규칙
+- 이슈로 지적된 부분만 수정하세요.
+- 나머지 내용은 절대 변경하지 마세요.
+- 숫자, 통계 데이터는 원본 그대로 유지하세요.
+- 마크다운 형식을 유지하세요.
+- 수정된 전체 텍스트만 출력하세요.`, { temperature: 0.1, maxOutputTokens: 65536 })
+      setParsedText(fixed)
+      setVerification(prev => ({ ...prev, issues: [], isValid: true }))
+      clearStepErrors('analysis')
+    } catch (err) {
+      showErrorAlert('AI 수정', err.message)
+    } finally {
+      setFixingIssues(false)
+    }
+  }
+
+  // 사용자 직접 수정 저장
+  const saveEditedText = () => {
+    setParsedText(editedText)
+    setEditingText(false)
+    setVerification(prev => prev ? { ...prev, issues: [], isValid: true } : prev)
   }
 
   // Step 3 재시도
@@ -814,6 +911,7 @@ export default function ExtractionPage() {
         longformVideo,
         fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
         fileBase64,
+        savedFromExtraction: true,
       }
     })
   }
@@ -836,26 +934,8 @@ export default function ExtractionPage() {
       <div className="bg-surface rounded-xl border border-border p-6">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-text">콘텐츠 추출 파이프라인</h3>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setDemoMode(!demoMode)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                demoMode
-                  ? 'bg-warning/10 border-warning/30 text-warning'
-                  : 'bg-surface-light border-border text-text-muted hover:border-warning/30 hover:text-warning'
-              }`}
-            >
-              {demoMode ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-              {demoMode ? 'Demo ON' : 'Demo OFF'}
-            </button>
-            <span className="text-xs text-text-muted">Step {currentStep} / 5</span>
-          </div>
+          <span className="text-xs text-text-muted">Step {currentStep} / 5</span>
         </div>
-        {demoMode && (
-          <div className="mb-4 p-3 rounded-lg bg-warning/5 border border-warning/20">
-            <p className="text-xs text-warning font-medium">데모 모드 활성화 - AI 크레딧을 사용하지 않고 목업 데이터로 UI를 테스트합니다.</p>
-          </div>
-        )}
         <div className="flex items-center gap-1 mt-4">
           {steps.map((step, i) => {
             const Icon = step.icon
@@ -896,8 +976,8 @@ export default function ExtractionPage() {
               <Upload size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-sm">Step 1. PDF 업로드</h3>
-              <p className="text-xs text-text-muted">분석할 PDF 파일을 업로드하세요</p>
+              <h3 className="font-semibold text-text text-sm">Step 1. 문서 업로드</h3>
+              <p className="text-xs text-text-muted">분석할 문서 파일을 업로드하세요</p>
             </div>
           </div>
           {file && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 업로드 완료</span>}
@@ -927,10 +1007,11 @@ export default function ExtractionPage() {
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf" onChange={handleFileInput} />
+                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt" onChange={handleFileInput} />
                   <Upload size={28} className="mx-auto mb-3 text-text-muted" />
                   <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
-                  <p className="text-xs text-text-muted mt-1">PDF 파일만 지원</p>
+
+                  <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX 지원</p>
                 </div>
               )}
             </>
@@ -944,6 +1025,46 @@ export default function ExtractionPage() {
               <button onClick={() => { setFile(null); setCurrentStep(1) }} className="text-xs text-text-muted hover:text-danger transition-colors">
                 변경
               </button>
+            </div>
+          )}
+
+          {/* 강조 내용 입력 */}
+          {file && (
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-text-muted mb-1.5">
+                강조하고 싶은 내용 <span className="text-text-muted/50">(선택사항)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={emphasisText}
+                  onChange={(e) => { setEmphasisText(e.target.value); setEmphasisConfirmed(false) }}
+                  placeholder="예: 입시 일정을 강조해줘, 핵심 통계 위주로 만들어줘"
+                  disabled={emphasisConfirmed}
+                  className="flex-1 px-3 py-2.5 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all disabled:opacity-60"
+                />
+                {!emphasisConfirmed ? (
+                  <button
+                    onClick={() => setEmphasisConfirmed(true)}
+                    className="px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all shrink-0"
+                  >
+                    확인
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setEmphasisConfirmed(false)}
+                    className="px-4 py-2.5 bg-success/10 text-success text-sm font-medium rounded-lg hover:bg-success/20 transition-all shrink-0 flex items-center gap-1.5"
+                  >
+                    <CheckCircle size={14} />
+                    {emphasisText.trim() ? '설정됨' : '자동'}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                {emphasisConfirmed
+                  ? emphasisText.trim() ? `"${emphasisText.trim()}" 내용이 강조됩니다.` : 'AI가 자동으로 핵심 내용을 판단하여 생성합니다.'
+                  : '비워두면 AI가 자동으로 핵심 내용을 판단하여 생성합니다.'}
+              </p>
             </div>
           )}
         </div>
@@ -969,13 +1090,22 @@ export default function ExtractionPage() {
                 검증 {verification.confidence > 0 ? '완료' : '부분 완료'} (신뢰도: {Math.round((verification.confidence || 0) * 100)}%)
               </span>
             )}
-            {currentStep === 2 && (
+            {currentStep === 2 && !verification && (
               <button
                 onClick={runAnalysis}
                 disabled={loading.analysis}
                 className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
               >
                 {loading.analysis ? <><Loader2 size={14} className="animate-spin" /> 분석중...</> : <><Sparkles size={14} /> 실행</>}
+              </button>
+            )}
+            {verification && (stepErrors.analysis?.length > 0 || verification.confidence < 0.8) && (
+              <button
+                onClick={runAnalysis}
+                disabled={loading.analysis}
+                className="px-3 py-1.5 bg-warning/10 text-warning text-xs font-medium rounded-lg hover:bg-warning/20 disabled:opacity-50 transition-all flex items-center gap-1.5"
+              >
+                {loading.analysis ? <><Loader2 size={12} className="animate-spin" /> 재분석중...</> : <><RefreshCw size={12} /> 재분석</>}
               </button>
             )}
           </div>
@@ -996,12 +1126,51 @@ export default function ExtractionPage() {
                 <ul className="text-xs text-text-muted space-y-1">
                   {verification.issues.map((issue, i) => <li key={i}>- {issue}</li>)}
                 </ul>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={fixIssuesWithAI}
+                    disabled={fixingIssues}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 text-primary-light text-xs font-medium rounded-lg hover:bg-primary/20 disabled:opacity-50 transition-all"
+                  >
+                    {fixingIssues ? <><Loader2 size={11} className="animate-spin" /> AI 수정중...</> : <><Sparkles size={11} /> AI 자동 수정</>}
+                  </button>
+                  <button
+                    onClick={() => { setEditedText(parsedText); setEditingText(true) }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-light text-text-muted text-xs font-medium rounded-lg hover:bg-border transition-all border border-border"
+                  >
+                    <PenTool size={11} /> 직접 수정
+                  </button>
+                </div>
               </div>
             )}
 
-            <div className="bg-surface-light rounded-lg p-3 max-h-96 overflow-y-auto">
-              <p className="text-xs text-text-muted whitespace-pre-wrap">{parsedText}</p>
-            </div>
+            {editingText ? (
+              <div className="space-y-2">
+                <textarea
+                  value={editedText}
+                  onChange={(e) => setEditedText(e.target.value)}
+                  className="w-full bg-surface-light rounded-lg p-3 max-h-96 min-h-48 text-xs text-text whitespace-pre-wrap border border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setEditingText(false)}
+                    className="px-3 py-1.5 text-xs text-text-muted hover:bg-surface-light rounded-lg transition-all"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={saveEditedText}
+                    className="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary-dark transition-all"
+                  >
+                    저장
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-surface-light rounded-lg p-3 max-h-96 overflow-y-auto">
+                <p className="text-xs text-text-muted whitespace-pre-wrap">{parsedText}</p>
+              </div>
+            )}
           </div>
         )}
         <ErrorPanel errors={stepErrors.analysis} onRetry={retryAnalysis} retrying={retrying} />
@@ -1020,8 +1189,34 @@ export default function ExtractionPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {summary && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 요약 완료</span>}
-            {currentStep === 3 && (
+            {summary && !stepErrors.summary?.length && summary.title !== '요약 생성 실패' && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 요약 완료</span>}
+            {summary?.title === '요약 생성 실패' && (
+              <button
+                onClick={runSummary}
+                disabled={loading.summary}
+                className="px-3 py-1.5 bg-danger/10 text-danger text-xs font-medium rounded-lg hover:bg-danger/20 disabled:opacity-50 transition-all flex items-center gap-1.5"
+              >
+                {loading.summary ? <><Loader2 size={12} className="animate-spin" /> 재생성중...</> : <><RefreshCw size={12} /> 재시도</>}
+              </button>
+            )}
+            {summary && stepErrors.summary?.length > 0 && (
+              <button
+                onClick={runSummary}
+                disabled={loading.summary}
+                className="px-3 py-1.5 bg-warning/10 text-warning text-xs font-medium rounded-lg hover:bg-warning/20 disabled:opacity-50 transition-all flex items-center gap-1.5"
+              >
+                {loading.summary ? <><Loader2 size={12} className="animate-spin" /> 재생성중...</> : <><RefreshCw size={12} /> 재생성</>}
+              </button>
+            )}
+            {currentStep >= 3 && !summary && !loading.summary && stepErrors.summary?.length > 0 && (
+              <button
+                onClick={runSummary}
+                className="px-3 py-1.5 bg-danger/10 text-danger text-xs font-medium rounded-lg hover:bg-danger/20 transition-all flex items-center gap-1.5"
+              >
+                <RefreshCw size={12} /> 재시도
+              </button>
+            )}
+            {currentStep === 3 && !summary && !stepErrors.summary?.length && (
               <button
                 onClick={runSummary}
                 disabled={loading.summary}
@@ -1111,11 +1306,11 @@ export default function ExtractionPage() {
           <div className="p-5">
             <div className="grid grid-cols-5 gap-3">
               {[
-                { label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent?.title },
-                { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent?.subject },
+                { label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
+                { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
                 { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `${instagramContent.cards?.length || 0}장 카드` : null },
-                { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.duration || 0}초` : null },
-                { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript?.estimatedDuration },
+                { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
+                { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript ? `${longformScript.sections?.length || 0}개 섹션 · ${longformScript.estimatedDuration || ''}` : null },
               ].map((ch, i) => {
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
@@ -1202,39 +1397,59 @@ export default function ExtractionPage() {
                 {stepErrors.media?.length ? '부분 완료' : '생성 완료'}
               </span>
             )}
-            {currentStep === 5 && !mediaGenerationDone && (
+            {currentStep === 5 && !mediaGenerationDone && !loading.media && (
               <button
                 onClick={runMediaGeneration}
-                disabled={loading.media}
-                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
+                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-2"
               >
-                {loading.media ? <><Loader2 size={14} className="animate-spin" /> 생성중...</> : <><Sparkles size={14} /> 실행</>}
+                <Sparkles size={14} /> 실행
+              </button>
+            )}
+            {loading.media && (
+              <button
+                onClick={stopGeneration}
+                className="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-lg hover:bg-danger/20 transition-all flex items-center gap-2 border border-danger/20"
+              >
+                <XCircle size={14} /> 중단
               </button>
             )}
           </div>
         </div>
+        {mediaGenerationDone && !loading.media && (stepErrors.media?.length > 0 || [blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, longformVideo].some(v => !v)) && (
+          <div className="mx-5 mt-4">
+            <button
+              onClick={runMediaGeneration}
+              disabled={loading.media}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all border border-primary/20 disabled:opacity-50"
+            >
+              <RefreshCw size={12} /> 실패/건너뜀 항목 모두 재시도
+            </button>
+          </div>
+        )}
         {(loading.media || blogImages || instagramImages || shortsVideo || shortsNarration || longformNarration || longformVideo || mediaGenerationDone) && (
           <div className="p-5 space-y-3">
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {[
                 {
                   label: '블로그 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
-                  status: blogImages ? `${blogImages.filter(i => i.imageUrl).length}개 생성` : null,
+                  status: blogImages ? `${blogImages.filter(i => i.imageUrl).length}/${blogImages.length}개` : null,
                   ok: blogImages?.some(i => i.imageUrl),
                 },
                 {
                   label: '인스타 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
-                  status: instagramImages ? `${instagramImages.filter(i => i.imageUrl).length}개 생성` : null,
+                  status: instagramImages ? `${instagramImages.filter(i => i.imageUrl).length}/${instagramImages.length}개` : null,
                   ok: instagramImages?.some(i => i.imageUrl),
                 },
                 {
                   label: '숏폼 영상', service: 'luma', icon: Film, iconColor: 'text-rose-400',
-                  status: shortsVideo ? `${Array.isArray(shortsVideo) ? shortsVideo.filter(v => v.videoUrl).length : 0}개 생성` : null,
+                  status: shortsVideo
+                    ? `${Array.isArray(shortsVideo) ? shortsVideo.filter(v => v.videoUrl).length : 0}개 생성`
+                    : shortsProgress ? `${shortsProgress.completed}/${shortsProgress.total}개 완료${shortsProgress.current ? ` (씬${shortsProgress.current} 생성중)` : ''}` : null,
                   ok: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
                 },
                 {
                   label: '숏폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',
-                  status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '개' : ''} 생성 완료` : null,
+                  status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '/' + shortsNarration.length + '개' : '완료'}` : null,
                   ok: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
                 },
                 {
@@ -1286,7 +1501,13 @@ export default function ExtractionPage() {
                         <span className="text-xs text-text-muted">대기중...</span>
                       </div>
                     ) : isSkipped ? (
-                      <span className="text-xs text-text-muted">건너뜀</span>
+                      <button
+                        onClick={() => retryMediaItem({ service: item.service, channel: item.label })}
+                        className="flex items-center gap-1 text-xs text-warning hover:text-primary transition-colors"
+                      >
+                        <RefreshCw size={10} />
+                        건너뜀 · 재시도
+                      </button>
                     ) : (
                       <span className="text-xs text-text-muted">-</span>
                     )}

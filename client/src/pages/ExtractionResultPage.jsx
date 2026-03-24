@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Mail, Film, Video, ArrowLeft, Copy, Download,
+  FileText, Image, Mail, Film, Video, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Hash, Clock, Layers, ChevronLeft, ChevronRight
 } from 'lucide-react'
 import { saveExtraction, getExtractions } from '../services/storage'
@@ -40,19 +40,16 @@ export default function ExtractionResultPage() {
     link.click()
   }
 
-  // 결과 데이터가 있으면 자동으로 콘텐츠 관리에 저장
+  // 결과 저장은 ExtractionPage에서 navigateToResults 시 1회만 수행
+  // savedFromExtraction 플래그가 있을 때만 저장
   useEffect(() => {
     const stateData = location.state
-    if (!stateData) return
+    if (!stateData || !stateData.savedFromExtraction) return
     const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript || stateData.longformScript
     if (!hasContent) return
 
-    const existing = getExtractions()
-    const alreadySaved = existing.some(e => e.fileName === stateData.fileName && Math.abs(new Date(e.createdAt) - new Date()) < 60000)
-    if (!alreadySaved) {
-      saveExtraction(stateData)
-    }
-  }, [location.state])
+    saveExtraction(stateData)
+  }, [])
 
   if (!blogContent && !newsletterContent && !instagramContent && !shortsScript && !longformScript) {
     return (
@@ -113,6 +110,11 @@ export default function ExtractionResultPage() {
                   </div>
                 </div>
               )}
+              {section.keyPhrase && (
+                <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
+                  <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
+                </div>
+              )}
               <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{section.content}</div>
             </section>
           )
@@ -154,17 +156,36 @@ export default function ExtractionResultPage() {
           <div className="relative">
             <div
               className="aspect-square rounded-none overflow-hidden relative"
-              style={{ backgroundColor: currentCard?.backgroundColor || '#1a1a2e' }}
+              style={{ backgroundColor: currentCard?.backgroundColor || '#f0f4ff', fontFamily: "'Pretendard', sans-serif", wordBreak: 'keep-all' }}
             >
-              {currentImage?.imageUrl && (
-                <img src={currentImage.imageUrl} alt={currentCard?.headline} className="w-full h-full object-cover absolute inset-0" />
-              )}
-              <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center p-8 text-center">
-                <h3 className="text-white font-bold text-xl mb-3 drop-shadow-lg">{currentCard?.headline}</h3>
-                <p className="text-white/90 text-sm mb-3">{currentCard?.body}</p>
-                {currentCard?.dataPoint && (
-                  <p className="text-yellow-300 font-bold text-2xl drop-shadow-lg">{currentCard.dataPoint}</p>
-                )}
+              {/* 인포그래픽 PPT 스타일 오버레이 */}
+              <div className="absolute inset-0 flex flex-col justify-between p-7">
+                {/* 상단: 카드 번호 뱃지 */}
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full bg-white/90 text-gray-700 flex items-center justify-center text-xs font-black shadow-sm">{currentCard?.cardNumber}</span>
+                  <div className="h-0.5 flex-1 bg-white/40 rounded-full" />
+                </div>
+
+                {/* 중앙: 메인 콘텐츠 */}
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
+                  {currentCard?.dataPoint && (
+                    <div className="mb-4 px-5 py-3 bg-white/90 rounded-2xl shadow-lg">
+                      <p className="text-3xl font-black text-gray-800 leading-none">{currentCard.dataPoint}</p>
+                    </div>
+                  )}
+                  <h3 className="text-gray-800 font-extrabold text-xl mb-2 leading-tight whitespace-pre-line">{currentCard?.headline?.replace(/[.!?]\s*/g, m => m.trim() + '\n')}</h3>
+                  <p className="text-gray-600 font-semibold text-sm leading-relaxed whitespace-pre-line">{currentCard?.body?.replace(/[.!?]\s*/g, m => m.trim() + '\n')}</p>
+                </div>
+
+                {/* 하단: 브랜딩 바 */}
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500/70">@autocreator</span>
+                  <div className="flex gap-1">
+                    {[...Array(cards.length)].map((_, j) => (
+                      <span key={j} className={`w-1.5 h-1.5 rounded-full ${j === instaSlide ? 'bg-gray-700' : 'bg-gray-400/50'}`} />
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -216,11 +237,29 @@ export default function ExtractionResultPage() {
         <div className="mt-4 px-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-semibold text-text">캡션</p>
-            <button onClick={() => copy(instagramContent?.caption || '')} className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
+            <button onClick={() => {
+              const icons = ['📌', '💡', '📊', '🔑', '✅', '🎯', '📈', '⭐', '🔥', '💬']
+              const cardText = cards.map((card, i) => `${icons[i % icons.length]} ${card.headline}${card.dataPoint ? ' ' + card.dataPoint : ''}${card.body ? ' — ' + card.body : ''}`).join('\n')
+              copy((instagramContent?.caption || '') + '\n\n' + cardText + '\n\n' + (instagramContent?.hashtags?.join(' ') || ''))
+            }} className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
               <Copy size={11} /> 복사
             </button>
           </div>
           <p className="text-sm text-text-muted whitespace-pre-wrap leading-relaxed">{instagramContent?.caption}</p>
+
+          {cards.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {cards.map((card, i) => {
+                const icons = ['📌', '💡', '📊', '🔑', '✅', '🎯', '📈', '⭐', '🔥', '💬']
+                return (
+                  <p key={i} className="text-sm text-text-muted leading-relaxed">
+                    {icons[i % icons.length]} {card.headline}{card.dataPoint ? ` ${card.dataPoint}` : ''}{card.body ? ` — ${card.body}` : ''}
+                  </p>
+                )
+              })}
+            </div>
+          )}
+
           {instagramContent?.hashtags?.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-3">
               {instagramContent.hashtags.map((tag, i) => (
@@ -292,17 +331,6 @@ export default function ExtractionResultPage() {
             </div>
           )}
 
-          {newsletterContent?.cta && (
-            <div className="text-center py-6">
-              <button className="px-8 py-3.5 bg-primary text-white rounded-lg font-semibold text-sm shadow-md shadow-primary/20 hover:bg-primary-dark transition-colors">
-                {newsletterContent.cta.text}
-              </button>
-              {newsletterContent.cta.description && (
-                <p className="text-xs text-text-muted mt-3">{newsletterContent.cta.description}</p>
-              )}
-            </div>
-          )}
-
           {newsletterContent?.closingNote && (
             <div className="pt-5 border-t border-border">
               <p className="text-sm text-text-muted">{newsletterContent.closingNote}</p>
@@ -348,16 +376,22 @@ export default function ExtractionResultPage() {
             <span>{shortsScript?.scenes?.length}개 씬</span>
           </div>
 
-          {shortsScript?.scenes?.map((scene, i) => (
-            <div key={i} className="p-4 bg-surface rounded-lg border border-border">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center text-xs font-bold">{scene.sceneNumber}</span>
-                <span className="text-xs text-text-muted">{scene.duration}초</span>
+          {shortsScript?.scenes?.map((scene, i) => {
+            const sceneAudio = shortsNarration?.find(n => n.sceneNumber === scene.sceneNumber)
+            return (
+              <div key={i} className="p-4 bg-surface rounded-lg border border-border">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center text-xs font-bold">{scene.sceneNumber}</span>
+                  <span className="text-xs text-text-muted">{scene.duration}초</span>
+                </div>
+                <p className="text-sm text-text mb-1">{scene.narration}</p>
+                {scene.textOverlay && <p className="text-xs text-amber-400 font-medium mb-2">[자막] {scene.textOverlay}</p>}
+                {sceneAudio?.audioUrl && (
+                  <audio controls className="w-full h-8 mt-2" src={sceneAudio.audioUrl} />
+                )}
               </div>
-              <p className="text-sm text-text mb-1">{scene.narration}</p>
-              {scene.textOverlay && <p className="text-xs text-amber-400 font-medium">[자막] {scene.textOverlay}</p>}
-            </div>
-          ))}
+            )
+          })}
 
           {shortsScript?.cta && (
             <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg">
@@ -370,7 +404,9 @@ export default function ExtractionResultPage() {
   )
 
   // ── 롱폼 (영상 스크립트 타임라인) ──
-  const renderLongform = () => (
+  const renderLongform = () => !longformScript ? (
+    <div className="flex items-center justify-center h-40 text-text-muted text-sm">롱폼 대본이 생성되지 않았습니다.</div>
+  ) : (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -446,18 +482,51 @@ export default function ExtractionResultPage() {
         </div>
       )}
 
+      {/* 롱폼 영상 */}
+      {longformVideo && (
+        <div className="rounded-xl overflow-hidden border border-border">
+          {longformVideo.endsWith('.mp4') ? (
+            <video
+              controls
+              className="w-full"
+              src={longformVideo}
+              crossOrigin="anonymous"
+              onError={(e) => {
+                // video 실패 시 iframe으로 교체
+                const iframe = document.createElement('iframe')
+                iframe.src = longformVideo
+                iframe.className = 'w-full aspect-video'
+                iframe.allow = 'autoplay'
+                e.target.replaceWith(iframe)
+              }}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-48 bg-surface-light text-text-muted">
+              <p className="text-sm mb-2">영상이 아직 렌더링 중입니다.</p>
+              <p className="text-xs">완료 후 새 탭에서 확인해주세요.</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between p-3 bg-surface-light border-t border-border">
+            <p className="text-xs font-medium text-success">롱폼 영상 {longformVideo.endsWith('.mp4') ? '생성 완료' : '렌더링 중...'}</p>
+            <div className="flex gap-2">
+              <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-surface text-text-muted text-xs font-medium rounded-lg hover:bg-border transition-all border border-border">
+                새 탭에서 보기
+              </a>
+              {longformVideo.endsWith('.mp4') && (
+                <a href={longformVideo} download="longform-video.mp4" className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary-dark transition-all">
+                  <Download size={11} /> 다운로드
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 나레이션 오디오 */}
       {longformNarration?.audioUrl && (
         <div className="p-4 bg-surface border border-border rounded-xl">
           <p className="text-xs font-medium text-text mb-2">전체 나레이션 오디오</p>
           <audio controls className="w-full h-10" src={longformNarration.audioUrl} />
-        </div>
-      )}
-
-      {longformVideo && (
-        <div className="p-4 bg-success/5 border border-success/20 rounded-xl">
-          <p className="text-sm font-medium text-success">롱폼 영상 생성 완료</p>
-          <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-light underline">영상 보기</a>
         </div>
       )}
     </div>

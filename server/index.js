@@ -88,14 +88,16 @@ app.post('/api/elevenlabs/tts/:voiceId', async (req, res) => {
   }
 })
 
-// Flux Proxy - Generate
-app.post('/api/flux/:model', async (req, res) => {
+// fal.ai Proxy - Submit (모델 경로를 x-fal-model 헤더로 전달)
+app.post('/api/fal/submit', async (req, res) => {
   try {
-    const response = await fetch(`https://api.bfl.ml/v1/${req.params.model}`, {
+    const model = req.headers['x-fal-model']
+    if (!model) return res.status(400).json({ error: 'x-fal-model header required' })
+    const response = await fetch(`https://queue.fal.run/${model}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-key': req.headers['x-api-key'],
+        Authorization: `Key ${req.headers['x-api-key']}`,
       },
       body: JSON.stringify(req.body),
     })
@@ -107,13 +109,19 @@ app.post('/api/flux/:model', async (req, res) => {
   }
 })
 
-// Flux Proxy - Get Result
-app.get('/api/flux/result/:taskId', async (req, res) => {
+// fal.ai Proxy - Result (response_url을 x-fal-response-url 헤더로 전달)
+app.get('/api/fal/result/:requestId', async (req, res) => {
   try {
-    const response = await fetch(`https://api.bfl.ml/v1/get_result?id=${req.params.taskId}`, {
-      headers: { 'x-key': req.headers['x-api-key'] },
+    const responseUrl = req.headers['x-fal-response-url']
+    if (!responseUrl) return res.status(400).json({ error: 'x-fal-response-url header required' })
+    const response = await fetch(responseUrl, {
+      headers: { Authorization: `Key ${req.headers['x-api-key']}` },
     })
     const data = await response.json()
+    // fal.ai는 진행 중일 때 422를 반환 — 클라이언트가 폴링할 수 있도록 200으로 전달
+    if (response.status === 422 || data.detail?.includes?.('still in progress')) {
+      return res.json({ status: 'IN_PROGRESS', ...data })
+    }
     if (!response.ok) return res.status(response.status).json(data)
     res.json(data)
   } catch (err) {
@@ -149,6 +157,204 @@ app.get('/api/luma/generations/:id', async (req, res) => {
     const data = await response.json()
     if (!response.ok) return res.status(response.status).json(data)
     res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Creatomate Proxy - Render
+app.post('/api/creatomate/renders', async (req, res) => {
+  try {
+    const response = await fetch('https://api.creatomate.com/v2/renders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${req.headers['x-api-key']}`,
+      },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Creatomate Proxy - Get Render Status
+app.get('/api/creatomate/renders/:id', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.creatomate.com/v2/renders/${req.params.id}`, {
+      headers: { Authorization: `Bearer ${req.headers['x-api-key']}` },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Notion API
+const NOTION_API_KEY = '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'
+const NOTION_DB_ID = '32d92fe7a665800ea081e2ed53681b84'
+
+function buildNotionBlocks(fileName, channels, summary, data, blogImages) {
+  const blocks = []
+  const text = (content) => ({ text: { content } })
+  const paragraph = (content) => ({ object: 'block', type: 'paragraph', paragraph: { rich_text: [text(content)] } })
+  const heading2 = (content) => ({ object: 'block', type: 'heading_2', heading_2: { rich_text: [text(content)] } })
+  const image = (url) => ({ object: 'block', type: 'image', image: { type: 'external', external: { url } } })
+  const heading3 = (content) => ({ object: 'block', type: 'heading_3', heading_3: { rich_text: [text(content)] } })
+  const bullet = (content) => ({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: [text(content)] } })
+  const divider = () => ({ object: 'block', type: 'divider', divider: {} })
+
+  // 기본 정보
+  blocks.push(paragraph(`📁 파일: ${fileName || '없음'}`))
+  blocks.push(paragraph(`📅 생성일: ${new Date().toLocaleDateString('ko-KR')} ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`))
+  blocks.push(paragraph(`📺 채널: ${(channels || []).map(ch => ch.channel).join(', ')}`))
+  blocks.push(divider())
+
+  // 요약
+  if (summary) {
+    blocks.push(heading2('📊 핵심 요약'))
+    if (summary.summary) blocks.push(paragraph(summary.summary))
+    if (summary.keyData?.length) {
+      for (const kd of summary.keyData) {
+        blocks.push(bullet(`${kd.label}: ${kd.value}${kd.context ? ` (${kd.context})` : ''}`))
+      }
+    }
+    if (summary.insights?.length) {
+      blocks.push(heading3('💡 인사이트'))
+      for (const ins of summary.insights) blocks.push(bullet(ins))
+    }
+    blocks.push(divider())
+  }
+
+  // 블로그
+  if (data?.blogContent) {
+    blocks.push(heading2('📝 블로그'))
+    blocks.push(paragraph(`제목: ${data.blogContent.title || ''}`))
+    for (const sec of data.blogContent.sections || []) {
+      blocks.push(heading3(sec.heading || ''))
+      const img = (blogImages || []).find(i => i.heading === sec.heading)
+      if (img?.imageUrl && img.imageUrl.startsWith('http')) blocks.push(image(img.imageUrl))
+      if (sec.keyPhrase) blocks.push(paragraph(`💬 ${sec.keyPhrase}`))
+      blocks.push(paragraph((sec.content || '').slice(0, 2000)))
+    }
+    blocks.push(divider())
+  }
+
+  // 뉴스레터
+  if (data?.newsletterContent) {
+    blocks.push(heading2('📧 뉴스레터'))
+    blocks.push(paragraph(`제목: ${data.newsletterContent.subject || ''}`))
+    blocks.push(paragraph(`헤드라인: ${data.newsletterContent.headline || ''}`))
+    if (data.newsletterContent.keyPoints?.length) {
+      for (const kp of data.newsletterContent.keyPoints) blocks.push(bullet(kp))
+    }
+    blocks.push(paragraph((data.newsletterContent.body || '').slice(0, 2000)))
+    blocks.push(divider())
+  }
+
+  // 인스타그램
+  if (data?.instagramContent) {
+    blocks.push(heading2('📸 인스타그램'))
+    blocks.push(paragraph(`카드 ${data.instagramContent.cards?.length || 0}장`))
+    for (const card of data.instagramContent.cards || []) {
+      blocks.push(bullet(`${card.cardNumber}. ${card.headline} — ${card.body || ''}${card.dataPoint ? ` [${card.dataPoint}]` : ''}`))
+    }
+    if (data.instagramContent.caption) blocks.push(paragraph(`캡션: ${data.instagramContent.caption}`))
+    blocks.push(divider())
+  }
+
+  // 숏폼
+  if (data?.shortsScript) {
+    blocks.push(heading2('🎬 숏폼 대본'))
+    blocks.push(paragraph(`제목: ${data.shortsScript.title || ''} | ${data.shortsScript.duration || 0}초`))
+    for (const scene of data.shortsScript.scenes || []) {
+      blocks.push(bullet(`씬${scene.sceneNumber} (${scene.duration}초): ${scene.narration || ''}`))
+    }
+    blocks.push(divider())
+  }
+
+  // 롱폼
+  if (data?.longformScript) {
+    blocks.push(heading2('🎥 롱폼 대본'))
+    blocks.push(paragraph(`제목: ${data.longformScript.title || ''} | ${data.longformScript.estimatedDuration || ''}`))
+    for (const sec of data.longformScript.sections || []) {
+      blocks.push(heading3(`${sec.sectionNumber}. ${sec.title || ''}`))
+      blocks.push(paragraph((sec.narration || '').slice(0, 2000)))
+    }
+  }
+
+  // Notion 블록 최대 100개 제한
+  return blocks.slice(0, 100)
+}
+
+// Notion - 콘텐츠 저장
+app.post('/api/notion/save', async (req, res) => {
+  try {
+    const { fileName, channels, summary, data, blogImages } = req.body
+
+    const response = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        parent: { database_id: NOTION_DB_ID },
+        properties: {
+          Name: { title: [{ text: { content: summary?.title || fileName || '새 콘텐츠' } }] },
+        },
+        children: buildNotionBlocks(fileName, channels, summary, data, blogImages),
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok) return res.status(response.status).json(result)
+    res.json({ id: result.id, url: result.url })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Notion - 콘텐츠 목록 조회
+app.get('/api/notion/list', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.notion.com/v1/databases/${NOTION_DB_ID}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+        page_size: 50,
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok) return res.status(response.status).json(result)
+    res.json(result.results)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Notion - 페이지 상세 조회 (children blocks)
+app.get('/api/notion/page/:pageId', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.notion.com/v1/blocks/${req.params.pageId}/children`, {
+      headers: {
+        'Authorization': `Bearer ${NOTION_API_KEY}`,
+        'Notion-Version': '2022-06-28',
+      },
+    })
+    const result = await response.json()
+    if (!response.ok) return res.status(response.status).json(result)
+    res.json(result.results)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

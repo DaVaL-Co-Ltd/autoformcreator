@@ -6,7 +6,7 @@ const MODELS = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
-  'gemini-1.5-flash',
+  'gemini-2.5-flash-lite',
 ]
 
 // 모델별 429 발생 시각 추적 (60초 후 자동 해제)
@@ -34,7 +34,7 @@ async function waitForRateLimit(retryAfterMs = 5000) {
 }
 
 export async function callGeminiWithFallback(prompt, options = {}) {
-  const { temperature = 0.3, maxOutputTokens = 8192 } = options
+  const { temperature = 0.3, maxOutputTokens = 8192, jsonMode = false } = options
 
   // rate limit 안 걸린 모델 우선, 걸린 모델은 뒤로
   const availableModels = [
@@ -53,7 +53,7 @@ export async function callGeminiWithFallback(prompt, options = {}) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature, maxOutputTokens },
+            generationConfig: { temperature, maxOutputTokens, ...(jsonMode ? { responseMimeType: 'application/json' } : {}) },
           }),
         })
 
@@ -81,7 +81,9 @@ export async function callGeminiWithFallback(prompt, options = {}) {
         }
 
         const data = await res.json()
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        // thinking 모델은 여러 part를 반환할 수 있음 — 마지막 text part를 사용
+        const parts = data.candidates?.[0]?.content?.parts || []
+        const text = parts.filter(p => p.text).map(p => p.text).pop() || ''
         if (text) {
           console.log(`[Gemini] ${model} 사용 성공`)
           return text
@@ -113,7 +115,14 @@ export async function callGeminiWithFallback(prompt, options = {}) {
 
 export function parseJSON(result, fallback) {
   try {
-    const cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    // 코드블록 제거
+    let cleaned = result.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+    // JSON 객체 부분만 추출 (앞뒤 텍스트 제거)
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace = cleaned.lastIndexOf('}')
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+    }
     return JSON.parse(cleaned)
   } catch {
     return fallback

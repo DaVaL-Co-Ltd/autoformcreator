@@ -1,26 +1,38 @@
 const STORAGE_KEY = 'autocreator_contents'
+const NOTION_API = 'http://localhost:3001/api/notion'
 
 export function saveExtraction(data) {
-  const existing = getExtractions()
-  // fileBase64는 용량이 크므로 저장에서 제외
-  const { fileBase64, ...dataWithoutFile } = data
+  const { fileBase64, blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, longformVideo, parsedText, ...lightData } = data
+
+  const channels = []
+  if (data.blogContent) channels.push({ channel: 'blog', title: data.blogContent.title })
+  if (data.newsletterContent) channels.push({ channel: 'newsletter', title: data.newsletterContent.subject })
+  if (data.instagramContent) channels.push({ channel: 'instagram', title: `카드뉴스 ${data.instagramContent.cards?.length || 0}장` })
+  if (data.shortsScript) channels.push({ channel: 'shorts', title: data.shortsScript.title })
+  if (data.longformScript) channels.push({ channel: 'longform', title: data.longformScript.title })
+
   const item = {
     id: Date.now(),
     createdAt: new Date().toISOString(),
     fileName: data.fileName,
     summary: data.summary,
-    channels: [],
-    data: dataWithoutFile,
+    channels,
+    data: lightData,
   }
 
-  if (data.blogContent) item.channels.push({ channel: 'blog', title: data.blogContent.title })
-  if (data.newsletterContent) item.channels.push({ channel: 'newsletter', title: data.newsletterContent.subject })
-  if (data.instagramContent) item.channels.push({ channel: 'instagram', title: `카드뉴스 ${data.instagramContent.cards?.length || 0}장` })
-  if (data.shortsScript) item.channels.push({ channel: 'shorts', title: data.shortsScript.title })
-  if (data.longformScript) item.channels.push({ channel: 'longform', title: data.longformScript.title })
-
+  // localStorage 저장 (로컬 캐시)
+  const existing = getExtractions()
   existing.unshift(item)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(existing))
+  const trimmed = existing.slice(0, 20)
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed)) } catch {}
+
+  // Notion 저장 (비동기, 실패해도 무시)
+  fetch(`${NOTION_API}/save`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: data.fileName, channels, summary: data.summary, data: lightData, blogImages: data.blogImages }),
+  }).catch(err => console.warn('[Notion] 저장 실패:', err.message))
+
   return item.id
 }
 

@@ -1,8 +1,8 @@
 const API_KEY = import.meta.env.VITE_LUMA_API_KEY
-const PROXY_URL = '/api/luma'
+const PROXY_URL = 'http://localhost:3001/api/luma'
 
-async function generateVideo(prompt, aspectRatio = '9:16', duration = '5s') {
-  // Step 1: 영상 생성 요청
+async function generateVideo(prompt, aspectRatio = '9:16') {
+  // Step 1: Luma AI 직접 영상 생성 요청
   const createRes = await fetch(`${PROXY_URL}/generations`, {
     method: 'POST',
     headers: {
@@ -12,7 +12,6 @@ async function generateVideo(prompt, aspectRatio = '9:16', duration = '5s') {
     body: JSON.stringify({
       prompt,
       aspect_ratio: aspectRatio,
-      duration,
       model: 'ray-flash-2',
     }),
   })
@@ -51,21 +50,23 @@ async function generateVideo(prompt, aspectRatio = '9:16', duration = '5s') {
       throw new Error(`Luma 영상 생성 실패: ${statusData.failure_reason || '알 수 없는 오류'}`)
     }
 
-    // queued / dreaming
     attempts++
   }
 
   throw new Error('Luma 영상 생성 시간 초과 (5분)')
 }
 
-export async function generateShortsVideos(scenes) {
+export async function generateShortsVideos(scenes, onProgress) {
   const results = []
+  const total = scenes.filter(s => s.visualDescription).length
+  let completed = 0
+
   for (const scene of scenes) {
     if (scene.visualDescription) {
+      onProgress?.({ completed, total, current: scene.sceneNumber })
       try {
-        // 숏폼: 세로형 9:16, 5초 클립
         const shortsPrompt = `Short-form vertical video clip. ${scene.visualDescription}. Dynamic camera movement, cinematic quality, engaging visual for social media shorts.`
-        const result = await generateVideo(shortsPrompt, '9:16', '5s')
+        const result = await generateVideo(shortsPrompt, '9:16')
         results.push({
           sceneNumber: scene.sceneNumber,
           videoUrl: result.videoUrl,
@@ -78,6 +79,8 @@ export async function generateShortsVideos(scenes) {
           error: err.message,
         })
       }
+      completed++
+      onProgress?.({ completed, total, current: null })
     }
   }
   return results

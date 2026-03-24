@@ -1,10 +1,11 @@
 const API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY
-const PROXY_URL = '/api/elevenlabs'
+const PROXY_URL = 'http://localhost:3001/api/elevenlabs'
 
-// 기본 한국어 음성 ID (Rachel - multilingual)
-const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'
+// 음성 ID
+const SHORTS_VOICE_ID = 'TX3LPaxmHKxFdv7VOQHJ'  // Liam - 에너지 넘치는 숏폼용
+const LONGFORM_VOICE_ID = 'a52RveZOORPA9buQulXm' // 롱폼용
 
-export async function textToSpeech(text, voiceId = DEFAULT_VOICE_ID) {
+export async function textToSpeech(text, voiceId = SHORTS_VOICE_ID) {
   const res = await fetch(`${PROXY_URL}/tts/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -33,7 +34,7 @@ export async function generateNarrationForScenes(scenes) {
   const results = []
   for (const scene of scenes) {
     try {
-      const audioUrl = await textToSpeech(scene.narration)
+      const audioUrl = await textToSpeech(scene.narration, SHORTS_VOICE_ID)
       results.push({ sceneNumber: scene.sceneNumber, audioUrl, text: scene.narration })
     } catch (err) {
       results.push({ sceneNumber: scene.sceneNumber, audioUrl: null, error: err.message, text: scene.narration })
@@ -44,7 +45,7 @@ export async function generateNarrationForScenes(scenes) {
 
 export async function generateFullNarration(fullText) {
   try {
-    const audioUrl = await textToSpeech(fullText)
+    const audioUrl = await textToSpeech(fullText, LONGFORM_VOICE_ID)
     return { audioUrl, text: fullText }
   } catch (err) {
     return { audioUrl: null, error: err.message, text: fullText }

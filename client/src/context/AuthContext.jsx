@@ -2,11 +2,8 @@ import { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext(null)
 
-// 인증된 계정 목록
-const AUTHORIZED_ACCOUNTS = [
-  { email: 'admin@daval.co', password: 'daval2024!', name: '관리자' },
-  { email: 'test@daval.co', password: 'test1234', name: '테스트' },
-]
+// 접속 비밀번호
+const ACCESS_PASSWORD = '1234'
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -20,13 +17,10 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  const login = (email, password) => {
-    const account = AUTHORIZED_ACCOUNTS.find(
-      a => a.email === email && a.password === password
-    )
-    if (!account) return { success: false, message: '이메일 또는 비밀번호가 올바르지 않습니다.' }
+  const login = (password) => {
+    if (password !== ACCESS_PASSWORD) return { success: false, message: '비밀번호가 올바르지 않습니다.' }
 
-    const userData = { email: account.email, name: account.name }
+    const userData = { name: '사용자' }
     setUser(userData)
     localStorage.setItem('mybest_user', JSON.stringify(userData))
     return { success: true }
