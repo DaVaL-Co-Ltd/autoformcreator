@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>숏폼 자막 v2 미리보기</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Pretendard', sans-serif; background: #0f172a; color: #e2e8f0; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+  h1 { font-size: 22px; font-weight: 800; margin-bottom: 8px; }
+  p.desc { color: #64748b; margin-bottom: 30px; font-size: 13px; text-align: center; }
+  .grid { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .frame { width: 240px; border-radius: 16px; overflow: hidden; border: 1px solid #334155; background: #1e293b; }
+  .frame-label { padding: 10px 14px; font-size: 11px; font-weight: 700; color: #94a3b8; border-bottom: 1px solid #334155; }
+  .frame-label span { color: #22c55e; }
+  .canvas-wrap { aspect-ratio: 9/16; background: #000; }
+  .canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+  .info { padding: 10px 14px; font-size: 11px; color: #64748b; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h1>숏폼 자막 v2 - 한 문장씩 표시</h1>
+<p class="desc">나레이션 진행에 따라 문장이 하나씩 바뀝니다. textOverlay가 상단 뱃지로 표시됩니다.</p>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const W = 1080, H = 1920
+const ACCENTS = ['#e57a00', '#2e7d32', '#1565c0', '#e57a00']
+const PASTELS = ['#FFF3E0', '#E8F5E9', '#E3F2FD', '#FFF3E0']
+
+const narrations = [
+  '2026학년도 대입, 올해 뭐가 달라졌을까요? 핵심만 빠르게 정리해드립니다!',
+  '수시 비율이 역대 최고입니다! 학생부 종합전형이 더 중요해졌습니다.',
+  '지금 바로 준비하세요. 3월 모의고사부터 전략적으로 접근해야 합니다!',
+]
+
+const textOverlays = [
+  '2026 대입 핵심 변화',
+  '수시 78.2% 역대 최고',
+  '3월 모의고사 D-DAY',
+]
+
+function splitSentences(text) {
+  const sentences = text.match(/[^.!?]+[.!?]*/g) || [text]
+  return sentences.map(s => s.trim()).filter(Boolean)
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const lines = []; let line = ''
+  for (const ch of text) {
+    const test = line + ch
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = ch }
+    else line = test
+  }
+  if (line) lines.push(line)
+  return lines
+}
+
+// 각 문장별로 하나의 프레임 생성
+const grid = document.getElementById('grid')
+
+narrations.forEach((narration, sceneIdx) => {
+  const sentences = splitSentences(narration)
+  sentences.forEach((sentence, sentIdx) => {
+    const div = document.createElement('div')
+    div.className = 'frame'
+    div.innerHTML = `
+      <div class="frame-label">Scene ${sceneIdx + 1} - 문장 ${sentIdx + 1}/${sentences.length} <span>| 자막</span></div>
+      <div class="canvas-wrap"><canvas id="sc${sceneIdx}_${sentIdx}"></canvas></div>
+      <div class="info">"${sentence}"</div>
+    `
+    grid.appendChild(div)
+
+    requestAnimationFrame(() => {
+      const canvas = document.getElementById(`sc${sceneIdx}_${sentIdx}`)
+      canvas.width = W; canvas.height = H
+      const ctx = canvas.getContext('2d')
+      const accent = ACCENTS[sceneIdx]
+
+      // 파스텔 배경
+      ctx.fillStyle = PASTELS[sceneIdx]
+      ctx.fillRect(0, 0, W, H)
+      ctx.globalAlpha = 0.12; ctx.fillStyle = accent
+      ctx.beginPath(); ctx.arc(W * 0.7, H * 0.3, 300, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.arc(W * 0.2, H * 0.55, 200, 0, Math.PI * 2); ctx.fill()
+      ctx.globalAlpha = 1
+      ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(0, 0, W, H)
+
+      // 하단 그라데이션
+      const gradH = 550
+      const grad = ctx.createLinearGradient(0, H - gradH, 0, H)
+      grad.addColorStop(0, 'rgba(0,0,0,0)')
+      grad.addColorStop(0.35, 'rgba(0,0,0,0.5)')
+      grad.addColorStop(1, 'rgba(0,0,0,0.85)')
+      ctx.fillStyle = grad
+      ctx.fillRect(0, H - gradH, W, gradH)
+
+      // textOverlay 뱃지 (상단)
+      const overlay = textOverlays[sceneIdx]
+      ctx.font = 'bold 26px Pretendard'
+      ctx.fillStyle = accent
+      const bw = ctx.measureText(overlay).width + 40
+      ctx.beginPath(); ctx.roundRect(60, H - 420, bw, 42, 16); ctx.fill()
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'left'
+      ctx.fillText(overlay, 80, H - 392)
+
+      // 현재 문장 자막
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 48px Pretendard'
+      ctx.textAlign = 'left'
+      wrapText(ctx, sentence, W - 120).slice(0, 4).forEach((l, i) => {
+        ctx.fillText(l, 60, H - 280 + i * 60)
+      })
+
+      // 프로그레스 바
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(0, 0, W, 4)
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W * ((sceneIdx + 1) / 3), 4)
+    })
+  })
+})
+</script>
+</body>
+</html>

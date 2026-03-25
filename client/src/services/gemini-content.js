@@ -13,6 +13,7 @@ async function generate4Channels(summary, rawText, emphasis) {
 - 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
 - 사실에 기반한 내용만 작성하세요.
 - 특정 대학교(예: 건국대, 성균관대 등)에만 해당하는 세부 내용은 최소화하세요. 여러 대학에 공통으로 적용되는 트렌드, 제도 변화, 일반적인 전략 등 공통적인 내용을 중심으로 작성하세요. 특정 대학은 예시로만 간단히 언급하세요.
+- 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
 ${buildEmphasisInstruction(emphasis)}
 
 ## 요약 데이터
@@ -131,6 +132,7 @@ async function retryNonLongform(channels, summary, rawText, emphasis) {
 ## 핵심 규칙
 - 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
 - 사실에 기반한 내용만 작성하세요.
+- 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
 ${buildEmphasisInstruction(emphasis)}
 
 ## 요약 데이터
@@ -190,6 +192,7 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis) 
 export async function generateBlogContent(summary, rawText, emphasis) {
   const prompt = `당신은 전문 블로그 작가입니다. 아래 데이터를 바탕으로 블로그 글을 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
+볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
 ${buildEmphasisInstruction(emphasis)}
 
 ## 요약 데이터

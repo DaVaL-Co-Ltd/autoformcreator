@@ -15,7 +15,7 @@ import {
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
 import { generateNarrationForScenes, generateFullNarration } from '../services/elevenlabs'
 import { renderVideoAndWait } from '../services/creatomate'
-import { generateShortsVideos } from '../services/luma'
+import { generateShortsVideoLocal } from '../services/shorts-video'
 
 const steps = [
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
@@ -659,7 +659,7 @@ export default function ExtractionPage() {
     const alreadyDone = {
       blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
       instaImg: instagramImages?.length > 0,
-      shortsVid: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
+      shortsVid: !!shortsVideo?.combinedVideoUrl,
       shortsNar: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
       longformNar: !!longformNarration?.audioUrl,
       longformVid: !!longformVideo,
@@ -679,35 +679,42 @@ export default function ExtractionPage() {
       )
     }
 
-    // TODO: 숏폼 영상 임시 비활성화
-    // const lumaDirectKey = import.meta.env.VITE_LUMA_API_KEY
-    // if (lumaDirectKey && !alreadyDone.shortsVid) {
-    //   tasks.push(
-    //     { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes.slice(0, 1), setShortsProgress) : Promise.resolve([]), setter: setShortsVideo },
-    //   )
-    // }
+    // 숏폼: 나레이션 먼저 → 오디오 길이 기반으로 영상 생성
+    const elevenlabsKey = import.meta.env.VITE_ELEVENLABS_API_KEY
+    let cachedNarrations = shortsNarration // 이미 있으면 재사용
 
-    // TODO: ElevenLabs 나레이션 임시 비활성화
-    // const elevenlabsKey = import.meta.env.VITE_ELEVENLABS_API_KEY
-    // if (elevenlabsKey) {
-    //   if (!alreadyDone.shortsNar) {
-    //     tasks.push(
-    //       { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null), setter: setShortsNarration },
-    //     )
-    //   }
-    //   if (!alreadyDone.longformNar) {
-    //     tasks.push(
-    //       { key: 'longformNar', service: 'elevenlabs', channel: '롱폼 나레이션', fn: () => {
-    //         if (longformScript?.fullNarrationText) return generateFullNarration(longformScript.fullNarrationText)
-    //         if (longformScript?.sections) return generateFullNarration(longformScript.sections.map(s => s.narration).join('\n\n'))
-    //         return Promise.resolve(null)
-    //       }, setter: setLongformNarration },
-    //     )
-    //   }
-    // } else {
-    //   if (!alreadyDone.shortsNar) errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
-    //   if (!alreadyDone.longformNar) errors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
-    // }
+    if (shortsScript?.scenes?.length) {
+      // [임시 비활성화] 숏폼 나레이션
+      // if (elevenlabsKey && !alreadyDone.shortsNar) {
+      //   tasks.push(
+      //     { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: async () => {
+      //       try {
+      //         const result = await generateNarrationForScenes(shortsScript.scenes)
+      //         cachedNarrations = result
+      //         return result
+      //       } catch (err) {
+      //         console.warn('[숏폼 나레이션] 실패, 영상만 생성:', err.message)
+      //         cachedNarrations = null
+      //         return null
+      //       }
+      //     }, setter: setShortsNarration },
+      //   )
+      // }
+
+      // 영상 생성 (순차 실행이므로 나레이션이 먼저 완료됨)
+      if (!alreadyDone.shortsVid) {
+        tasks.push(
+          { key: 'shortsVid', service: 'gemini', channel: '숏폼 영상', fn: async () => {
+            return await generateShortsVideoLocal(shortsScript.scenes, shortsScript.title, setShortsProgress, cachedNarrations)
+          }, setter: setShortsVideo },
+        )
+      }
+      // [롱폼 비활성화] 롱폼 나레이션은 아직 적용하지 않음
+
+      if (!elevenlabsKey && !alreadyDone.shortsNar) {
+        errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
+      }
+    }
 
     // 롱폼 영상 (Creatomate) - preview 모드
     const creatomateKey = import.meta.env.VITE_CREATOMATE_API_KEY
@@ -1448,11 +1455,11 @@ ${parsedText}
                   ok: instagramImages?.length > 0,
                 },
                 {
-                  label: '숏폼 영상', service: 'luma', icon: Film, iconColor: 'text-rose-400',
-                  status: shortsVideo
-                    ? `${Array.isArray(shortsVideo) ? shortsVideo.filter(v => v.videoUrl).length : 0}개 생성`
-                    : shortsProgress ? `${shortsProgress.completed}/${shortsProgress.total}개 완료${shortsProgress.current ? ` (씬${shortsProgress.current} 생성중)` : ''}` : null,
-                  ok: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
+                  label: '숏폼 영상', service: 'gemini', icon: Film, iconColor: 'text-rose-400',
+                  status: shortsVideo?.combinedVideoUrl
+                    ? `${shortsVideo.sceneTimings?.length || 0}씬 통합 영상`
+                    : shortsProgress ? `${shortsProgress.completed}/${shortsProgress.total}개 완료${shortsProgress.current ? ` (씬${shortsProgress.current} ${shortsProgress.phase === 'image' ? '이미지' : '영상'} 생성중)` : ''}` : null,
+                  ok: !!shortsVideo?.combinedVideoUrl,
                 },
                 {
                   label: '숏폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',

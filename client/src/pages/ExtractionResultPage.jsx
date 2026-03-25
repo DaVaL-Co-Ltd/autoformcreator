@@ -6,8 +6,10 @@ import {
 } from 'lucide-react'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import { marked } from 'marked'
-import { saveExtraction, getExtractions, loadImages } from '../services/storage'
+import { saveExtraction, getExtractions, loadImages, loadShortsMedia } from '../services/storage'
 
 const menuItems = [
   { id: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10' },
@@ -94,23 +96,37 @@ export default function ExtractionResultPage() {
     parsedText, verification, summary,
     blogContent, newsletterContent, instagramContent,
     shortsScript, longformScript, blogImages: initialBlogImages, instagramImages,
-    shortsVideo, shortsNarration, longformNarration,
+    shortsVideo: initialShortsVideo, shortsNarration: initialShortsNarration, longformNarration,
     longformVideo, fileName, fileBase64,
   } = location.state || {}
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
+  const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
+  const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
 
-  // blogImages가 없으면 IndexedDB에서 불러오기
+  // blogImages / shorts 미디어가 없으면 IndexedDB에서 불러오기
   useEffect(() => {
-    if (blogImages?.length) return
     const stateData = location.state
     if (!stateData) return
-    // extractionId 찾기: localStorage에서 같은 fileName의 최신 항목
     const extractions = getExtractions()
     const match = extractions.find(e => e.fileName === stateData.fileName)
-    if (match?.id) {
+    if (!match?.id) return
+
+    if (!blogImages?.length) {
       loadImages(match.id).then(imgs => {
         if (imgs?.length) setBlogImages(imgs)
+      })
+    }
+
+    if (!shortsVideo?.combinedVideoUrl && shortsScript) {
+      loadShortsMedia(match.id).then(media => {
+        if (!media) return
+        if (media.combinedVideoUrl) {
+          setShortsVideo({ combinedVideoUrl: media.combinedVideoUrl, sceneTimings: media.sceneTimings || [], scenes: media.sceneTimings || [] })
+        }
+        if (media.narration?.length) {
+          setShortsNarration(media.narration)
+        }
       })
     }
   }, [])
@@ -166,6 +182,16 @@ export default function ExtractionResultPage() {
     }
   }, [activeMenu, blogContent])
 
+  // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
+  const normalizeMd = (text) => {
+    if (!text) return ''
+    return text
+      .replace(/\*{3,}([^*]+?)\*{3,}/g, '<strong>$1</strong>')  // ***text*** → <strong>
+      .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** → <strong> (공백 포함)
+      .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* → <strong>
+      .replace(/\*{2,}/g, '')  // 남은 고아 ** 제거
+  }
+
   // 결과 저장은 ExtractionPage에서 navigateToResults 시 1회만 수행
   // savedFromExtraction 플래그가 있을 때만 저장
   useEffect(() => {
@@ -192,7 +218,8 @@ export default function ExtractionResultPage() {
 
   const copy = (text, { richText = false } = {}) => {
     if (richText) {
-      const html = marked.parse(text)
+      const normalized = normalizeMd(text)
+      const html = normalized.includes('<strong>') ? normalized.replace(/\n/g, '<br>') : marked.parse(normalized)
       const blob = new Blob([html], { type: 'text/html' })
       const plainBlob = new Blob([text], { type: 'text/plain' })
       navigator.clipboard.write([
@@ -307,7 +334,20 @@ export default function ExtractionResultPage() {
                   <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
                 </div>
               )}
-              <div className="text-sm text-text-muted leading-7 prose prose-sm prose-invert max-w-none"><ReactMarkdown>{section.content}</ReactMarkdown></div>
+              <div className="text-sm text-text-muted leading-7 max-w-none">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                  components={{
+                    strong: ({ children }) => <strong className="font-bold text-text">{children}</strong>,
+                    h2: ({ children }) => <h2 className="text-base font-bold text-text mt-4 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-bold text-text mt-3 mb-1">{children}</h3>,
+                    ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
+                    p: ({ children }) => <p className="mb-2">{children}</p>,
+                  }}
+                >{normalizeMd(section.content)}</ReactMarkdown>
+              </div>
             </section>
           )
         })
@@ -538,15 +578,77 @@ export default function ExtractionResultPage() {
   )
 
   // ── 숏폼 (세로 영상 스크립트) ──
+  const shortsVideoRef = useRef(null)
+  const shortsAudioRefs = useRef([])
+  const [currentScene, setCurrentScene] = useState(-1)
+  const playingSceneRef = useRef(-1)
+
+  const combinedVideoUrl = shortsVideo?.combinedVideoUrl
+  const sceneTimings = shortsVideo?.sceneTimings || []
+
+  // 현재 시간에 해당하는 씬 인덱스 계산
+  const getSceneAtTime = (t) => {
+    for (let i = 0; i < sceneTimings.length; i++) {
+      const s = sceneTimings[i]
+      if (t >= s.startTime && t < s.startTime + s.duration) return i
+    }
+    return -1 // 간격 구간
+  }
+
+  // timeupdate 기반 나레이션 싱크
+  const handleShortsTimeUpdate = () => {
+    const video = shortsVideoRef.current
+    if (!video || !sceneTimings.length) return
+
+    const t = video.currentTime
+    const sceneIdx = getSceneAtTime(t)
+
+    // 현재 씬 UI 업데이트
+    if (sceneIdx !== currentScene) setCurrentScene(sceneIdx)
+
+    // 나레이션 싱크: 씬이 바뀌었을 때만 재생/정지
+    if (sceneIdx !== playingSceneRef.current) {
+      // 이전 씬 나레이션 정지
+      shortsAudioRefs.current.forEach(a => { if (a) { a.pause(); a.currentTime = 0 } })
+
+      // 새 씬 나레이션 재생
+      if (sceneIdx >= 0 && !video.paused) {
+        const audio = shortsAudioRefs.current[sceneIdx]
+        if (audio) {
+          audio.currentTime = 0
+          audio.play().catch(() => {})
+        }
+      }
+      playingSceneRef.current = sceneIdx
+    }
+  }
+
+  const handleShortsPlay = () => {
+    playingSceneRef.current = -1 // 리셋하여 timeupdate에서 다시 싱크
+  }
+
+  const handleShortsPause = () => {
+    shortsAudioRefs.current.forEach(a => { if (a) { a.pause(); a.currentTime = 0 } })
+    playingSceneRef.current = -1
+  }
+
   const renderShorts = () => (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* 숏폼 미리보기 프레임 */}
       <div className="flex gap-6">
-        {/* 9:16 프레임 */}
+        {/* 9:16 통합 영상 프레임 */}
         <div className="w-64 shrink-0">
           <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
-            {shortsVideo?.[0]?.videoUrl ? (
-              <video controls className="w-full h-full object-cover absolute inset-0" src={shortsVideo[0].videoUrl} />
+            {combinedVideoUrl ? (
+              <video
+                ref={shortsVideoRef}
+                controls
+                className="w-full h-full object-cover absolute inset-0"
+                src={combinedVideoUrl}
+                onPlay={handleShortsPlay}
+                onPause={handleShortsPause}
+                onEnded={handleShortsPause}
+                onTimeUpdate={handleShortsTimeUpdate}
+              />
             ) : (
               <>
                 <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -562,18 +664,18 @@ export default function ExtractionResultPage() {
               </>
             )}
           </div>
-          {shortsVideo?.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {shortsVideo.map((sv, vi) => (
-                sv.videoUrl && (
-                  <a key={vi} href={sv.videoUrl} download={`숏폼_씬${sv.sceneNumber}.mp4`}
-                    className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-                    <Download size={10} /> 씬{sv.sceneNumber} 다운로드
-                  </a>
-                )
-              ))}
+          {combinedVideoUrl && (
+            <div className="mt-2">
+              <a href={combinedVideoUrl} download="숏폼_영상.webm"
+                className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+                <Download size={10} /> 영상 다운로드
+              </a>
             </div>
           )}
+          {/* 나레이션 오디오 (숨김, 싱크용) */}
+          {shortsNarration?.map((n, i) => (
+            n.audioUrl && <audio key={i} ref={el => shortsAudioRefs.current[i] = el} src={n.audioUrl} preload="auto" />
+          ))}
         </div>
 
         {/* 스크립트 */}
@@ -592,15 +694,17 @@ export default function ExtractionResultPage() {
 
           {shortsScript?.scenes?.map((scene, i) => {
             const sceneAudio = shortsNarration?.find(n => n.sceneNumber === scene.sceneNumber)
+            const isActive = combinedVideoUrl && i === currentScene
             return (
-              <div key={i} className="p-4 bg-surface rounded-lg border border-border">
+              <div key={i} className={`p-4 rounded-lg border transition-all ${isActive ? 'bg-amber-400/5 border-amber-400/30' : 'bg-surface border-border'}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="w-6 h-6 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center text-xs font-bold">{scene.sceneNumber}</span>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-amber-400/30 text-amber-400' : 'bg-amber-400/20 text-amber-400'}`}>{scene.sceneNumber}</span>
                   <span className="text-xs text-text-muted">{scene.duration}초</span>
+                  {isActive && <span className="text-xs text-amber-400 font-medium animate-pulse">재생중</span>}
                 </div>
                 <p className="text-sm text-text mb-1">{scene.narration}</p>
                 {scene.textOverlay && <p className="text-xs text-amber-400 font-medium mb-2">[자막] {scene.textOverlay}</p>}
-                {sceneAudio?.audioUrl && (
+                {sceneAudio?.audioUrl && !combinedVideoUrl && (
                   <audio controls className="w-full h-8 mt-2" src={sceneAudio.audioUrl} />
                 )}
               </div>

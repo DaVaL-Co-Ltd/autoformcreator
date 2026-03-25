@@ -88,6 +88,28 @@ app.post('/api/elevenlabs/tts/:voiceId', async (req, res) => {
   }
 })
 
+// ElevenLabs TTS with timestamps (문장별 타이밍 포함)
+app.post('/api/elevenlabs/tts-timestamps/:voiceId', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}/with-timestamps`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'xi-api-key': req.headers['x-api-key'],
+      },
+      body: JSON.stringify(req.body),
+    })
+    if (!response.ok) {
+      const err = await response.text()
+      return res.status(response.status).send(err)
+    }
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // fal.ai Proxy - Submit (모델 경로를 x-fal-model 헤더로 전달)
 app.post('/api/fal/submit', async (req, res) => {
   try {

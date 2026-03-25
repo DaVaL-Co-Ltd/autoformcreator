@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>숏폼 영상 생성 방식 비교</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Pretendard', sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+  p.desc { text-align: center; color: #64748b; margin-bottom: 40px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; max-width: 1600px; margin: 0 auto; }
+  .card { background: #1e293b; border-radius: 16px; overflow: hidden; border: 1px solid #334155; }
+  .card-header { padding: 12px 16px; border-bottom: 1px solid #334155; }
+  .card-header h3 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .card-header p { font-size: 11px; color: #64748b; }
+  .video-wrap { aspect-ratio: 9/16; position: relative; background: #000; overflow: hidden; }
+  .video-wrap canvas, .video-wrap video { width: 100%; height: 100%; position: absolute; inset: 0; }
+  .controls { padding: 12px; display: flex; gap: 8px; }
+  .btn { flex: 1; padding: 8px; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-primary { background: #6366f1; color: #fff; }
+  .btn-primary:hover { background: #4f46e5; }
+  .btn-primary:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+  .btn-download { background: #334155; color: #94a3b8; }
+  .btn-download:hover { background: #475569; }
+  .status { padding: 0 16px 12px; font-size: 11px; color: #64748b; }
+</style>
+</head>
+<body>
+<h1>숏폼 영상 생성 방식 비교 (6가지)</h1>
+<p class="desc">동일한 대본으로 6가지 방식의 결과물을 비교해보세요 — 6번은 Gemini AI 이미지 + 자막</p>
+
+<div class="grid">
+  <!-- 1. Canvas 기본 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>1. Canvas 기본</h3>
+      <p>단색 배경 + 텍스트</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv1"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate1()">생성</button>
+      <button class="btn btn-download" id="dl1" disabled onclick="download1()">저장</button>
+    </div>
+    <div class="status" id="st1">대기중</div>
+  </div>
+
+  <!-- 2. Canvas 그라데이션 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>2. 그라데이션 배경</h3>
+      <p>그라데이션 + 카드 + 텍스트</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv2"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate2()">생성</button>
+      <button class="btn btn-download" id="dl2" disabled onclick="download2()">저장</button>
+    </div>
+    <div class="status" id="st2">대기중</div>
+  </div>
+
+  <!-- 3. CSS 애니메이션 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>3. CSS 애니메이션</h3>
+      <p>페이드인 + 슬라이드 효과</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv3"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate3()">생성</button>
+      <button class="btn btn-download" id="dl3" disabled onclick="download3()">저장</button>
+    </div>
+    <div class="status" id="st3">대기중</div>
+  </div>
+
+  <!-- 4. 타이핑 효과 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>4. 타이핑 효과</h3>
+      <p>글자가 한글자씩 나타남</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv4"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate4()">생성</button>
+      <button class="btn btn-download" id="dl4" disabled onclick="download4()">저장</button>
+    </div>
+    <div class="status" id="st4">대기중</div>
+  </div>
+
+  <!-- 5. 모션그래픽 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>5. 모션그래픽</h3>
+      <p>도형 애니메이션 + 텍스트</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv5"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate5()">생성</button>
+      <button class="btn btn-download" id="dl5" disabled onclick="download5()">저장</button>
+    </div>
+    <div class="status" id="st5">대기중</div>
+  </div>
+
+  <!-- 6. Gemini 이미지 + 자막 -->
+  <div class="card">
+    <div class="card-header">
+      <h3>6. AI 이미지 + 자막</h3>
+      <p>Gemini 배경 사진 + 하단 자막</p>
+    </div>
+    <div class="video-wrap"><canvas id="cv6"></canvas></div>
+    <div class="controls">
+      <button class="btn btn-primary" onclick="generate6()">생성</button>
+      <button class="btn btn-download" id="dl6" disabled onclick="download6()">저장</button>
+    </div>
+    <div class="status" id="st6">대기중 (이미지 생성 포함)</div>
+  </div>
+</div>
+
+<script>
+const W = 1080, H = 1920, FPS = 30, DURATION = 10
+const scenes = [
+  { num: 1, text: '2028 대입, 뭐가 달라질까?', sub: '수시·정시 비율 변화', overlay: '핵심 변화 3가지' },
+  { num: 2, text: '학생부종합전형 비중 확대', sub: '내신 + 비교과 활동이 핵심', overlay: '학종 40% 이상' },
+  { num: 3, text: '논술 전형도 주목하세요!', sub: '일반 논술 vs 약술형 비교', overlay: '논술 확대' },
+]
+const PASTELS = ['#FFF3E0','#E8F5E9','#E3F2FD','#F3E5F5']
+const ACCENTS = ['#e57a00','#2e7d32','#1565c0','#7b1fa2']
+
+const blobs = {}
+
+function wrapText(ctx, text, maxW) {
+  const lines = []; let line = ''
+  for (const ch of text) {
+    if (ctx.measureText(line + ch).width > maxW && line) { lines.push(line); line = ch } else line += ch
+  }
+  if (line) lines.push(line)
+  return lines
+}
+
+function setupCanvas(id) {
+  const cv = document.getElementById(id)
+  cv.width = W; cv.height = H
+  return cv
+}
+
+async function record(canvas, drawFrame, totalFrames, id) {
+  const st = document.getElementById('st' + id)
+  const dl = document.getElementById('dl' + id)
+  st.textContent = '생성중...'
+  const stream = canvas.captureStream(FPS)
+  const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 5000000 })
+  const chunks = []
+  rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+  rec.start()
+  for (let f = 0; f < totalFrames; f++) {
+    drawFrame(f, totalFrames)
+    await new Promise(r => setTimeout(r, 1000 / FPS))
+    if (f % 30 === 0) st.textContent = `생성중... ${Math.round(f/totalFrames*100)}%`
+  }
+  rec.stop()
+  await new Promise(r => { rec.onstop = r })
+  const blob = new Blob(chunks, { type: 'video/webm' })
+  blobs[id] = blob
+  st.textContent = '완료!'
+  dl.disabled = false
+  // 미리보기
+  const video = document.createElement('video')
+  video.src = URL.createObjectURL(blob)
+  video.controls = true; video.loop = true; video.autoplay = true; video.muted = true
+  video.style.cssText = 'width:100%;height:100%;position:absolute;inset:0;object-fit:cover'
+  canvas.parentElement.appendChild(video)
+}
+
+function downloadBlob(id) {
+  if (!blobs[id]) return
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blobs[id])
+  a.download = `숏폼_방식${id}.webm`
+  a.click()
+}
+
+// === 방식 1: 기본 단색 배경 ===
+function generate1() {
+  const cv = setupCanvas('cv1')
+  const ctx = cv.getContext('2d')
+  const framesPerScene = Math.floor(DURATION * FPS / scenes.length)
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    ctx.fillStyle = PASTELS[si % 4]; ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(0, 0, W, 8)
+    // 번호
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.beginPath(); ctx.arc(100, 120, 45, 0, Math.PI*2); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 36px Pretendard'; ctx.textAlign = 'center'; ctx.fillText(s.num, 100, 133)
+    // 카드
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.beginPath(); ctx.roundRect(60, 400, W-120, 700, 30); ctx.fill()
+    // 텍스트
+    ctx.fillStyle = '#1f2937'; ctx.font = 'bold 48px Pretendard'; ctx.textAlign = 'center'
+    wrapText(ctx, s.text, W-200).forEach((l, i) => ctx.fillText(l, W/2, 550 + i*60))
+    ctx.fillStyle = '#6b7280'; ctx.font = '600 32px Pretendard'
+    ctx.fillText(s.sub, W/2, 750)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.font = 'bold 56px Pretendard'
+    ctx.fillText(s.overlay, W/2, 950)
+    // 프로그레스
+    ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(60, H-100, W-120, 6)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(60, H-100, (W-120)*(si+1)/scenes.length, 6)
+  }, DURATION * FPS, '1')
+}
+function download1() { downloadBlob('1') }
+
+// === 방식 2: 그라데이션 배경 ===
+function generate2() {
+  const cv = setupCanvas('cv2')
+  const ctx = cv.getContext('2d')
+  const fps = DURATION * FPS
+  const framesPerScene = Math.floor(fps / scenes.length)
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    const t = (f % framesPerScene) / framesPerScene
+    // 그라데이션 배경 (움직임)
+    const grad = ctx.createLinearGradient(0, t * 200, W, H - t * 200)
+    grad.addColorStop(0, PASTELS[si % 4]); grad.addColorStop(1, PASTELS[(si+1) % 4])
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H)
+    // 장식 원
+    ctx.globalAlpha = 0.15
+    ctx.fillStyle = ACCENTS[si % 4]
+    ctx.beginPath(); ctx.arc(W * 0.8, 300 + Math.sin(f*0.02)*50, 200, 0, Math.PI*2); ctx.fill()
+    ctx.beginPath(); ctx.arc(W * 0.2, H * 0.7 + Math.cos(f*0.02)*50, 150, 0, Math.PI*2); ctx.fill()
+    ctx.globalAlpha = 1
+    // 중앙 카드
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.roundRect(80, 450, W-160, 650, 40); ctx.fill()
+    ctx.shadowColor = 'rgba(0,0,0,0.1)'; ctx.shadowBlur = 20
+    // 텍스트
+    ctx.shadowBlur = 0
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.font = 'bold 28px Pretendard'; ctx.textAlign = 'center'
+    ctx.fillText(`STEP ${s.num}`, W/2, 530)
+    ctx.fillStyle = '#1f2937'; ctx.font = 'bold 46px Pretendard'
+    wrapText(ctx, s.text, W-240).forEach((l, i) => ctx.fillText(l, W/2, 620 + i*58))
+    ctx.fillStyle = '#6b7280'; ctx.font = '600 30px Pretendard'
+    ctx.fillText(s.sub, W/2, 780)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.font = 'bold 52px Pretendard'
+    ctx.fillText(s.overlay, W/2, 920)
+  }, fps, '2')
+}
+function download2() { downloadBlob('2') }
+
+// === 방식 3: CSS 애니메이션 (페이드인) ===
+function generate3() {
+  const cv = setupCanvas('cv3')
+  const ctx = cv.getContext('2d')
+  const fps = DURATION * FPS
+  const framesPerScene = Math.floor(fps / scenes.length)
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    const localF = f % framesPerScene
+    const fadeIn = Math.min(localF / 15, 1) // 0.5초 페이드인
+    const slideUp = (1 - fadeIn) * 80
+    ctx.fillStyle = PASTELS[si % 4]; ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(0, 0, W, 8)
+    ctx.globalAlpha = fadeIn
+    // 번호 (위에서 내려옴)
+    const numY = 120 - (1-fadeIn)*100
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.beginPath(); ctx.arc(W/2, numY, 55, 0, Math.PI*2); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 42px Pretendard'; ctx.textAlign = 'center'; ctx.fillText(s.num, W/2, numY+14)
+    // 메인 텍스트 (아래서 올라옴)
+    ctx.fillStyle = '#1f2937'; ctx.font = 'bold 52px Pretendard'
+    wrapText(ctx, s.text, W-160).forEach((l, i) => ctx.fillText(l, W/2, 500 + slideUp + i*64))
+    // 구분선 (왼쪽에서 확장)
+    ctx.fillStyle = ACCENTS[si % 4]
+    ctx.fillRect(W/2 - 40*fadeIn, 680 + slideUp, 80*fadeIn, 4)
+    // 서브텍스트
+    ctx.fillStyle = '#6b7280'; ctx.font = '600 32px Pretendard'
+    ctx.fillText(s.sub, W/2, 740 + slideUp)
+    // 오버레이 (스케일업)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.font = `bold ${44 + 8*fadeIn}px Pretendard`
+    ctx.fillText(s.overlay, W/2, 900 + slideUp)
+    ctx.globalAlpha = 1
+    // 하단 바
+    ctx.fillStyle = 'rgba(0,0,0,0.08)'; ctx.fillRect(60, H-100, W-120, 6)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(60, H-100, (W-120)*(si+1)/scenes.length, 6)
+  }, fps, '3')
+}
+function download3() { downloadBlob('3') }
+
+// === 방식 4: 타이핑 효과 ===
+function generate4() {
+  const cv = setupCanvas('cv4')
+  const ctx = cv.getContext('2d')
+  const fps = DURATION * FPS
+  const framesPerScene = Math.floor(fps / scenes.length)
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    const localF = f % framesPerScene
+    const charCount = Math.floor(localF / 2) // 2프레임당 1글자
+    ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, W, H)
+    // 터미널 스타일
+    ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.roundRect(60, 300, W-120, 900, 20); ctx.fill()
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(60, 300, W-120, 900, 20); ctx.stroke()
+    // 상단 바
+    ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(110, 340, 10, 0, Math.PI*2); ctx.fill()
+    ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(145, 340, 10, 0, Math.PI*2); ctx.fill()
+    ctx.fillStyle = '#22c55e'; ctx.beginPath(); ctx.arc(180, 340, 10, 0, Math.PI*2); ctx.fill()
+    // 타이핑 텍스트
+    ctx.fillStyle = '#22c55e'; ctx.font = 'bold 18px monospace'; ctx.textAlign = 'left'
+    ctx.fillText('> shorts_generator.py', 100, 400)
+    ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 40px Pretendard'; ctx.textAlign = 'center'
+    const typed = s.text.slice(0, charCount)
+    wrapText(ctx, typed, W-200).forEach((l, i) => ctx.fillText(l, W/2, 520 + i*52))
+    // 커서
+    if (charCount < s.text.length && Math.floor(f/15) % 2 === 0) {
+      const lastLine = wrapText(ctx, typed, W-200)
+      const ly = 520 + (lastLine.length-1)*52
+      const lx = W/2 + ctx.measureText(lastLine[lastLine.length-1]||'').width/2 + 5
+      ctx.fillStyle = '#22c55e'; ctx.fillRect(lx, ly-30, 3, 40)
+    }
+    // 오버레이 (타이핑 완료 후)
+    if (charCount >= s.text.length) {
+      const fadeIn = Math.min((charCount - s.text.length) / 10, 1)
+      ctx.globalAlpha = fadeIn
+      ctx.fillStyle = '#818cf8'; ctx.font = 'bold 52px Pretendard'
+      ctx.fillText(s.overlay, W/2, 800)
+      ctx.fillStyle = '#64748b'; ctx.font = '600 28px Pretendard'
+      ctx.fillText(s.sub, W/2, 870)
+      ctx.globalAlpha = 1
+    }
+    // 씬 번호
+    ctx.fillStyle = '#818cf8'; ctx.font = 'bold 24px Pretendard'; ctx.textAlign = 'right'
+    ctx.fillText(`Scene ${s.num}/3`, W-80, H-60)
+  }, fps, '4')
+}
+function download4() { downloadBlob('4') }
+
+// === 방식 5: 모션그래픽 ===
+function generate5() {
+  const cv = setupCanvas('cv5')
+  const ctx = cv.getContext('2d')
+  const fps = DURATION * FPS
+  const framesPerScene = Math.floor(fps / scenes.length)
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    const t = (f % framesPerScene) / framesPerScene
+    const easeOut = 1 - Math.pow(1 - Math.min(t * 3, 1), 3)
+    // 배경
+    ctx.fillStyle = PASTELS[si % 4]; ctx.fillRect(0, 0, W, H)
+    // 움직이는 도형들
+    for (let d = 0; d < 8; d++) {
+      ctx.globalAlpha = 0.08
+      ctx.fillStyle = ACCENTS[(si + d) % 4]
+      const dx = (d * 173 + f * (d % 2 === 0 ? 1 : -1)) % (W + 200) - 100
+      const dy = (d * 251 + f * 0.5) % (H + 200) - 100
+      const size = 60 + d * 20
+      ctx.beginPath()
+      if (d % 3 === 0) { ctx.arc(dx, dy, size, 0, Math.PI*2) }
+      else if (d % 3 === 1) { ctx.roundRect(dx-size/2, dy-size/2, size, size, 15) }
+      else { ctx.moveTo(dx, dy-size); ctx.lineTo(dx+size, dy+size); ctx.lineTo(dx-size, dy+size); ctx.closePath() }
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+    // 중앙 원형 카드
+    const cardScale = easeOut
+    ctx.save()
+    ctx.translate(W/2, H/2 - 100)
+    ctx.scale(cardScale, cardScale)
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'
+    ctx.beginPath(); ctx.arc(0, 0, 350, 0, Math.PI*2); ctx.fill()
+    // 번호
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.beginPath(); ctx.arc(0, -220, 40, 0, Math.PI*2); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 32px Pretendard'; ctx.textAlign = 'center'; ctx.fillText(s.num, 0, -210)
+    // 텍스트
+    ctx.fillStyle = '#1f2937'; ctx.font = 'bold 42px Pretendard'
+    wrapText(ctx, s.text, 550).forEach((l, i) => ctx.fillText(l, 0, -80 + i*54))
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(-30, 60, 60, 4)
+    ctx.fillStyle = '#6b7280'; ctx.font = '600 28px Pretendard'
+    ctx.fillText(s.sub, 0, 120)
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.font = 'bold 44px Pretendard'
+    ctx.fillText(s.overlay, 0, 200)
+    ctx.restore()
+    // 하단
+    ctx.fillStyle = ACCENTS[si % 4]; ctx.fillRect(0, H-8, W * (si+1)/scenes.length, 8)
+  }, fps, '5')
+}
+function download5() { downloadBlob('5') }
+
+// === 방식 6: Gemini 이미지 + 자막 ===
+const GEMINI_KEY = 'AIzaSyABRiBA8mPkX1grj_LNvGx06drPwRBV6Ns'
+const sceneVisuals = [
+  'A Korean high school student looking confused while reading exam papers at a desk, warm soft lighting, vertical 9:16',
+  'A bright modern Korean classroom with students raising hands enthusiastically, warm atmosphere, vertical 9:16',
+  'Close-up of a student writing an essay with determination, notebook and pen on wooden desk, soft bokeh, vertical 9:16'
+]
+
+async function generateGeminiImage(prompt) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: `Generate a 9:16 vertical photograph. ${prompt}. NO text, NO letters, NO words anywhere. Pure visual only.` }] }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+    })
+  })
+  const data = await res.json()
+  const imgPart = (data.candidates?.[0]?.content?.parts || []).find(p => p.inlineData)
+  if (!imgPart) return null
+  return `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`
+}
+
+async function generate6() {
+  const cv = setupCanvas('cv6')
+  const ctx = cv.getContext('2d')
+  const st = document.getElementById('st6')
+
+  // Step 1: Gemini로 씬별 이미지 생성
+  const images = []
+  for (let i = 0; i < scenes.length; i++) {
+    st.textContent = `이미지 생성중... ${i+1}/${scenes.length}`
+    try {
+      const dataUrl = await generateGeminiImage(sceneVisuals[i])
+      if (dataUrl) {
+        const img = new Image()
+        await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; img.src = dataUrl })
+        images.push(img)
+      } else {
+        images.push(null)
+      }
+    } catch { images.push(null) }
+    // rate limit 방지
+    if (i < scenes.length - 1) await new Promise(r => setTimeout(r, 2000))
+  }
+
+  st.textContent = '영상 생성중...'
+
+  // Step 2: 이미지 + 자막으로 영상 생성
+  const fps = DURATION * FPS
+  const framesPerScene = Math.floor(fps / scenes.length)
+
+  record(cv, (f) => {
+    const si = Math.min(Math.floor(f / framesPerScene), scenes.length - 1)
+    const s = scenes[si]
+    const localF = f % framesPerScene
+    const fadeIn = Math.min(localF / 10, 1)
+
+    // 배경 이미지 또는 폴백
+    const img = images[si]
+    if (img && img.complete && img.naturalWidth > 0) {
+      // 이미지를 9:16에 맞게 크롭
+      const imgRatio = img.naturalWidth / img.naturalHeight
+      const canvasRatio = W / H
+      let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight
+      if (imgRatio > canvasRatio) {
+        sw = img.naturalHeight * canvasRatio
+        sx = (img.naturalWidth - sw) / 2
+      } else {
+        sh = img.naturalWidth / canvasRatio
+        sy = (img.naturalHeight - sh) / 2
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H)
+      // 살짝 어둡게
+      ctx.fillStyle = 'rgba(0,0,0,0.15)'
+      ctx.fillRect(0, 0, W, H)
+    } else {
+      ctx.fillStyle = PASTELS[si % 4]
+      ctx.fillRect(0, 0, W, H)
+    }
+
+    // 하단 자막 영역 (그라데이션)
+    const gradH = 500
+    const grad = ctx.createLinearGradient(0, H - gradH, 0, H)
+    grad.addColorStop(0, 'rgba(0,0,0,0)')
+    grad.addColorStop(0.4, 'rgba(0,0,0,0.6)')
+    grad.addColorStop(1, 'rgba(0,0,0,0.85)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, H - gradH, W, gradH)
+
+    ctx.globalAlpha = fadeIn
+
+    // 씬 번호
+    ctx.fillStyle = ACCENTS[si % 4]
+    ctx.beginPath(); ctx.roundRect(60, H - 380, 70, 36, 12); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 22px Pretendard'; ctx.textAlign = 'center'
+    ctx.fillText(`${s.num}/3`, 95, H - 356)
+
+    // 메인 자막
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 48px Pretendard'; ctx.textAlign = 'left'
+    wrapText(ctx, s.text, W - 120).forEach((l, i) => ctx.fillText(l, 60, H - 280 + i * 58))
+
+    // 서브 자막
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '600 30px Pretendard'
+    ctx.fillText(s.sub, 60, H - 140)
+
+    // 키워드 뱃지
+    ctx.fillStyle = ACCENTS[si % 4]
+    const badgeW = ctx.measureText(s.overlay).width + 40
+    ctx.beginPath(); ctx.roundRect(60, H - 100, badgeW, 42, 16); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 26px Pretendard'
+    ctx.fillText(s.overlay, 80, H - 72)
+
+    ctx.globalAlpha = 1
+
+    // 상단 프로그레스
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(0, 0, W, 4)
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W * ((localF / framesPerScene + si) / scenes.length), 4)
+  }, fps, '6')
+}
+function download6() { downloadBlob('6') }
+</script>
+</body>
+</html>

@@ -117,9 +117,9 @@ export default function ContentPage() {
         </div>
       )}
 
-      {/* Content Grid */}
+      {/* Content List */}
       {filtered.length > 0 ? (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="space-y-2">
           {filtered.map((item, idx) => {
             const channel = channelConfig[item.channel]
             const ChannelIcon = channel.icon
@@ -128,32 +128,35 @@ export default function ContentPage() {
               <div
                 key={`${item.extractionId}-${item.channel}-${idx}`}
                 onClick={() => handleView(item)}
-                className="bg-surface rounded-xl border border-border hover:border-primary/30 transition-all cursor-pointer"
+                className="flex items-center gap-4 bg-surface rounded-xl border border-border hover:border-primary/30 transition-all cursor-pointer p-3"
               >
-                <div className="h-40 bg-surface-light rounded-t-xl flex items-center justify-center border-b border-border">
-                  <ChannelIcon size={32} className={`${channel.color} opacity-40`} />
+                {/* 왼쪽: 정사각형 썸네일 */}
+                <div className="w-16 h-16 shrink-0 rounded-lg bg-surface-light flex items-center justify-center border border-border">
+                  <ChannelIcon size={24} className={`${channel.color} opacity-50`} />
                 </div>
 
-                <div className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-xs font-medium ${channel.color}`}>{channel.label}</span>
+                {/* 오른쪽: 정보 */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-xs font-semibold ${channel.color}`}>{channel.label}</span>
                     {item.cards && <span className="text-xs text-text-muted">{item.cards}장</span>}
                     {item.duration && <span className="text-xs text-text-muted">{item.duration}</span>}
                   </div>
-                  <h4 className="text-sm font-medium text-text mb-1 line-clamp-2">{item.title}</h4>
-                  <p className="text-xs text-text-muted mb-3 truncate">{item.source}</p>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-text-muted">{item.date} {item.time}</span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title }) }}
-                      className="p-1.5 rounded-lg hover:bg-surface-light text-text-muted hover:text-danger transition-colors"
-                      title="삭제"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                  <h4 className="text-sm font-medium text-text truncate">{item.title}</h4>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs text-text-muted truncate">{item.source}</span>
+                    <span className="text-xs text-text-muted shrink-0">{item.date} {item.time}</span>
                   </div>
                 </div>
+
+                {/* 삭제 버튼 */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title }) }}
+                  className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-danger transition-colors shrink-0"
+                  title="삭제"
+                >
+                  <Trash2 size={16} />
+                </button>
               </div>
             )
           })}

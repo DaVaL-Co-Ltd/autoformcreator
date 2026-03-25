@@ -2,71 +2,70 @@ const API_KEY = import.meta.env.VITE_CREATOMATE_API_KEY
 const PROXY_URL = 'http://localhost:3001/api/creatomate'
 
 // true일 때만 실제 유료 렌더링 (mp4, 1920x1080)
-// false면 preview 모드 (snapshot, 640x360, 3초 미만)
+// false면 preview 모드 (640x360, 3초 미만)
+// isProduction을 true로 변경하기 전에 반드시 사용자에게 확인
 const isProduction = false
 
 /**
- * 롱폼 스크립트를 기반으로 영상 source를 동적 생성
+ * 롱폼 스크립트를 기반으로 Creatomate render body 생성
  */
-function buildLongformSource(script, narrationUrl) {
+function buildLongformBody(script) {
   const elements = []
   let currentTime = 0
 
-  const width = isProduction ? 1920 : 640
-  const height = isProduction ? 1080 : 360
-
   // 인트로
   if (script.intro) {
-    const introDuration = isProduction ? 8 : 1
+    const dur = isProduction ? 8 : 1
     elements.push(
-      { type: 'text', track: 1, time: currentTime, duration: introDuration, text: script.title, y: '35%', width: '80%', x: '10%', font_size: '5.5 vmin', font_weight: '800', fill_color: '#ffffff', text_align: 'center', background_color: '#1a1a2e' },
-      { type: 'text', track: 2, time: currentTime, duration: introDuration, text: script.intro.hook || '', y: '55%', width: '70%', x: '15%', font_size: '3.5 vmin', fill_color: '#94a3b8', text_align: 'center' },
+      { type: 'text', track: 1, time: currentTime, duration: dur, text: script.title, font_family: 'Noto Sans', font_size: '5.5 vmin', font_weight: '800', fill_color: '#ffffff', y: '35%' },
+      { type: 'text', track: 2, time: currentTime, duration: dur, text: script.intro.hook || '', font_family: 'Noto Sans', font_size: '3.5 vmin', fill_color: '#94a3b8', y: '55%' },
     )
-    currentTime += introDuration
+    currentTime += dur
   }
 
-  // 각 섹션 (preview: 첫 1개만, 1초씩)
+  // 각 섹션 (preview: 첫 1개만)
   const sections = isProduction ? (script.sections || []) : (script.sections || []).slice(0, 1)
   for (const section of sections) {
-    const sectionDuration = isProduction ? Math.max(parseInt(section.duration) || 30, 10) : 1
+    const dur = isProduction ? Math.max(parseInt(section.duration) || 30, 10) : 1
     elements.push(
-      { type: 'text', track: 1, time: currentTime, duration: sectionDuration, text: section.title, y: '10%', width: '80%', x: '10%', font_size: '4.5 vmin', font_weight: '700', fill_color: '#e2e8f0', text_align: 'left', background_color: '#0f172a' },
-      { type: 'text', track: 2, time: currentTime, duration: sectionDuration, text: section.narration?.slice(0, 200) || '', y: '30%', width: '80%', x: '10%', font_size: '3 vmin', fill_color: '#94a3b8', line_height: '160%', text_align: 'left' },
+      { type: 'text', track: 1, time: currentTime, duration: dur, text: section.title, font_family: 'Noto Sans', font_size: '4.5 vmin', font_weight: '700', fill_color: '#e2e8f0', y: '15%' },
+      { type: 'text', track: 2, time: currentTime, duration: dur, text: (section.narration || '').slice(0, 200), font_family: 'Noto Sans', font_size: '3 vmin', fill_color: '#94a3b8', y: '45%' },
     )
     if (section.dataPoints?.length > 0) {
       elements.push(
-        { type: 'text', track: 3, time: currentTime, duration: sectionDuration, text: section.dataPoints.join(' · '), y: '75%', width: '80%', x: '10%', font_size: '3.5 vmin', font_weight: '700', fill_color: '#818cf8' },
+        { type: 'text', track: 3, time: currentTime, duration: dur, text: section.dataPoints.join(' · '), font_family: 'Noto Sans', font_size: '3.5 vmin', font_weight: '700', fill_color: '#818cf8', y: '75%' },
       )
     }
-    currentTime += sectionDuration
+    currentTime += dur
   }
 
   // 아웃트로
   if (script.outro) {
-    const outroDuration = isProduction ? 8 : 1
+    const dur = isProduction ? 8 : 1
     elements.push(
-      { type: 'text', track: 1, time: currentTime, duration: outroDuration, text: script.outro.summary || '', y: '35%', width: '80%', x: '10%', font_size: '4.5 vmin', font_weight: '700', fill_color: '#ffffff', text_align: 'center', background_color: '#1a1a2e' },
-      { type: 'text', track: 2, time: currentTime, duration: outroDuration, text: script.outro.cta || '', y: '60%', width: '70%', x: '15%', font_size: '3.5 vmin', fill_color: '#818cf8', text_align: 'center' },
+      { type: 'text', track: 1, time: currentTime, duration: dur, text: script.outro.summary || '', font_family: 'Noto Sans', font_size: '4.5 vmin', font_weight: '700', fill_color: '#ffffff', y: '35%' },
+      { type: 'text', track: 2, time: currentTime, duration: dur, text: script.outro.cta || '', font_family: 'Noto Sans', font_size: '3.5 vmin', fill_color: '#818cf8', y: '60%' },
     )
-    currentTime += outroDuration
+    currentTime += dur
   }
 
   return {
-    output_format: isProduction ? 'mp4' : 'jpg',
+    output_format: 'mp4',
     frame_rate: '30 fps',
-    width,
-    height,
+    fill_color: '#1a1a2e',
+    width: isProduction ? 1920 : 640,
+    height: isProduction ? 1080 : 360,
     duration: currentTime,
     elements,
   }
 }
 
 /**
- * 롱폼 영상 렌더링 요청 (preview: snapshot / production: mp4)
+ * 롱폼 영상 렌더링 요청
  */
-export async function renderVideo(script, narrationUrl) {
-  const source = buildLongformSource(script, narrationUrl)
-  console.log(`[Creatomate] ${isProduction ? 'PRODUCTION' : 'PREVIEW'} mode | duration: ${source.duration}s | ${source.width}x${source.height}`)
+export async function renderVideo(script) {
+  const body = buildLongformBody(script)
+  console.log(`[Creatomate] ${isProduction ? 'PRODUCTION' : 'PREVIEW'} mode | duration: ${body.duration}s | ${body.width}x${body.height}`)
 
   const res = await fetch(`${PROXY_URL}/renders`, {
     method: 'POST',
@@ -74,10 +73,7 @@ export async function renderVideo(script, narrationUrl) {
       'Content-Type': 'application/json',
       'x-api-key': API_KEY,
     },
-    body: JSON.stringify({
-      output_format: isProduction ? 'mp4' : 'jpg',
-      source,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok) {
@@ -108,7 +104,7 @@ export async function getRenderStatus(renderId) {
  * 롱폼 영상 렌더 요청 후 완료까지 폴링
  */
 export async function renderVideoAndWait(script, narrationUrl) {
-  const render = await renderVideo(script, narrationUrl)
+  const render = await renderVideo(script)
 
   if (render.status === 'succeeded') return render.url
   if (render.status === 'failed') throw new Error(`렌더 실패: ${render.error_message}`)
