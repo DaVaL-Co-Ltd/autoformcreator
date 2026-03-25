@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>블로그 내부 이미지 시안 v2</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+<style>
+  body { font-family: 'Pretendard', sans-serif; background: #f8fafc; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 22px; font-weight: 800; color: #1e293b; margin-bottom: 8px; }
+  p.desc { text-align: center; color: #94a3b8; margin-bottom: 16px; font-size: 13px; }
+  h2.section { font-size: 15px; font-weight: 700; color: #475569; margin: 36px auto 16px; padding-left: 12px; border-left: 4px solid #6366f1; max-width: 1100px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 1100px; margin: 0 auto; }
+  .card { border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; background: #fff; }
+  .card-label { padding: 10px 14px; background: #f1f5f9; font-size: 12px; font-weight: 600; color: #64748b; }
+  .preview { width: 100%; aspect-ratio: 1; position: relative; overflow: hidden; }
+  .preview img { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .circle { width: 75%; height: 75%; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(255,255,255,0.93); box-shadow: 0 4px 28px rgba(0,0,0,0.08); }
+  .keyword { font-weight: 900; line-height: 1.4; word-break: keep-all; letter-spacing: -0.5px; font-size: 28px; color: #1e293b; }
+  .divider { width: 32px; height: 2.5px; border-radius: 2px; margin: 8px 0; }
+  .sub-t { font-size: 12px; font-weight: 600; color: #64748b; }
+</style>
+</head>
+<body>
+<h1>블로그 내부 이미지 시안 v2</h1>
+<p class="desc">첫 이미지 이후 본문 중간에 들어가는 키워드 강조 이미지 — 내용과 배경 매칭</p>
+
+<h2 class="section">입시·면접 (핑크/피치 배경)</h2>
+<div class="grid">
+  <div class="card">
+    <div class="card-label">면접 대비</div>
+    <div class="preview">
+      <img src="/blog_admissions.png" alt="">
+      <div class="overlay">
+        <div class="circle">
+          <p class="keyword">면접<br><span style="color: #e11d48;">예상 질문</span></p>
+          <div class="divider" style="background: #e11d48;"></div>
+          <p class="sub-t">학종 면접 완벽 대비</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">수시 전략</div>
+    <div class="preview">
+      <img src="/blog_admissions.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #8b5cf6;">
+          <p class="keyword">수시 6회<br><span style="color: #8b5cf6;">지원 전략</span></p>
+          <div class="divider" style="background: #8b5cf6;"></div>
+          <p class="sub-t">상향·적정·안정 배분법</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">학생부 관리</div>
+    <div class="preview">
+      <img src="/blog_admissions.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #f59e0b;">
+          <p class="keyword">학생부<br><span style="color: #f59e0b;">세특 작성법</span></p>
+          <div class="divider" style="background: #f59e0b;"></div>
+          <p class="sub-t">교과 세특 핵심 포인트</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section">학습 계획 (하늘/시안 배경)</h2>
+<div class="grid">
+  <div class="card">
+    <div class="card-label">월별 계획</div>
+    <div class="preview">
+      <img src="/blog_planning.png" alt="">
+      <div class="overlay">
+        <div class="circle">
+          <p class="keyword">3학년<br><span style="color: #3b82f6;">월별 로드맵</span></p>
+          <div class="divider" style="background: #3b82f6;"></div>
+          <p class="sub-t">3월~수능까지 완벽 플랜</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">시간 관리</div>
+    <div class="preview">
+      <img src="/blog_planning.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #10b981;">
+          <p class="keyword">하루 공부<br><span style="color: #10b981;">시간 배분</span></p>
+          <div class="divider" style="background: #10b981;"></div>
+          <p class="sub-t">과목별 최적 시간 분배</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">모의고사 분석</div>
+    <div class="preview">
+      <img src="/blog_planning.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #8b5cf6;">
+          <p class="keyword">6월 모의고사<br><span style="color: #8b5cf6;">분석 방법</span></p>
+          <div class="divider" style="background: #8b5cf6;"></div>
+          <p class="sub-t">오답 분석 3단계</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section">논술·국어 (크림/베이지 배경)</h2>
+<div class="grid">
+  <div class="card">
+    <div class="card-label">논술 구조</div>
+    <div class="preview">
+      <img src="/blog_essay.png" alt="">
+      <div class="overlay">
+        <div class="circle">
+          <p class="keyword">논술<br><span style="color: #e11d48;">답안 구조</span></p>
+          <div class="divider" style="background: #e11d48;"></div>
+          <p class="sub-t">서론·본론·결론 작성법</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">비문학 독해</div>
+    <div class="preview">
+      <img src="/blog_essay.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #3b82f6;">
+          <p class="keyword">비문학<br><span style="color: #3b82f6;">3단계 풀이</span></p>
+          <div class="divider" style="background: #3b82f6;"></div>
+          <p class="sub-t">지문 분석 → 선지 판단</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">문학 감상</div>
+    <div class="preview">
+      <img src="/blog_essay.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #10b981;">
+          <p class="keyword">현대시<br><span style="color: #10b981;">감상 포인트</span></p>
+          <div class="divider" style="background: #10b981;"></div>
+          <p class="sub-t">화자·어조·심상 분석</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section">성적·분석 (코랄/오렌지 배경)</h2>
+<div class="grid">
+  <div class="card">
+    <div class="card-label">등급컷 분석</div>
+    <div class="preview">
+      <img src="/blog_grades.png" alt="">
+      <div class="overlay">
+        <div class="circle">
+          <p class="keyword">등급컷<br><span style="color: #f59e0b;">변화 추이</span></p>
+          <div class="divider" style="background: #f59e0b;"></div>
+          <p class="sub-t">최근 3년 등급컷 비교</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">합격선 예측</div>
+    <div class="preview">
+      <img src="/blog_grades.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #e11d48;">
+          <p class="keyword">정시<br><span style="color: #e11d48;">합격선 예측</span></p>
+          <div class="divider" style="background: #e11d48;"></div>
+          <p class="sub-t">배치표 활용 전략</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-label">성적 향상</div>
+    <div class="preview">
+      <img src="/blog_grades.png" alt="">
+      <div class="overlay">
+        <div class="circle" style="border: 3px solid #8b5cf6;">
+          <p class="keyword">내신<br><span style="color: #8b5cf6;">1등급 비결</span></p>
+          <div class="divider" style="background: #8b5cf6;"></div>
+          <p class="sub-t">상위 1% 공부법</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   FileText, Image, Mail, Film, Video, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Hash, Clock, Layers, ChevronLeft, ChevronRight
 } from 'lucide-react'
-import { saveExtraction, getExtractions } from '../services/storage'
+import { domToPng } from 'modern-screenshot'
+import ReactMarkdown from 'react-markdown'
+import { marked } from 'marked'
+import { saveExtraction, getExtractions, loadImages } from '../services/storage'
 
 const menuItems = [
   { id: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10' },
@@ -23,14 +26,128 @@ export default function ExtractionResultPage() {
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
   const [copied, setCopied] = useState(false)
   const [instaSlide, setInstaSlide] = useState(0)
+  const [downloading, setDownloading] = useState(false)
+  const blogImagesRef = useRef([])
+  const instaCardsRef = useRef([])
+  const [blogPngUrls, setBlogPngUrls] = useState([])
+  const [instaPngUrls, setInstaPngUrls] = useState([])
+
+  const downloadAllImages = async (type) => {
+    setDownloading(true)
+    try {
+      const captureElement = async (el, filename) => {
+        const dataUrl = await domToPng(el, {
+          scale: 2,
+          quality: 1,
+          fetchOptions: { mode: 'cors' },
+        })
+        const link = document.createElement('a')
+        link.download = filename
+        link.href = dataUrl
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+
+      if (type === 'blog') {
+        if (blogPngUrls.length > 0) {
+          // 캐시된 PNG 사용
+          for (let idx = 0; idx < blogPngUrls.length; idx++) {
+            if (!blogPngUrls[idx]) continue
+            const link = document.createElement('a')
+            link.download = `블로그_${idx + 1}.png`
+            link.href = blogPngUrls[idx]
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            await new Promise(r => setTimeout(r, 300))
+          }
+        } else {
+          for (let idx = 0; idx < blogImagesRef.current.length; idx++) {
+            const el = blogImagesRef.current[idx]
+            if (!el) continue
+            await captureElement(el, `블로그_${idx + 1}.png`)
+            await new Promise(r => setTimeout(r, 500))
+          }
+        }
+      } else {
+        // 인스타: 각 카드를 순서대로 캡처
+        const cards = instagramContent?.cards || []
+        const prevSlide = instaSlide
+        for (let idx = 0; idx < cards.length; idx++) {
+          setInstaSlide(idx)
+          await new Promise(r => setTimeout(r, 400))
+          const el = instaCardsRef.current[idx]
+          if (!el) continue
+          await captureElement(el, `인스타그램_${idx + 1}.png`)
+          await new Promise(r => setTimeout(r, 500))
+        }
+        setInstaSlide(prevSlide)
+      }
+    } catch (err) {
+      console.error('다운로드 실패:', err)
+    }
+    setDownloading(false)
+  }
 
   const {
     parsedText, verification, summary,
     blogContent, newsletterContent, instagramContent,
-    shortsScript, longformScript, blogImages, instagramImages,
-    shortsNarration, longformNarration,
+    shortsScript, longformScript, blogImages: initialBlogImages, instagramImages,
+    shortsVideo, shortsNarration, longformNarration,
     longformVideo, fileName, fileBase64,
   } = location.state || {}
+
+  const [blogImages, setBlogImages] = useState(initialBlogImages || null)
+
+  // blogImages가 없으면 IndexedDB에서 불러오기
+  useEffect(() => {
+    if (blogImages?.length) return
+    const stateData = location.state
+    if (!stateData) return
+    // extractionId 찾기: localStorage에서 같은 fileName의 최신 항목
+    const extractions = getExtractions()
+    const match = extractions.find(e => e.fileName === stateData.fileName)
+    if (match?.id) {
+      loadImages(match.id).then(imgs => {
+        if (imgs?.length) setBlogImages(imgs)
+      })
+    }
+  }, [])
+
+  // 블로그 이미지 HTML → PNG 변환
+  const convertBlogImagesToPng = async () => {
+    const refs = blogImagesRef.current.filter(Boolean)
+    if (refs.length === 0) return
+    const urls = []
+    for (const el of refs) {
+      try {
+        const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+        urls.push(url)
+      } catch { urls.push(null) }
+    }
+    setBlogPngUrls(urls)
+  }
+
+  // 인스타 카드 HTML → PNG 변환
+  const convertInstaCardsToPng = async () => {
+    const cards = instagramContent?.cards || []
+    if (cards.length === 0) return
+    const prevSlide = instaSlide
+    const urls = []
+    for (let i = 0; i < cards.length; i++) {
+      setInstaSlide(i)
+      await new Promise(r => setTimeout(r, 300))
+      const el = instaCardsRef.current[i]
+      if (!el) { urls.push(null); continue }
+      try {
+        const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+        urls.push(url)
+      } catch { urls.push(null) }
+    }
+    setInstaPngUrls(urls)
+    setInstaSlide(prevSlide)
+  }
 
   const handleDownload = () => {
     if (!fileBase64) return
@@ -39,6 +156,15 @@ export default function ExtractionResultPage() {
     link.download = fileName || 'document.pdf'
     link.click()
   }
+
+  // 블로그 이미지 PNG 변환 트리거
+  useEffect(() => {
+    if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
+      // HTML 렌더링 완료 후 변환
+      const timer = setTimeout(() => convertBlogImagesToPng(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [activeMenu, blogContent])
 
   // 결과 저장은 ExtractionPage에서 navigateToResults 시 1회만 수행
   // savedFromExtraction 플래그가 있을 때만 저장
@@ -64,8 +190,17 @@ export default function ExtractionResultPage() {
     )
   }
 
-  const copy = (text) => {
-    navigator.clipboard.writeText(text)
+  const copy = (text, { richText = false } = {}) => {
+    if (richText) {
+      const html = marked.parse(text)
+      const blob = new Blob([html], { type: 'text/html' })
+      const plainBlob = new Blob([text], { type: 'text/plain' })
+      navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': blob, 'text/plain': plainBlob })
+      ])
+    } else {
+      navigator.clipboard.writeText(text)
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -85,40 +220,98 @@ export default function ExtractionResultPage() {
             <p className="text-xs font-medium text-text">AutoCreator</p>
             <p className="text-xs text-text-muted">{new Date().toLocaleDateString('ko-KR')}</p>
           </div>
-          <button onClick={() => copy(blogContent?.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n'))}
-            className="ml-auto flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-            {copied ? <CheckCircle size={12} /> : <Copy size={12} />} {copied ? '복사됨' : '복사'}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => downloadAllImages('blog')} disabled={downloading}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+              <Download size={12} /> {downloading ? '저장중...' : '이미지 저장하기'}
+            </button>
+            <button onClick={() => copy(blogContent?.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n'), { richText: true })}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+              {copied ? <CheckCircle size={12} /> : <Copy size={12} />} {copied ? '복사됨' : '복사'}
+            </button>
+          </div>
         </div>
       </div>
 
       {/* 블로그 본문 */}
       <div className="space-y-8">
-        {blogContent?.sections?.map((section, i) => {
+        {(() => {
+          // 첫 번째 이미지를 기준으로 모든 섹션에서 동일한 배경 사용
+          const firstImage = blogImages?.find(img => img.imageUrl)
+          return blogContent?.sections?.map((section, i) => {
           const image = blogImages?.find(img => img.heading === section.heading)
+          const bgImageUrl = firstImage?.imageUrl || image?.imageUrl
           return (
             <section key={i}>
               <h2 className="text-lg font-bold text-text mb-3 pb-2 border-b border-border">{section.heading}</h2>
-              {image?.imageUrl && (
-                <img src={image.imageUrl} alt={section.heading} className="w-full rounded-xl mb-4 shadow-sm" />
-              )}
-              {!image?.imageUrl && section.imagePrompt && (
-                <div className="w-full h-52 bg-gradient-to-br from-primary/5 to-primary/10 rounded-xl mb-4 flex items-center justify-center border border-dashed border-primary/20">
-                  <div className="text-center">
-                    <Image size={24} className="mx-auto mb-2 text-primary/40" />
-                    <p className="text-xs text-text-muted">{section.imagePrompt}</p>
+              {(() => {
+                const hasOverlayImg = !!bgImageUrl
+                const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
+                const keyword = image?.keyPhrase || section.keyPhrase || section.heading
+                const isFirst = i === 0
+                const labels = ['INSIGHT', 'STUDY TIP', 'CORE', 'CHECK LIST', 'KEY POINT']
+                // 첫 번째 배경색 기준으로 모든 강조색 통일
+                const bgAccentMap = {
+                  'bg-[#FFF3E0]': '#e57a00',
+                  'bg-[#E8F5E9]': '#2e7d32',
+                  'bg-[#E3F2FD]': '#1565c0',
+                  'bg-[#F3E5F5]': '#7b1fa2',
+                }
+                const firstBg = bgColors[0]
+                const accentColor = bgAccentMap[firstBg] || '#6366f1'
+
+                return (
+                  <div className="mb-4">
+                    {/* PNG 미리보기 */}
+                    {blogPngUrls[i] ? (
+                      <img src={blogPngUrls[i]} alt={section.heading} className="w-full rounded-xl shadow-sm" />
+                    ) : (
+                      <div ref={el => blogImagesRef.current[i] = el} className="w-full aspect-square rounded-xl relative overflow-hidden shadow-sm" style={{ fontFamily: "'Pretendard', sans-serif" }}>
+                        {hasOverlayImg ? (
+                          <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
+                        ) : (
+                          <div className={`w-full h-full absolute inset-0 ${bgColors[i % 4]}`} />
+                        )}
+
+                        {isFirst ? (
+                          <>
+                            <div className="absolute inset-0 bg-white/35 backdrop-blur-[1px]" />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ wordBreak: 'keep-all' }}>
+                              <span className="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-3 bg-white shadow-sm" style={{ letterSpacing: '1.5px', color: accentColor }}>{labels[i % labels.length]}</span>
+                              <p className="font-black text-gray-800 leading-snug drop-shadow-sm" style={{ fontSize: 'clamp(28px, 8vw, 36px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}>{section.heading.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</p>
+                              <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
+                              <p className="text-lg text-gray-500 font-semibold">{keyword}</p>
+                              <div className="absolute bottom-5 flex gap-1.5">
+                                {(blogContent?.tags || []).slice(0, 3).map((tag, ti) => (
+                                  <span key={ti} className="px-3 py-1 bg-white/70 backdrop-blur-sm rounded-full text-xs text-gray-600 font-medium">#{tag}</span>
+                                ))}
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-[75%] h-[75%] rounded-full bg-white/[0.93] shadow-lg flex flex-col items-center justify-center text-center p-6 relative" style={{ wordBreak: 'keep-all' }}>
+                              <p className="font-black text-gray-800 leading-snug" style={{ fontSize: 'clamp(22px, 6vw, 30px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}>{section.heading.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</p>
+                              <div className="w-10 h-1 rounded-full mt-2 mb-2" style={{ background: accentColor }} />
+                              <p className="text-base text-gray-500 font-semibold">{keyword}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
               {section.keyPhrase && (
                 <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
                   <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
                 </div>
               )}
-              <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{section.content}</div>
+              <div className="text-sm text-text-muted leading-7 prose prose-sm prose-invert max-w-none"><ReactMarkdown>{section.content}</ReactMarkdown></div>
             </section>
           )
-        })}
+        })
+        })()}
       </div>
 
       {/* 태그 */}
@@ -155,6 +348,7 @@ export default function ExtractionResultPage() {
         {cards.length > 0 && (
           <div className="relative">
             <div
+              ref={el => instaCardsRef.current[instaSlide] = el}
               className="aspect-square rounded-none overflow-hidden relative"
               style={{ backgroundColor: currentCard?.backgroundColor || '#f0f4ff', fontFamily: "'Pretendard', sans-serif", wordBreak: 'keep-all' }}
             >
@@ -173,19 +367,12 @@ export default function ExtractionResultPage() {
                       <p className="text-3xl font-black text-gray-800 leading-none">{currentCard.dataPoint}</p>
                     </div>
                   )}
-                  <h3 className="text-gray-800 font-extrabold text-xl mb-2 leading-tight whitespace-pre-line">{currentCard?.headline?.replace(/[.!?]\s*/g, m => m.trim() + '\n')}</h3>
-                  <p className="text-gray-600 font-semibold text-sm leading-relaxed whitespace-pre-line">{currentCard?.body?.replace(/[.!?]\s*/g, m => m.trim() + '\n')}</p>
+                  <h3 className="text-gray-800 font-extrabold text-xl mb-2 leading-tight" style={{ wordBreak: 'keep-all', overflowWrap: 'normal' }}>{currentCard?.headline?.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</h3>
+                  <p className="text-gray-600 font-semibold text-sm leading-relaxed" style={{ wordBreak: 'keep-all', overflowWrap: 'normal' }}>{currentCard?.body?.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</p>
                 </div>
 
-                {/* 하단: 브랜딩 바 */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-500/70">@autocreator</span>
-                  <div className="flex gap-1">
-                    {[...Array(cards.length)].map((_, j) => (
-                      <span key={j} className={`w-1.5 h-1.5 rounded-full ${j === instaSlide ? 'bg-gray-700' : 'bg-gray-400/50'}`} />
-                    ))}
-                  </div>
-                </div>
+                {/* 하단 여백 */}
+                <div />
               </div>
             </div>
 
@@ -237,13 +424,22 @@ export default function ExtractionResultPage() {
         <div className="mt-4 px-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-semibold text-text">캡션</p>
+            <div className="flex items-center gap-2">
+            <button onClick={() => downloadAllImages('insta')} disabled={downloading}
+              className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
+              <Download size={11} /> {downloading ? '저장중...' : '이미지 저장하기'}
+            </button>
             <button onClick={() => {
               const icons = ['📌', '💡', '📊', '🔑', '✅', '🎯', '📈', '⭐', '🔥', '💬']
-              const cardText = cards.map((card, i) => `${icons[i % icons.length]} ${card.headline}${card.dataPoint ? ' ' + card.dataPoint : ''}${card.body ? ' — ' + card.body : ''}`).join('\n')
-              copy((instagramContent?.caption || '') + '\n\n' + cardText + '\n\n' + (instagramContent?.hashtags?.join(' ') || ''))
+              const caption = instagramContent?.caption || ''
+              const cardText = (instagramContent?.cards || []).map((card, i) => `${icons[i % icons.length]} ${card.headline || ''}${card.dataPoint ? ' ' + card.dataPoint : ''}${card.body ? ' — ' + card.body : ''}`).join('\n')
+              const hashtags = (instagramContent?.hashtags || []).join(' ')
+              const fullText = [caption, cardText, hashtags].filter(Boolean).join('\n\n')
+              copy(fullText)
             }} className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
-              <Copy size={11} /> 복사
+              <Copy size={11} /> 글 복사
             </button>
+            </div>
           </div>
           <p className="text-sm text-text-muted whitespace-pre-wrap leading-relaxed">{instagramContent?.caption}</p>
 
@@ -349,17 +545,35 @@ export default function ExtractionResultPage() {
         {/* 9:16 프레임 */}
         <div className="w-64 shrink-0">
           <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-              <Film size={32} className="text-white/20 mb-4" />
-              <h3 className="text-white font-bold text-sm mb-2">{shortsScript?.title}</h3>
-              <p className="text-white/60 text-xs">{shortsScript?.duration}초</p>
-            </div>
-            {shortsScript?.hook && (
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 p-4">
-                <p className="text-white text-xs font-medium">{shortsScript.hook}</p>
-              </div>
+            {shortsVideo?.[0]?.videoUrl ? (
+              <video controls className="w-full h-full object-cover absolute inset-0" src={shortsVideo[0].videoUrl} />
+            ) : (
+              <>
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                  <Film size={32} className="text-white/20 mb-4" />
+                  <h3 className="text-white font-bold text-sm mb-2">{shortsScript?.title}</h3>
+                  <p className="text-white/60 text-xs">{shortsScript?.duration}초</p>
+                </div>
+                {shortsScript?.hook && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 p-4">
+                    <p className="text-white text-xs font-medium">{shortsScript.hook}</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
+          {shortsVideo?.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {shortsVideo.map((sv, vi) => (
+                sv.videoUrl && (
+                  <a key={vi} href={sv.videoUrl} download={`숏폼_씬${sv.sceneNumber}.mp4`}
+                    className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+                    <Download size={10} /> 씬{sv.sceneNumber} 다운로드
+                  </a>
+                )
+              ))}
+            </div>
+          )}
         </div>
 
         {/* 스크립트 */}
@@ -482,7 +696,7 @@ export default function ExtractionResultPage() {
         </div>
       )}
 
-      {/* 롱폼 영상 */}
+      {/* 롱폼 영상/프리뷰 */}
       {longformVideo && (
         <div className="rounded-xl overflow-hidden border border-border">
           {longformVideo.endsWith('.mp4') ? (
@@ -492,7 +706,6 @@ export default function ExtractionResultPage() {
               src={longformVideo}
               crossOrigin="anonymous"
               onError={(e) => {
-                // video 실패 시 iframe으로 교체
                 const iframe = document.createElement('iframe')
                 iframe.src = longformVideo
                 iframe.className = 'w-full aspect-video'
@@ -500,14 +713,21 @@ export default function ExtractionResultPage() {
                 e.target.replaceWith(iframe)
               }}
             />
+          ) : longformVideo.match(/\.(jpg|png|jpeg)$/i) ? (
+            <div className="relative">
+              <img src={longformVideo} alt="롱폼 프리뷰" className="w-full" />
+              <div className="absolute top-3 left-3 px-2.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg">PREVIEW</div>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-48 bg-surface-light text-text-muted">
-              <p className="text-sm mb-2">영상이 아직 렌더링 중입니다.</p>
-              <p className="text-xs">완료 후 새 탭에서 확인해주세요.</p>
+              <p className="text-sm mb-2">롱폼 영상 결과</p>
+              <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">링크에서 확인</a>
             </div>
           )}
           <div className="flex items-center justify-between p-3 bg-surface-light border-t border-border">
-            <p className="text-xs font-medium text-success">롱폼 영상 {longformVideo.endsWith('.mp4') ? '생성 완료' : '렌더링 중...'}</p>
+            <p className="text-xs font-medium text-success">
+              {longformVideo.endsWith('.mp4') ? '롱폼 영상 생성 완료' : longformVideo.match(/\.(jpg|png|jpeg)$/i) ? '롱폼 프리뷰 (Preview 모드)' : '롱폼 영상 결과'}
+            </p>
             <div className="flex gap-2">
               <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-surface text-text-muted text-xs font-medium rounded-lg hover:bg-border transition-all border border-border">
                 새 탭에서 보기

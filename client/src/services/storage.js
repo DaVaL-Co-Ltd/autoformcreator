@@ -1,8 +1,41 @@
 const STORAGE_KEY = 'autocreator_contents'
 const NOTION_API = 'http://localhost:3001/api/notion'
+const IMG_DB_NAME = 'autocreator_images'
+const IMG_STORE = 'images'
+
+function openImgDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IMG_DB_NAME, 1)
+    req.onupgradeneeded = () => req.result.createObjectStore(IMG_STORE)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+export async function saveImages(extractionId, blogImages) {
+  try {
+    const db = await openImgDB()
+    const tx = db.transaction(IMG_STORE, 'readwrite')
+    tx.objectStore(IMG_STORE).put(blogImages, `blog_${extractionId}`)
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej })
+  } catch (err) {
+    console.warn('[ImageDB] 저장 실패:', err.message)
+  }
+}
+
+export async function loadImages(extractionId) {
+  try {
+    const db = await openImgDB()
+    const tx = db.transaction(IMG_STORE, 'readonly')
+    const req = tx.objectStore(IMG_STORE).get(`blog_${extractionId}`)
+    return new Promise((res) => { req.onsuccess = () => res(req.result || null); req.onerror = () => res(null) })
+  } catch {
+    return null
+  }
+}
 
 export function saveExtraction(data) {
-  const { fileBase64, blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, longformVideo, parsedText, ...lightData } = data
+  const { fileBase64, blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, parsedText, ...lightData } = data
 
   const channels = []
   if (data.blogContent) channels.push({ channel: 'blog', title: data.blogContent.title })
@@ -25,6 +58,11 @@ export function saveExtraction(data) {
   existing.unshift(item)
   const trimmed = existing.slice(0, 20)
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed)) } catch {}
+
+  // IndexedDB에 이미지 저장 (용량 제한 없음)
+  if (data.blogImages?.length) {
+    saveImages(item.id, data.blogImages).catch(() => {})
+  }
 
   // Notion 저장 (비동기, 실패해도 무시)
   fetch(`${NOTION_API}/save`, {

@@ -85,17 +85,17 @@ ${rawText.slice(0, 8000)}
 // 5개 채널 콘텐츠를 2회 API 호출로 생성 (4채널 + 롱폼)
 export async function generateAllContent(summary, rawText, emphasis) {
   // 1차: 4개 채널 + 2차: 롱폼 병렬 실행
-  const [fourResult, longformResult] = await Promise.allSettled([
+  // [롱폼 비활성화] 롱폼 생성을 건너뛰고 4채널만 실행
+  const [fourResult] = await Promise.allSettled([
     generate4Channels(summary, rawText, emphasis),
-    generateLongform(summary, rawText, emphasis),
+    // generateLongform(summary, rawText, emphasis),
   ])
 
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null
-  const longform = longformResult.status === 'fulfilled' ? longformResult.value : null
+  // const longform = longformResult.status === 'fulfilled' ? longformResult.value : null
 
-  if (!four && !longform) {
+  if (!four) {
     console.error('[Gemini] 4채널 에러:', fourResult.reason?.message)
-    console.error('[Gemini] 롱폼 에러:', longformResult.reason?.message)
     throw new Error('콘텐츠 생성 결과를 파싱하지 못했습니다.')
   }
 
@@ -104,7 +104,7 @@ export async function generateAllContent(summary, rawText, emphasis) {
     newsletter: four?.newsletter || null,
     instagram: four?.instagram || null,
     shorts: four?.shorts || null,
-    longform: longform || null,
+    // longform: longform || null,  // [롱폼 비활성화]
   }
 }
 
@@ -158,13 +158,15 @@ ${rawText.slice(0, 8000)}
 export async function retryFailedChannels(channels, summary, rawText, emphasis) {
   if (channels.length === 0) throw new Error('재시도할 채널이 없습니다.')
 
-  const hasLongform = channels.includes('longform')
+  // [롱폼 비활성화] 롱폼 채널은 건너뜀
+  // const hasLongform = channels.includes('longform')
   const nonLongform = channels.filter(ch => ch !== 'longform')
 
   // 롱폼과 나머지를 분리하여 병렬 실행
   const tasks = []
   if (nonLongform.length > 0) tasks.push(retryNonLongform(nonLongform, summary, rawText, emphasis))
-  if (hasLongform) tasks.push(generateLongform(summary, rawText, emphasis).then(r => ({ longform: r })))
+  // [롱폼 비활성화]
+  // if (hasLongform) tasks.push(generateLongform(summary, rawText, emphasis).then(r => ({ longform: r })))
 
   const results = await Promise.allSettled(tasks)
 
@@ -175,10 +177,10 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis) 
     }
   }
 
-  // 롱폼 결과가 직접 객체로 온 경우 래핑
-  if (hasLongform && output.longform && output.longform.title) {
-    // 이미 올바른 형태
-  }
+  // [롱폼 비활성화]
+  // if (hasLongform && output.longform && output.longform.title) {
+  //   // 이미 올바른 형태
+  // }
 
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
   return output

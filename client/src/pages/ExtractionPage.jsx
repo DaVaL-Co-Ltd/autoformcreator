@@ -443,7 +443,7 @@ export default function ExtractionPage() {
       { key: 'newsletter', label: '뉴스레터', setter: setNewsletterContent },
       { key: 'instagram', label: '인스타그램', setter: setInstagramContent },
       { key: 'shorts', label: '숏폼 대본', setter: setShortsScript },
-      { key: 'longform', label: '롱폼 대본', setter: setLongformScript },
+      // { key: 'longform', label: '롱폼 대본', setter: setLongformScript },  // [롱폼 비활성화]
     ]
 
     try {
@@ -478,8 +478,10 @@ export default function ExtractionPage() {
   }
 
   // 라벨 → API 키 매핑
-  const labelToKey = { '블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts', '롱폼 대본': 'longform' }
-  const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript, longform: setLongformScript }
+  // [롱폼 비활성화] '롱폼 대본': 'longform' 제외
+  const labelToKey = { '블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
+  // [롱폼 비활성화] longform: setLongformScript 제외
+  const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript }
 
   // Step 4 재시도 — 실패한 채널을 모아서 1회 API 호출
   const retryAllFailedContent = async () => {
@@ -492,7 +494,7 @@ export default function ExtractionPage() {
         '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-        '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },
+        // '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },  // [롱폼 비활성화]
       }
       setRetrying('content-all')
       for (const err of failedErrors) {
@@ -551,7 +553,7 @@ export default function ExtractionPage() {
         '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-        '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },
+        // '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },  // [롱폼 비활성화]
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -626,17 +628,15 @@ export default function ExtractionPage() {
       await delay(600)
       demoErrors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '[데모] ElevenLabs API 인증 실패 - Invalid API key' })
       setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': false }))
-      // 롱폼 나레이션
-      setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': true }))
-      await delay(600)
-      demoErrors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: '[데모] ElevenLabs 무료 플랜 음성 생성 한도 초과' })
-      setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': false }))
-      // 롱폼 영상
-      setMediaItemLoading(p => ({ ...p, '롱폼 영상': true }))
-      await delay(600)
-      demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 렌더링 대기 중' })
-      setMediaItemLoading(p => ({ ...p, '롱폼 영상': false }))
-
+      // [롱폼 비활성화] 롱폼 나레이션/영상 데모 건너뜀
+      // setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': true }))
+      // await delay(600)
+      // demoErrors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: '[데모] ElevenLabs 무료 플랜 음성 생성 한도 초과' })
+      // setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': false }))
+      // setMediaItemLoading(p => ({ ...p, '롱폼 영상': true }))
+      // await delay(600)
+      // demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 렌더링 대기 중' })
+      // setMediaItemLoading(p => ({ ...p, '롱폼 영상': false }))
       if (demoErrors.length > 0) {
         addStepErrors('media', demoErrors)
         const retryable = demoErrors.filter(e => !e.noRetry)
@@ -657,27 +657,33 @@ export default function ExtractionPage() {
 
     // 이미 성공한 항목은 건너뜀
     const alreadyDone = {
-      blogImg: blogImages?.some(i => i.imageUrl),
+      blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
+      instaImg: instagramImages?.length > 0,
       shortsVid: Array.isArray(shortsVideo) && shortsVideo.some(v => v.videoUrl),
       shortsNar: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
       longformNar: !!longformNarration?.audioUrl,
-      longformVid: !!longformVideo && longformVideo.endsWith('.mp4'),
+      longformVid: !!longformVideo,
     }
 
-    // TODO: 블로그 이미지 임시 비활성화
-    // if (fluxKey) {
-    //   if (!alreadyDone.blogImg) {
-    //     tasks.push(
-    //       { key: 'blogImg', service: 'flux', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]), setter: setBlogImages },
-    //     )
-    //   }
-    // }
+    // 블로그 이미지 (Gemini 이미지 생성)
+    if (!alreadyDone.blogImg) {
+      tasks.push(
+        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]), setter: setBlogImages },
+      )
+    }
+
+    // 인스타 이미지 (단색 배경 카드 - AI 생성 불필요, 카드 데이터 기반)
+    if (!alreadyDone.instaImg && instagramContent?.cards?.length) {
+      tasks.push(
+        { key: 'instaImg', service: 'gemini', channel: '인스타 이미지', fn: () => Promise.resolve(instagramContent.cards.map(c => ({ cardNumber: c.cardNumber, imageUrl: null, style: 'card' }))), setter: setInstagramImages },
+      )
+    }
 
     // TODO: 숏폼 영상 임시 비활성화
     // const lumaDirectKey = import.meta.env.VITE_LUMA_API_KEY
     // if (lumaDirectKey && !alreadyDone.shortsVid) {
     //   tasks.push(
-    //     { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes, setShortsProgress) : Promise.resolve([]), setter: setShortsVideo },
+    //     { key: 'shortsVid', service: 'luma', channel: '숏폼 영상', fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes.slice(0, 1), setShortsProgress) : Promise.resolve([]), setter: setShortsVideo },
     //   )
     // }
 
@@ -703,7 +709,7 @@ export default function ExtractionPage() {
     //   if (!alreadyDone.longformNar) errors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
     // }
 
-    // 롱폼 영상 (Creatomate)
+    // 롱폼 영상 (Creatomate) - preview 모드
     const creatomateKey = import.meta.env.VITE_CREATOMATE_API_KEY
     if (creatomateKey) {
       if (!alreadyDone.longformVid) {
@@ -749,8 +755,8 @@ export default function ExtractionPage() {
         '인스타 이미지': { data: mockInstagramImages, setter: setInstagramImages },
         '숏폼 영상': { data: [{ sceneNumber: 1, videoUrl: 'demo://shorts-1.mp4' }, { sceneNumber: 2, videoUrl: 'demo://shorts-2.mp4' }], setter: setShortsVideo },
         '숏폼 나레이션': { data: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }], setter: setShortsNarration },
-        '롱폼 나레이션': { data: { audioUrl: 'demo://longform-narration.mp3', duration: 510 }, setter: setLongformNarration },
-        '롱폼 영상': { data: { videoUrl: 'demo://longform-video.mp4', duration: 510 }, setter: setLongformVideo },
+        // '롱폼 나레이션': { data: { audioUrl: 'demo://longform-narration.mp3', duration: 510 }, setter: setLongformNarration },  // [롱폼 비활성화]
+        // '롱폼 영상': { data: { videoUrl: 'demo://longform-video.mp4', duration: 510 }, setter: setLongformVideo },  // [롱폼 비활성화]
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -783,18 +789,19 @@ export default function ExtractionPage() {
         fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null),
         setter: setShortsNarration,
       },
-      '롱폼 나레이션': {
-        fn: () => {
-          if (longformScript?.fullNarrationText) return generateFullNarration(longformScript.fullNarrationText)
-          if (longformScript?.sections) return generateFullNarration(longformScript.sections.map(s => s.narration).join('\n\n'))
-          return Promise.resolve(null)
-        },
-        setter: setLongformNarration,
-      },
-      '롱폼 영상': {
-        fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null),
-        setter: setLongformVideo,
-      },
+      // [롱폼 비활성화]
+      // '롱폼 나레이션': {
+      //   fn: () => {
+      //     if (longformScript?.fullNarrationText) return generateFullNarration(longformScript.fullNarrationText)
+      //     if (longformScript?.sections) return generateFullNarration(longformScript.sections.map(s => s.narration).join('\n\n'))
+      //     return Promise.resolve(null)
+      //   },
+      //   setter: setLongformNarration,
+      // },
+      // '롱폼 영상': {
+      //   fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null),
+      //   setter: setLongformVideo,
+      // },
     }
 
     const task = mediaMap[err.channel]
@@ -1304,13 +1311,13 @@ ${parsedText}
         </div>
         {hasAnyContent && (
           <div className="p-5">
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               {[
                 { label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
                 { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
                 { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `${instagramContent.cards?.length || 0}장 카드` : null },
                 { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
-                { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript ? `${longformScript.sections?.length || 0}개 섹션 · ${longformScript.estimatedDuration || ''}` : null },
+                // { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript ? `${longformScript.sections?.length || 0}개 섹션 · ${longformScript.estimatedDuration || ''}` : null },  // [롱폼 비활성화]
               ].map((ch, i) => {
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
@@ -1436,9 +1443,9 @@ ${parsedText}
                   ok: blogImages?.some(i => i.imageUrl),
                 },
                 {
-                  label: '인스타 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
-                  status: instagramImages ? `${instagramImages.filter(i => i.imageUrl).length}/${instagramImages.length}개` : null,
-                  ok: instagramImages?.some(i => i.imageUrl),
+                  label: '인스타 이미지', service: 'gemini', icon: ImageIcon, iconColor: 'text-pink-400',
+                  status: instagramImages?.length ? `${instagramImages.length}장 카드` : null,
+                  ok: instagramImages?.length > 0,
                 },
                 {
                   label: '숏폼 영상', service: 'luma', icon: Film, iconColor: 'text-rose-400',
@@ -1452,6 +1459,7 @@ ${parsedText}
                   status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '/' + shortsNarration.length + '개' : '완료'}` : null,
                   ok: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
                 },
+                // [롱폼 비활성화]
                 {
                   label: '롱폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-info',
                   status: longformNarration?.audioUrl ? '생성 완료' : null,
@@ -1459,7 +1467,7 @@ ${parsedText}
                 },
                 {
                   label: '롱폼 영상', service: 'creatomate', icon: Video, iconColor: 'text-cyan-400',
-                  status: longformVideo ? '생성 완료' : null,
+                  status: longformVideo ? (longformVideo.endsWith('.mp4') ? '생성 완료' : '프리뷰 완료') : null,
                   ok: !!longformVideo,
                 },
               ].map((item, i) => {
@@ -1501,13 +1509,7 @@ ${parsedText}
                         <span className="text-xs text-text-muted">대기중...</span>
                       </div>
                     ) : isSkipped ? (
-                      <button
-                        onClick={() => retryMediaItem({ service: item.service, channel: item.label })}
-                        className="flex items-center gap-1 text-xs text-warning hover:text-primary transition-colors"
-                      >
-                        <RefreshCw size={10} />
-                        건너뜀 · 재시도
-                      </button>
+                      <span className="text-xs text-text-muted">건너뜀</span>
                     ) : (
                       <span className="text-xs text-text-muted">-</span>
                     )}

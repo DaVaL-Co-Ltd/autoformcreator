@@ -1,81 +1,72 @@
-const API_KEY = import.meta.env.VITE_FAL_API_KEY
-const PROXY_URL = 'http://localhost:3001/api/fal'
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
+const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent'
 
-async function generateImage(prompt, width = 1024, height = 1024) {
-  // Step 1: 큐에 이미지 생성 요청
-  const createRes = await fetch(`${PROXY_URL}/submit`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': API_KEY,
-      'x-fal-model': 'fal-ai/flux-pro',
-    },
-    body: JSON.stringify({
-      prompt,
-      image_size: { width, height },
-      num_images: 1,
-    }),
-  })
+async function generateImage(prompt, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${GEMINI_IMAGE_URL}?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+        }),
+      })
 
-  if (!createRes.ok) {
-    const err = await createRes.json().catch(() => ({}))
-    throw new Error(`Flux 생성 요청 실패: ${createRes.status} - ${err.detail || err.message || ''}`)
-  }
+      if (res.status === 429) {
+        await new Promise(r => setTimeout(r, 5000))
+        continue
+      }
 
-  const result = await createRes.json()
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`이미지 생성 실패: ${res.status} - ${err.slice(0, 200)}`)
+      }
 
-  // fal.ai 동기 응답 (바로 결과가 오는 경우)
-  if (result.images?.[0]?.url) {
-    return result.images[0].url
-  }
+      const data = await res.json()
+      const parts = data.candidates?.[0]?.content?.parts || []
+      const imagePart = parts.find(p => p.inlineData)
 
-  // 큐 응답인 경우 폴링
-  const requestId = result.request_id
-  const responseUrl = result.response_url
-  if (!requestId || !responseUrl) throw new Error('fal.ai 요청 ID를 받지 못했습니다.')
+      if (!imagePart) throw new Error('이미지를 생성하지 못했습니다.')
 
-  // Step 2: 결과 폴링 (최대 120초)
-  let attempts = 0
-  while (attempts < 60) {
-    await new Promise(r => setTimeout(r, 2000))
-
-    const resultRes = await fetch(`${PROXY_URL}/result/${requestId}`, {
-      headers: { 'x-api-key': API_KEY, 'x-fal-response-url': responseUrl },
-    })
-
-    if (!resultRes.ok) {
-      attempts++
-      continue
+      const base64 = imagePart.inlineData.data
+      const mimeType = imagePart.inlineData.mimeType || 'image/png'
+      return `data:${mimeType};base64,${base64}`
+    } catch (err) {
+      if (attempt === retries) throw err
+      await new Promise(r => setTimeout(r, 3000))
     }
-
-    const resultData = await resultRes.json()
-
-    if (resultData.images?.[0]?.url) {
-      return resultData.images[0].url
-    }
-
-    if (resultData.status === 'FAILED') {
-      throw new Error(`Flux 이미지 생성 실패: ${resultData.error || '알 수 없는 오류'}`)
-    }
-
-    attempts++
   }
-
-  throw new Error('Flux 이미지 생성 시간 초과 (120초)')
 }
 
 export async function generateBlogImages(sections) {
   const results = []
-  for (const section of sections) {
-    if (section.imagePrompt) {
-      try {
-        // 블로그: 가로형 16:9 비율, 글자 절대 없는 순수 사진/일러스트
-        const blogPrompt = `A beautiful photograph or illustration related to the concept of "${section.heading}". The image must contain ZERO text, ZERO letters, ZERO writing, ZERO symbols, ZERO logos, ZERO watermarks, ZERO signs, ZERO labels, ZERO captions in any language. No books with visible text, no screens with text, no signs, no banners. Only pure visual scenery, objects, or abstract art. Professional photography style, soft bokeh, warm natural lighting, cinematic composition.`
-        const imageUrl = await generateImage(blogPrompt, 1440, 816)
-        results.push({ heading: section.heading, imageUrl })
-      } catch (err) {
-        results.push({ heading: section.heading, imageUrl: null, error: err.message })
-      }
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i]
+    try {
+      const colorVariations = [
+        { tone: 'soft peach, warm cream', icons: 'books, pencils, speech bubbles, paper scrolls, reading glasses' },
+        { tone: 'soft sky blue, light cyan', icons: 'calculator, ruler, compass, geometric shapes, graph paper' },
+        { tone: 'soft mint green, light teal', icons: 'microscope, test tubes, magnifying glass, lightbulb, seedling' },
+        { tone: 'soft lavender, light purple', icons: 'notebook, graduation cap, star, clock, abacus' },
+        { tone: 'warm yellow, soft apricot', icons: 'trophy, target, checklist, heart, pencil case' },
+      ]
+      const variation = colorVariations[i % colorVariations.length]
+      const bgPrompt = `Generate a 1:1 square illustration for a Korean education blog thumbnail about "${section.heading}". STRICT: PASTEL palette ONLY (${variation.tone}). Cute 3D rendered icons on edges: ${variation.icons}. Warm rounded friendly style. CENTER MUST BE EMPTY - leave middle 60% blank for text overlay. Icons ONLY on edges and corners. NO text, NO letters, NO words, NO numbers. NO realistic photos, NO people. Cute Korean educational style.`
+      const imageUrl = await generateImage(bgPrompt)
+      results.push({
+        heading: section.heading,
+        imageUrl,
+        keyPhrase: section.keyPhrase || section.heading,
+        style: 'overlay',
+      })
+    } catch (err) {
+      results.push({
+        heading: section.heading,
+        imageUrl: null,
+        keyPhrase: section.keyPhrase || section.heading,
+        style: 'overlay',
+      })
     }
   }
   return results
@@ -86,9 +77,8 @@ export async function generateInstagramImages(cards) {
   for (const card of cards) {
     if (card.imagePrompt) {
       try {
-        // 인스타그램: 정사각형 1:1, 미리캔버스/Canva PPT 스타일
-        const instaPrompt = `Minimal clean presentation slide background for Instagram card news. Single solid pastel color background (soft pink, mint, lavender, sky blue, or cream). ${card.imagePrompt}. Style exactly like Canva or Miricanvas template: simple geometric shapes, small cute vector icons, minimal decorative elements in corners. Absolutely NO text, NO letters, NO words, NO characters anywhere. NO photo-realistic images. Only flat vector decorations, simple icons, and subtle patterns. Very clean with lots of white space in the center for text overlay. Soft, cute, student-friendly aesthetic.`
-        const imageUrl = await generateImage(instaPrompt, 1024, 1024)
+        const instaPrompt = `Generate an image: Minimal clean presentation slide background. Single solid pastel color background. ${card.imagePrompt}. No text, no letters, no words anywhere. Only flat vector decorations, simple icons, and subtle patterns. Soft, cute aesthetic.`
+        const imageUrl = await generateImage(instaPrompt)
         results.push({ cardNumber: card.cardNumber, imageUrl })
       } catch (err) {
         results.push({ cardNumber: card.cardNumber, imageUrl: null, error: err.message })
