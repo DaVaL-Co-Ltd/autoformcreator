@@ -7,6 +7,7 @@ const navItems = [
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출' },
   { to: '/content', icon: FileText, label: '콘텐츠 관리' },
   { to: '/settings', icon: Settings, label: '설정' },
+  { type: 'logout', icon: LogOut, label: '로그아웃' },
 ]
 
 export default function Sidebar() {
@@ -28,12 +29,27 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 p-3 space-y-1">
-        {navItems.map(({ to, icon: Icon, label }) => {
-          const isActive = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to)
+        {navItems.map((item) => {
+          const { icon: Icon, label } = item
+
+          if (item.type === 'logout') {
+            return (
+              <button
+                key="logout"
+                onClick={logout}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 w-full text-text-muted hover:text-danger hover:bg-danger/10 border border-transparent"
+              >
+                <Icon size={18} strokeWidth={1.8} />
+                {label}
+              </button>
+            )
+          }
+
+          const isActive = item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
           return (
             <NavLink
-              key={to}
-              to={to}
+              key={item.to}
+              to={item.to}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200
                 ${isActive
                   ? 'bg-primary/15 text-primary-light border border-primary/30'
@@ -46,27 +62,6 @@ export default function Sidebar() {
           )
         })}
       </nav>
-
-      <div className="p-4 border-t border-border">
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-sm font-bold">
-              {user?.name?.[0] || 'U'}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-text">{user?.name || '사용자'}</p>
-              <p className="text-xs text-text-muted">{user?.email || ''}</p>
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            className="p-1.5 rounded-lg text-text-muted hover:text-danger hover:bg-danger/10 transition-all"
-            title="로그아웃"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </div>
     </aside>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
-  ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight, Film, Video, Mic,
+  ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight, Film, Mic,
   XCircle, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -10,12 +10,11 @@ import { verifyParsedContent, summarizeContent } from '../services/gemini'
 import {
   generateAllContent, retryFailedChannels,
   generateBlogContent, generateNewsletterContent, generateInstagramContent,
-  generateShortsScript, generateLongformScript
+  generateShortsScript
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
-import { generateNarrationForScenes, generateFullNarration } from '../services/elevenlabs'
-import { renderVideoAndWait } from '../services/creatomate'
-import { generateShortsVideoLocal } from '../services/shorts-video'
+import { generateNarrationForScenes } from '../services/elevenlabs'
+import { generateShortsVideo } from '../services/shorts-video'
 
 const steps = [
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
@@ -31,7 +30,6 @@ const aiServiceInfo = {
   gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
   flux: { name: 'Flux', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
   elevenlabs: { name: 'ElevenLabs', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
-  creatomate: { name: 'Creatomate', color: 'text-cyan-400', bg: 'bg-cyan-400/10 border-cyan-400/20' },
   luma: { name: 'Luma', color: 'text-rose-400', bg: 'bg-rose-400/10 border-rose-400/20' },
 }
 
@@ -129,17 +127,6 @@ const mockShortsScript = {
   ],
   cta: '더 자세한 분석은 프로필 링크에서!',
   thumbnailPrompt: 'AI market growth dramatic thumbnail',
-}
-
-const mockLongformScript = {
-  title: '[데모] 2024 AI 시장 완전 분석',
-  estimatedDuration: '8:30',
-  intro: { hook: 'AI 시장이 역대 최대를 기록했습니다', narration: '안녕하세요, 오늘은 2024년 AI 시장을 분석합니다.', visualDescription: 'intro animation' },
-  sections: [
-    { sectionNumber: 1, title: '시장 규모', duration: '120', narration: '2024년 글로벌 AI 시장은 $184.0B를 달성했습니다.', dataPoints: ['$184.0B', '+32.4%'], visualElements: [{ type: 'chart', description: 'bar chart', data: '$184.0B' }], transition: '다음으로' },
-  ],
-  outro: { summary: 'AI 시장 핵심 요약', narration: '지금까지 2024 AI 시장 분석이었습니다.', cta: '구독과 좋아요 부탁드립니다.' },
-  fullNarrationText: '안녕하세요, 오늘은 2024년 AI 시장을 분석합니다. 2024년 글로벌 AI 시장은 $184.0B를 달성했습니다.',
 }
 
 const mockBlogImages = [
@@ -279,13 +266,10 @@ export default function ExtractionPage() {
   const [newsletterContent, setNewsletterContent] = useState(null)
   const [instagramContent, setInstagramContent] = useState(null)
   const [shortsScript, setShortsScript] = useState(null)
-  const [longformScript, setLongformScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
   const [instagramImages, setInstagramImages] = useState(null)
   const [shortsNarration, setShortsNarration] = useState(null)
   const [shortsVideo, setShortsVideo] = useState(null)
-  const [longformNarration, setLongformNarration] = useState(null)
-  const [longformVideo, setLongformVideo] = useState(null)
 
   // step 5까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -399,8 +383,13 @@ export default function ExtractionPage() {
 
     try {
       const result = await summarizeContent(parsedText)
-      setSummary(result)
-      setCurrentStep(4)
+      // JSON 파싱 실패로 fallback이 반환된 경우 재시도 유도
+      if (result.title === '요약 생성 실패') {
+        addStepErrors('summary', [{ service: 'gemini', message: 'Gemini 응답을 JSON으로 파싱하지 못했습니다. 재시도해주세요.' }])
+      } else {
+        setSummary(result)
+        setCurrentStep(4)
+      }
     } catch (err) {
       addStepErrors('summary', [{ service: 'gemini', message: `요약 생성 실패 - ${err.message}` }])
       showErrorAlert('핵심 요약', err.message)
@@ -425,8 +414,6 @@ export default function ExtractionPage() {
       demoErrors.push({ service: 'gemini', channel: '인스타그램', message: '[데모] Gemini API 응답 시간 초과 - Rate limit exceeded' })
       await delay(300)
       setShortsScript(mockShortsScript)
-      await delay(300)
-      setLongformScript(mockLongformScript)
       if (demoErrors.length > 0) {
         addStepErrors('content', demoErrors)
         const failedChannels = demoErrors.map(e => e.channel).join(', ')
@@ -443,7 +430,6 @@ export default function ExtractionPage() {
       { key: 'newsletter', label: '뉴스레터', setter: setNewsletterContent },
       { key: 'instagram', label: '인스타그램', setter: setInstagramContent },
       { key: 'shorts', label: '숏폼 대본', setter: setShortsScript },
-      // { key: 'longform', label: '롱폼 대본', setter: setLongformScript },  // [롱폼 비활성화]
     ]
 
     try {
@@ -478,9 +464,7 @@ export default function ExtractionPage() {
   }
 
   // 라벨 → API 키 매핑
-  // [롱폼 비활성화] '롱폼 대본': 'longform' 제외
   const labelToKey = { '블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
-  // [롱폼 비활성화] longform: setLongformScript 제외
   const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript }
 
   // Step 4 재시도 — 실패한 채널을 모아서 1회 API 호출
@@ -494,7 +478,6 @@ export default function ExtractionPage() {
         '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-        // '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },  // [롱폼 비활성화]
       }
       setRetrying('content-all')
       for (const err of failedErrors) {
@@ -553,7 +536,6 @@ export default function ExtractionPage() {
         '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-        // '롱폼 대본': { data: mockLongformScript, setter: setLongformScript },  // [롱폼 비활성화]
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -615,28 +597,16 @@ export default function ExtractionPage() {
       await delay(MOCK_DELAY)
       setInstagramImages(mockInstagramImages)
       setMediaItemLoading(p => ({ ...p, '인스타 이미지': false }))
-      // 숏폼 영상 (Luma) 성공 시뮬레이션
+      // 숏폼 영상 성공 시뮬레이션
       setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
       await delay(MOCK_DELAY)
-      setShortsVideo([
-        { sceneNumber: 1, videoUrl: 'demo://shorts-scene-1.mp4', thumbnailUrl: null },
-        { sceneNumber: 2, videoUrl: 'demo://shorts-scene-2.mp4', thumbnailUrl: null },
-      ])
+      setShortsVideo({ combinedVideoUrl: null, sceneTimings: [] })
       setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
       // 숏폼 나레이션 실패 시뮬레이션
       setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': true }))
       await delay(600)
       demoErrors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '[데모] ElevenLabs API 인증 실패 - Invalid API key' })
       setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': false }))
-      // [롱폼 비활성화] 롱폼 나레이션/영상 데모 건너뜀
-      // setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': true }))
-      // await delay(600)
-      // demoErrors.push({ service: 'elevenlabs', channel: '롱폼 나레이션', message: '[데모] ElevenLabs 무료 플랜 음성 생성 한도 초과' })
-      // setMediaItemLoading(p => ({ ...p, '롱폼 나레이션': false }))
-      // setMediaItemLoading(p => ({ ...p, '롱폼 영상': true }))
-      // await delay(600)
-      // demoErrors.push({ service: 'creatomate', channel: '롱폼 영상', message: '[데모] Creatomate 렌더링 대기 중' })
-      // setMediaItemLoading(p => ({ ...p, '롱폼 영상': false }))
       if (demoErrors.length > 0) {
         addStepErrors('media', demoErrors)
         const retryable = demoErrors.filter(e => !e.noRetry)
@@ -659,10 +629,8 @@ export default function ExtractionPage() {
     const alreadyDone = {
       blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
       instaImg: instagramImages?.length > 0,
-      shortsVid: !!shortsVideo?.combinedVideoUrl,
+      shortsVideo: !!shortsVideo?.combinedVideoUrl,
       shortsNar: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
-      longformNar: !!longformNarration?.audioUrl,
-      longformVid: !!longformVideo,
     }
 
     // 블로그 이미지 (Gemini 이미지 생성)
@@ -684,61 +652,59 @@ export default function ExtractionPage() {
     let cachedNarrations = shortsNarration // 이미 있으면 재사용
 
     if (shortsScript?.scenes?.length) {
-      // [임시 비활성화] 숏폼 나레이션
-      // if (elevenlabsKey && !alreadyDone.shortsNar) {
-      //   tasks.push(
-      //     { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: async () => {
-      //       try {
-      //         const result = await generateNarrationForScenes(shortsScript.scenes)
-      //         cachedNarrations = result
-      //         return result
-      //       } catch (err) {
-      //         console.warn('[숏폼 나레이션] 실패, 영상만 생성:', err.message)
-      //         cachedNarrations = null
-      //         return null
-      //       }
-      //     }, setter: setShortsNarration },
-      //   )
-      // }
-
-      // 영상 생성 (순차 실행이므로 나레이션이 먼저 완료됨)
-      if (!alreadyDone.shortsVid) {
+      // 숏폼 나레이션 먼저 생성 (V1/V2보다 앞에 위치)
+      if (elevenlabsKey && !alreadyDone.shortsNar) {
         tasks.push(
-          { key: 'shortsVid', service: 'gemini', channel: '숏폼 영상', fn: async () => {
-            return await generateShortsVideoLocal(shortsScript.scenes, shortsScript.title, setShortsProgress, cachedNarrations)
+          { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: async () => {
+            try {
+              const result = await generateNarrationForScenes(shortsScript.scenes)
+              cachedNarrations = result
+              return result
+            } catch (err) {
+              console.warn('[숏폼 나레이션] 실패, 영상만 생성:', err.message)
+              cachedNarrations = null
+              return null
+            }
+          }, setter: setShortsNarration },
+        )
+      }
+
+      // 숏폼 영상 생성 (첫/마지막 Veo, 중간 Gemini 이미지 하이브리드)
+      if (!alreadyDone.shortsVideo) {
+        tasks.push(
+          { key: 'shortsVideo', service: 'gemini', channel: '숏폼 영상', fn: async () => {
+            return await generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, cachedNarrations)
           }, setter: setShortsVideo },
         )
       }
-      // [롱폼 비활성화] 롱폼 나레이션은 아직 적용하지 않음
 
       if (!elevenlabsKey && !alreadyDone.shortsNar) {
         errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
       }
     }
 
-    // 롱폼 영상 (Creatomate) - preview 모드
-    const creatomateKey = import.meta.env.VITE_CREATOMATE_API_KEY
-    if (creatomateKey) {
-      if (!alreadyDone.longformVid) {
-        tasks.push(
-          { key: 'longformVid', service: 'creatomate', channel: '롱폼 영상', fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null), setter: setLongformVideo },
-        )
-      }
-    } else {
-      if (!alreadyDone.longformVid) errors.push({ service: 'creatomate', channel: '롱폼 영상', message: 'Creatomate API 키가 설정되지 않았습니다.', noRetry: true })
-    }
-
     // 순차 실행으로 항목별 로딩 표시
     abortedRef.current = false
+    let narrationFailed = false
     for (const task of tasks) {
       if (abortedRef.current) break
+      // 나레이션이 전부 실패했어도 V1/V2는 계속 진행 (narration optional)
       setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
       try {
         const result = await task.fn()
         task.setter(result)
+        // 나레이션 완료 후 유효성 확인
+        if (task.key === 'shortsNar') {
+          const hasAnyAudio = Array.isArray(result) ? result.some(n => n?.audioUrl) : !!(result?.audioUrl)
+          if (!hasAnyAudio) {
+            narrationFailed = true
+            errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '나레이션 오디오가 생성되지 않았습니다. 영상은 나레이션 없이 생성됩니다.' })
+          }
+        }
       } catch (err) {
         if (abortedRef.current) break
         errors.push({ service: task.service, channel: task.channel, message: err.reason?.message || err.message || '생성 실패' })
+        if (task.key === 'shortsNar') narrationFailed = true
       }
       setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
     }
@@ -754,16 +720,76 @@ export default function ExtractionPage() {
     setStepLoading('media', false)
   }
 
+  // Step 5: 개별 미디어 생성
+  const runSingleMedia = async (key) => {
+    const taskMap = {
+      blogImg: {
+        channel: '블로그 이미지',
+        service: 'gemini',
+        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]),
+        setter: setBlogImages,
+        demoData: mockBlogImages,
+      },
+      instaImg: {
+        channel: '인스타 이미지',
+        service: 'gemini',
+        fn: () => instagramContent?.cards?.length
+          ? Promise.resolve(instagramContent.cards.map(c => ({ cardNumber: c.cardNumber, imageUrl: null, style: 'card' })))
+          : Promise.resolve([]),
+        setter: setInstagramImages,
+        demoData: mockInstagramImages,
+      },
+      shortsVideo: {
+        channel: '숏폼 영상',
+        service: 'gemini',
+        fn: async () => await generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, shortsNarration),
+        setter: setShortsVideo,
+        demoData: { combinedVideoUrl: null, sceneTimings: [] },
+      },
+      shortsNar: {
+        channel: '숏폼 나레이션',
+        service: 'elevenlabs',
+        fn: async () => await generateNarrationForScenes(shortsScript.scenes),
+        setter: setShortsNarration,
+        demoData: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }],
+      },
+    }
+
+    const task = taskMap[key]
+    if (!task) return
+
+    setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
+    // 해당 채널 기존 에러 제거
+    setStepErrors(p => ({
+      ...p,
+      media: (p.media || []).filter(e => e.channel !== task.channel)
+    }))
+
+    if (demoMode) {
+      await delay(MOCK_DELAY)
+      task.setter(task.demoData)
+      setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
+      return
+    }
+
+    try {
+      const result = await task.fn()
+      task.setter(result)
+    } catch (err) {
+      addStepErrors('media', [{ service: task.service, channel: task.channel, message: err.message || '생성 실패' }])
+      showErrorAlert('미디어 생성', `${task.channel} 생성에 실패했습니다: ${err.message}`)
+    }
+    setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
+  }
+
   // Step 5 재시도
   const retryMediaItem = async (err) => {
     if (demoMode) {
       const mockMap = {
         '블로그 이미지': { data: mockBlogImages, setter: setBlogImages },
         '인스타 이미지': { data: mockInstagramImages, setter: setInstagramImages },
-        '숏폼 영상': { data: [{ sceneNumber: 1, videoUrl: 'demo://shorts-1.mp4' }, { sceneNumber: 2, videoUrl: 'demo://shorts-2.mp4' }], setter: setShortsVideo },
+        '숏폼 영상': { data: { combinedVideoUrl: null, sceneTimings: [] }, setter: setShortsVideo },
         '숏폼 나레이션': { data: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }], setter: setShortsNarration },
-        // '롱폼 나레이션': { data: { audioUrl: 'demo://longform-narration.mp3', duration: 510 }, setter: setLongformNarration },  // [롱폼 비활성화]
-        // '롱폼 영상': { data: { videoUrl: 'demo://longform-video.mp4', duration: 510 }, setter: setLongformVideo },  // [롱폼 비활성화]
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -789,26 +815,13 @@ export default function ExtractionPage() {
         setter: setInstagramImages,
       },
       '숏폼 영상': {
-        fn: () => shortsScript?.scenes ? generateShortsVideos(shortsScript.scenes) : Promise.resolve([]),
+        fn: () => shortsScript?.scenes ? generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, shortsNarration) : Promise.resolve(null),
         setter: setShortsVideo,
       },
       '숏폼 나레이션': {
         fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null),
         setter: setShortsNarration,
       },
-      // [롱폼 비활성화]
-      // '롱폼 나레이션': {
-      //   fn: () => {
-      //     if (longformScript?.fullNarrationText) return generateFullNarration(longformScript.fullNarrationText)
-      //     if (longformScript?.sections) return generateFullNarration(longformScript.sections.map(s => s.narration).join('\n\n'))
-      //     return Promise.resolve(null)
-      //   },
-      //   setter: setLongformNarration,
-      // },
-      // '롱폼 영상': {
-      //   fn: () => longformScript ? renderVideoAndWait(longformScript, longformNarration?.audioUrl) : Promise.resolve(null),
-      //   setter: setLongformVideo,
-      // },
     }
 
     const task = mediaMap[err.channel]
@@ -910,19 +923,54 @@ ${parsedText}
     await navigateToResults()
   }
 
+  // Blob URL → base64 data URL 변환 (페이지 이동 시 유실 방지)
+  const blobToDataUrl = async (blobUrl) => {
+    if (!blobUrl || !blobUrl.startsWith('blob:')) return blobUrl
+    try {
+      const res = await fetch(blobUrl)
+      const blob = await res.blob()
+      return new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => resolve(null)
+        reader.readAsDataURL(blob)
+      })
+    } catch { return null }
+  }
+
+  const persistShortsVideo = async (sv) => {
+    if (!sv?.combinedVideoUrl) return sv
+    const dataUrl = await blobToDataUrl(sv.combinedVideoUrl)
+    return { ...sv, combinedVideoUrl: dataUrl }
+  }
+
   const navigateToResults = async () => {
     let fileBase64 = null
     if (file) {
       try { fileBase64 = await fileToBase64(file) } catch {}
     }
+
+    // Blob URL을 data URL로 변환
+    const persistedShortsVideo = await persistShortsVideo(shortsVideo)
+
+    // 나레이션 Blob URL도 변환
+    let persistedNarrations = shortsNarration
+    if (Array.isArray(shortsNarration)) {
+      persistedNarrations = await Promise.all(shortsNarration.map(async (n) => {
+        if (!n?.audioUrl) return n
+        const dataUrl = await blobToDataUrl(n.audioUrl)
+        return { ...n, audioUrl: dataUrl || n.audioUrl }
+      }))
+    }
+
     navigate('/extraction/result', {
       state: {
         parsedText, verification, summary,
         blogContent, newsletterContent, instagramContent,
-        shortsScript, longformScript,
+        shortsScript,
         blogImages, instagramImages,
-        shortsVideo, shortsNarration, longformNarration,
-        longformVideo,
+        shortsVideo: persistedShortsVideo,
+        shortsNarration: persistedNarrations,
         fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
         fileBase64,
         savedFromExtraction: true,
@@ -930,7 +978,7 @@ ${parsedText}
     })
   }
 
-  const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript || longformScript
+  const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -1302,7 +1350,7 @@ ${parsedText}
             {hasAnyContent && (
               <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.content?.length ? 'text-warning' : 'text-success'}`}>
                 {stepErrors.content?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
-                {5 - (stepErrors.content?.length || 0)}/5 채널 생성 완료
+                {4 - (stepErrors.content?.length || 0)}/4 채널 생성 완료
               </span>
             )}
             {currentStep === 4 && (
@@ -1324,7 +1372,6 @@ ${parsedText}
                 { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
                 { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `${instagramContent.cards?.length || 0}장 카드` : null },
                 { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
-                // { label: '롱폼 대본', icon: Video, color: 'text-info bg-info/10', data: longformScript, detail: longformScript ? `${longformScript.sections?.length || 0}개 섹션 · ${longformScript.estimatedDuration || ''}` : null },  // [롱폼 비활성화]
               ].map((ch, i) => {
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
@@ -1405,18 +1452,12 @@ ${parsedText}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {mediaGenerationDone && (
-              <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.media?.length ? 'text-warning' : 'text-success'}`}>
-                {stepErrors.media?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
-                {stepErrors.media?.length ? '부분 완료' : '생성 완료'}
-              </span>
-            )}
-            {currentStep === 5 && !mediaGenerationDone && !loading.media && (
+            {currentStep === 5 && !loading.media && (
               <button
                 onClick={runMediaGeneration}
                 className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-2"
               >
-                <Sparkles size={14} /> 실행
+                <Sparkles size={14} /> 전체 실행
               </button>
             )}
             {loading.media && (
@@ -1429,66 +1470,45 @@ ${parsedText}
             )}
           </div>
         </div>
-        {mediaGenerationDone && !loading.media && (stepErrors.media?.length > 0 || [blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, longformVideo].some(v => !v)) && (
-          <div className="mx-5 mt-4">
-            <button
-              onClick={runMediaGeneration}
-              disabled={loading.media}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all border border-primary/20 disabled:opacity-50"
-            >
-              <RefreshCw size={12} /> 실패/건너뜀 항목 모두 재시도
-            </button>
-          </div>
-        )}
-        {(loading.media || blogImages || instagramImages || shortsVideo || shortsNarration || longformNarration || longformVideo || mediaGenerationDone) && (
+        {currentStep >= 5 && (
           <div className="p-5 space-y-3">
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 {
-                  label: '블로그 이미지', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
+                  label: '블로그 이미지', key: 'blogImg', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
                   status: blogImages ? `${blogImages.filter(i => i.imageUrl).length}/${blogImages.length}개` : null,
                   ok: blogImages?.some(i => i.imageUrl),
+                  canRun: !!blogContent?.sections,
                 },
                 {
-                  label: '인스타 이미지', service: 'gemini', icon: ImageIcon, iconColor: 'text-pink-400',
+                  label: '인스타 이미지', key: 'instaImg', service: 'gemini', icon: ImageIcon, iconColor: 'text-pink-400',
                   status: instagramImages?.length ? `${instagramImages.length}장 카드` : null,
                   ok: instagramImages?.length > 0,
+                  canRun: !!instagramContent?.cards?.length,
                 },
                 {
-                  label: '숏폼 영상', service: 'gemini', icon: Film, iconColor: 'text-rose-400',
+                  label: '숏폼 영상', key: 'shortsVideo', service: 'gemini', icon: Film, iconColor: 'text-cyan-400',
                   status: shortsVideo?.combinedVideoUrl
-                    ? `${shortsVideo.sceneTimings?.length || 0}씬 통합 영상`
-                    : shortsProgress ? `${shortsProgress.completed}/${shortsProgress.total}개 완료${shortsProgress.current ? ` (씬${shortsProgress.current} ${shortsProgress.phase === 'image' ? '이미지' : '영상'} 생성중)` : ''}` : null,
+                    ? `${shortsVideo.sceneTimings?.length || 0}씬 하이브리드`
+                    : shortsProgress && shortsProgress.phase !== 'done' ? `${shortsProgress.completed}/${shortsProgress.total} (씬${shortsProgress.current || ''} ${shortsProgress.phase === 'image-gen' ? '이미지' : '영상'} 생성중)` : null,
                   ok: !!shortsVideo?.combinedVideoUrl,
+                  canRun: !!shortsScript?.scenes?.length,
                 },
                 {
-                  label: '숏폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',
+                  label: '숏폼 나레이션', key: 'shortsNar', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',
                   status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '/' + shortsNarration.length + '개' : '완료'}` : null,
                   ok: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
-                },
-                // [롱폼 비활성화]
-                {
-                  label: '롱폼 나레이션', service: 'elevenlabs', icon: Mic, iconColor: 'text-info',
-                  status: longformNarration?.audioUrl ? '생성 완료' : null,
-                  ok: !!longformNarration?.audioUrl,
-                },
-                {
-                  label: '롱폼 영상', service: 'creatomate', icon: Video, iconColor: 'text-cyan-400',
-                  status: longformVideo ? (longformVideo.endsWith('.mp4') ? '생성 완료' : '프리뷰 완료') : null,
-                  ok: !!longformVideo,
+                  canRun: !!shortsScript?.scenes?.length,
                 },
               ].map((item, i) => {
                 const Icon = item.icon
                 const failed = stepErrors.media?.some(e => e.channel === item.label)
                 const isLoading = mediaItemLoading[item.label]
-                const isWaiting = !mediaGenerationDone && !isLoading && !item.ok && !failed
-                const isSkipped = mediaGenerationDone && !item.ok && !failed
                 return (
                   <div key={i} className={`rounded-lg p-3 border ${
                     isLoading ? 'bg-primary/5 border-primary/20' :
                     failed ? 'bg-danger/5 border-danger/20' :
                     item.ok ? 'bg-success/5 border-success/20' :
-                    isSkipped ? 'bg-surface-light border-border opacity-50' :
                     'bg-surface-light border-border'
                   }`}>
                     <div className="flex items-center gap-1 mb-1">
@@ -1510,15 +1530,25 @@ ${parsedText}
                         <XCircle size={10} className="text-danger" />
                         <span className="text-xs text-danger">실패</span>
                       </div>
-                    ) : loading.media ? (
-                      <div className="flex items-center gap-1">
-                        <Loader2 size={10} className="text-text-muted animate-spin" />
-                        <span className="text-xs text-text-muted">대기중...</span>
-                      </div>
-                    ) : isSkipped ? (
-                      <span className="text-xs text-text-muted">건너뜀</span>
                     ) : (
-                      <span className="text-xs text-text-muted">-</span>
+                      <span className="text-xs text-text-muted">대기</span>
+                    )}
+                    {/* 개별 실행 버튼 */}
+                    {!isLoading && !item.ok && item.canRun && !loading.media && (
+                      <button
+                        onClick={() => runSingleMedia(item.key)}
+                        className="mt-2 w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all border border-primary/20"
+                      >
+                        <Sparkles size={10} /> 실행
+                      </button>
+                    )}
+                    {!isLoading && item.ok && item.canRun && !loading.media && (
+                      <button
+                        onClick={() => runSingleMedia(item.key)}
+                        className="mt-2 w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-surface-light hover:bg-surface text-text-muted text-xs font-medium transition-all border border-border"
+                      >
+                        <RefreshCw size={10} /> 재생성
+                      </button>
                     )}
                   </div>
                 )
@@ -1526,23 +1556,36 @@ ${parsedText}
             </div>
           </div>
         )}
+        {shortsNarration && Array.isArray(shortsNarration) && shortsNarration.some(n => n.audioUrl) && (
+          <div className="mx-5 mb-4 bg-surface-light rounded-lg border border-border p-3 space-y-2">
+            <p className="text-xs font-medium text-text-muted">나레이션 미리듣기</p>
+            {shortsNarration.map((n, i) => n.audioUrl && (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-[10px] text-text-muted w-12">씬 {n.sceneNumber}</span>
+                <audio src={n.audioUrl} controls className="h-7 flex-1" style={{ minWidth: 0 }} />
+              </div>
+            ))}
+          </div>
+        )}
         <ErrorPanel errors={stepErrors.media} onRetry={retryMediaItem} retrying={retrying} />
       </div>
 
-      {/* View Results Button - Step 5 완료 후에만 활성화 */}
+      {/* View Results Button - 콘텐츠 또는 미디어가 하나라도 있으면 활성화, 로딩 중이면 비활성 */}
       <div className="flex justify-end">
         <button
           onClick={viewResults}
-          disabled={!mediaGenerationDone}
+          disabled={!(hasAnyContent || mediaGenerationDone) || loading.content || loading.media}
           className={`px-6 py-3 font-medium rounded-xl transition-all flex items-center gap-2 ${
-            mediaGenerationDone
+            (hasAnyContent || mediaGenerationDone) && !loading.content && !loading.media
               ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
               : 'bg-surface-light text-text-muted border border-border cursor-not-allowed'
           }`}
         >
-          <Eye size={18} />
-          결과 확인
-          <ArrowRight size={16} />
+          {loading.content || loading.media ? (
+            <><Loader2 size={18} className="animate-spin" /> 작업 중...</>
+          ) : (
+            <><Eye size={18} /> 결과 확인 <ArrowRight size={16} /></>
+          )}
         </button>
       </div>
     </div>

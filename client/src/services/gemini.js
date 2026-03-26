@@ -20,7 +20,7 @@ export async function verifyParsedContent(parsedText) {
 추출된 텍스트:
 ${parsedText}`
 
-  const result = await callGeminiWithFallback(prompt)
+  const result = await callGeminiWithFallback(prompt, { jsonMode: true })
   return parseJSON(result, { isValid: true, issues: [], correctedText: parsedText, confidence: 0.8 })
 }
 
@@ -49,7 +49,7 @@ export async function summarizeContent(verifiedText) {
 텍스트:
 ${verifiedText}`
 
-  const result = await callGeminiWithFallback(prompt)
+  const result = await callGeminiWithFallback(prompt, { jsonMode: true })
   return parseJSON(result, {
     title: '요약 생성 실패',
     keyData: [],

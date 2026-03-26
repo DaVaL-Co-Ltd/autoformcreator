@@ -29,7 +29,7 @@ ${rawText.slice(0, 8000)}
   "blog": {"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
   "newsletter": {"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"},
   "instagram": {"cards":[{"cardNumber":1,"headline":"헤드라인","body":"본문(50자 이내)","dataPoint":"데이터","imagePrompt":"이미지 설명(영문)","backgroundColor":"#hex"}],"caption":"캡션","hashtags":["#태그"]},
-  "shorts": {"title":"숏폼 제목","duration":"초(10~40)","hook":"오프닝 훅(3초)","scenes":[{"sceneNumber":1,"duration":"초","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
+  "shorts": {"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
 }
 
 주의사항:
@@ -39,61 +39,25 @@ ${rawText.slice(0, 8000)}
   2) 각 카드 핵심을 이모지와 함께 키워드 중심으로 요약 (예: "📌 일반 논술 vs 약술형 논술", "📊 2028 대입 핵심 변화 3가지")
   3) "~하세요", "~합니다" 같은 경어체 대신 "~정리", "~변화", "~포인트" 같이 명사/키워드로 문장을 끝내세요.
   4) 마지막에 CTA 한 줄
-- 숏폼은 핵심 데이터 2~3개에 집중, 나레이션 10~40초 분량.
+- 숏폼은 반드시 3씬 이상으로 구성하세요. 총 약 20초. 각 씬은 6~7초. 나레이션은 씬당 1~2문장. scenes 배열에 3개 이상의 씬 객체를 넣으세요.
+- 숏폼 씬 구성 규칙:
+  * 첫 번째 씬: 인사/소개 (예: "안녕하세요~ 오늘의 입시 정보를 알려드릴게요!"). visualDescription은 귀여운 고양이 캐릭터가 인사하는 애니메이션.
+  * 중간 씬들: 핵심 내용 전달. visualDescription은 내용과 어울리는 배경 이미지 묘사 (교실, 차트, 책 등). 텍스트 없이 시각적 이미지 위주로.
+  * 마지막 씬: 마무리/CTA (예: "더 많은 정보는 프로필에서 확인하세요!"). visualDescription은 고양이 캐릭터가 손 흔들며 작별하는 애니메이션.
+- 첫 번째와 마지막 씬의 visualDescription만 고양이 캐릭터 애니메이션으로, 중간 씬은 배경 이미지로 묘사하세요.
 - 반드시 위 JSON 구조만 출력하세요.`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 32768, jsonMode: true })
   return parseJSON(result, null)
 }
 
-// 2차: 롱폼 단독 생성
-async function generateLongform(summary, rawText, emphasis) {
-  const prompt = `당신은 유튜브 롱폼 영상 전문 크리에이터입니다. 아래 데이터를 바탕으로 5~15분 분량의 롱폼 영상 대본을 작성해주세요.
-
-## 핵심 규칙
-- 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-- 모든 중요 데이터를 빠짐없이 포함하세요.
-- 특정 대학교에만 해당하는 세부 내용은 최소화하고, 공통적인 트렌드·제도 변화·전략을 중심으로 작성하세요. 특정 대학은 예시로만 간단히 언급하세요.
-${buildEmphasisInstruction(emphasis)}
-
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
-
-## 원본 텍스트
-${rawText.slice(0, 8000)}
-
----
-
-아래 JSON 형식으로 롱폼 대본을 생성하세요:
-{
-  "title": "롱폼 영상 제목",
-  "estimatedDuration": "분:초(5~15분)",
-  "intro": {"hook":"오프닝 훅","narration":"인트로 나레이션","visualDescription":"인트로 영상 설명"},
-  "sections": [{"sectionNumber":1,"title":"섹션 제목","duration":"초","narration":"나레이션 전문(충분히 길게)","dataPoints":["정확한 데이터"],"visualElements":[{"type":"chart","description":"설명","data":"데이터"}],"transition":"다음 섹션 연결 멘트"}],
-  "outro": {"summary":"핵심 요약","narration":"마무리 나레이션","cta":"구독/좋아요 콜투액션"},
-  "fullNarrationText": "전체 나레이션 텍스트(인트로~아웃트로 전부 이어붙인 것)"
-}
-
-주의사항:
-- 섹션을 3개 이상 작성하세요.
-- fullNarrationText는 인트로 나레이션 + 모든 섹션 나레이션 + 아웃트로 나레이션을 이어붙인 전체 텍스트입니다.
-- 반드시 위 JSON 구조만 출력하세요.`
-
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 65536, jsonMode: true })
-  return parseJSON(result, null)
-}
-
-// 5개 채널 콘텐츠를 2회 API 호출로 생성 (4채널 + 롱폼)
+// 4개 채널 콘텐츠 생성
 export async function generateAllContent(summary, rawText, emphasis) {
-  // 1차: 4개 채널 + 2차: 롱폼 병렬 실행
-  // [롱폼 비활성화] 롱폼 생성을 건너뛰고 4채널만 실행
   const [fourResult] = await Promise.allSettled([
     generate4Channels(summary, rawText, emphasis),
-    // generateLongform(summary, rawText, emphasis),
   ])
 
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null
-  // const longform = longformResult.status === 'fulfilled' ? longformResult.value : null
 
   if (!four) {
     console.error('[Gemini] 4채널 에러:', fourResult.reason?.message)
@@ -105,7 +69,6 @@ export async function generateAllContent(summary, rawText, emphasis) {
     newsletter: four?.newsletter || null,
     instagram: four?.instagram || null,
     shorts: four?.shorts || null,
-    // longform: longform || null,  // [롱폼 비활성화]
   }
 }
 
@@ -114,13 +77,12 @@ const CHANNEL_SCHEMAS = {
   blog: `"blog":{"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
   newsletter: `"newsletter":{"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트1","포인트2"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`,
   instagram: `"instagram":{"cards":[{"cardNumber":1,"headline":"헤드라인","body":"본문(50자 이내)","dataPoint":"데이터","imagePrompt":"이미지 설명(영문)","backgroundColor":"#hex"}],"caption":"캡션(해시태그 포함)","hashtags":["#태그"]}`,
-  shorts: `"shorts":{"title":"숏폼 제목","duration":"초(10~40)","hook":"오프닝 훅(3초)","scenes":[{"sceneNumber":1,"duration":"초","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
-  longform: `"longform":{"title":"롱폼 제목","estimatedDuration":"분:초(5~15분)","intro":{"hook":"훅","narration":"인트로 나레이션","visualDescription":"영상 설명"},"sections":[{"sectionNumber":1,"title":"섹션 제목","duration":"초","narration":"나레이션 전문(충분히 길게)","dataPoints":["데이터"],"visualElements":[{"type":"chart","description":"설명","data":"데이터"}],"transition":"연결 멘트"}],"outro":{"summary":"요약","narration":"마무리 나레이션","cta":"콜투액션"},"fullNarrationText":"전체 나레이션 텍스트"}`,
+  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
 }
 
 const CHANNEL_LABELS = {
   blog: '블로그', newsletter: '뉴스레터', instagram: '인스타그램 카드뉴스(6~10장)',
-  shorts: '숏폼 대본(10~40초)', longform: '롱폼 대본(5~15분, 데이터 빠짐없이)',
+  shorts: '숏폼 대본(20~30초, 3~4씬)',
 }
 
 async function retryNonLongform(channels, summary, rawText, emphasis) {
@@ -160,17 +122,9 @@ ${rawText.slice(0, 8000)}
 export async function retryFailedChannels(channels, summary, rawText, emphasis) {
   if (channels.length === 0) throw new Error('재시도할 채널이 없습니다.')
 
-  // [롱폼 비활성화] 롱폼 채널은 건너뜀
-  // const hasLongform = channels.includes('longform')
-  const nonLongform = channels.filter(ch => ch !== 'longform')
-
-  // 롱폼과 나머지를 분리하여 병렬 실행
-  const tasks = []
-  if (nonLongform.length > 0) tasks.push(retryNonLongform(nonLongform, summary, rawText, emphasis))
-  // [롱폼 비활성화]
-  // if (hasLongform) tasks.push(generateLongform(summary, rawText, emphasis).then(r => ({ longform: r })))
-
-  const results = await Promise.allSettled(tasks)
+  const results = await Promise.allSettled([
+    retryNonLongform(channels, summary, rawText, emphasis),
+  ])
 
   const output = {}
   for (const r of results) {
@@ -178,11 +132,6 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis) 
       Object.assign(output, r.value)
     }
   }
-
-  // [롱폼 비활성화]
-  // if (hasLongform && output.longform && output.longform.title) {
-  //   // 이미 올바른 형태
-  // }
 
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
   return output
@@ -245,8 +194,11 @@ ${rawText.slice(0, 3000)}
 }
 
 export async function generateShortsScript(summary, rawText, emphasis) {
-  const prompt = `당신은 유튜브 숏폼 전문 크리에이터입니다. 10~40초 분량의 숏폼 대본을 작성해주세요.
-모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 핵심 데이터 2~3개에 집중하세요.
+  const prompt = `당신은 유튜브 숏폼 전문 크리에이터입니다. 약 20초 분량의 숏폼 대본을 반드시 3씬 이상으로 작성해주세요.
+각 씬은 6~7초이며 나레이션은 씬당 1~2문장으로 짧게. scenes 배열에 3개 이상 씬 객체를 넣으세요.
+첫 씬: 인사/소개, 마지막 씬: 마무리/CTA, 중간 씬: 핵심 내용 전달.
+첫/마지막 visualDescription은 고양이 캐릭터 애니메이션, 중간 씬은 내용과 어울리는 배경 이미지 묘사.
+모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
 ${buildEmphasisInstruction(emphasis)}
 
 ## 요약 데이터
@@ -262,20 +214,3 @@ ${rawText.slice(0, 3000)}
   return parseJSON(result, { title: '숏폼 대본 생성 실패', scenes: [], duration: '0' })
 }
 
-export async function generateLongformScript(summary, rawText, emphasis) {
-  const prompt = `당신은 유튜브 롱폼 영상 전문 크리에이터입니다. 5~15분 분량의 롱폼 대본을 작성해주세요.
-모든 중요 데이터, 숫자, 통계를 빠짐없이 포함하세요.
-${buildEmphasisInstruction(emphasis)}
-
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
-
-## 원본 텍스트
-${rawText.slice(0, 8000)}
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{"title":"영상 제목","estimatedDuration":"분:초","intro":{"hook":"훅","narration":"인트로 나레이션","visualDescription":"영상 설명"},"sections":[{"sectionNumber":1,"title":"섹션 제목","duration":"초","narration":"나레이션 전문","dataPoints":["데이터"],"visualElements":[{"type":"chart","description":"설명","data":"데이터"}],"transition":"연결 멘트"}],"outro":{"summary":"요약","narration":"마무리 나레이션","cta":"콜투액션"},"fullNarrationText":"전체 나레이션 텍스트"}`
-
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 65536, jsonMode: true })
-  return parseJSON(result, { title: '롱폼 대본 생성 실패', sections: [], estimatedDuration: '0:00' })
-}

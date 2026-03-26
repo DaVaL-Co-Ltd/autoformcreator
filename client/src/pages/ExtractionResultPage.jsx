@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Mail, Film, Video, ArrowLeft, ArrowRight, Copy, Download,
-  CheckCircle, Hash, Clock, Layers, ChevronLeft, ChevronRight
+  FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
+  CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink
 } from 'lucide-react'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
@@ -16,14 +16,13 @@ const menuItems = [
   { id: 'instagram', label: '인스타그램', icon: Image, color: 'text-pink-400', bg: 'bg-pink-400/10' },
   { id: 'newsletter', label: '뉴스레터', icon: Mail, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
   { id: 'shorts', label: '숏폼', icon: Film, color: 'text-amber-400', bg: 'bg-amber-400/10' },
-  { id: 'longform', label: '롱폼', icon: Video, color: 'text-sky-400', bg: 'bg-sky-400/10' },
 ]
 
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const state = location.state || {}
-  const dataMap = { blog: state.blogContent, instagram: state.instagramContent, newsletter: state.newsletterContent, shorts: state.shortsScript, longform: state.longformScript }
+  const dataMap = { blog: state.blogContent, instagram: state.instagramContent, newsletter: state.newsletterContent, shorts: state.shortsScript }
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
   const [copied, setCopied] = useState(false)
@@ -95,9 +94,10 @@ export default function ExtractionResultPage() {
   const {
     parsedText, verification, summary,
     blogContent, newsletterContent, instagramContent,
-    shortsScript, longformScript, blogImages: initialBlogImages, instagramImages,
-    shortsVideo: initialShortsVideo, shortsNarration: initialShortsNarration, longformNarration,
-    longformVideo, fileName, fileBase64,
+    shortsScript, blogImages: initialBlogImages, instagramImages,
+    shortsVideo: initialShortsVideo,
+    shortsNarration: initialShortsNarration,
+    fileName, fileBase64,
   } = location.state || {}
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
@@ -122,7 +122,8 @@ export default function ExtractionResultPage() {
       loadShortsMedia(match.id).then(media => {
         if (!media) return
         if (media.combinedVideoUrl) {
-          setShortsVideo({ combinedVideoUrl: media.combinedVideoUrl, sceneTimings: media.sceneTimings || [], scenes: media.sceneTimings || [] })
+          const videoData = { combinedVideoUrl: media.combinedVideoUrl, sceneTimings: media.sceneTimings || [] }
+          setShortsVideo(videoData)
         }
         if (media.narration?.length) {
           setShortsNarration(media.narration)
@@ -197,13 +198,13 @@ export default function ExtractionResultPage() {
   useEffect(() => {
     const stateData = location.state
     if (!stateData || !stateData.savedFromExtraction) return
-    const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript || stateData.longformScript
+    const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript
     if (!hasContent) return
 
     saveExtraction(stateData)
   }, [])
 
-  if (!blogContent && !newsletterContent && !instagramContent && !shortsScript && !longformScript) {
+  if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -592,93 +593,101 @@ export default function ExtractionResultPage() {
       const s = sceneTimings[i]
       if (t >= s.startTime && t < s.startTime + s.duration) return i
     }
-    return -1 // 간격 구간
+    return -1
   }
 
   // timeupdate 기반 나레이션 싱크
   const handleShortsTimeUpdate = () => {
     const video = shortsVideoRef.current
     if (!video || !sceneTimings.length) return
-
     const t = video.currentTime
     const sceneIdx = getSceneAtTime(t)
-
-    // 현재 씬 UI 업데이트
     if (sceneIdx !== currentScene) setCurrentScene(sceneIdx)
-
-    // 나레이션 싱크: 씬이 바뀌었을 때만 재생/정지
     if (sceneIdx !== playingSceneRef.current) {
-      // 이전 씬 나레이션 정지
       shortsAudioRefs.current.forEach(a => { if (a) { a.pause(); a.currentTime = 0 } })
-
-      // 새 씬 나레이션 재생
       if (sceneIdx >= 0 && !video.paused) {
         const audio = shortsAudioRefs.current[sceneIdx]
-        if (audio) {
-          audio.currentTime = 0
-          audio.play().catch(() => {})
-        }
+        if (audio) { audio.currentTime = 0; audio.play().catch(() => {}) }
       }
       playingSceneRef.current = sceneIdx
     }
   }
 
-  const handleShortsPlay = () => {
-    playingSceneRef.current = -1 // 리셋하여 timeupdate에서 다시 싱크
-  }
+  const handleShortsPlay = () => { playingSceneRef.current = -1 }
 
   const handleShortsPause = () => {
     shortsAudioRefs.current.forEach(a => { if (a) { a.pause(); a.currentTime = 0 } })
     playingSceneRef.current = -1
   }
 
+  const renderVideoPanel = (videoData, versionLabel) => {
+    const videoUrl = videoData?.combinedVideoUrl
+    const timings = videoData?.sceneTimings || []
+    return (
+      <div className="w-64 shrink-0">
+        <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
+          {videoUrl ? (
+            <video
+              ref={shortsVideoRef}
+              controls
+              className="w-full h-full object-cover absolute inset-0"
+              src={videoUrl}
+              onPlay={handleShortsPlay}
+              onPause={handleShortsPause}
+              onEnded={handleShortsPause}
+              onTimeUpdate={handleShortsTimeUpdate}
+            />
+          ) : (
+            <>
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                <Film size={32} className="text-white/20 mb-4" />
+                <h3 className="text-white font-bold text-sm mb-2">{shortsScript?.title}</h3>
+                <p className="text-white/60 text-xs">{versionLabel}</p>
+                <p className="text-white/40 text-xs mt-1">영상 미생성</p>
+              </div>
+              {shortsScript?.hook && (
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 p-4">
+                  <p className="text-white text-xs font-medium">{shortsScript.hook}</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {videoUrl && (
+          <div className="mt-2 flex items-center gap-3">
+            <a href={videoUrl} download={`숏폼_${versionLabel}.webm`}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+              <Download size={10} /> 다운로드
+            </a>
+            <button
+              onClick={() => navigate('/shorts/view', { state: {
+                combinedVideoUrl: videoUrl,
+                sceneTimings: timings,
+                scenes: shortsScript?.scenes || [],
+                narrations: shortsNarration || [],
+                title: `${shortsScript?.title || '숏폼 영상'} (${versionLabel})`,
+              }})}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+            >
+              <ExternalLink size={10} /> 웹에서 보기
+            </button>
+          </div>
+        )}
+        {/* 나레이션 오디오 (숨김, 싱크용) */}
+        {shortsNarration?.map((n, i) => (
+          n.audioUrl && <audio key={i} ref={el => shortsAudioRefs.current[i] = el} src={n.audioUrl} preload="auto" />
+        ))}
+      </div>
+    )
+  }
+
   const renderShorts = () => (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="flex gap-6">
         {/* 9:16 통합 영상 프레임 */}
-        <div className="w-64 shrink-0">
-          <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
-            {combinedVideoUrl ? (
-              <video
-                ref={shortsVideoRef}
-                controls
-                className="w-full h-full object-cover absolute inset-0"
-                src={combinedVideoUrl}
-                onPlay={handleShortsPlay}
-                onPause={handleShortsPause}
-                onEnded={handleShortsPause}
-                onTimeUpdate={handleShortsTimeUpdate}
-              />
-            ) : (
-              <>
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
-                  <Film size={32} className="text-white/20 mb-4" />
-                  <h3 className="text-white font-bold text-sm mb-2">{shortsScript?.title}</h3>
-                  <p className="text-white/60 text-xs">{shortsScript?.duration}초</p>
-                </div>
-                {shortsScript?.hook && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 p-4">
-                    <p className="text-white text-xs font-medium">{shortsScript.hook}</p>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          {combinedVideoUrl && (
-            <div className="mt-2">
-              <a href={combinedVideoUrl} download="숏폼_영상.webm"
-                className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-                <Download size={10} /> 영상 다운로드
-              </a>
-            </div>
-          )}
-          {/* 나레이션 오디오 (숨김, 싱크용) */}
-          {shortsNarration?.map((n, i) => (
-            n.audioUrl && <audio key={i} ref={el => shortsAudioRefs.current[i] = el} src={n.audioUrl} preload="auto" />
-          ))}
-        </div>
+        {renderVideoPanel(shortsVideo, '숏폼 영상')}
 
-        {/* 스크립트 */}
+        {/* 스크립트 (공유) */}
         <div className="flex-1 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-text">{shortsScript?.title}</h3>
@@ -721,142 +730,7 @@ export default function ExtractionResultPage() {
     </div>
   )
 
-  // ── 롱폼 (영상 스크립트 타임라인) ──
-  const renderLongform = () => !longformScript ? (
-    <div className="flex items-center justify-center h-40 text-text-muted text-sm">롱폼 대본이 생성되지 않았습니다.</div>
-  ) : (
-    <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-xl font-bold text-text">{longformScript?.title}</h3>
-          <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
-            <span className="flex items-center gap-1"><Clock size={12} /> {longformScript?.estimatedDuration}</span>
-            <span className="flex items-center gap-1"><Layers size={12} /> {longformScript?.sections?.length}개 섹션</span>
-          </div>
-        </div>
-        <button onClick={() => copy(longformScript?.fullNarrationText || longformScript?.sections?.map(s => s.narration).join('\n\n'))}
-          className="text-xs text-text-muted hover:text-primary flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg">
-          <Copy size={11} /> 전체 나레이션 복사
-        </button>
-      </div>
-
-      {/* 인트로 */}
-      {longformScript?.intro && (
-        <div className="bg-gradient-to-r from-sky-400/10 to-sky-400/5 rounded-xl p-5 border border-sky-400/20">
-          <p className="text-xs font-bold text-sky-400 mb-2 uppercase tracking-wide">INTRO</p>
-          {longformScript.intro.hook && <p className="text-base font-semibold text-text mb-2">{longformScript.intro.hook}</p>}
-          <p className="text-sm text-text-muted leading-relaxed">{longformScript.intro.narration}</p>
-        </div>
-      )}
-
-      {/* 타임라인 섹션 */}
-      <div className="relative">
-        <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-border" />
-        <div className="space-y-6">
-          {longformScript?.sections?.map((section, i) => (
-            <div key={i} className="relative pl-12">
-              <div className="absolute left-0 w-10 h-10 rounded-full bg-sky-400/20 text-sky-400 flex items-center justify-center text-sm font-bold border-2 border-surface z-10">
-                {section.sectionNumber}
-              </div>
-              <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                <div className="px-5 py-3 bg-surface-light border-b border-border flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-text">{section.title}</h4>
-                  <span className="text-xs text-text-muted">{section.duration}초</span>
-                </div>
-                <div className="p-5 space-y-3">
-                  <p className="text-sm text-text leading-relaxed whitespace-pre-wrap">{section.narration}</p>
-
-                  {section.dataPoints?.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {section.dataPoints.map((dp, j) => (
-                        <span key={j} className="text-xs bg-primary/5 text-primary-light px-2.5 py-1 rounded-full">{dp}</span>
-                      ))}
-                    </div>
-                  )}
-
-                  {section.visualElements?.length > 0 && (
-                    <div className="grid grid-cols-2 gap-2 pt-2">
-                      {section.visualElements.map((ve, j) => (
-                        <div key={j} className="bg-surface-light rounded-lg p-2.5 border border-border">
-                          <span className="text-xs font-medium text-sky-400">[{ve.type}]</span>
-                          <p className="text-xs text-text-muted mt-0.5">{ve.description}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 아웃트로 */}
-      {longformScript?.outro && (
-        <div className="bg-gradient-to-r from-sky-400/10 to-sky-400/5 rounded-xl p-5 border border-sky-400/20">
-          <p className="text-xs font-bold text-sky-400 mb-2 uppercase tracking-wide">OUTRO</p>
-          <p className="text-sm text-text mb-2">{longformScript.outro.narration}</p>
-          <p className="text-sm font-semibold text-primary-light">{longformScript.outro.cta}</p>
-        </div>
-      )}
-
-      {/* 롱폼 영상/프리뷰 */}
-      {longformVideo && (
-        <div className="rounded-xl overflow-hidden border border-border">
-          {longformVideo.endsWith('.mp4') ? (
-            <video
-              controls
-              className="w-full"
-              src={longformVideo}
-              crossOrigin="anonymous"
-              onError={(e) => {
-                const iframe = document.createElement('iframe')
-                iframe.src = longformVideo
-                iframe.className = 'w-full aspect-video'
-                iframe.allow = 'autoplay'
-                e.target.replaceWith(iframe)
-              }}
-            />
-          ) : longformVideo.match(/\.(jpg|png|jpeg)$/i) ? (
-            <div className="relative">
-              <img src={longformVideo} alt="롱폼 프리뷰" className="w-full" />
-              <div className="absolute top-3 left-3 px-2.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg">PREVIEW</div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-48 bg-surface-light text-text-muted">
-              <p className="text-sm mb-2">롱폼 영상 결과</p>
-              <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="text-xs text-primary underline">링크에서 확인</a>
-            </div>
-          )}
-          <div className="flex items-center justify-between p-3 bg-surface-light border-t border-border">
-            <p className="text-xs font-medium text-success">
-              {longformVideo.endsWith('.mp4') ? '롱폼 영상 생성 완료' : longformVideo.match(/\.(jpg|png|jpeg)$/i) ? '롱폼 프리뷰 (Preview 모드)' : '롱폼 영상 결과'}
-            </p>
-            <div className="flex gap-2">
-              <a href={longformVideo} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-surface text-text-muted text-xs font-medium rounded-lg hover:bg-border transition-all border border-border">
-                새 탭에서 보기
-              </a>
-              {longformVideo.endsWith('.mp4') && (
-                <a href={longformVideo} download="longform-video.mp4" className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary-dark transition-all">
-                  <Download size={11} /> 다운로드
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 나레이션 오디오 */}
-      {longformNarration?.audioUrl && (
-        <div className="p-4 bg-surface border border-border rounded-xl">
-          <p className="text-xs font-medium text-text mb-2">전체 나레이션 오디오</p>
-          <audio controls className="w-full h-10" src={longformNarration.audioUrl} />
-        </div>
-      )}
-    </div>
-  )
-
-  const renderContent = { blog: renderBlog, instagram: renderInstagram, newsletter: renderNewsletter, shorts: renderShorts, longform: renderLongform }
+  const renderContent = { blog: renderBlog, instagram: renderInstagram, newsletter: renderNewsletter, shorts: renderShorts }
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -888,7 +762,7 @@ export default function ExtractionResultPage() {
       {/* 채널 탭 */}
       <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
         {menuItems.map(({ id, label, icon: Icon, color, bg }) => {
-          const hasData = { blog: blogContent, instagram: instagramContent, newsletter: newsletterContent, shorts: shortsScript, longform: longformScript }[id]
+          const hasData = { blog: blogContent, instagram: instagramContent, newsletter: newsletterContent, shorts: shortsScript }[id]
           return (
             <button
               key={id}

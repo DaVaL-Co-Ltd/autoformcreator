@@ -1,15 +1,16 @@
+import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 
 const app = express()
 app.use(cors())
 
-// JSON body for most routes
+// ElevenLabs는 별도 body 처리 (아래 라우트에서 직접 수집)
+
+// JSON body for most routes (ElevenLabs와 LlamaParse upload 제외)
 app.use((req, res, next) => {
-  if (req.path === '/api/llamaparse/upload') {
-    // Skip JSON parsing for file upload - handle raw
-    return next()
-  }
+  if (req.path === '/api/llamaparse/upload') return next()
+  if (req.path.startsWith('/api/elevenlabs')) return next()
   express.json({ limit: '50mb' })(req, res, next)
 })
 
@@ -65,49 +66,59 @@ app.get('/api/llamaparse/job/:jobId/result/markdown', async (req, res) => {
   }
 })
 
-// ElevenLabs Proxy - TTS
-app.post('/api/elevenlabs/tts/:voiceId', async (req, res) => {
-  try {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': req.headers['x-api-key'],
-      },
-      body: JSON.stringify(req.body),
-    })
-    if (!response.ok) {
-      const err = await response.text()
-      return res.status(response.status).send(err)
+// ElevenLabs Proxy - TTS (body를 직접 수집하여 UTF-8 한글 보존)
+app.post('/api/elevenlabs/tts/:voiceId', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', async () => {
+    try {
+      const rawBody = Buffer.concat(chunks)
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': req.headers['x-api-key'],
+        },
+        body: rawBody,
+      })
+      if (!response.ok) {
+        const err = await response.text()
+        return res.status(response.status).send(err)
+      }
+      res.set('Content-Type', 'audio/mpeg')
+      const buffer = await response.arrayBuffer()
+      res.send(Buffer.from(buffer))
+    } catch (err) {
+      res.status(500).json({ error: err.message })
     }
-    res.set('Content-Type', 'audio/mpeg')
-    const buffer = await response.arrayBuffer()
-    res.send(Buffer.from(buffer))
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+  })
 })
 
 // ElevenLabs TTS with timestamps (문장별 타이밍 포함)
-app.post('/api/elevenlabs/tts-timestamps/:voiceId', async (req, res) => {
-  try {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}/with-timestamps`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': req.headers['x-api-key'],
-      },
-      body: JSON.stringify(req.body),
-    })
+app.post('/api/elevenlabs/tts-timestamps/:voiceId', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', async () => {
+    try {
+      const rawBody = Buffer.concat(chunks)
+      const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}/with-timestamps`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'xi-api-key': req.headers['x-api-key'],
+        },
+        body: rawBody,
+      })
     if (!response.ok) {
       const err = await response.text()
       return res.status(response.status).send(err)
     }
-    const data = await response.json()
-    res.json(data)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
+      const data = await response.json()
+      res.json(data)
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
 })
 
 // fal.ai Proxy - Submit (모델 경로를 x-fal-model 헤더로 전달)
@@ -218,8 +229,8 @@ app.get('/api/creatomate/renders/:id', async (req, res) => {
 })
 
 // Notion API
-const NOTION_API_KEY = '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'
-const NOTION_DB_ID = '32d92fe7a665800ea081e2ed53681b84'
+const NOTION_API_KEY = process.env.NOTION_API_KEY || ''
+const NOTION_DB_ID = process.env.NOTION_DB_ID || ''
 
 function buildNotionBlocks(fileName, channels, summary, data, blogImages) {
   const blocks = []

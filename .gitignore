@@ -2,6 +2,19 @@ node_modules/
 dist/
 .DS_Store
 .env
+.env.local
 *.log
 api/uploads/
 .omc/
+
+# 테스트 미디어 파일
+client/public/test-*.mp4
+client/public/test-*.mp3
+client/public/test-*.html
+client/public/cat-teacher-*.png
+client/public/cat-teacher-*.mp3
+client/public/cat-teacher-test.html
+client/public/nar-scene*.mp3
+client/public/scene*-bg.png
+client/public/shorts-combined.html
+client/public/test*.mp4

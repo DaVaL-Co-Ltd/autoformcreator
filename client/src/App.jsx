@@ -8,6 +8,8 @@ import ExtractionPage from './pages/ExtractionPage'
 import ExtractionResultPage from './pages/ExtractionResultPage'
 import ContentPage from './pages/ContentPage'
 import SettingsPage from './pages/SettingsPage'
+import AnimationTestPage from './pages/AnimationTestPage'
+import ShortsViewerPage from './pages/ShortsViewerPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -54,6 +56,8 @@ function AppRoutes() {
                     <Route path="/extraction/result" element={<ExtractionResultPage />} />
                     <Route path="/content" element={<ContentPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
+                    <Route path="/animation-test" element={<AnimationTestPage />} />
+                    <Route path="/shorts/view" element={<ShortsViewerPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
                 </main>

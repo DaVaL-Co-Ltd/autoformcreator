@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Image, Mail, Film, Video, Trash2, Sparkles, Filter, FolderOpen, AlertTriangle, X } from 'lucide-react'
+import { FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X } from 'lucide-react'
 import { getExtractions, deleteExtractionChannel } from '../services/storage'
 
 const channelConfig = {
@@ -9,7 +9,6 @@ const channelConfig = {
   instagram: { label: '인스타그램', icon: Image, color: 'text-pink-400' },
   newsletter: { label: '뉴스레터', icon: Mail, color: 'text-success' },
   shorts: { label: '숏폼', icon: Film, color: 'text-warning' },
-  longform: { label: '롱폼', icon: Video, color: 'text-info' },
 }
 
 export default function ContentPage() {
@@ -36,7 +35,7 @@ export default function ContentPage() {
       date: new Date(ext.createdAt).toLocaleDateString('ko-KR'),
       time: new Date(ext.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       cards: ch.channel === 'instagram' ? ext.data?.instagramContent?.cards?.length : null,
-      duration: ch.channel === 'shorts' ? ext.data?.shortsScript?.duration : ch.channel === 'longform' ? ext.data?.longformScript?.estimatedDuration : null,
+      duration: ch.channel === 'shorts' ? ext.data?.shortsScript?.duration : null,
       data: ext.data,
     }))
   )

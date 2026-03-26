@@ -79,14 +79,13 @@ export async function loadShortsMedia(extractionId) {
 }
 
 export function saveExtraction(data) {
-  const { fileBase64, blogImages, instagramImages, shortsVideo, shortsNarration, longformNarration, parsedText, ...lightData } = data
+  const { fileBase64, blogImages, instagramImages, shortsVideo, shortsNarration, parsedText, ...lightData } = data
 
   const channels = []
   if (data.blogContent) channels.push({ channel: 'blog', title: data.blogContent.title })
   if (data.newsletterContent) channels.push({ channel: 'newsletter', title: data.newsletterContent.subject })
   if (data.instagramContent) channels.push({ channel: 'instagram', title: `카드뉴스 ${data.instagramContent.cards?.length || 0}장` })
   if (data.shortsScript) channels.push({ channel: 'shorts', title: data.shortsScript.title })
-  if (data.longformScript) channels.push({ channel: 'longform', title: data.longformScript.title })
 
   const item = {
     id: Date.now(),
@@ -178,7 +177,6 @@ export function deleteExtractionChannel(id, channel) {
       newsletter: 'newsletterContent',
       instagram: 'instagramContent',
       shorts: 'shortsScript',
-      longform: 'longformScript',
     }
     const dataKey = channelDataKeys[channel]
     const updatedData = { ...item.data }

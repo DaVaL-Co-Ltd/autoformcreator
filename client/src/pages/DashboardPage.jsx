@@ -8,7 +8,6 @@ const channelLabels = {
   instagram: '인스타그램',
   newsletter: '뉴스레터',
   shorts: '숏폼',
-  longform: '롱폼',
 }
 
 const channelColors = {
@@ -16,7 +15,6 @@ const channelColors = {
   instagram: 'bg-pink-500',
   newsletter: 'bg-success',
   shorts: 'bg-warning',
-  longform: 'bg-info',
 }
 
 export default function DashboardPage() {
@@ -126,8 +124,8 @@ export default function DashboardPage() {
       <div className="bg-surface rounded-xl border border-border p-5">
         <h3 className="font-semibold text-text mb-4">채널별 콘텐츠 현황</h3>
         {allContents.length > 0 ? (
-          <div className="grid grid-cols-5 gap-4">
-            {['blog', 'instagram', 'newsletter', 'shorts', 'longform'].map(ch => {
+          <div className="grid grid-cols-4 gap-4">
+            {['blog', 'instagram', 'newsletter', 'shorts'].map(ch => {
               const count = channelCounts[ch] || 0
               return (
                 <div key={ch} className="text-center">

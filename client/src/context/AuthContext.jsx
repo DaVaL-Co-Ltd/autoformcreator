@@ -2,8 +2,12 @@ import { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext(null)
 
-// 접속 비밀번호
-const ACCESS_PASSWORD = '1234'
+// 기본 비밀번호
+const DEFAULT_PASSWORD = '1234'
+
+function getPassword() {
+  return localStorage.getItem('mybest_password') || DEFAULT_PASSWORD
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -18,7 +22,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = (password) => {
-    if (password !== ACCESS_PASSWORD) return { success: false, message: '비밀번호가 올바르지 않습니다.' }
+    if (password !== getPassword()) return { success: false, message: '비밀번호가 올바르지 않습니다.' }
 
     const userData = { name: '사용자' }
     setUser(userData)
@@ -31,8 +35,14 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('mybest_user')
   }
 
+  const changePassword = (currentPw, newPw) => {
+    if (currentPw !== getPassword()) return { success: false, message: '현재 비밀번호가 올바르지 않습니다.' }
+    localStorage.setItem('mybest_password', newPw)
+    return { success: true }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, changePassword, loading }}>
       {children}
     </AuthContext.Provider>
   )
