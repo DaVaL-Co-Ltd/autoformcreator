@@ -120,7 +120,7 @@ export default function ContentPage() {
       {filtered.length > 0 ? (
         <div className="space-y-2">
           {filtered.map((item, idx) => {
-            const channel = channelConfig[item.channel]
+            const channel = channelConfig[item.channel] || channelConfig.all
             const ChannelIcon = channel.icon
 
             return (

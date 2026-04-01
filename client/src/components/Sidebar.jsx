@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Sparkles, LogOut, Film, Clapperboard, Type, X } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, Sparkles, LogOut, Film, Clapperboard, Type, Mic, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/shorts/test', icon: Film, label: '숏폼 테스트' },
   { to: '/shorts/lite', icon: Clapperboard, label: '숏폼 Lite' },
   { to: '/subtitle', icon: Type, label: '자막 추가' },
+  { to: '/narration', icon: Mic, label: '나레이션 추가' },
   { to: '/settings', icon: Settings, label: '설정' },
   { type: 'logout', icon: LogOut, label: '로그아웃' },
 ]

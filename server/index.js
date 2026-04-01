@@ -17,6 +17,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path.startsWith('/api/elevenlabs')) return next()
   if (req.path === '/api/output/upload') return next()
+  if (req.path === '/api/output/save') return next()
   express.json({ limit: '150mb' })(req, res, next)
 })
 
@@ -110,7 +111,7 @@ app.post('/api/elevenlabs/tts-timestamps/:voiceId', (req, res) => {
       const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${req.params.voiceId}/with-timestamps`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json; charset=utf-8',
           'xi-api-key': req.headers['x-api-key'],
         },
         body: rawBody,
@@ -593,12 +594,46 @@ app.use('/output', (req, res, next) => {
 
 // ===== File upload → public URL =====
 app.post('/api/output/upload', (req, res) => {
+  const MAX_UPLOAD = 100 * 1024 * 1024 // 100MB
   const chunks = []
-  req.on('data', chunk => chunks.push(chunk))
+  let totalSize = 0
+  let responded = false
+
+  const fail = (status, msg) => {
+    if (responded) return
+    responded = true
+    res.status(status).json({ error: msg })
+  }
+
+  // 60초 타임아웃 (Imagen 이미지 용량 대비)
+  const timeout = setTimeout(() => fail(408, 'Upload timeout (60s)'), 60000)
+
+  req.on('data', chunk => {
+    totalSize += chunk.length
+    if (totalSize > MAX_UPLOAD) {
+      fail(413, `Body too large (>${MAX_UPLOAD} bytes)`)
+      req.destroy()
+      return
+    }
+    chunks.push(chunk)
+  })
+
+  req.on('error', (err) => {
+    clearTimeout(timeout)
+    fail(500, `Upload stream error: ${err.message}`)
+  })
+
   req.on('end', () => {
+    clearTimeout(timeout)
+    if (responded) return
     try {
       const body = JSON.parse(Buffer.concat(chunks).toString())
       const { filename, data, encoding } = body
+
+      if (!filename || !data) {
+        fail(400, 'Missing filename or data')
+        return
+      }
 
       if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
       const sanitized = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_')
@@ -612,9 +647,10 @@ app.post('/api/output/upload', (req, res) => {
 
       const size = fs.statSync(filePath).size
       const url = `/output/${sanitized}`
+      responded = true
       res.json({ url, path: filePath, size })
     } catch (err) {
-      res.status(500).json({ error: err.message })
+      fail(500, err.message)
     }
   })
 })

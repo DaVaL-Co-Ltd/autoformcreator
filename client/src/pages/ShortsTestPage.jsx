@@ -45,10 +45,11 @@ const mockSummary = {
 }
 const mockScript = {
   title: '서울대 수시, 1,906명 뽑는다고?!',
-  totalDuration: 10,
+  totalDuration: 15,
   scenes: [
-    { sceneNumber: 1, duration: 5, narration: '여러분, 서울대가 수시로만 1,906명을 뽑는다는 사실, 알고 계셨나요?', videoPrompt: 'Korean male presenter surprised face', imagePrompt: 'SNU campus aerial', textOverlay: '1,906명', lipSync: true },
-    { sceneNumber: 2, duration: 5, narration: '특히 학생부종합이 82%! 내신보다 활동이 중요합니다.', videoPrompt: 'Korean male presenter nodding', imagePrompt: 'Students studying', textOverlay: '82% 학종', lipSync: true },
+    { sceneNumber: 1, sceneType: 'cat_intro', duration: 5, narration: '안녕하세요! 오늘은 제가 서울대 수시 핵심 정보를 알려드릴게요!', videoPrompt: 'A cute kawaii cat teacher wearing round glasses and a school gown, sitting at a teacher desk, looking directly at camera with friendly expression, pastel-colored classroom with chalkboard and bookshelves behind. Warm studio lighting.', imagePrompt: 'Cute kawaii cat teacher with glasses at teacher desk, pastel classroom setting.', textOverlay: '', useVideo: true },
+    { sceneNumber: 2, sceneType: 'data', duration: 5, narration: '서울대가 수시로만 1,906명을 뽑고, 학생부종합이 82%나 됩니다!', videoPrompt: 'Animated green chalkboard with white chalk writing appearing: large number 1906 with an arrow pointing up, pie chart showing 82 percent, classroom setting with wooden frame. Warm lighting.', imagePrompt: 'Chalkboard with statistics 1906 and 82 percent, classroom setting.', textOverlay: '1,906', useVideo: true },
+    { sceneNumber: 3, sceneType: 'cat_outro', duration: 5, narration: '더 자세한 건 프로필 링크를 확인하세요! 다음에 또 만나요!', videoPrompt: 'A cute kawaii cat teacher wearing glasses waving paw at camera, happy expression, pastel classroom background with sparkles, farewell gesture, warm lighting.', imagePrompt: 'Cute kawaii cat teacher waving paw, happy, pastel classroom setting.', textOverlay: '', useVideo: true },
   ],
   bgmStyle: 'upbeat',
 }

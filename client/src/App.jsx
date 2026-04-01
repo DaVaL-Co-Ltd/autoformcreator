@@ -14,6 +14,7 @@ import ShortsViewerPage from './pages/ShortsViewerPage'
 import ShortsTestPage from './pages/ShortsTestPage'
 import ShortsLitePage from './pages/ShortsLitePage'
 import SubtitlePage from './pages/SubtitlePage'
+import NarrationPage from './pages/NarrationPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -56,6 +57,7 @@ function AppLayout() {
             <Route path="/shorts/test" element={<ShortsTestPage />} />
             <Route path="/shorts/lite" element={<ShortsLitePage />} />
             <Route path="/subtitle" element={<SubtitlePage />} />
+            <Route path="/narration" element={<NarrationPage />} />
             <Route path="/shorts/view" element={<ShortsViewerPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

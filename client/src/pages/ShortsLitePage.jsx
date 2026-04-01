@@ -81,6 +81,8 @@ export default function ShortsLitePage() {
   const [finalVideo, setFinalVideo] = useState(null)
   const [mediaItemLoading, setMediaItemLoading] = useState({})
   const abortedRef = useRef(false)
+  const liteCheckpointRef = useRef(null) // assembleCreatomateOnly 체크포인트
+  const liteAbortRef = useRef(null) // assembleCreatomateOnly AbortController
 
   const setStepLoading = (s, v) => setLoading(p => ({ ...p, [s]: v }))
   const addStepErrors = (step, errs) => setStepErrors(p => ({ ...p, [step]: [...(p[step] || []), ...errs] }))
@@ -162,19 +164,45 @@ export default function ShortsLitePage() {
     setMediaItemLoading(p => ({ ...p, '나레이션': false })); setProgressMsg('')
   }
 
-  // Step 5-2: 최종 영상 (Imagen + Creatomate)
+  // Step 5-2: 최종 영상 (Imagen + Creatomate) — 체크포인트 기반 재시도
   const runFinal = async () => {
     if (!shortsScript?.scenes?.length || !narrations?.length) return
-    setMediaItemLoading(p => ({ ...p, '최종 영상': true })); setProgressMsg('이미지 생성 + Creatomate 조립 중... (1~3분)')
+    const cp = liteCheckpointRef.current
+    const resuming = cp && (cp.images?.some(img => img.url) || cp.uploadedImages?.length)
+    const abortCtrl = new AbortController()
+    liteAbortRef.current = abortCtrl
+    setMediaItemLoading(p => ({ ...p, '최종 영상': true }))
+    setProgressMsg(resuming ? '이전 진행분 이어서 제작 중...' : '이미지 생성 + Creatomate 조립 중... (1~3분)')
     if (demoMode) {
       await delay(MOCK_DELAY); setFinalVideo({ url: null, duration: targetDuration })
       setMediaItemLoading(p => ({ ...p, '최종 영상': false })); setProgressMsg(''); refreshLogs(); return
     }
     try {
-      const result = await assembleCreatomateOnly(shortsScript.scenes, narrations, {})
-      setFinalVideo(result); refreshLogs()
-    } catch (err) { addStepErrors('media', [{ service: 'creatomate', channel: '최종 영상', message: err.message }]); refreshLogs() }
+      const result = await assembleCreatomateOnly(shortsScript.scenes, narrations, {
+        title: shortsScript.title,
+        checkpoint: cp,
+        signal: abortCtrl.signal,
+        onCheckpoint: (phase, data) => {
+          liteCheckpointRef.current = { ...liteCheckpointRef.current, [phase]: data }
+          refreshLogs()
+        },
+      })
+      setFinalVideo(result)
+      liteCheckpointRef.current = null // 성공 시 체크포인트 초기화
+      refreshLogs()
+    } catch (err) {
+      if (!abortCtrl.signal.aborted) addStepErrors('media', [{ service: 'creatomate', channel: '최종 영상', message: err.message }])
+      refreshLogs()
+    }
+    liteAbortRef.current = null
     setMediaItemLoading(p => ({ ...p, '최종 영상': false })); setProgressMsg('')
+  }
+
+  const stopFinal = () => {
+    if (liteAbortRef.current) {
+      liteAbortRef.current.abort()
+      pipelineLog('lite', '사용자가 최종 영상 제작을 중단했습니다')
+    }
   }
 
   // 전체 실행
@@ -208,17 +236,32 @@ export default function ShortsLitePage() {
       setNarrations(currentNarrations)
     }
 
-    // 2) 최종 영상
-    setProgressMsg('[2/2] 이미지 + Creatomate 조립 중... (1~3분)')
+    // 2) 최종 영상 (체크포인트 기반)
+    const cp2 = liteCheckpointRef.current
+    const abortCtrl = new AbortController()
+    liteAbortRef.current = abortCtrl
+    setProgressMsg(cp2 ? '[2/2] 이전 진행분 이어서 제작 중...' : '[2/2] 이미지 + Creatomate 조립 중... (1~3분)')
     setMediaItemLoading(p => ({ ...p, '최종 영상': true }))
     if (demoMode) {
       await delay(MOCK_DELAY); setFinalVideo({ url: null, duration: targetDuration })
     } else {
       try {
-        const result = await assembleCreatomateOnly(currentScript.scenes, currentNarrations, {})
+        const result = await assembleCreatomateOnly(currentScript.scenes, currentNarrations, {
+          title: currentScript.title,
+          checkpoint: cp2,
+          signal: abortCtrl.signal,
+          onCheckpoint: (phase, data) => {
+            liteCheckpointRef.current = { ...liteCheckpointRef.current, [phase]: data }
+            refreshLogs()
+          },
+        })
         setFinalVideo(result)
-      } catch (err) { addStepErrors('media', [{ service: 'creatomate', channel: '최종 영상', message: err.message }]) }
+        liteCheckpointRef.current = null
+      } catch (err) {
+        if (!abortCtrl.signal.aborted) addStepErrors('media', [{ service: 'creatomate', channel: '최종 영상', message: err.message }])
+      }
     }
+    liteAbortRef.current = null
     setMediaItemLoading(p => ({ ...p, '최종 영상': false })); refreshLogs()
     setStepLoading('media', false); setProgressMsg('')
   }
@@ -475,14 +518,15 @@ export default function ShortsLitePage() {
                   status: narrations ? `${narrations.filter(n => n.audioUrl).length}/${narrations.length}개` : null,
                   ok: Array.isArray(narrations) && narrations.some(n => n.audioUrl),
                   canRun: !!shortsScript?.scenes?.length,
-                  fn: runNarration,
+                  fn: runNarration, stopFn: null,
                 },
                 {
                   label: '최종 영상', key: 'final', icon: Clapperboard, iconColor: 'text-purple-400',
                   status: finalVideo ? `${finalVideo.duration?.toFixed?.(1) || finalVideo.duration}초` : null,
                   ok: !!finalVideo,
                   canRun: Array.isArray(narrations) && narrations.some(n => n.audioUrl),
-                  fn: runFinal,
+                  fn: runFinal, stopFn: stopFinal,
+                  hasCheckpoint: !!liteCheckpointRef.current?.images?.some(img => img.url),
                 },
               ].map((item, i) => {
                 const Icon = item.icon
@@ -495,7 +539,15 @@ export default function ShortsLitePage() {
                       <p className="text-sm font-medium text-text">{item.label}</p>
                     </div>
                     {isLoading ? (
-                      <div className="flex items-center gap-1"><Loader2 size={12} className="text-purple-400 animate-spin" /><span className="text-xs text-purple-400">생성중...</span></div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1"><Loader2 size={12} className="text-purple-400 animate-spin" /><span className="text-xs text-purple-400">생성중...</span></div>
+                        {item.stopFn && (
+                          <button onClick={item.stopFn}
+                            className="w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-danger/10 hover:bg-danger/20 text-danger text-xs font-medium transition-all border border-danger/20">
+                            <XCircle size={10} /> 중단
+                          </button>
+                        )}
+                      </div>
                     ) : item.ok ? (
                       <div className="flex items-center gap-1"><CheckCircle size={12} className="text-success" /><span className="text-xs text-success">{item.status}</span></div>
                     ) : failed ? (
@@ -505,7 +557,7 @@ export default function ShortsLitePage() {
                     )}
                     {!isLoading && !item.ok && item.canRun && !loading.media && (
                       <button onClick={item.fn} className="mt-2 w-full flex items-center justify-center gap-1 px-2 py-1.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 text-xs font-medium transition-all border border-purple-500/20">
-                        <Sparkles size={10} /> 실행
+                        {item.hasCheckpoint ? <><RefreshCw size={10} /> 이어서 실행</> : <><Sparkles size={10} /> 실행</>}
                       </button>
                     )}
                     {!isLoading && item.ok && !loading.media && (
