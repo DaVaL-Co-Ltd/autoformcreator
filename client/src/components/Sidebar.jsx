@@ -1,22 +1,25 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Sparkles, LogOut } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, Sparkles, LogOut, Film, Clapperboard, Type, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '대시보드' },
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출' },
   { to: '/content', icon: FileText, label: '콘텐츠 관리' },
+  { to: '/shorts/test', icon: Film, label: '숏폼 테스트' },
+  { to: '/shorts/lite', icon: Clapperboard, label: '숏폼 Lite' },
+  { to: '/subtitle', icon: Type, label: '자막 추가' },
   { to: '/settings', icon: Settings, label: '설정' },
   { type: 'logout', icon: LogOut, label: '로그아웃' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ onClose }) {
   const location = useLocation()
   const { user, logout } = useAuth()
 
   return (
-    <aside className="w-64 bg-surface border-r border-border flex flex-col shrink-0">
-      <div className="p-6 border-b border-border">
+    <aside className="w-64 h-full bg-surface border-r border-border flex flex-col shrink-0">
+      <div className="p-6 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
           <img src="/logo.svg" alt="MyBest" className="w-9 h-9 rounded-lg" />
           <div>
@@ -26,6 +29,11 @@ export default function Sidebar() {
             <p className="text-xs text-text-muted">AI Video Automation</p>
           </div>
         </div>
+        {onClose && (
+          <button onClick={onClose} className="lg:hidden p-1.5 rounded-lg text-text-muted hover:bg-surface-light transition-colors">
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 p-3 space-y-1">
@@ -50,6 +58,7 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to}
+              onClick={onClose}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200
                 ${isActive
                   ? 'bg-primary/15 text-primary-light border border-primary/30'

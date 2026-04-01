@@ -125,7 +125,7 @@ async function geminiParsePDF(file) {
 
   const generateData = await generateRes.json()
   const parts = generateData.candidates?.[0]?.content?.parts || []
-  const extractedText = parts.filter(p => p.text).map(p => p.text).pop()
+  const extractedText = parts.filter(p => p.text).map(p => p.text).join('\n')
   if (!extractedText) throw new Error('Gemini에서 텍스트를 추출하지 못했습니다.')
   return extractedText
 }

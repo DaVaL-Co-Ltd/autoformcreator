@@ -34,7 +34,7 @@ async function waitForRateLimit(retryAfterMs = 5000) {
 }
 
 export async function callGeminiWithFallback(prompt, options = {}) {
-  const { temperature = 0.3, maxOutputTokens = 8192, jsonMode = false } = options
+  const { temperature = 0.3, maxOutputTokens = 65536, jsonMode = false } = options
 
   // rate limit 안 걸린 모델 우선, 걸린 모델은 뒤로
   const availableModels = [
@@ -81,9 +81,10 @@ export async function callGeminiWithFallback(prompt, options = {}) {
         }
 
         const data = await res.json()
-        // thinking 모델은 여러 part를 반환할 수 있음 — 마지막 text part를 사용
+        // thinking 모델은 [thought, answer] 순서 — thought를 제외한 text part를 모두 합침
         const parts = data.candidates?.[0]?.content?.parts || []
-        const text = parts.filter(p => p.text).map(p => p.text).pop() || ''
+        const textParts = parts.filter(p => p.text && !p.thought)
+        const text = textParts.map(p => p.text).join('\n') || ''
         if (text) {
           console.log(`[Gemini] ${model} 사용 성공`)
           return text

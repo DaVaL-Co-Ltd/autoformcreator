@@ -2,7 +2,7 @@ const API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY
 const PROXY_URL = '/api/elevenlabs'
 
 // 음성 ID
-const SHORTS_VOICE_ID = 'XJ2fW4ybq7HouelYYGcL'  // 선택된 유료 음성
+const SHORTS_VOICE_ID = '4JJwo477JUAx3HV0T7n7'  // 한국어 보이스
 
 // 기본 TTS (프록시 경유)
 export async function textToSpeech(text, voiceId = SHORTS_VOICE_ID) {

@@ -1,6 +1,11 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const app = express()
 app.use(cors())
@@ -11,7 +16,8 @@ app.use(cors())
 app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path.startsWith('/api/elevenlabs')) return next()
-  express.json({ limit: '50mb' })(req, res, next)
+  if (req.path === '/api/output/upload') return next()
+  express.json({ limit: '150mb' })(req, res, next)
 })
 
 // LlamaParse Proxy - Upload (forward multipart as-is)
@@ -195,21 +201,27 @@ app.get('/api/luma/generations/:id', async (req, res) => {
   }
 })
 
-// Creatomate Proxy - Render
+// Creatomate Proxy - Render (대용량 base64 지원)
 app.post('/api/creatomate/renders', async (req, res) => {
   try {
+    const bodyStr = JSON.stringify(req.body)
+    console.log(`[Creatomate] 렌더 요청: ${(bodyStr.length / 1024 / 1024).toFixed(1)}MB, elements: ${req.body.elements?.length || 0}`)
     const response = await fetch('https://api.creatomate.com/v2/renders', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${req.headers['x-api-key']}`,
       },
-      body: JSON.stringify(req.body),
+      body: bodyStr,
     })
     const data = await response.json()
-    if (!response.ok) return res.status(response.status).json(data)
+    if (!response.ok) {
+      console.error(`[Creatomate] 오류 ${response.status}:`, JSON.stringify(data).slice(0, 500))
+      return res.status(response.status).json(data)
+    }
     res.json(data)
   } catch (err) {
+    console.error(`[Creatomate] 서버 에러:`, err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -391,6 +403,220 @@ app.get('/api/notion/page/:pageId', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+})
+
+// ===== ElevenLabs Lip-Sync Proxy =====
+// Submit lip-sync job (video URL + audio base64 → ElevenLabs Dubbing API)
+app.post('/api/elevenlabs/lip-sync', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', async () => {
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString())
+      const { videoUrl, audioBase64 } = body
+      const apiKey = req.headers['x-api-key']
+
+      // Download video from Veo URL
+      const videoRes = await fetch(videoUrl)
+      if (!videoRes.ok) throw new Error(`Video download failed: ${videoRes.status}`)
+      const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+
+      // Decode audio from base64
+      const audioBuffer = Buffer.from(audioBase64, 'base64')
+
+      // Build multipart form for ElevenLabs Dubbing API
+      const boundary = '----PipelineBoundary' + Date.now()
+      const parts = []
+
+      // Video file part
+      parts.push(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="video.mp4"\r\nContent-Type: video/mp4\r\n\r\n`
+      )
+      parts.push(videoBuffer)
+      parts.push('\r\n')
+
+      // Source lang
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="source_lang"\r\n\r\nko\r\n`)
+      // Target lang
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="target_lang"\r\n\r\nko\r\n`)
+      // Mode
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="mode"\r\n\r\nautomatic\r\n`)
+      // Num speakers
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="num_speakers"\r\n\r\n1\r\n`)
+
+      parts.push(`--${boundary}--\r\n`)
+
+      const multipartBody = Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p))
+
+      const response = await fetch('https://api.elevenlabs.io/v1/dubbing', {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      })
+
+      const data = await response.json()
+      if (!response.ok) return res.status(response.status).json(data)
+      res.json({ id: data.dubbing_id, status: data.status || 'processing', expected_duration: data.expected_duration_sec })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+})
+
+// Poll lip-sync status
+app.get('/api/elevenlabs/lip-sync/:id', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/dubbing/${req.params.id}`, {
+      headers: { 'xi-api-key': req.headers['x-api-key'] },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Download lip-synced video
+app.get('/api/elevenlabs/lip-sync/:id/download', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/dubbing/${req.params.id}/audio/ko`, {
+      headers: { 'xi-api-key': req.headers['x-api-key'] },
+    })
+    if (!response.ok) {
+      const err = await response.text()
+      return res.status(response.status).send(err)
+    }
+    res.set('Content-Type', response.headers.get('content-type') || 'video/mp4')
+    const buffer = await response.arrayBuffer()
+    res.send(Buffer.from(buffer))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== ElevenLabs Video Upscaler Proxy =====
+app.post('/api/elevenlabs/upscale', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', async () => {
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString())
+      const { videoUrl } = body
+      const apiKey = req.headers['x-api-key']
+
+      // Download video
+      const videoRes = await fetch(videoUrl)
+      if (!videoRes.ok) throw new Error(`Video download failed: ${videoRes.status}`)
+      const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+
+      const boundary = '----UpscaleBoundary' + Date.now()
+      const parts = []
+      parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="video.mp4"\r\nContent-Type: video/mp4\r\n\r\n`)
+      parts.push(videoBuffer)
+      parts.push(`\r\n--${boundary}--\r\n`)
+
+      const multipartBody = Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p) : p))
+
+      const response = await fetch('https://api.elevenlabs.io/v1/video/upscale', {
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body: multipartBody,
+      })
+
+      const data = await response.json()
+      if (!response.ok) return res.status(response.status).json(data)
+      res.json({ id: data.id || data.task_id, status: data.status || 'processing' })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+})
+
+app.get('/api/elevenlabs/upscale/:id', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/video/upscale/${req.params.id}`, {
+      headers: { 'xi-api-key': req.headers['x-api-key'] },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== Output File Saving =====
+app.post('/api/output/save', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', () => {
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString())
+      const { filename, data, encoding } = body
+      const outputDir = path.join(__dirname, '..', 'output')
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
+
+      const sanitized = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_')
+      const filePath = path.join(outputDir, sanitized)
+
+      if (encoding === 'base64') {
+        fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+      } else {
+        fs.writeFileSync(filePath, data, 'utf8')
+      }
+
+      res.json({ path: filePath, size: fs.statSync(filePath).size })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
+})
+
+// ===== Static file serving for output/ =====
+const outputDir = path.join(__dirname, '..', 'output')
+if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
+// ngrok 무료 경고 페이지 우회: Content-Type을 강제 설정
+app.use('/output', (req, res, next) => {
+  const ext = path.extname(req.path).toLowerCase()
+  const mimeMap = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.png': 'image/png', '.jpg': 'image/jpeg' }
+  if (mimeMap[ext]) res.setHeader('Content-Type', mimeMap[ext])
+  res.setHeader('ngrok-skip-browser-warning', 'true')
+  next()
+}, express.static(outputDir))
+
+// ===== File upload → public URL =====
+app.post('/api/output/upload', (req, res) => {
+  const chunks = []
+  req.on('data', chunk => chunks.push(chunk))
+  req.on('end', () => {
+    try {
+      const body = JSON.parse(Buffer.concat(chunks).toString())
+      const { filename, data, encoding } = body
+
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
+      const sanitized = filename.replace(/[^a-zA-Z0-9_\-\.]/g, '_')
+      const filePath = path.join(outputDir, sanitized)
+
+      if (encoding === 'base64') {
+        fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+      } else {
+        fs.writeFileSync(filePath, data, 'utf8')
+      }
+
+      const size = fs.statSync(filePath).size
+      const url = `/output/${sanitized}`
+      res.json({ url, path: filePath, size })
+    } catch (err) {
+      res.status(500).json({ error: err.message })
+    }
+  })
 })
 
 // Health check
