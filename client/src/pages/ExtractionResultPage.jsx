@@ -9,7 +9,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { marked } from 'marked'
-import { saveExtraction, getExtractions, loadImages, loadShortsMedia } from '../services/storage'
+import { saveExtraction, getExtractions, loadImages } from '../services/storage'
 
 const menuItems = [
   { id: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10' },
@@ -118,18 +118,6 @@ export default function ExtractionResultPage() {
       })
     }
 
-    if (!shortsVideo?.combinedVideoUrl && shortsScript) {
-      loadShortsMedia(match.id).then(media => {
-        if (!media) return
-        if (media.combinedVideoUrl) {
-          const videoData = { combinedVideoUrl: media.combinedVideoUrl, sceneTimings: media.sceneTimings || [] }
-          setShortsVideo(videoData)
-        }
-        if (media.narration?.length) {
-          setShortsNarration(media.narration)
-        }
-      })
-    }
   }, [])
 
   // 블로그 이미지 HTML → PNG 변환

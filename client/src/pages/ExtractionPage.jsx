@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
-  ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight, Film, Mic,
+  ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight,
   XCircle, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -13,8 +13,6 @@ import {
   generateShortsScript
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
-import { generateNarrationForScenes } from '../services/elevenlabs'
-import { generateShortsVideo } from '../services/shorts-video'
 
 const steps = [
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
@@ -29,8 +27,6 @@ const aiServiceInfo = {
   llamaparse: { name: 'LlamaParse', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
   gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
   flux: { name: 'Flux', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
-  elevenlabs: { name: 'ElevenLabs', color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
-  luma: { name: 'Luma', color: 'text-rose-400', bg: 'bg-rose-400/10 border-rose-400/20' },
 }
 
 // 데모 모드용 목업 데이터
@@ -268,8 +264,6 @@ export default function ExtractionPage() {
   const [shortsScript, setShortsScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
   const [instagramImages, setInstagramImages] = useState(null)
-  const [shortsNarration, setShortsNarration] = useState(null)
-  const [shortsVideo, setShortsVideo] = useState(null)
 
   // step 5까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -278,7 +272,6 @@ export default function ExtractionPage() {
   const [mediaItemLoading, setMediaItemLoading] = useState({})
 
   const [retrying, setRetrying] = useState(null)
-  const [shortsProgress, setShortsProgress] = useState(null)
   const abortedRef = useRef(false)
 
   const stopGeneration = () => {
@@ -356,7 +349,14 @@ export default function ExtractionPage() {
     try {
       const verified = await verifyParsedContent(text)
       setVerification(verified)
-      setParsedText(verified.correctedText || text)
+      // AI 코멘트 제거: "## 발견된 이슈", "## 수정된 텍스트" 등 메타 헤더와 그 직후 빈 줄 제거
+      let cleaned = (verified.correctedText || text)
+        .replace(/^#{1,3}\s*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과|검증\s*결과|이슈\s*수정|오타\s*수정).*\n*/gm, '')
+        .replace(/^\*\*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과).*\n*/gm, '')
+        .replace(/^---+\s*\n*/gm, '')
+        .replace(/^\n{3,}/gm, '\n\n')
+        .trim()
+      setParsedText(cleaned)
     } catch (err) {
       errors.push({ service: 'gemini', message: `데이터 검증 실패 - ${err.message}` })
       setVerification({ isValid: false, issues: ['검증을 건너뛰었습니다.'], confidence: 0 })
@@ -597,16 +597,6 @@ export default function ExtractionPage() {
       await delay(MOCK_DELAY)
       setInstagramImages(mockInstagramImages)
       setMediaItemLoading(p => ({ ...p, '인스타 이미지': false }))
-      // 숏폼 영상 성공 시뮬레이션
-      setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
-      await delay(MOCK_DELAY)
-      setShortsVideo({ combinedVideoUrl: null, sceneTimings: [] })
-      setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
-      // 숏폼 나레이션 실패 시뮬레이션
-      setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': true }))
-      await delay(600)
-      demoErrors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '[데모] ElevenLabs API 인증 실패 - Invalid API key' })
-      setMediaItemLoading(p => ({ ...p, '숏폼 나레이션': false }))
       if (demoErrors.length > 0) {
         addStepErrors('media', demoErrors)
         const retryable = demoErrors.filter(e => !e.noRetry)
@@ -622,15 +612,10 @@ export default function ExtractionPage() {
     const errors = []
     const tasks = []
 
-    const fluxKey = import.meta.env.VITE_FAL_API_KEY
-    const lumaKey = import.meta.env.VITE_FAL_API_KEY
-
     // 이미 성공한 항목은 건너뜀
     const alreadyDone = {
       blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
       instaImg: instagramImages?.length > 0,
-      shortsVideo: !!shortsVideo?.combinedVideoUrl,
-      shortsNar: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
     }
 
     // 블로그 이미지 (Gemini 이미지 생성)
@@ -647,64 +632,17 @@ export default function ExtractionPage() {
       )
     }
 
-    // 숏폼: 나레이션 먼저 → 오디오 길이 기반으로 영상 생성
-    const elevenlabsKey = import.meta.env.VITE_ELEVENLABS_API_KEY
-    let cachedNarrations = shortsNarration // 이미 있으면 재사용
-
-    if (shortsScript?.scenes?.length) {
-      // 숏폼 나레이션 먼저 생성 (V1/V2보다 앞에 위치)
-      if (elevenlabsKey && !alreadyDone.shortsNar) {
-        tasks.push(
-          { key: 'shortsNar', service: 'elevenlabs', channel: '숏폼 나레이션', fn: async () => {
-            try {
-              const result = await generateNarrationForScenes(shortsScript.scenes)
-              cachedNarrations = result
-              return result
-            } catch (err) {
-              console.warn('[숏폼 나레이션] 실패, 영상만 생성:', err.message)
-              cachedNarrations = null
-              return null
-            }
-          }, setter: setShortsNarration },
-        )
-      }
-
-      // 숏폼 영상 생성 (첫/마지막 Veo, 중간 Gemini 이미지 하이브리드)
-      if (!alreadyDone.shortsVideo) {
-        tasks.push(
-          { key: 'shortsVideo', service: 'gemini', channel: '숏폼 영상', fn: async () => {
-            return await generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, cachedNarrations)
-          }, setter: setShortsVideo },
-        )
-      }
-
-      if (!elevenlabsKey && !alreadyDone.shortsNar) {
-        errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: 'ElevenLabs API 키가 설정되지 않았습니다.', noRetry: true })
-      }
-    }
-
     // 순차 실행으로 항목별 로딩 표시
     abortedRef.current = false
-    let narrationFailed = false
     for (const task of tasks) {
       if (abortedRef.current) break
-      // 나레이션이 전부 실패했어도 V1/V2는 계속 진행 (narration optional)
       setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
       try {
         const result = await task.fn()
         task.setter(result)
-        // 나레이션 완료 후 유효성 확인
-        if (task.key === 'shortsNar') {
-          const hasAnyAudio = Array.isArray(result) ? result.some(n => n?.audioUrl) : !!(result?.audioUrl)
-          if (!hasAnyAudio) {
-            narrationFailed = true
-            errors.push({ service: 'elevenlabs', channel: '숏폼 나레이션', message: '나레이션 오디오가 생성되지 않았습니다. 영상은 나레이션 없이 생성됩니다.' })
-          }
-        }
       } catch (err) {
         if (abortedRef.current) break
         errors.push({ service: task.service, channel: task.channel, message: err.reason?.message || err.message || '생성 실패' })
-        if (task.key === 'shortsNar') narrationFailed = true
       }
       setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
     }
@@ -738,20 +676,6 @@ export default function ExtractionPage() {
           : Promise.resolve([]),
         setter: setInstagramImages,
         demoData: mockInstagramImages,
-      },
-      shortsVideo: {
-        channel: '숏폼 영상',
-        service: 'gemini',
-        fn: async () => await generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, shortsNarration),
-        setter: setShortsVideo,
-        demoData: { combinedVideoUrl: null, sceneTimings: [] },
-      },
-      shortsNar: {
-        channel: '숏폼 나레이션',
-        service: 'elevenlabs',
-        fn: async () => await generateNarrationForScenes(shortsScript.scenes),
-        setter: setShortsNarration,
-        demoData: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }],
       },
     }
 
@@ -788,8 +712,6 @@ export default function ExtractionPage() {
       const mockMap = {
         '블로그 이미지': { data: mockBlogImages, setter: setBlogImages },
         '인스타 이미지': { data: mockInstagramImages, setter: setInstagramImages },
-        '숏폼 영상': { data: { combinedVideoUrl: null, sceneTimings: [] }, setter: setShortsVideo },
-        '숏폼 나레이션': { data: [{ audioUrl: 'demo://shorts-narration.mp3', duration: 30 }], setter: setShortsNarration },
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -813,14 +735,6 @@ export default function ExtractionPage() {
       '인스타 이미지': {
         fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]),
         setter: setInstagramImages,
-      },
-      '숏폼 영상': {
-        fn: () => shortsScript?.scenes ? generateShortsVideo(shortsScript.scenes, shortsScript.title, setShortsProgress, shortsNarration) : Promise.resolve(null),
-        setter: setShortsVideo,
-      },
-      '숏폼 나레이션': {
-        fn: () => shortsScript?.scenes ? generateNarrationForScenes(shortsScript.scenes) : Promise.resolve(null),
-        setter: setShortsNarration,
       },
     }
 
@@ -938,29 +852,10 @@ ${parsedText}
     } catch { return null }
   }
 
-  const persistShortsVideo = async (sv) => {
-    if (!sv?.combinedVideoUrl) return sv
-    const dataUrl = await blobToDataUrl(sv.combinedVideoUrl)
-    return { ...sv, combinedVideoUrl: dataUrl }
-  }
-
   const navigateToResults = async () => {
     let fileBase64 = null
     if (file) {
       try { fileBase64 = await fileToBase64(file) } catch {}
-    }
-
-    // Blob URL을 data URL로 변환
-    const persistedShortsVideo = await persistShortsVideo(shortsVideo)
-
-    // 나레이션 Blob URL도 변환
-    let persistedNarrations = shortsNarration
-    if (Array.isArray(shortsNarration)) {
-      persistedNarrations = await Promise.all(shortsNarration.map(async (n) => {
-        if (!n?.audioUrl) return n
-        const dataUrl = await blobToDataUrl(n.audioUrl)
-        return { ...n, audioUrl: dataUrl || n.audioUrl }
-      }))
     }
 
     navigate('/extraction/result', {
@@ -969,8 +864,6 @@ ${parsedText}
         blogContent, newsletterContent, instagramContent,
         shortsScript,
         blogImages, instagramImages,
-        shortsVideo: persistedShortsVideo,
-        shortsNarration: persistedNarrations,
         fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
         fileBase64,
         savedFromExtraction: true,
@@ -1090,45 +983,6 @@ ${parsedText}
             </div>
           )}
 
-          {/* 강조 내용 입력 */}
-          {file && (
-            <div className="mt-4">
-              <label className="block text-xs font-medium text-text-muted mb-1.5">
-                강조하고 싶은 내용 <span className="text-text-muted/50">(선택사항)</span>
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={emphasisText}
-                  onChange={(e) => { setEmphasisText(e.target.value); setEmphasisConfirmed(false) }}
-                  placeholder="예: 입시 일정을 강조해줘, 핵심 통계 위주로 만들어줘"
-                  disabled={emphasisConfirmed}
-                  className="flex-1 px-3 py-2.5 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all disabled:opacity-60"
-                />
-                {!emphasisConfirmed ? (
-                  <button
-                    onClick={() => setEmphasisConfirmed(true)}
-                    className="px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all shrink-0"
-                  >
-                    확인
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setEmphasisConfirmed(false)}
-                    className="px-4 py-2.5 bg-success/10 text-success text-sm font-medium rounded-lg hover:bg-success/20 transition-all shrink-0 flex items-center gap-1.5"
-                  >
-                    <CheckCircle size={14} />
-                    {emphasisText.trim() ? '설정됨' : '자동'}
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-text-muted mt-1">
-                {emphasisConfirmed
-                  ? emphasisText.trim() ? `"${emphasisText.trim()}" 내용이 강조됩니다.` : 'AI가 자동으로 핵심 내용을 판단하여 생성합니다.'
-                  : '비워두면 AI가 자동으로 핵심 내용을 판단하여 생성합니다.'}
-              </p>
-            </div>
-          )}
         </div>
         <ErrorPanel errors={stepErrors.upload} />
       </div>
@@ -1174,6 +1028,17 @@ ${parsedText}
         </div>
         {(parsedText || verification) && (
           <div className="p-5 space-y-3">
+            {/* 수정 내역 (이슈 목록) */}
+            {verification?.issues?.length > 0 && (
+              <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+                <p className="text-xs font-medium text-blue-400 mb-1.5">수정 내역</p>
+                <ul className="text-xs text-text-muted space-y-1">
+                  {verification.issues.map((issue, i) => <li key={i}>- {issue}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* 검증 상태 배지 */}
             {verification && (
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-1 rounded-full font-medium ${verification.isValid ? 'text-success bg-success/10' : 'text-warning bg-warning/10'}`}>
@@ -1182,13 +1047,11 @@ ${parsedText}
               </div>
             )}
 
-            {verification?.issues?.length > 0 && (
+            {/* 심각한 이슈 시 액션 버튼 */}
+            {verification?.issues?.length > 0 && !verification.isValid && (
               <div className="bg-warning/5 border border-warning/20 rounded-lg p-3">
-                <p className="text-xs font-medium text-warning mb-1">발견된 이슈:</p>
-                <ul className="text-xs text-text-muted space-y-1">
-                  {verification.issues.map((issue, i) => <li key={i}>- {issue}</li>)}
-                </ul>
-                <div className="flex gap-2 mt-3">
+                <p className="text-xs font-medium text-warning mb-2">구조적 문제가 발견되었습니다:</p>
+                <div className="flex gap-2">
                   <button
                     onClick={fixIssuesWithAI}
                     disabled={fixingIssues}
@@ -1201,6 +1064,13 @@ ${parsedText}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-light text-text-muted text-xs font-medium rounded-lg hover:bg-border transition-all border border-border"
                   >
                     <PenTool size={11} /> 직접 수정
+                  </button>
+                  <button
+                    onClick={retryAnalysis}
+                    disabled={loading.analysis}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-warning/10 text-warning text-xs font-medium rounded-lg hover:bg-warning/20 disabled:opacity-50 transition-all border border-warning/20"
+                  >
+                    {loading.analysis ? <><Loader2 size={11} className="animate-spin" /> 분석중...</> : <><RefreshCw size={11} /> 재시도</>}
                   </button>
                 </div>
               </div>
@@ -1486,20 +1356,6 @@ ${parsedText}
                   ok: instagramImages?.length > 0,
                   canRun: !!instagramContent?.cards?.length,
                 },
-                {
-                  label: '숏폼 영상', key: 'shortsVideo', service: 'gemini', icon: Film, iconColor: 'text-cyan-400',
-                  status: shortsVideo?.combinedVideoUrl
-                    ? `${shortsVideo.sceneTimings?.length || 0}씬 하이브리드`
-                    : shortsProgress && shortsProgress.phase !== 'done' ? `${shortsProgress.completed}/${shortsProgress.total} (씬${shortsProgress.current || ''} ${shortsProgress.phase === 'image-gen' ? '이미지' : '영상'} 생성중)` : null,
-                  ok: !!shortsVideo?.combinedVideoUrl,
-                  canRun: !!shortsScript?.scenes?.length,
-                },
-                {
-                  label: '숏폼 나레이션', key: 'shortsNar', service: 'elevenlabs', icon: Mic, iconColor: 'text-warning',
-                  status: shortsNarration ? `${Array.isArray(shortsNarration) ? shortsNarration.filter(n => n.audioUrl).length + '/' + shortsNarration.length + '개' : '완료'}` : null,
-                  ok: Array.isArray(shortsNarration) ? shortsNarration.some(n => n.audioUrl) : !!shortsNarration?.audioUrl,
-                  canRun: !!shortsScript?.scenes?.length,
-                },
               ].map((item, i) => {
                 const Icon = item.icon
                 const failed = stepErrors.media?.some(e => e.channel === item.label)
@@ -1554,17 +1410,6 @@ ${parsedText}
                 )
               })}
             </div>
-          </div>
-        )}
-        {shortsNarration && Array.isArray(shortsNarration) && shortsNarration.some(n => n.audioUrl) && (
-          <div className="mx-5 mb-4 bg-surface-light rounded-lg border border-border p-3 space-y-2">
-            <p className="text-xs font-medium text-text-muted">나레이션 미리듣기</p>
-            {shortsNarration.map((n, i) => n.audioUrl && (
-              <div key={i} className="flex items-center gap-2">
-                <span className="text-[10px] text-text-muted w-12">씬 {n.sceneNumber}</span>
-                <audio src={n.audioUrl} controls className="h-7 flex-1" style={{ minWidth: 0 }} />
-              </div>
-            ))}
           </div>
         )}
         <ErrorPanel errors={stepErrors.media} onRetry={retryMediaItem} retrying={retrying} />

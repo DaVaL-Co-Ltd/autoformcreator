@@ -4,17 +4,11 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import LoginPage from './pages/LoginPage'
-import DashboardPage from './pages/DashboardPage'
 import ExtractionPage from './pages/ExtractionPage'
 import ExtractionResultPage from './pages/ExtractionResultPage'
-import ContentPage from './pages/ContentPage'
 import SettingsPage from './pages/SettingsPage'
 import AnimationTestPage from './pages/AnimationTestPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
-import ShortsTestPage from './pages/ShortsTestPage'
-import ShortsLitePage from './pages/ShortsLitePage'
-import SubtitlePage from './pages/SubtitlePage'
-import NarrationPage from './pages/NarrationPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -48,16 +42,11 @@ function AppLayout() {
         <Header onMenuClick={() => setSidebarOpen(p => !p)} />
         <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <Routes>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<ExtractionPage />} />
             <Route path="/extraction" element={<ExtractionPage />} />
             <Route path="/extraction/result" element={<ExtractionResultPage />} />
-            <Route path="/content" element={<ContentPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/animation-test" element={<AnimationTestPage />} />
-            <Route path="/shorts/test" element={<ShortsTestPage />} />
-            <Route path="/shorts/lite" element={<ShortsLitePage />} />
-            <Route path="/subtitle" element={<SubtitlePage />} />
-            <Route path="/narration" element={<NarrationPage />} />
             <Route path="/shorts/view" element={<ShortsViewerPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

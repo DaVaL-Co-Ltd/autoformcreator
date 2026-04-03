@@ -1,15 +1,9 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { LayoutDashboard, FileText, Settings, Sparkles, LogOut, Film, Clapperboard, Type, Mic, X } from 'lucide-react'
+import { LayoutDashboard, FileText, Settings, Sparkles, LogOut, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '대시보드' },
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출' },
-  { to: '/content', icon: FileText, label: '콘텐츠 관리' },
-  { to: '/shorts/test', icon: Film, label: '숏폼 테스트' },
-  { to: '/shorts/lite', icon: Clapperboard, label: '숏폼 Lite' },
-  { to: '/subtitle', icon: Type, label: '자막 추가' },
-  { to: '/narration', icon: Mic, label: '나레이션 추가' },
   { to: '/settings', icon: Settings, label: '설정' },
   { type: 'logout', icon: LogOut, label: '로그아웃' },
 ]

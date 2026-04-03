@@ -1,19 +1,26 @@
 import { callGeminiWithFallback, parseJSON } from './gemini-core'
 
 export async function verifyParsedContent(parsedText) {
-  const prompt = `당신은 데이터 검증 전문가입니다. 아래는 PDF에서 추출된 텍스트입니다.
+  const prompt = `당신은 데이터 검증 및 교정 전문가입니다. 아래는 PDF에서 추출된 텍스트입니다.
 
 다음을 수행해주세요:
 1. 텍스트의 구조와 논리적 흐름을 확인
 2. 숫자, 통계, 데이터가 일관성이 있는지 검증
 3. 누락되었거나 깨진 부분이 있는지 확인
-4. 검증 결과를 JSON 형태로 반환
+4. 간단한 오타, 맞춤법 오류, 띄어쓰기 오류는 자동으로 수정하여 correctedText에 반영
+5. 검증 결과를 JSON 형태로 반환
+
+규칙:
+- 오타/맞춤법/띄어쓰기 등 간단한 오류는 별도 확인 없이 correctedText에서 바로 수정하세요.
+- 숫자, 통계 데이터는 절대 변경하지 마세요.
+- 수정한 내용이 있으면 issues에 "오타 수정: OO → OO" 형태로 기록하세요.
+- 심각한 구조적 문제만 isValid를 false로 설정하세요. 오타 수정만 있으면 isValid는 true입니다.
 
 반드시 아래 JSON 형식으로만 응답하세요:
 {
   "isValid": true/false,
   "issues": ["발견된 문제 목록"],
-  "correctedText": "수정된 텍스트 (문제가 없으면 원본 그대로)",
+  "correctedText": "오타가 수정된 텍스트 (문제가 없으면 원본 그대로)",
   "confidence": 0.0~1.0
 }
 
