@@ -54,14 +54,14 @@ export default function SettingsPage() {
     <div className="flex gap-6 max-w-7xl">
       {/* Settings Nav */}
       <div className="w-56 shrink-0">
-        <div className="bg-surface rounded-xl border border-border p-2 space-y-1 sticky top-0">
+        <div className="bg-surface rounded-2xl border border-border p-2 space-y-1 sticky top-0 shadow-sm">
           {sections.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveSection(id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all text-left
                 ${activeSection === id
-                  ? 'bg-primary/15 text-primary-light'
+                  ? 'bg-primary/10 text-primary shadow-sm'
                   : 'text-text-muted hover:text-text hover:bg-surface-light'
                 }`}
             >
@@ -75,7 +75,7 @@ export default function SettingsPage() {
       {/* Settings Content */}
       <div className="flex-1 space-y-6">
         {activeSection === 'platforms' && (
-          <div className="bg-surface rounded-xl border border-border p-6">
+          <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="text-base font-semibold text-text mb-1">배포 플랫폼 연동</h3>
             <p className="text-sm text-text-muted mb-5">콘텐츠를 자동 배포할 플랫폼 계정을 연결하세요.</p>
 
@@ -94,7 +94,7 @@ export default function SettingsPage() {
                       {p.account && <p className="text-xs text-text-muted">{p.account}</p>}
                     </div>
                   </div>
-                  <button className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all
+                  <button className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all
                     ${p.connected
                       ? 'border-border text-text-muted hover:border-danger hover:text-danger'
                       : 'border-primary text-primary hover:bg-primary hover:text-white'
@@ -108,7 +108,7 @@ export default function SettingsPage() {
         )}
 
         {activeSection === 'account' && (
-          <div className="bg-surface rounded-xl border border-border p-6">
+          <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="text-base font-semibold text-text mb-1">비밀번호 변경</h3>
             <p className="text-sm text-text-muted mb-5">접속 비밀번호를 변경합니다.</p>
 
@@ -120,7 +120,7 @@ export default function SettingsPage() {
                   value={currentPw}
                   onChange={e => { setCurrentPw(e.target.value); setPwError('') }}
                   placeholder="현재 비밀번호를 입력하세요"
-                  className="w-full bg-surface-light border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary"
+                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
               </div>
               <div>
@@ -130,7 +130,7 @@ export default function SettingsPage() {
                   value={newPw}
                   onChange={e => { setNewPw(e.target.value); setPwError('') }}
                   placeholder="새 비밀번호를 입력하세요"
-                  className="w-full bg-surface-light border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary"
+                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
               </div>
               <div>
@@ -140,7 +140,7 @@ export default function SettingsPage() {
                   value={confirmPw}
                   onChange={e => { setConfirmPw(e.target.value); setPwError('') }}
                   placeholder="새 비밀번호를 다시 입력하세요"
-                  className="w-full bg-surface-light border border-border rounded-lg px-4 py-2.5 text-sm text-text focus:outline-none focus:border-primary"
+                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                 />
               </div>
 
@@ -154,7 +154,7 @@ export default function SettingsPage() {
               <div className="pt-2">
                 <button
                   onClick={handleChangePassword}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
+                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-primary/25 transition-all"
                 >
                   <Save size={16} />
                   저장
@@ -168,10 +168,10 @@ export default function SettingsPage() {
       {/* 비밀번호 변경 확인 팝업 */}
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface rounded-xl border border-border p-6 max-w-sm w-full mx-4 shadow-xl">
+          <div className="bg-surface rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <CheckCircle size={20} className="text-primary" />
+              <div className="p-2 rounded-xl bg-success/10">
+                <CheckCircle size={20} className="text-success" />
               </div>
               <h3 className="text-base font-semibold text-text">비밀번호 변경 완료</h3>
             </div>
@@ -181,7 +181,7 @@ export default function SettingsPage() {
             <div className="flex justify-end">
               <button
                 onClick={handleConfirmLogout}
-                className="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
+                className="px-6 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-primary/25 transition-all"
               >
                 확인
               </button>

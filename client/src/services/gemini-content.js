@@ -28,16 +28,17 @@ ${rawText.slice(0, 8000)}
 {
   "blog": {"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
   "newsletter": {"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"},
-  "instagram": {"cards":[{"cardNumber":1,"headline":"헤드라인","body":"본문(50자 이내)","dataPoint":"데이터","imagePrompt":"이미지 설명(영문)","backgroundColor":"#hex"}],"caption":"캡션","hashtags":["#태그"]},
+  "instagram": {"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]},
   "shorts": {"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
 }
 
 주의사항:
-- 인스타그램 카드는 6~10장으로 구성하세요.
+- 인스타그램 body는 게시글 본문으로, 핵심 내용을 마크다운으로 상세히 작성하세요.
+- 인스타그램 cardTopics는 Step 5에서 카드 이미지 생성에 사용될 소재입니다. 6~10개로 구성하세요.
 - 인스타그램 caption은 다음 형식으로 작성하세요:
   1) 도입 한 줄 (관심을 끄는 문장)
-  2) 각 카드 핵심을 이모지와 함께 키워드 중심으로 요약 (예: "📌 일반 논술 vs 약술형 논술", "📊 2028 대입 핵심 변화 3가지")
-  3) "~하세요", "~합니다" 같은 경어체 대신 "~정리", "~변화", "~포인트" 같이 명사/키워드로 문장을 끝내세요.
+  2) 각 핵심을 이모지와 함께 키워드 중심으로 요약
+  3) "~하세요", "~합니다" 같은 경어체 대신 "~정리", "~변화", "~포인트" 같이 명사/키워드로 끝내세요.
   4) 마지막에 CTA 한 줄
 - 숏폼은 반드시 3씬 이상으로 구성하세요. 총 약 20초. 각 씬은 6~7초. 나레이션은 씬당 1~2문장. scenes 배열에 3개 이상의 씬 객체를 넣으세요.
 - 숏폼 씬 구성 규칙:
@@ -76,12 +77,12 @@ export async function generateAllContent(summary, rawText, emphasis) {
 const CHANNEL_SCHEMAS = {
   blog: `"blog":{"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
   newsletter: `"newsletter":{"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트1","포인트2"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`,
-  instagram: `"instagram":{"cards":[{"cardNumber":1,"headline":"헤드라인","body":"본문(50자 이내)","dataPoint":"데이터","imagePrompt":"이미지 설명(영문)","backgroundColor":"#hex"}],"caption":"캡션(해시태그 포함)","hashtags":["#태그"]}`,
+  instagram: `"instagram":{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용 상세 작성)","caption":"인스타그램 캡션(이모지 포함)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}`,
   shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
 }
 
 const CHANNEL_LABELS = {
-  blog: '블로그', newsletter: '뉴스레터', instagram: '인스타그램 카드뉴스(6~10장)',
+  blog: '블로그', newsletter: '뉴스레터', instagram: '인스타그램 게시글(본문+카드 소재 6~10개)',
   shorts: '숏폼 대본(20~30초, 3~4씬)',
 }
 
@@ -176,7 +177,7 @@ ${rawText.slice(0, 3000)}
 }
 
 export async function generateInstagramContent(summary, rawText, emphasis) {
-  const prompt = `당신은 인스타그램 카드뉴스 전문가입니다. 6~10장의 카드뉴스를 작성해주세요.
+  const prompt = `당신은 인스타그램 콘텐츠 전문가입니다. 게시글 본문과 카드 이미지 소재를 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
 ${buildEmphasisInstruction(emphasis)}
 
@@ -187,10 +188,12 @@ ${JSON.stringify(summary, null, 2)}
 ${rawText.slice(0, 3000)}
 
 반드시 아래 JSON 형식으로만 응답하세요:
-{"cards":[{"cardNumber":1,"headline":"헤드라인","body":"본문(50자 이내)","dataPoint":"데이터","imagePrompt":"이미지 설명(영문)","backgroundColor":"#hex"}],"caption":"캡션","hashtags":["#태그"]}`
+{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}
+
+주의: cardTopics는 6~10개로 구성하세요. 이 데이터는 카드 이미지 생성에 사용됩니다.`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return parseJSON(result, { cards: [], caption: '', hashtags: [] })
+  return parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] })
 }
 
 export async function generateShortsScript(summary, rawText, emphasis) {

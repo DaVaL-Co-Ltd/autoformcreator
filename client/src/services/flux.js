@@ -75,14 +75,13 @@ export async function generateBlogImages(sections) {
 export async function generateInstagramImages(cards) {
   const results = []
   for (const card of cards) {
-    if (card.imagePrompt) {
-      try {
-        const instaPrompt = `Generate an image: Minimal clean presentation slide background. Single solid pastel color background. ${card.imagePrompt}. No text, no letters, no words anywhere. Only flat vector decorations, simple icons, and subtle patterns. Soft, cute aesthetic.`
-        const imageUrl = await generateImage(instaPrompt)
-        results.push({ cardNumber: card.cardNumber, imageUrl })
-      } catch (err) {
-        results.push({ cardNumber: card.cardNumber, imageUrl: null, error: err.message })
-      }
+    const promptText = card.imagePrompt || `${card.headline || ''} ${card.content || ''}`
+    try {
+      const instaPrompt = `Generate an image: Minimal clean presentation slide background. Single solid pastel color background. ${promptText.trim()}. No text, no letters, no words anywhere. Only flat vector decorations, simple icons, and subtle patterns. Soft, cute aesthetic.`
+      const imageUrl = await generateImage(instaPrompt)
+      results.push({ cardNumber: card.cardNumber, imageUrl })
+    } catch (err) {
+      results.push({ cardNumber: card.cardNumber, imageUrl: null, error: err.message })
     }
   }
   return results

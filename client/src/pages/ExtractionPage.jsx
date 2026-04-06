@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight
+  XCircle, AlertTriangle, RefreshCw, ToggleLeft, ToggleRight, Film
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
@@ -104,13 +104,18 @@ const mockNewsletterContent = {
 }
 
 const mockInstagramContent = {
-  cards: [
-    { cardNumber: 1, headline: 'AI 시장 $184B', body: '2024년 역대 최대 규모', dataPoint: '$184.0B', imagePrompt: 'AI market infographic', backgroundColor: '#6366f1' },
-    { cardNumber: 2, headline: '생성형 AI 폭발', body: '전년 대비 67.2% 성장', dataPoint: '+67.2%', imagePrompt: 'generative AI growth', backgroundColor: '#8b5cf6' },
-    { cardNumber: 3, headline: '2030년 전망', body: 'AI 시장 $826.7B 예상', dataPoint: '$826.7B', imagePrompt: 'future AI prediction', backgroundColor: '#a855f7' },
+  title: '[데모] 2024 AI 시장 핵심 분석',
+  body: '2024년 글로벌 AI 시장이 **$184.0B**를 달성하며 역대 최대 규모를 기록했습니다.\n\n생성형 AI가 **67.2%**의 성장률로 시장을 견인하고 있으며, 2030년까지 **$826.7B**에 도달할 전망입니다.\n\n북미가 38.2%로 최대 시장이지만, 아시아태평양이 31.5%로 빠르게 추격 중입니다.',
+  caption: '📊 2024 글로벌 AI 시장 핵심 분석\n📌 시장 규모 $184B 달성\n🚀 생성형 AI 67.2% 폭발 성장\n🔮 2030년 $826.7B 전망\n\n자세한 내용은 프로필 링크에서 확인하세요!',
+  hashtags: ['#AI', '#인공지능', '#생성형AI', '#시장분석', '#테크트렌드'],
+  cardTopics: [
+    { cardNumber: 1, headline: 'AI 시장 $184B', content: '2024년 역대 최대 규모 달성', dataPoint: '$184.0B' },
+    { cardNumber: 2, headline: '생성형 AI 폭발', content: '전년 대비 최고 성장률', dataPoint: '+67.2%' },
+    { cardNumber: 3, headline: '2030년 전망', content: 'AI 시장 초대형 성장 예상', dataPoint: '$826.7B' },
+    { cardNumber: 4, headline: '북미 시장 선도', content: '글로벌 최대 AI 시장', dataPoint: '38.2%' },
+    { cardNumber: 5, headline: '아태 추격', content: '빠른 성장세로 2위 달성', dataPoint: '31.5%' },
+    { cardNumber: 6, headline: '엔터프라이즈 AI', content: 'B2B AI 솔루션 수요 급증', dataPoint: '도입 가속화' },
   ],
-  caption: '2024 글로벌 AI 시장 핵심 분석',
-  hashtags: ['#AI', '#인공지능', '#생성형AI', '#시장분석'],
 }
 
 const mockShortsScript = {
@@ -135,6 +140,13 @@ const mockInstagramImages = [
   { imageUrl: 'https://placehold.co/1080x1080/8b5cf6/white?text=Card+2', prompt: 'growth' },
   { imageUrl: 'https://placehold.co/1080x1080/a855f7/white?text=Card+3', prompt: 'future' },
 ]
+
+const mockShortsVideo = {
+  videoUrl: 'https://placehold.co/1080x1920/f59e0b/white?text=Shorts+Video',
+  thumbnailUrl: 'https://placehold.co/1080x1920/f59e0b/white?text=Thumbnail',
+  duration: '30',
+  status: 'completed',
+}
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms))
 
@@ -242,7 +254,7 @@ export default function ExtractionPage() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
-  const [demoMode, setDemoMode] = useState(false)
+  const [demoMode, setDemoMode] = useState(true)
   const [emphasisText, setEmphasisText] = useState('')
   const [emphasisConfirmed, setEmphasisConfirmed] = useState(false)
   const [editingText, setEditingText] = useState(false)
@@ -264,6 +276,7 @@ export default function ExtractionPage() {
   const [shortsScript, setShortsScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
   const [instagramImages, setInstagramImages] = useState(null)
+  const [shortsVideo, setShortsVideo] = useState(null)
 
   // step 5까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -404,21 +417,14 @@ export default function ExtractionPage() {
     clearStepErrors('content')
 
     if (demoMode) {
-      const demoErrors = []
       await delay(MOCK_DELAY)
       setBlogContent(mockBlogContent)
       await delay(300)
       setNewsletterContent(mockNewsletterContent)
       await delay(300)
-      // 인스타그램 실패 시뮬레이션
-      demoErrors.push({ service: 'gemini', channel: '인스타그램', message: '[데모] Gemini API 응답 시간 초과 - Rate limit exceeded' })
+      setInstagramContent(mockInstagramContent)
       await delay(300)
       setShortsScript(mockShortsScript)
-      if (demoErrors.length > 0) {
-        addStepErrors('content', demoErrors)
-        const failedChannels = demoErrors.map(e => e.channel).join(', ')
-        showErrorAlert('콘텐츠 생성', `다음 채널 생성에 실패했습니다: ${failedChannels}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
-      }
       setCurrentStep(5)
       setStepLoading('content', false)
       return
@@ -593,10 +599,15 @@ export default function ExtractionPage() {
       setBlogImages(mockBlogImages)
       setMediaItemLoading(p => ({ ...p, '블로그 이미지': false }))
       // 인스타 이미지 생성
-      setMediaItemLoading(p => ({ ...p, '인스타 이미지': true }))
+      setMediaItemLoading(p => ({ ...p, '인스타 카드': true }))
       await delay(MOCK_DELAY)
       setInstagramImages(mockInstagramImages)
-      setMediaItemLoading(p => ({ ...p, '인스타 이미지': false }))
+      setMediaItemLoading(p => ({ ...p, '인스타 카드': false }))
+      // 숏폼 영상 생성
+      setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
+      await delay(MOCK_DELAY)
+      setShortsVideo(mockShortsVideo)
+      setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
       if (demoErrors.length > 0) {
         addStepErrors('media', demoErrors)
         const retryable = demoErrors.filter(e => !e.noRetry)
@@ -616,6 +627,7 @@ export default function ExtractionPage() {
     const alreadyDone = {
       blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
       instaImg: instagramImages?.length > 0,
+      shortsVid: !!shortsVideo,
     }
 
     // 블로그 이미지 (Gemini 이미지 생성)
@@ -625,10 +637,17 @@ export default function ExtractionPage() {
       )
     }
 
-    // 인스타 이미지 (단색 배경 카드 - AI 생성 불필요, 카드 데이터 기반)
-    if (!alreadyDone.instaImg && instagramContent?.cards?.length) {
+    // 인스타 카드 이미지 (cardTopics 기반)
+    if (!alreadyDone.instaImg && instagramContent?.cardTopics?.length) {
       tasks.push(
-        { key: 'instaImg', service: 'gemini', channel: '인스타 이미지', fn: () => Promise.resolve(instagramContent.cards.map(c => ({ cardNumber: c.cardNumber, imageUrl: null, style: 'card' }))), setter: setInstagramImages },
+        { key: 'instaImg', service: 'gemini', channel: '인스타 카드', fn: () => Promise.resolve(instagramContent.cardTopics.map(c => ({ cardNumber: c.cardNumber, headline: c.headline, content: c.content, dataPoint: c.dataPoint, imageUrl: null, style: 'card' }))), setter: setInstagramImages },
+      )
+    }
+
+    // 숏폼 영상
+    if (!alreadyDone.shortsVid && shortsScript) {
+      tasks.push(
+        { key: 'shortsVid', service: 'gemini', channel: '숏폼 영상', fn: () => Promise.resolve({ status: 'placeholder', duration: shortsScript.duration }), setter: setShortsVideo },
       )
     }
 
@@ -669,13 +688,22 @@ export default function ExtractionPage() {
         demoData: mockBlogImages,
       },
       instaImg: {
-        channel: '인스타 이미지',
+        channel: '인스타 카드',
         service: 'gemini',
-        fn: () => instagramContent?.cards?.length
-          ? Promise.resolve(instagramContent.cards.map(c => ({ cardNumber: c.cardNumber, imageUrl: null, style: 'card' })))
+        fn: () => instagramContent?.cardTopics?.length
+          ? Promise.resolve(instagramContent.cardTopics.map(c => ({ cardNumber: c.cardNumber, headline: c.headline, content: c.content, dataPoint: c.dataPoint, imageUrl: null, style: 'card' })))
           : Promise.resolve([]),
         setter: setInstagramImages,
         demoData: mockInstagramImages,
+      },
+      shortsVid: {
+        channel: '숏폼 영상',
+        service: 'gemini',
+        fn: () => shortsScript
+          ? Promise.resolve({ status: 'placeholder', duration: shortsScript.duration })
+          : Promise.resolve(null),
+        setter: setShortsVideo,
+        demoData: mockShortsVideo,
       },
     }
 
@@ -711,7 +739,8 @@ export default function ExtractionPage() {
     if (demoMode) {
       const mockMap = {
         '블로그 이미지': { data: mockBlogImages, setter: setBlogImages },
-        '인스타 이미지': { data: mockInstagramImages, setter: setInstagramImages },
+        '인스타 카드': { data: mockInstagramImages, setter: setInstagramImages },
+        '숏폼 영상': { data: mockShortsVideo, setter: setShortsVideo },
       }
       const mock = mockMap[err.channel]
       if (mock) {
@@ -732,9 +761,13 @@ export default function ExtractionPage() {
         fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections) : Promise.resolve([]),
         setter: setBlogImages,
       },
-      '인스타 이미지': {
-        fn: () => instagramContent?.cards ? generateInstagramImages(instagramContent.cards) : Promise.resolve([]),
+      '인스타 카드': {
+        fn: () => instagramContent?.cardTopics ? generateInstagramImages(instagramContent.cardTopics) : Promise.resolve([]),
         setter: setInstagramImages,
+      },
+      '숏폼 영상': {
+        fn: () => shortsScript ? Promise.resolve({ status: 'placeholder', duration: shortsScript.duration }) : Promise.resolve(null),
+        setter: setShortsVideo,
       },
     }
 
@@ -863,7 +896,7 @@ ${parsedText}
         parsedText, verification, summary,
         blogContent, newsletterContent, instagramContent,
         shortsScript,
-        blogImages, instagramImages,
+        blogImages, instagramImages, shortsVideo,
         fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
         fileBase64,
         savedFromExtraction: true,
@@ -935,7 +968,14 @@ ${parsedText}
               <p className="text-xs text-text-muted">분석할 문서 파일을 업로드하세요</p>
             </div>
           </div>
-          {file && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 업로드 완료</span>}
+          <div className="flex items-center gap-2">
+            {file && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 업로드 완료</span>}
+            <button onClick={() => setDemoMode(p => !p)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${demoMode ? 'bg-warning/15 text-warning' : 'bg-surface-light text-text-muted hover:text-text'}`}>
+              {demoMode ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+              데모 {demoMode ? 'ON' : 'OFF'}
+            </button>
+          </div>
         </div>
         <div className="p-5">
           {!file ? (
@@ -1240,7 +1280,7 @@ ${parsedText}
               {[
                 { label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
                 { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
-                { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `${instagramContent.cards?.length || 0}장 카드` : null },
+                { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `본문 작성` : null },
                 { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
               ].map((ch, i) => {
                 const Icon = ch.icon
@@ -1342,7 +1382,7 @@ ${parsedText}
         </div>
         {currentStep >= 5 && (
           <div className="p-5 space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               {[
                 {
                   label: '블로그 이미지', key: 'blogImg', service: 'flux', icon: ImageIcon, iconColor: 'text-purple-400',
@@ -1351,10 +1391,16 @@ ${parsedText}
                   canRun: !!blogContent?.sections,
                 },
                 {
-                  label: '인스타 이미지', key: 'instaImg', service: 'gemini', icon: ImageIcon, iconColor: 'text-pink-400',
+                  label: '인스타 카드', key: 'instaImg', service: 'gemini', icon: ImageIcon, iconColor: 'text-pink-400',
                   status: instagramImages?.length ? `${instagramImages.length}장 카드` : null,
                   ok: instagramImages?.length > 0,
-                  canRun: !!instagramContent?.cards?.length,
+                  canRun: !!instagramContent?.cardTopics?.length,
+                },
+                {
+                  label: '숏폼 영상', key: 'shortsVid', service: 'gemini', icon: Film, iconColor: 'text-amber-400',
+                  status: shortsVideo ? `${shortsVideo.duration || 30}초 영상` : null,
+                  ok: !!shortsVideo,
+                  canRun: !!shortsScript,
                 },
               ].map((item, i) => {
                 const Icon = item.icon
