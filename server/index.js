@@ -98,6 +98,77 @@ app.post('/api/output/save', (req, res) => {
   })
 })
 
+// ===== HeyGen Voices Proxy =====
+app.get('/api/heygen/voices', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/voices', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    if (!response.ok) {
+      const errText = await response.text()
+      return res.status(response.status).json({ error: errText })
+    }
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen Video Generate Proxy =====
+app.post('/api/heygen/video/generate', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/video/generate', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen Video Status Proxy =====
+app.get('/api/heygen/video/status/:videoId', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${req.params.videoId}`, {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen Upload Photo Avatar Proxy =====
+app.post('/api/heygen/photo-avatar', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/photo_avatar', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== Static file serving for output/ =====
 const outputDir = path.join(__dirname, '..', 'output')
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })

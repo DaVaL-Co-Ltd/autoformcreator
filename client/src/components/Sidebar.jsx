@@ -17,14 +17,11 @@ export default function Sidebar({ onClose }) {
       <div className="px-5 py-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-lg shadow-primary/25">
-            <img src="/logo.svg" alt="MyBest" className="w-6 h-6" />
+            <img src="/logo.svg" alt="마이베스트" className="w-6 h-6" />
           </div>
-          <div>
-            <h1 className="text-base font-bold text-white tracking-tight">
-              MyBest
-            </h1>
-            <p className="text-[10px] text-sidebar-text leading-tight">Content Automation</p>
-          </div>
+          <h1 className="text-base font-bold text-white tracking-tight">
+            마이베스트
+          </h1>
         </div>
         {onClose && (
           <button onClick={onClose} className="lg:hidden p-1.5 rounded-lg text-sidebar-text hover:text-white hover:bg-sidebar-hover transition-colors">

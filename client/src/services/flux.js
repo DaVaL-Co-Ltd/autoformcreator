@@ -39,7 +39,30 @@ async function generateImage(prompt, retries = 2) {
   }
 }
 
-export async function generateBlogImages(sections) {
+const STYLE_PROMPTS = {
+  pastel: 'STRICT: PASTEL palette ONLY. Cute 3D rendered icons. Warm rounded friendly style.',
+  '3d': '3D rendered style with vibrant colors. Bold 3D objects and icons.',
+  minimal: 'Minimal flat vector style. Clean lines, solid colors, geometric shapes.',
+  photo: 'Realistic photographic style. High quality, natural lighting.',
+  watercolor: 'Soft watercolor painting style. Delicate washes of color, gentle blends.',
+}
+
+const COLOR_PROMPTS = {
+  blue: 'Color palette: soft sky blue, light cyan, navy accents.',
+  pink: 'Color palette: soft pink, rose, light coral.',
+  green: 'Color palette: mint green, sage, light teal.',
+  purple: 'Color palette: soft lavender, light purple, violet accents.',
+}
+
+export async function generateBlogImages(sections, options = {}) {
+  const styleHint = options.imageStyle && options.imageStyle !== 'auto' && STYLE_PROMPTS[options.imageStyle]
+    ? STYLE_PROMPTS[options.imageStyle]
+    : STYLE_PROMPTS.pastel
+  const colorHint = options.mainColor && options.mainColor !== 'auto' && COLOR_PROMPTS[options.mainColor]
+    ? COLOR_PROMPTS[options.mainColor]
+    : ''
+  const extraHint = options.extra ? ` ${options.extra}.` : ''
+
   const results = []
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i]
@@ -52,7 +75,8 @@ export async function generateBlogImages(sections) {
         { tone: 'warm yellow, soft apricot', icons: 'trophy, target, checklist, heart, pencil case' },
       ]
       const variation = colorVariations[i % colorVariations.length]
-      const bgPrompt = `Generate a 1:1 square illustration for a Korean education blog thumbnail about "${section.heading}". STRICT: PASTEL palette ONLY (${variation.tone}). Cute 3D rendered icons on edges: ${variation.icons}. Warm rounded friendly style. CENTER MUST BE EMPTY - leave middle 60% blank for text overlay. Icons ONLY on edges and corners. NO text, NO letters, NO words, NO numbers. NO realistic photos, NO people. Cute Korean educational style.`
+      const paletteDesc = colorHint || `${variation.tone}`
+      const bgPrompt = `Generate a 1:1 square illustration for a Korean education blog thumbnail about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. Icons on edges: ${variation.icons}. CENTER MUST BE EMPTY - leave middle 60% blank for text overlay. Icons ONLY on edges and corners. NO text, NO letters, NO words, NO numbers. NO realistic photos, NO people. Cute Korean educational style.${extraHint}`
       const imageUrl = await generateImage(bgPrompt)
       results.push({
         heading: section.heading,
@@ -72,12 +96,20 @@ export async function generateBlogImages(sections) {
   return results
 }
 
-export async function generateInstagramImages(cards) {
+export async function generateInstagramImages(cards, options = {}) {
+  const styleHint = options.imageStyle && options.imageStyle !== 'auto' && STYLE_PROMPTS[options.imageStyle]
+    ? STYLE_PROMPTS[options.imageStyle]
+    : 'Minimal flat vector style. Clean lines.'
+  const colorHint = options.mainColor && options.mainColor !== 'auto' && COLOR_PROMPTS[options.mainColor]
+    ? ` ${COLOR_PROMPTS[options.mainColor]}`
+    : ' Single solid pastel color background.'
+  const extraHint = options.extra ? ` ${options.extra}.` : ''
+
   const results = []
   for (const card of cards) {
     const promptText = card.imagePrompt || `${card.headline || ''} ${card.content || ''}`
     try {
-      const instaPrompt = `Generate an image: Minimal clean presentation slide background. Single solid pastel color background. ${promptText.trim()}. No text, no letters, no words anywhere. Only flat vector decorations, simple icons, and subtle patterns. Soft, cute aesthetic.`
+      const instaPrompt = `Generate an image: ${styleHint}${colorHint} ${promptText.trim()}. No text, no letters, no words anywhere. Only flat vector decorations, simple icons, and subtle patterns. Soft, cute aesthetic.${extraHint}`
       const imageUrl = await generateImage(instaPrompt)
       results.push({ cardNumber: card.cardNumber, imageUrl })
     } catch (err) {

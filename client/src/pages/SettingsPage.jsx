@@ -51,7 +51,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex gap-6 max-w-7xl">
+    <div className="flex gap-6 max-w-7xl mx-auto w-full">
       {/* Settings Nav */}
       <div className="w-56 shrink-0">
         <div className="bg-surface rounded-2xl border border-border p-2 space-y-1 sticky top-0 shadow-sm">

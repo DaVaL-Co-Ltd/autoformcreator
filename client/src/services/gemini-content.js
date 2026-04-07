@@ -5,8 +5,28 @@ function buildEmphasisInstruction(emphasis) {
   return `\n## 강조 요청\n사용자가 다음 내용을 특별히 강조해달라고 요청했습니다: "${emphasis.trim()}"\n위 내용을 모든 채널의 콘텐츠에서 중심 주제로 부각하고, 관련 데이터와 인사이트를 더 비중 있게 다뤄주세요.\n`
 }
 
+function buildOptionsInstruction(options = {}) {
+  const parts = []
+  const toneMap = {
+    friendly: '친근하고 편안한',
+    professional: '전문적이고 신뢰감 있는',
+    humorous: '유머러스하고 재미있는',
+    formal: '진지하고 격식 있는',
+  }
+  if (options.tone && options.tone !== 'auto' && toneMap[options.tone]) {
+    parts.push(`글의 어조: ${toneMap[options.tone]} 톤으로 작성하세요.`)
+  }
+  if (options.commonExtra) parts.push(`공통 지시: ${options.commonExtra}`)
+  if (options.blogExtra) parts.push(`블로그 추가 지시: ${options.blogExtra}`)
+  if (options.instaExtra) parts.push(`인스타그램 추가 지시: ${options.instaExtra}`)
+  if (options.newsletterExtra) parts.push(`뉴스레터 추가 지시: ${options.newsletterExtra}`)
+  if (options.shortsExtra) parts.push(`숏폼 추가 지시: ${options.shortsExtra}`)
+  return parts.length > 0 ? '\n## 사용자 설정\n' + parts.join('\n') : ''
+}
+
 // 1차: 4개 채널 (블로그, 뉴스레터, 인스타그램, 숏폼)
-async function generate4Channels(summary, rawText, emphasis) {
+async function generate4Channels(summary, rawText, emphasis, options = {}) {
+  const optionsInstruction = buildOptionsInstruction(options)
   const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 4개 채널의 콘텐츠를 작성해주세요.
 
 ## 핵심 규칙
@@ -14,7 +34,7 @@ async function generate4Channels(summary, rawText, emphasis) {
 - 사실에 기반한 내용만 작성하세요.
 - 특정 대학교(예: 건국대, 성균관대 등)에만 해당하는 세부 내용은 최소화하세요. 여러 대학에 공통으로 적용되는 트렌드, 제도 변화, 일반적인 전략 등 공통적인 내용을 중심으로 작성하세요. 특정 대학은 예시로만 간단히 언급하세요.
 - 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}
@@ -53,9 +73,9 @@ ${rawText.slice(0, 8000)}
 }
 
 // 4개 채널 콘텐츠 생성
-export async function generateAllContent(summary, rawText, emphasis) {
+export async function generateAllContent(summary, rawText, emphasis, options = {}) {
   const [fourResult] = await Promise.allSettled([
-    generate4Channels(summary, rawText, emphasis),
+    generate4Channels(summary, rawText, emphasis, options),
   ])
 
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null

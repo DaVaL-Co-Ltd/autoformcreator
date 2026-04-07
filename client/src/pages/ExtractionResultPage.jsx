@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
-  CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink
+  CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink,
+  Upload, Loader2, AlertCircle
 } from 'lucide-react'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
@@ -32,6 +33,29 @@ export default function ExtractionResultPage() {
   const instaCardsRef = useRef([])
   const [blogPngUrls, setBlogPngUrls] = useState([])
   const [instaPngUrls, setInstaPngUrls] = useState([])
+  const [uploadStatus, setUploadStatus] = useState({}) // { blog: 'idle'|'loading'|'done'|'error', ... }
+  const [uploadError, setUploadError] = useState(null)
+
+  const platformConfig = {
+    blog: { name: '네이버 블로그', icon: '📝', color: 'text-primary-light', bg: 'bg-primary/10' },
+    instagram: { name: '인스타그램', icon: '📷', color: 'text-pink-400', bg: 'bg-pink-400/10' },
+    newsletter: { name: '뉴스레터', icon: '📧', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+    shorts: { name: '유튜브 Shorts', icon: '▶️', color: 'text-amber-400', bg: 'bg-amber-400/10' },
+  }
+
+  const handleUpload = async (channel) => {
+    setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
+    setUploadError(null)
+    try {
+      // TODO: 실제 플랫폼 API 연동 (네이버 블로그 API, 인스타그램 Graph API 등)
+      // 현재는 시뮬레이션
+      await new Promise(r => setTimeout(r, 2000))
+      setUploadStatus(p => ({ ...p, [channel]: 'done' }))
+    } catch (err) {
+      setUploadStatus(p => ({ ...p, [channel]: 'error' }))
+      setUploadError(`${platformConfig[channel]?.name} 업로드 실패: ${err.message}`)
+    }
+  }
 
   const downloadAllImages = async (type) => {
     setDownloading(true)
@@ -721,7 +745,7 @@ export default function ExtractionResultPage() {
   const renderContent = { blog: renderBlog, instagram: renderInstagram, newsletter: renderNewsletter, shorts: renderShorts }
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6 max-w-7xl mx-auto w-full">
       {/* 상단 헤더 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -779,6 +803,68 @@ export default function ExtractionResultPage() {
           </div>
         )}
       </div>
+
+      {/* 업로드 패널 */}
+      {dataMap[activeMenu] && (
+        <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text">플랫폼 업로드</h3>
+              <p className="text-xs text-text-muted mt-0.5">생성된 콘텐츠를 연동된 플랫폼에 바로 업로드</p>
+            </div>
+          </div>
+
+          {uploadError && (
+            <div className="mb-3 flex items-center gap-2 p-3 bg-danger/5 border border-danger/20 rounded-lg">
+              <AlertCircle size={14} className="text-danger shrink-0" />
+              <p className="text-xs text-danger">{uploadError}</p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3">
+            {(() => {
+              const ch = activeMenu
+              const cfg = platformConfig[ch]
+              const status = uploadStatus[ch]
+              if (!cfg) return null
+              return (
+                <div className="flex items-center gap-3 flex-1">
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border border-border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : 'bg-surface-light'}`}>
+                    <span className="text-lg">{cfg.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-text">{cfg.name}</p>
+                      <p className="text-xs text-text-muted">
+                        {status === 'done' ? '업로드 완료' : status === 'error' ? '업로드 실패' : '업로드 대기'}
+                      </p>
+                    </div>
+                    {status === 'done' && <CheckCircle size={16} className="text-success shrink-0" />}
+                    {status === 'error' && <AlertCircle size={16} className="text-danger shrink-0" />}
+                  </div>
+                  <button
+                    onClick={() => handleUpload(ch)}
+                    disabled={status === 'loading'}
+                    className={`px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0
+                      ${status === 'done'
+                        ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
+                        : status === 'loading'
+                          ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                          : 'bg-gradient-to-r from-primary to-primary-dark text-white hover:shadow-lg hover:shadow-primary/25'
+                      }`}
+                  >
+                    {status === 'loading' ? (
+                      <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                    ) : status === 'done' ? (
+                      <><CheckCircle size={14} /> 완료</>
+                    ) : (
+                      <><Upload size={14} /> {cfg.name}에 업로드</>
+                    )}
+                  </button>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
