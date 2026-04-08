@@ -151,12 +151,115 @@ app.get('/api/heygen/video/status/:videoId', async (req, res) => {
   }
 })
 
-// ===== HeyGen Upload Photo Avatar Proxy =====
-app.post('/api/heygen/photo-avatar', async (req, res) => {
+// ===== HeyGen 프리셋 아바타 목록 =====
+app.get('/api/heygen/preset-avatars', async (req, res) => {
   const apiKey = req.headers['x-api-key']
   if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
   try {
-    const response = await fetch('https://api.heygen.com/v2/photo_avatar', {
+    const response = await fetch('https://api.heygen.com/v2/avatars', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    if (!response.ok) return res.status(response.status).json({ error: 'HeyGen API error' })
+    const data = await response.json()
+    const tps = data.data?.talking_photos || []
+    const presets = tps.filter(tp => !(tp.talking_photo_name || '').startsWith('avatar_')).map(tp => ({
+      id: tp.talking_photo_id,
+      name: tp.talking_photo_name,
+      preview: tp.preview_image_url,
+    }))
+    res.json({ presets })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen 커스텀 아바타 목록 (슬롯 확인용) =====
+app.get('/api/heygen/avatar-list', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/avatars', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    if (!response.ok) return res.status(response.status).json({ error: 'HeyGen API error' })
+    const data = await response.json()
+    const tps = data.data?.talking_photos || []
+    const custom = tps.filter(tp => (tp.talking_photo_name || '').startsWith('avatar_'))
+    res.json({ custom, total: tps.length })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen 아바타 상태 확인 (avatars 목록에서 조회) =====
+app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/avatars', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    if (!response.ok) return res.status(response.status).json({ error: 'HeyGen API error' })
+    const data = await response.json()
+    const tps = data.data?.talking_photos || []
+    const found = tps.find(tp => tp.talking_photo_id === req.params.groupId)
+    if (found && found.preview_image_url) {
+      res.json({ ready: true, data: found })
+    } else {
+      res.json({ ready: false })
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen 테스트용: 성공한 이미지 직접 업로드 =====
+app.post('/api/heygen/upload-test-avatar', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const imgPath = path.join(__dirname, '..', 'output', 'avatar_1775569832756.png')
+    const buffer = fs.readFileSync(imgPath)
+    const response = await fetch('https://upload.heygen.com/v1/asset', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'image/png' },
+      body: buffer,
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen Upload Asset (base64 → binary → HeyGen) =====
+app.post('/api/heygen/upload-asset', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const { base64, mimeType } = req.body
+    if (!base64) return res.status(400).json({ error: 'Missing base64 data' })
+    const buffer = Buffer.from(base64, 'base64')
+    const response = await fetch('https://upload.heygen.com/v1/asset', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': mimeType || 'image/png' },
+      body: buffer,
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen Avatar Group 생성 (image_key → talking_photo_id) =====
+app.post('/api/heygen/avatar-group/create', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/photo_avatar/avatar_group/create', {
       method: 'POST',
       headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),

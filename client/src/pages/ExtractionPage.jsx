@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Play, Pause, ToggleLeft, ToggleRight
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Play, Pause, ToggleLeft, ToggleRight, Download
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
@@ -120,15 +120,17 @@ const mockInstagramContent = {
 }
 
 const mockShortsScript = {
-  title: '[데모] AI 시장 184조, 진짜 어디까지 커지는 거야?',
+  title: '[데모] 2024 AI 시장 핵심 분석',
   duration: '30',
   hook: '여러분, AI 시장이 올해 얼마나 커졌는지 아세요?',
   scenes: [
-    { sceneNumber: 1, duration: '5', narration: 'AI 시장이 올해 184조를 돌파했습니다.', visualDescription: 'dramatic number reveal', textOverlay: '$184.0B' },
-    { sceneNumber: 2, duration: '8', narration: '특히 생성형 AI는 무려 67% 성장했죠.', visualDescription: 'growth chart animation', textOverlay: '+67.2%' },
+    { sceneNumber: 1, duration: '8', narration: '안녕하세요. 오늘은 2024년 글로벌 AI 시장의 핵심 트렌드를 분석해보겠습니다.', visualDescription: 'intro scene', textOverlay: '2024 AI 시장 분석' },
+    { sceneNumber: 2, duration: '8', narration: '올해 글로벌 AI 시장은 184조 원을 돌파하며 역대 최대 규모를 기록했습니다.', visualDescription: 'market size reveal', textOverlay: '$184.0B 달성' },
+    { sceneNumber: 3, duration: '8', narration: '특히 생성형 AI가 전년 대비 67퍼센트 성장하면서 전체 시장을 이끌고 있습니다.', visualDescription: 'growth chart', textOverlay: '생성형 AI +67%' },
+    { sceneNumber: 4, duration: '6', narration: '전문가들은 2030년까지 AI 시장이 826조 원에 달할 것으로 전망하고 있습니다. 더 자세한 분석은 프로필 링크에서 확인하세요.', visualDescription: 'future prediction', textOverlay: '2030년 $826.7B' },
   ],
-  cta: '더 자세한 분석은 프로필 링크에서!',
-  thumbnailPrompt: 'AI market growth dramatic thumbnail',
+  cta: '프로필 링크에서 전체 리포트를 확인하세요!',
+  thumbnailPrompt: 'AI market growth analysis thumbnail',
 }
 
 const mockBlogImages = [
@@ -266,7 +268,9 @@ export default function ExtractionPage() {
   // Popup states
   const [errorAlert, setErrorAlert] = useState(null)
   const [confirmDialog, setConfirmDialog] = useState(null)
+  const [creditConfirm, setCreditConfirm] = useState(false) // 크레딧 소모 확인 팝업
   const [previewImage, setPreviewImage] = useState(null)
+  const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'newsletter' | 'instagram' | 'shorts' | null
 
   // 프롬프트 설정 (각 Step별)
   const [promptOpen, setPromptOpen] = useState({})
@@ -296,7 +300,10 @@ export default function ExtractionPage() {
   const [avatarPrompt, setAvatarPrompt] = useState('')
   const [avatarImage, setAvatarImage] = useState(null) // data:image URL
   const [avatarConfirmed, setAvatarConfirmed] = useState(false)
-  const [selectedVoice, setSelectedVoice] = useState('iyvXhCAqzDxKnq3FDjZl')
+  const [selectedVoice, setSelectedVoice] = useState(null)
+  const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id
+  const [heygenReady, setHeygenReady] = useState(false)
+  const [heygenUploading, setHeygenUploading] = useState(false)
 
   // step 5까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -379,7 +386,8 @@ export default function ExtractionPage() {
       setParsedText(mockParsedText)
       await delay(MOCK_DELAY)
       setVerification(mockVerification)
-      setCurrentStep(3)
+      setShortsScript(mockShortsScript)
+      setCurrentStep(6) // 데모: Step 3~5 스킵 → 바로 Step 6
       setStepLoading('analysis', false)
       return
     }
@@ -457,14 +465,14 @@ export default function ExtractionPage() {
 
     if (demoMode) {
       await delay(MOCK_DELAY)
-      setBlogContent(mockBlogContent)
-      await delay(300)
-      setNewsletterContent(mockNewsletterContent)
-      await delay(300)
-      setInstagramContent(mockInstagramContent)
-      await delay(300)
+      // setBlogContent(mockBlogContent)
+      // await delay(300)
+      // setNewsletterContent(mockNewsletterContent)
+      // await delay(300)
+      // setInstagramContent(mockInstagramContent)
+      // await delay(300)
       setShortsScript(mockShortsScript)
-      setCurrentStep(5)
+      setCurrentStep(6) // Step 5 스킵 → 바로 숏폼으로
       setStepLoading('content', false)
       return
     }
@@ -625,6 +633,34 @@ export default function ExtractionPage() {
     }
   }
 
+  // Step 4 개별 채널 재생성 (성공한 채널도 다시 생성)
+  const regenerateChannel = async (channelKey) => {
+    const mockMap = { blog: mockBlogContent, newsletter: mockNewsletterContent, instagram: mockInstagramContent, shorts: mockShortsScript }
+    const fnMap = {
+      blog: () => generateBlogContent(summary, parsedText, emphasisText),
+      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText),
+      instagram: () => generateInstagramContent(summary, parsedText, emphasisText),
+      shorts: () => generateShortsScript(summary, parsedText, emphasisText),
+    }
+    const setter = keyToSetter[channelKey]
+    if (!setter) return
+
+    setRetrying(`regen-${channelKey}`)
+    try {
+      if (demoMode) {
+        await delay(MOCK_DELAY)
+        setter(mockMap[channelKey])
+      } else {
+        const result = await fnMap[channelKey]()
+        setter(result)
+      }
+    } catch (err) {
+      showErrorAlert('채널 재생성', err.message || '재생성 실패')
+    } finally {
+      setRetrying(null)
+    }
+  }
+
   // Step 5: 이미지 생성 (블로그 + 인스타그램)
   const runMediaGeneration = async () => {
     setStepLoading('media', true)
@@ -680,6 +716,15 @@ export default function ExtractionPage() {
     if (!avatarPrompt.trim()) return
     setMediaItemLoading(p => ({ ...p, '아바타': true }))
     clearStepErrors('shorts')
+    // 아바타 재생성 시 관련 상태 초기화
+    setAvatarConfirmed(false)
+    setAvatarImage(null)
+    setHeygenAvatarId(null)
+    setHeygenReady(false)
+    setHeygenUploading(false)
+    setSelectedVoice(null)
+    setRecommendedVoices([])
+    setShortsVideo(null)
     try {
       const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
       const res = await fetch(
@@ -688,35 +733,50 @@ export default function ExtractionPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `Generate a realistic photo-style 9:16 vertical image. Subject: ${avatarPrompt.trim()}.
+            contents: [{ parts: [{ text: `Generate a realistic high-quality photograph. Subject: ${avatarPrompt.trim()}.
 
-STYLE & COMPOSITION:
-- Realistic, high-quality photograph style with shallow depth of field
-- 9:16 VERTICAL portrait orientation (phone screen ratio)
-- Character occupies about 40-50% of the frame, NOT too close-up
-- Character is naturally placed WITHIN a detailed, cozy environment (desk, bookshelf, stationery, plants, warm lighting etc.)
-- The background and surroundings should be rich with props and details that match the scene
-- Camera angle: slightly above eye level, natural perspective
-- Warm, soft natural lighting from a window
+IMPORTANT REQUIREMENTS:
+- Realistic photo style (like taken with a DSLR camera)
+- Character facing directly toward the camera, front-facing
+- Mouth CLEARLY VISIBLE and slightly open (showing a friendly expression)
+- Bright, warm, natural lighting (golden hour or soft window light)
+- Shallow depth of field with blurred background
+- Character sitting or standing naturally in an environment (desk, room, park, etc.)
+- Full upper body visible (not extreme close-up)
+- The scene should look like a real photograph, NOT a painting or illustration
 
-CHARACTER:
-- FRONT-FACING, looking directly at camera
-- Mouth clearly visible (for lip-sync)
-- Cute, friendly expression
-- Full upper body visible with some desk/table in front
+COMPOSITION:
+- 9:16 VERTICAL portrait orientation
+- Character occupies about 40-50% of the frame
+- Face is well-lit and clearly visible
+- Background has context but is not distracting
 
 DO NOT:
-- Make the character fill the entire frame (leave room for environment)
-- Use plain/solid color backgrounds
-- Include any text, watermarks, or UI elements` }] }],
+- Use cartoon, anime, 3D render, or illustration style
+- Generate extreme close-ups (face only)
+- Place objects near or covering the mouth
+- Use dark or dramatic lighting
+- Include any text or watermarks` }] }],
             generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
           }),
         }
       )
-      if (!res.ok) throw new Error(`Gemini 오류: ${res.status}`)
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error?.message || `Gemini 오류: ${res.status}`)
+      }
       const data = await res.json()
-      const imagePart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData)
-      if (!imagePart) throw new Error('아바타 이미지를 생성하지 못했습니다.')
+      // 모든 candidates의 모든 parts에서 이미지 탐색
+      let imagePart = null
+      for (const candidate of data.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if (part.inlineData) { imagePart = part; break }
+        }
+        if (imagePart) break
+      }
+      if (!imagePart) {
+        throw new Error('아바타 이미지를 생성하지 못했습니다. 다시 시도해주세요.')
+      }
       const b64 = imagePart.inlineData.data
       const mime = imagePart.inlineData.mimeType || 'image/png'
       setAvatarImage(`data:${mime};base64,${b64}`)
@@ -725,6 +785,67 @@ DO NOT:
       showErrorAlert('아바타 생성', err.message)
     }
     setMediaItemLoading(p => ({ ...p, '아바타': false }))
+  }
+
+  // Step 6-2: 아바타 확정 시 HeyGen 업로드 + 폴링 대기 (백그라운드)
+  const confirmAndUploadAvatar = async () => {
+    setAvatarConfirmed(true)
+    setHeygenAvatarId(null)
+    setHeygenReady(false)
+    setHeygenUploading(true)
+    const HEYGEN_API_KEY = import.meta.env.VITE_HEYGEN_API_KEY
+    if (!avatarImage || !HEYGEN_API_KEY) { setHeygenUploading(false); return }
+    try {
+      // 테스트용: 서버에서 성공한 이미지를 업로드하고 기존 아바타가 있으면 재사용
+      const listRes = await fetch('/api/heygen/avatar-list', { headers: { 'x-api-key': HEYGEN_API_KEY } })
+      if (listRes.ok) {
+        const listData = await listRes.json()
+        const existingCustom = listData.custom || []
+        if (existingCustom.length > 0) {
+          setHeygenAvatarId(existingCustom[0].talking_photo_id)
+          setHeygenReady(true)
+          setHeygenUploading(false)
+          return
+        }
+      }
+      // 기존 아바타 없으면 성공한 이미지로 새로 생성
+      const uploadRes = await fetch('/api/heygen/upload-test-avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+      })
+      if (!uploadRes.ok) throw new Error('업로드 실패')
+      const uploadData = await uploadRes.json()
+      const imageKey = uploadData.data?.image_key
+      if (!imageKey) throw new Error('image_key 없음')
+      const groupRes = await fetch('/api/heygen/avatar-group/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+        body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
+      })
+      if (!groupRes.ok) throw new Error('Group 생성 실패')
+      const groupData = await groupRes.json()
+      const groupId = groupData.data?.group_id
+      if (!groupId) throw new Error('group_id 없음')
+      setHeygenAvatarId(groupId)
+      // 폴링으로 준비 확인 (10초 간격, 최대 3분)
+      for (let i = 0; i < 18; i++) {
+        await new Promise(r => setTimeout(r, 10000))
+        try {
+          const statusRes = await fetch(`/api/heygen/avatar-status/${groupId}`, {
+            headers: { 'x-api-key': HEYGEN_API_KEY },
+          })
+          if (statusRes.ok) {
+            const statusData = await statusRes.json()
+            if (statusData.ready) { setHeygenReady(true); setHeygenUploading(false); return }
+          }
+        } catch { /* 계속 폴링 */ }
+      }
+      setHeygenReady(true)
+    } catch (err) {
+      console.error('[HeyGen 업로드 실패]', err.message)
+      addStepErrors('shorts', [{ service: 'heygen', channel: '아바타 업로드', message: err.message || 'HeyGen 업로드 실패' }])
+    }
+    setHeygenUploading(false)
   }
 
   // Step 6-3: 숏폼 영상 생성 (HeyGen)
@@ -746,50 +867,107 @@ DO NOT:
     clearStepErrors('shorts')
     setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
     try {
-      // 1) 아바타 이미지를 서버에 업로드 → public URL 확보
-      const avatarBase64 = avatarImage.split(',')[1]
-      const uploadRes = await fetch('/api/output/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: `avatar_${Date.now()}.png`, data: avatarBase64, encoding: 'base64' }),
-      })
-      if (!uploadRes.ok) throw new Error('아바타 이미지 업로드 실패')
-      const { url: avatarPath } = await uploadRes.json()
-      const PUBLIC_URL = import.meta.env.VITE_PUBLIC_SERVER_URL || `${window.location.protocol}//${window.location.host}`
-      const avatarPublicUrl = `${PUBLIC_URL}${avatarPath}`
+      let talkingPhotoId = heygenAvatarId
 
-      // 2) 나레이션 텍스트 합치기
+      // 백그라운드 업로드가 안 되었으면 여기서 실행
+      if (!talkingPhotoId) {
+        const avatarBase64 = avatarImage.split(',')[1]
+        const binaryStr = atob(avatarBase64)
+        const bytes = new Uint8Array(binaryStr.length)
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+        const blob = new Blob([bytes], { type: 'image/png' })
+
+        const uploadRes = await fetch('/api/heygen/upload-asset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/png', 'x-api-key': HEYGEN_API_KEY },
+          body: blob,
+        })
+        if (!uploadRes.ok) throw new Error('HeyGen 이미지 업로드 실패')
+        const uploadData = await uploadRes.json()
+        const imageKey = uploadData.data?.image_key
+        if (!imageKey) throw new Error('image_key를 받지 못했습니다.')
+
+        const groupRes = await fetch('/api/heygen/avatar-group/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+          body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
+        })
+        if (!groupRes.ok) {
+          const groupErr = await groupRes.json().catch(() => ({}))
+          throw new Error(groupErr.error?.message || groupErr.message || `Avatar Group 생성 실패: ${groupRes.status}`)
+        }
+        const groupData = await groupRes.json()
+        talkingPhotoId = groupData.data?.group_id
+        if (!talkingPhotoId) throw new Error('talking_photo_id를 받지 못했습니다.')
+        setHeygenAvatarId(talkingPhotoId)
+      }
+
+      // fallback 업로드 시 폴링 대기
+      if (!heygenReady) {
+        setMediaItemLoading(p => ({ ...p, '숏폼 영상': '아바타 준비 확인 중...' }))
+        for (let i = 0; i < 36; i++) {
+          await new Promise(r => setTimeout(r, 5000))
+          try {
+            const statusRes = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`, {
+              headers: { 'x-api-key': HEYGEN_API_KEY },
+            })
+            if (statusRes.ok) {
+              const statusData = await statusRes.json()
+              if (statusData.ready) break
+            }
+          } catch { /* 계속 폴링 */ }
+        }
+      }
+
+      // 3) 나레이션 텍스트 (대본의 나레이션 합치기)
       const narrationText = shortsScript.scenes?.map(s => s.narration).join(' ') || ''
 
-      // 3) HeyGen v2 Video Generate 요청
-      const generateRes = await fetch('/api/heygen/video/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
-        body: JSON.stringify({
-          video_inputs: [{
-            character: {
-              type: 'photo',
-              photo_url: avatarPublicUrl,
-            },
-            voice: {
-              type: 'text',
-              input_text: narrationText,
-              voice_id: selectedVoice || undefined,
-            },
-          }],
-          dimension: { width: 1080, height: 1920 },
-        }),
-      })
-      if (!generateRes.ok) {
-        const errData = await generateRes.json().catch(() => ({}))
-        throw new Error(errData.error?.message || errData.message || `HeyGen 오류: ${generateRes.status}`)
+      // 4) HeyGen v2 Video Generate 요청 (Avatar III) - 실패 시 30초 대기 후 재시도 (최대 3회)
+      let videoId = null
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const generateRes = await fetch('/api/heygen/video/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+          body: JSON.stringify({
+            video_inputs: [{
+              character: {
+                type: 'talking_photo',
+                talking_photo_id: talkingPhotoId,
+              },
+              voice: {
+                type: 'text',
+                input_text: narrationText,
+                voice_id: selectedVoice || undefined,
+              },
+            }],
+            dimension: { width: 1080, height: 1920 },
+            caption: true,
+          }),
+        })
+        const genData = await generateRes.json().catch(() => ({}))
+        if (generateRes.ok && genData.data?.video_id) {
+          videoId = genData.data.video_id
+          break
+        }
+        const errMsg = genData.error?.message || genData.message || ''
+        if (errMsg.includes('unlimited mode') && attempt < 2) {
+          setMediaItemLoading(p => ({ ...p, '숏폼 영상': `아바타 준비 대기 중... (${attempt + 1}/3)` }))
+          for (let j = 0; j < 6; j++) {
+            await new Promise(r => setTimeout(r, 5000))
+            try {
+              const sr = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`, { headers: { 'x-api-key': HEYGEN_API_KEY } })
+              if (sr.ok && (await sr.json()).ready) break
+            } catch { /* 계속 */ }
+          }
+          continue
+        }
+        throw new Error(errMsg || `HeyGen 오류: ${generateRes.status}`)
       }
-      const genData = await generateRes.json()
-      const videoId = genData.data?.video_id
       if (!videoId) throw new Error('HeyGen video_id를 받지 못했습니다.')
 
       // 4) 폴링 (최대 10분)
       setMediaItemLoading(p => ({ ...p, '숏폼 영상': 'polling' }))
+      let videoCompleted = false
       for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 5000))
         const pollRes = await fetch(`/api/heygen/video/status/${videoId}`, {
@@ -801,14 +979,16 @@ DO NOT:
         if (status === 'completed') {
           const videoUrl = pollData.data?.video_url
           setShortsVideo({ url: videoUrl, duration: shortsScript.duration, videoId })
+          videoCompleted = true
           break
         }
         if (status === 'failed') {
-          throw new Error(`HeyGen 렌더 실패: ${pollData.data?.error || '알 수 없는 오류'}`)
+          const errDetail = pollData.data?.error
+          const errMsg = typeof errDetail === 'object' ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail)) : (errDetail || '알 수 없는 오류')
+          throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
         }
       }
-      if (!shortsVideo?.url) {
-        // 폴링 끝났는데 완료 안 됐으면 timeout
+      if (!videoCompleted) {
         throw new Error('HeyGen 영상 생성 시간 초과 (10분)')
       }
     } catch (err) {
@@ -854,8 +1034,13 @@ DO NOT:
     const recommend = async () => {
       setVoicesLoading(true)
       try {
-        const voiceSummary = allKoVoices.slice(0, 200).map(v =>
-          `${v.voice_id}|${v.display_name}|${v.language || ''}|${v.gender || ''}`
+        // 한국어 네이티브를 먼저 넣고, 나머지를 셔플해서 다양한 결과 유도
+        const koNative = allKoVoices.filter(v => (v.language || '').includes('Korean'))
+        const others = allKoVoices.filter(v => !(v.language || '').includes('Korean'))
+        const shuffled = [...others].sort(() => Math.random() - 0.5)
+        const voicePool = [...koNative, ...shuffled].slice(0, 300)
+        const voiceSummary = voicePool.map(v =>
+          `${v.voice_id}|${v.display_name || v.name}|${v.language || ''}|${v.gender || ''}`
         ).join('\n')
         const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
         const res = await fetch(
@@ -864,21 +1049,27 @@ DO NOT:
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: `아래는 HeyGen TTS voice 목록입니다. 캐릭터 "${avatarPrompt}"에 어울리는 목소리 20~30개의 voice_id를 추천해주세요.
+              contents: [{ parts: [{ text: `아래는 HeyGen TTS voice 목록입니다. 캐릭터 "${avatarPrompt}"에 가장 어울리는 목소리 30개의 voice_id를 추천해주세요.
 
-추천 기준:
-- 캐릭터의 분위기, 성별, 나이대에 맞는 목소리
-- 한국어 네이티브(Korean) voice 우선
-- 다국어(support_locale) voice도 포함 가능
-- 귀여운 캐릭터 → 밝고 높은 톤 여성 voice
-- 전문적인 캐릭터 → 안정적인 톤
-- 동물 캐릭터 → 친근하고 밝은 톤
+voice 이름에서 톤/성격 힌트를 읽어주세요:
+- "Chill", "Calm", "Soft" → 차분한 톤
+- "Bright", "Cheerful", "Sweet" → 밝고 친근한 톤
+- "Natural" → 자연스러운 톤
+- "Professional", "Confident" → 전문적 톤
 
-JSON 배열로 voice_id만 반환하세요. 예: ["id1","id2",...]
+추천 기준 (우선순위 순서대로):
+1. voice 이름의 톤/성격이 캐릭터 "${avatarPrompt}"의 분위기와 일치
+2. 한국어 네이티브(Korean) voice 최우선 (상위 5개 내 배치)
+3. 캐릭터 성별/나이대에 맞는 gender 선택
+4. 귀여운/동물 캐릭터 → female, Bright/Sweet/Cheerful 톤 우선
+5. 전문적/뉴스 캐릭터 → male/female, Natural/Confident 톤 우선
+6. 다양한 톤을 섞어서 사용자가 선택할 수 있게 구성
+
+가장 어울리는 순서대로 정렬하여 JSON 배열로 voice_id만 반환하세요. 예: ["id1","id2",...]
 
 목록:
 ${voiceSummary}` }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 2048, responseMimeType: 'application/json' },
+              generationConfig: { temperature: 0.7, maxOutputTokens: 2048, responseMimeType: 'application/json' },
             }),
           }
         )
@@ -1169,23 +1360,23 @@ ${parsedText}
 
   // 프롬프트 필드 렌더
   const PF = (label, { optional, type = 'input', value, onChange, placeholder, hint, options } = {}) => (
-    <div className="mb-3 last:mb-0">
-      <label className="block text-xs font-semibold text-text-muted mb-1">
+    <div className="mb-4 last:mb-0">
+      <label className="block text-sm font-semibold text-text-muted mb-1.5">
         {label} {optional && <span className="font-normal text-text-muted/50">(선택)</span>}
       </label>
       {type === 'textarea' ? (
-        <textarea defaultValue={value} onBlur={e => onChange(e.target.value)} placeholder={placeholder} rows={2}
-          className="w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-[11px] text-text placeholder:text-text-muted/40 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-y min-h-[48px]" />
+        <textarea defaultValue={value} onBlur={e => onChange(e.target.value)} placeholder={placeholder} rows={3}
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text placeholder:text-text-muted/40 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-y min-h-[60px]" />
       ) : type === 'select' ? (
         <select value={value} onChange={e => onChange(e.target.value)}
-          className="w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-[11px] text-text focus:outline-none focus:ring-1 focus:ring-primary/30 appearance-none">
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary/30 appearance-none">
           {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       ) : (
         <input type="text" defaultValue={value} onBlur={e => onChange(e.target.value)} placeholder={placeholder}
-          className="w-full px-2.5 py-1.5 bg-background border border-border rounded-lg text-[11px] text-text placeholder:text-text-muted/40 focus:outline-none focus:ring-1 focus:ring-primary/30" />
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text placeholder:text-text-muted/40 focus:outline-none focus:ring-1 focus:ring-primary/30" />
       )}
-      {hint && <p className="text-[9px] text-text-muted/50 mt-0.5">{hint}</p>}
+      {hint && <p className="text-xs text-text-muted/50 mt-1">{hint}</p>}
     </div>
   )
 
@@ -1208,57 +1399,121 @@ ${parsedText}
         </div>
       )}
       <ConfirmDialog message={confirmDialog} onConfirm={() => { setConfirmDialog(null); navigateToResults() }} onCancel={() => setConfirmDialog(null)} />
-
-      {/* 메인 레이아웃: 좌우 여백 10%씩, 콘텐츠 80% */}
-      <div className="w-full max-w-[1400px] mx-auto px-[5%] lg:px-[10%] space-y-6">
-
-        {/* Step Progress */}
-      <div className="bg-surface rounded-xl border border-border p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="font-semibold text-text">콘텐츠 추출 파이프라인</h3>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setDemoMode(prev => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${demoMode ? 'bg-warning/15 text-warning border border-warning/30' : 'bg-surface-light text-text-muted border border-border hover:border-primary/30'}`}
-            >
-              {demoMode ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-              데모
-            </button>
+      {/* 크레딧 소모 확인 팝업 */}
+      {creditConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-surface rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-xl bg-warning/10">
+                <AlertTriangle size={20} className="text-warning" />
+              </div>
+              <h3 className="text-base font-semibold text-text">크레딧 소모 안내</h3>
+            </div>
+            <p className="text-sm text-text-muted mb-6">
+              영상 생성 시 HeyGen 크레딧이 소모됩니다.<br />계속 진행하시겠습니까?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setCreditConfirm(false)}
+                className="px-5 py-2.5 bg-surface-light text-text-muted rounded-xl text-sm font-medium border border-border hover:bg-surface transition-all">
+                아니오
+              </button>
+              <button onClick={() => { setCreditConfirm(false); runShortsGeneration() }}
+                className="px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary-dark transition-all">
+                예
+              </button>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-1 mt-4">
-          {steps.map((step, i) => {
-            const Icon = step.icon
-            const isActive = step.id === currentStep
-            const isDone = step.id < currentStep
-            const hasError = stepErrors[['upload', 'upload', 'analysis', 'summary', 'content', 'media'][step.id]]?.length > 0
-            return (
-              <div key={step.id} className="flex items-center flex-1">
-                <div className="flex flex-col items-center flex-1">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all
-                    ${isDone && !hasError ? 'bg-success/20 text-success' :
-                      isDone && hasError ? 'bg-warning/20 text-warning' :
-                      isActive ? 'bg-primary/20 text-primary ring-2 ring-primary/30' :
-                      'bg-surface-light text-text-muted'}`}>
-                    {isDone && !hasError ? <CheckCircle size={18} /> :
-                     isDone && hasError ? <AlertTriangle size={18} /> :
-                     <Icon size={18} />}
+      )}
+
+      {/* 메인 레이아웃: 넓은 화면 → 왼쪽 사이드바 + 오른쪽 콘텐츠 / 좁은 화면 → 상단 가로바 + 아래 콘텐츠 */}
+      <div className="w-full max-w-[1400px] mx-auto px-[3%] lg:px-[5%] flex flex-col xl:flex-row gap-5">
+
+        {/* 진행 단계: 넓은 화면 → 왼쪽 세로 / 좁은 화면 → 상단 가로 */}
+        <div className="xl:w-[180px] shrink-0 xl:sticky xl:top-4 xl:self-start">
+          <div className="bg-surface rounded-xl border border-border p-4">
+            <div className="flex items-center justify-between mb-4 xl:mb-4">
+              <h3 className="text-sm font-bold text-text">진행 단계</h3>
+              <button
+                onClick={() => setDemoMode(prev => !prev)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${demoMode ? 'bg-warning/15 text-warning border border-warning/30' : 'bg-surface-light text-text-muted border border-border hover:border-primary/30'}`}
+              >
+                {demoMode ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+                데모
+              </button>
+            </div>
+            {/* 좁은 화면: 가로 스텝 */}
+            <div className="flex items-center gap-1 xl:hidden">
+              {steps.map((step, i) => {
+                const Icon = step.icon
+                const isActive = step.id === currentStep
+                const isDone = step.id < currentStep
+                const hasError = stepErrors[['upload', 'upload', 'analysis', 'summary', 'content', 'media'][step.id]]?.length > 0
+                return (
+                  <div key={step.id} className="flex items-center flex-1">
+                    <div
+                      onClick={() => document.getElementById(`step-${step.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      className="flex flex-col items-center flex-1 cursor-pointer">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all
+                        ${isDone && !hasError ? 'bg-success/20 text-success' :
+                          isDone && hasError ? 'bg-warning/20 text-warning' :
+                          isActive ? 'bg-primary/20 text-primary ring-2 ring-primary/30' :
+                          'bg-surface-light text-text-muted'}`}>
+                        {isDone && !hasError ? <CheckCircle size={14} /> :
+                         isDone && hasError ? <AlertTriangle size={14} /> :
+                         <Icon size={14} />}
+                      </div>
+                      <span className={`text-[10px] mt-1 font-medium text-center ${isActive ? 'text-primary-light' : isDone ? (hasError ? 'text-warning' : 'text-success') : 'text-text-muted'}`}>
+                        {step.label}
+                      </span>
+                    </div>
+                    {i < steps.length - 1 && (
+                      <ChevronRight size={12} className={`mx-0.5 shrink-0 ${isDone ? 'text-success' : 'text-border'}`} />
+                    )}
                   </div>
-                  <span className={`text-xs mt-1.5 font-medium text-center ${isActive ? 'text-primary-light' : isDone ? (hasError ? 'text-warning' : 'text-success') : 'text-text-muted'}`}>
-                    {step.label}
-                  </span>
-                </div>
-                {i < steps.length - 1 && (
-                  <ChevronRight size={14} className={`mx-1 shrink-0 ${isDone ? 'text-success' : 'text-border'}`} />
-                )}
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+            {/* 넓은 화면: 세로 스텝 */}
+            <div className="hidden xl:block space-y-1">
+              {steps.map((step, i) => {
+                const Icon = step.icon
+                const isActive = step.id === currentStep
+                const isDone = step.id < currentStep
+                const hasError = stepErrors[['upload', 'upload', 'analysis', 'summary', 'content', 'media'][step.id]]?.length > 0
+                return (
+                  <div key={step.id}>
+                    <div
+                      onClick={() => document.getElementById(`step-${step.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all cursor-pointer hover:bg-surface-light ${isActive ? 'bg-primary/10' : ''}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-all
+                        ${isDone && !hasError ? 'bg-success/20 text-success' :
+                          isDone && hasError ? 'bg-warning/20 text-warning' :
+                          isActive ? 'bg-primary/20 text-primary ring-2 ring-primary/30' :
+                          'bg-surface-light text-text-muted'}`}>
+                        {isDone && !hasError ? <CheckCircle size={14} /> :
+                         isDone && hasError ? <AlertTriangle size={14} /> :
+                         <Icon size={14} />}
+                      </div>
+                      <span className={`text-xs font-medium truncate ${isActive ? 'text-primary-light' : isDone ? (hasError ? 'text-warning' : 'text-success') : 'text-text-muted'}`}>
+                        {step.label}
+                      </span>
+                    </div>
+                    {i < steps.length - 1 && (
+                      <div className={`w-0.5 h-3 ml-[21px] rounded-full transition-all ${isDone ? 'bg-success/40' : 'bg-border'}`} />
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
-      </div>
+
+        {/* 오른쪽: 스텝 카드들 */}
+        <div className="flex-1 min-w-0 space-y-6">
 
       {/* Step 1: PDF Upload (프롬프트 없음) */}
-      <div className={`bg-surface rounded-xl border transition-all ${currentStep === 1 ? 'border-primary/40' : 'border-border'}`}>
+      <div id="step-1" className={`bg-surface rounded-xl border transition-all ${currentStep === 1 ? 'border-primary/40' : 'border-border'}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${file ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
@@ -1324,13 +1579,7 @@ ${parsedText}
       </div>
 
       {/* Step 2: Analysis */}
-      <div className="flex gap-4 items-stretch">
-        <div className={`w-[30%] shrink-0 bg-surface rounded-xl border border-border p-3 space-y-2 ${currentStep < 2 ? 'opacity-50' : ''}`}>
-          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5"><Settings2 size={11} /> 문서 분석 설정</p>
-          {PF('분석 중점 사항', { optional: true, placeholder: '예: 입학 정원, 경쟁률에 집중', value: promptSettings.analysis.focus, onChange: v => updatePrompt('analysis', 'focus', v) })}
-          {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '예: 표 데이터 원본 유지', value: promptSettings.analysis.extra, onChange: v => updatePrompt('analysis', 'extra', v) })}
-        </div>
-        <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === 2 ? 'border-primary/40' : 'border-border'} ${currentStep < 2 ? 'opacity-50' : ''}`}>
+      <div id="step-2" className={`bg-surface rounded-xl border transition-all ${currentStep === 2 ? 'border-primary/40' : 'border-border'} ${currentStep < 2 ? 'opacity-50' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${verification ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
@@ -1358,11 +1607,11 @@ ${parsedText}
                 {loading.analysis ? <><Loader2 size={14} className="animate-spin" /> 분석중...</> : <><Sparkles size={14} /> 실행</>}
               </button>
             )}
-            {verification && (stepErrors.analysis?.length > 0 || verification.confidence < 0.8) && (
+            {verification && (
               <button
                 onClick={runAnalysis}
                 disabled={loading.analysis}
-                className="px-3 py-1.5 bg-warning/10 text-warning text-sm font-medium rounded-lg hover:bg-warning/20 disabled:opacity-50 transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
               >
                 {loading.analysis ? <><Loader2 size={12} className="animate-spin" /> 재분석중...</> : <><RefreshCw size={12} /> 재분석</>}
               </button>
@@ -1450,12 +1699,11 @@ ${parsedText}
         )}
         <ErrorPanel errors={stepErrors.analysis} onRetry={retryAnalysis} retrying={retrying} />
       </div>
-      </div>
 
       {/* Step 3: Summary */}
-      <div className="flex gap-4 items-stretch">
-        <div className={`w-[30%] shrink-0 bg-surface rounded-xl border border-border p-3 space-y-2 ${currentStep < 3 ? 'opacity-50' : ''}`}>
-          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5"><Settings2 size={11} /> 핵심 요약 설정</p>
+      <div id="step-3" className="flex gap-4 items-stretch">
+        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 3 ? 'opacity-50 pointer-events-none' : ''}`}>
+          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 핵심 요약 설정</p>
           {PF('강조 키워드', { optional: true, placeholder: '쉼표 구분', value: promptSettings.summary.keywords, onChange: v => updatePrompt('summary', 'keywords', v) })}
           {PF('요약 스타일', { type: 'select', value: promptSettings.summary.style, onChange: v => updatePrompt('summary', 'style', v), options: [{ value: 'auto', label: '자동' }, { value: 'data', label: '데이터 중심' }, { value: 'story', label: '스토리텔링' }, { value: 'compare', label: '비교 분석' }] })}
           {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '예: 학부모 관점 강조', value: promptSettings.summary.extra, onChange: v => updatePrompt('summary', 'extra', v) })}
@@ -1473,7 +1721,18 @@ ${parsedText}
           </div>
           <div className="flex items-center gap-2">
 
-            {summary && !stepErrors.summary?.length && summary.title !== '요약 생성 실패' && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 요약 완료</span>}
+            {summary && !stepErrors.summary?.length && summary.title !== '요약 생성 실패' && (
+              <>
+                <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 요약 완료</span>
+                <button
+                  onClick={runSummary}
+                  disabled={loading.summary}
+                  className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
+                >
+                  {loading.summary ? <><Loader2 size={12} className="animate-spin" /> 재생성중...</> : <><RefreshCw size={12} /> 재생성</>}
+                </button>
+              </>
+            )}
             {summary?.title === '요약 생성 실패' && (
               <button
                 onClick={runSummary}
@@ -1558,9 +1817,9 @@ ${parsedText}
       </div>
 
       {/* Step 4: Content Generation */}
-      <div className="flex gap-4 items-stretch">
-        <div className={`w-[30%] shrink-0 bg-surface rounded-xl border border-border p-3 space-y-2 ${currentStep < 4 ? 'opacity-50' : ''}`}>
-          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5"><Settings2 size={11} /> 콘텐츠 설정</p>
+      <div id="step-4" className="flex gap-4 items-stretch">
+        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
+          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 콘텐츠 설정</p>
           {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
           {PF('공통 추가 지시', { optional: true, type: 'textarea', placeholder: '모든 채널에 공통 적용', value: promptSettings.content.commonExtra, onChange: v => updatePrompt('content', 'commonExtra', v) })}
           <div className="border-t border-border/30 my-1" />
@@ -1588,7 +1847,7 @@ ${parsedText}
                 {4 - (stepErrors.content?.length || 0)}/4 채널 생성 완료
               </span>
             )}
-            {currentStep === 4 && (
+            {currentStep === 4 && !hasAnyContent && (
               <button
                 onClick={runContentGeneration}
                 disabled={loading.content || loading.analysis || loading.summary}
@@ -1597,32 +1856,56 @@ ${parsedText}
                 {loading.content ? <><Loader2 size={14} className="animate-spin" /> 생성중...</> : <><Sparkles size={14} /> 실행</>}
               </button>
             )}
+            {hasAnyContent && (
+              <button
+                onClick={runContentGeneration}
+                disabled={loading.content || loading.analysis || loading.summary}
+                className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
+              >
+                {loading.content ? <><Loader2 size={12} className="animate-spin" /> 재생성중...</> : <><RefreshCw size={12} /> 전체 재생성</>}
+              </button>
+            )}
           </div>
         </div>
         {hasAnyContent && (
           <div className="p-5">
             <div className="grid grid-cols-4 gap-3">
               {[
-                { label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
-                { label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
-                { label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `본문 작성` : null },
-                { label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
+                { key: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
+                { key: 'newsletter', label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
+                { key: 'instagram', label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `본문 작성` : null },
+                { key: 'shorts', label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
               ].map((ch, i) => {
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
                 const failed = !ch.data && !!errObj
                 return (
-                  <div key={i} className={`rounded-lg p-3 border ${failed ? 'bg-danger/5 border-danger/20' : ch.data ? 'bg-success/5 border-success/20' : 'bg-surface-light border-border'}`}>
+                  <div key={i}
+                    onClick={() => ch.data && setContentPreview(prev => prev === ch.key ? null : ch.key)}
+                    className={`rounded-lg p-3 border transition-all ${ch.data ? 'cursor-pointer hover:shadow-md' : ''} ${contentPreview === ch.key ? 'ring-2 ring-primary/40' : ''} ${failed ? 'bg-danger/5 border-danger/20' : ch.data ? 'bg-success/5 border-success/20' : 'bg-surface-light border-border'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`p-1 rounded ${ch.color}`}><Icon size={14} /></span>
                       <span className="text-sm font-medium text-text">{ch.label}</span>
+                      {ch.data && <Eye size={12} className={`ml-auto ${contentPreview === ch.key ? 'text-primary' : 'text-text-muted/40'}`} />}
                     </div>
                     {ch.data ? (
                       <>
                         <p className="text-xs text-text-muted line-clamp-2">{ch.detail}</p>
-                        <div className="flex items-center gap-1 mt-2">
-                          <CheckCircle size={12} className="text-success" />
-                          <span className="text-xs text-success">완료</span>
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-1">
+                            <CheckCircle size={12} className="text-success" />
+                            <span className="text-xs text-success">완료</span>
+                          </div>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); regenerateChannel(ch.key) }}
+                            disabled={retrying === `regen-${ch.key}`}
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-light hover:bg-surface text-text-muted text-[11px] font-medium transition-all border border-border disabled:opacity-50"
+                          >
+                            {retrying === `regen-${ch.key}`
+                              ? <><Loader2 size={10} className="animate-spin" /> 생성중</>
+                              : <><RefreshCw size={10} /> 재생성</>
+                            }
+                          </button>
                         </div>
                       </>
                     ) : failed ? (
@@ -1655,6 +1938,147 @@ ${parsedText}
                 )
               })}
             </div>
+
+            {/* 콘텐츠 미리보기 */}
+            {contentPreview && (
+              <div className="mt-4 bg-background rounded-xl border border-border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-light">
+                  <span className="text-sm font-semibold text-text">
+                    {contentPreview === 'blog' && '📝 블로그 미리보기'}
+                    {contentPreview === 'newsletter' && '📧 뉴스레터 미리보기'}
+                    {contentPreview === 'instagram' && '📷 인스타그램 미리보기'}
+                    {contentPreview === 'shorts' && '🎬 숏폼 대본 미리보기'}
+                  </span>
+                  <button onClick={() => setContentPreview(null)} className="text-text-muted hover:text-text transition-colors"><XCircle size={16} /></button>
+                </div>
+                <div className="p-4 max-h-[500px] overflow-y-auto text-sm text-text space-y-3">
+
+                  {/* 블로그 */}
+                  {contentPreview === 'blog' && blogContent && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
+                        {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
+                      </div>
+                      {blogContent.sections?.map((sec, i) => (
+                        <div key={i} className="border-l-2 border-primary/30 pl-3">
+                          <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
+                          {sec.keyPhrase && <span className="inline-block text-xs bg-primary/10 text-primary-light px-2 py-0.5 rounded mt-1">{sec.keyPhrase}</span>}
+                          <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{sec.content}</p>
+                        </div>
+                      ))}
+                      {blogContent.tags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-2 border-t border-border">
+                          {blogContent.tags.map((tag, i) => <span key={i} className="text-xs px-2 py-0.5 bg-surface-light rounded-full text-text-muted">#{tag}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 뉴스레터 */}
+                  {contentPreview === 'newsletter' && newsletterContent && (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-base font-bold text-text">{newsletterContent.subject}</h4>
+                        {newsletterContent.preheader && <p className="text-xs text-text-muted">{newsletterContent.preheader}</p>}
+                      </div>
+                      {newsletterContent.greeting && <p className="text-sm text-text">{newsletterContent.greeting}</p>}
+                      {newsletterContent.headline && <p className="text-sm font-semibold text-text">{newsletterContent.headline}</p>}
+                      {newsletterContent.keyPoints?.length > 0 && (
+                        <ul className="list-disc list-inside space-y-1">
+                          {newsletterContent.keyPoints.map((pt, i) => <li key={i} className="text-sm text-text-muted">{pt}</li>)}
+                        </ul>
+                      )}
+                      {newsletterContent.body && <p className="text-sm text-text-muted whitespace-pre-wrap">{newsletterContent.body}</p>}
+                      {newsletterContent.dataHighlights?.length > 0 && (
+                        <div className="grid grid-cols-2 gap-2">
+                          {newsletterContent.dataHighlights.map((d, i) => (
+                            <div key={i} className="bg-surface-light rounded-lg p-2 text-center">
+                              <p className="text-xs text-text-muted">{d.label}</p>
+                              <p className="text-sm font-bold text-text">{d.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {newsletterContent.cta && (
+                        <div className="bg-primary/10 rounded-lg p-3 text-center">
+                          <p className="text-sm font-semibold text-primary">{newsletterContent.cta.text}</p>
+                          {newsletterContent.cta.description && <p className="text-xs text-text-muted mt-0.5">{newsletterContent.cta.description}</p>}
+                        </div>
+                      )}
+                      {newsletterContent.closingNote && <p className="text-xs text-text-muted italic">{newsletterContent.closingNote}</p>}
+                    </div>
+                  )}
+
+                  {/* 인스타그램 */}
+                  {contentPreview === 'instagram' && instagramContent && (
+                    <div className="space-y-3">
+                      {instagramContent.title && <h4 className="text-base font-bold text-text">{instagramContent.title}</h4>}
+                      {instagramContent.body && <p className="text-sm text-text-muted whitespace-pre-wrap">{instagramContent.body}</p>}
+                      {instagramContent.cardTopics?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-text-muted mb-2">카드 소재 ({instagramContent.cardTopics.length}개)</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {instagramContent.cardTopics.map((card, i) => (
+                              <div key={i} className="bg-surface-light rounded-lg p-2.5 border border-border">
+                                <p className="text-xs font-bold text-text">{card.headline}</p>
+                                <p className="text-xs text-text-muted mt-0.5">{card.content}</p>
+                                {card.dataPoint && <p className="text-xs font-semibold text-primary mt-1">{card.dataPoint}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {instagramContent.caption && (
+                        <div className="bg-surface-light rounded-lg p-3 border border-border">
+                          <p className="text-xs font-semibold text-text-muted mb-1">캡션</p>
+                          <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>
+                        </div>
+                      )}
+                      {instagramContent.hashtags?.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {instagramContent.hashtags.map((tag, i) => <span key={i} className="text-xs text-primary-light">{tag}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 숏폼 대본 */}
+                  {contentPreview === 'shorts' && shortsScript && (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-base font-bold text-text">{shortsScript.title}</h4>
+                        <p className="text-xs text-text-muted">총 {shortsScript.duration}초 · {shortsScript.scenes?.length || 0}씬</p>
+                      </div>
+                      {shortsScript.hook && (
+                        <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20">
+                          <p className="text-xs font-semibold text-warning mb-0.5">🎣 오프닝 훅</p>
+                          <p className="text-sm text-text">{shortsScript.hook}</p>
+                        </div>
+                      )}
+                      {shortsScript.scenes?.map((scene, i) => (
+                        <div key={i} className="border-l-2 border-warning/30 pl-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded">씬 {scene.sceneNumber}</span>
+                            <span className="text-xs text-text-muted">{scene.duration}초</span>
+                          </div>
+                          <p className="text-sm text-text">{scene.narration}</p>
+                          {scene.textOverlay && <p className="text-xs text-text-muted mt-1">📌 {scene.textOverlay}</p>}
+                          {scene.visualDescription && <p className="text-xs text-text-muted/60 mt-0.5">🎬 {scene.visualDescription}</p>}
+                        </div>
+                      ))}
+                      {shortsScript.cta && (
+                        <div className="bg-primary/10 rounded-lg p-2.5 text-center">
+                          <p className="text-xs font-semibold text-text-muted mb-0.5">CTA</p>
+                          <p className="text-sm font-semibold text-primary">{shortsScript.cta}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
           </div>
         )}
         {stepErrors.content?.length > 1 && (
@@ -1676,9 +2100,9 @@ ${parsedText}
       </div>
 
       {/* Step 5: Media Generation */}
-      <div className="flex gap-4 items-stretch">
-        <div className={`w-[30%] shrink-0 bg-surface rounded-xl border border-border p-3 space-y-2 ${currentStep < 5 ? 'opacity-50' : ''}`}>
-          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5"><Settings2 size={11} /> 이미지 설정</p>
+      <div id="step-5" className="flex gap-4 items-stretch">
+        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 5 ? 'opacity-50 pointer-events-none' : ''}`}>
+          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 이미지 설정</p>
           {PF('이미지 스타일', { type: 'select', value: promptSettings.media.imageStyle, onChange: v => updatePrompt('media', 'imageStyle', v), options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'minimal', label: '미니멀 플랫' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }] })}
           {PF('메인 컬러', { type: 'select', value: promptSettings.media.mainColor, onChange: v => updatePrompt('media', 'mainColor', v), options: [{ value: 'auto', label: '자동' }, { value: 'blue', label: '파란 계열' }, { value: 'pink', label: '분홍 계열' }, { value: 'green', label: '초록 계열' }, { value: 'purple', label: '보라 계열' }] })}
           {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '캐릭터 포함 등', value: promptSettings.media.extra, onChange: v => updatePrompt('media', 'extra', v) })}
@@ -1696,13 +2120,22 @@ ${parsedText}
           </div>
           <div className="flex items-center gap-2">
 
-            {currentStep === 5 && !loading.media && (
+            {currentStep >= 5 && !loading.media && !mediaGenerationDone && (
               <button
                 onClick={runMediaGeneration}
                 disabled={loading.analysis || loading.summary || loading.content}
                 className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
               >
                 <Sparkles size={14} /> 전체 실행
+              </button>
+            )}
+            {mediaGenerationDone && !loading.media && (
+              <button
+                onClick={runMediaGeneration}
+                disabled={loading.analysis || loading.summary || loading.content}
+                className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
+              >
+                <RefreshCw size={12} /> 전체 재생성
               </button>
             )}
             {loading.media && (
@@ -1821,9 +2254,9 @@ ${parsedText}
       </div>
 
       {/* Step 6: 숏폼 생성 (아바타 + 목소리 + 영상) */}
-      <div className="flex gap-4 items-stretch">
-        <div className={`w-[30%] shrink-0 bg-surface rounded-xl border border-border p-3 space-y-2 ${currentStep < 5 ? 'opacity-50' : ''}`}>
-          <p className="text-xs font-semibold text-text-muted flex items-center gap-1.5"><Settings2 size={11} /> 숏폼 설정</p>
+      <div id="step-6" className="flex gap-4 items-stretch">
+        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 6 ? 'opacity-50 pointer-events-none' : ''}`}>
+          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 숏폼 설정</p>
           {PF('나레이션 톤', { type: 'select', value: promptSettings.shorts.narrationTone, onChange: v => updatePrompt('shorts', 'narrationTone', v), options: [{ value: 'auto', label: '자동' }, { value: 'bright', label: '밝고 에너지 넘치는' }, { value: 'calm', label: '차분하고 신뢰감 있는' }, { value: 'humor', label: '유머러스한' }] })}
           {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '프로필 링크 CTA 등', value: promptSettings.shorts.extra, onChange: v => updatePrompt('shorts', 'extra', v) })}
         </div>
@@ -1885,12 +2318,12 @@ ${parsedText}
                   {avatarImage && (
                     <div className="flex flex-col items-center gap-3">
                       <div className={`w-36 rounded-xl overflow-hidden shadow-lg ${avatarConfirmed ? 'border-2 border-success/50' : 'border-2 border-primary/30'}`} style={{ aspectRatio: '9/16' }}>
-                        <img src={avatarImage} alt="아바타" className="w-full h-full object-cover" />
+                        <img src={avatarImage} alt="아바타" className="w-full h-full object-cover cursor-pointer" onClick={() => setPreviewImage({ src: avatarImage, title: '아바타 미리보기' })} />
                       </div>
                       {avatarConfirmed ? (
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-success flex items-center gap-1"><CheckCircle size={12} /> 확정됨</span>
-                          <button onClick={() => setAvatarConfirmed(false)}
+                          <button onClick={() => { setAvatarConfirmed(false); setHeygenAvatarId(null); setHeygenReady(false); setHeygenUploading(false); setSelectedVoice(null); setRecommendedVoices([]) }}
                             className="text-sm text-text-muted hover:text-text transition-colors">변경</button>
                         </div>
                       ) : (
@@ -1899,7 +2332,7 @@ ${parsedText}
                             className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all border border-border flex items-center gap-1">
                             <RefreshCw size={11} /> 재시도
                           </button>
-                          <button onClick={() => setAvatarConfirmed(true)}
+                          <button onClick={confirmAndUploadAvatar}
                             className="px-4 py-1.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-1">
                             <CheckCircle size={11} /> 확정
                           </button>
@@ -1917,30 +2350,46 @@ ${parsedText}
                     {selectedVoice && <CheckCircle size={14} className="text-success" />}
                   </div>
 
-                  {!HEYGEN_KEY ? (
+                  {!avatarConfirmed ? (
+                    <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
+                      아바타를 먼저 생성하고 확정하면 어울리는 목소리를 추천해드립니다.
+                    </p>
+                  ) : !HEYGEN_KEY ? (
                     <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
                       <code>VITE_HEYGEN_API_KEY</code>를 .env.local에 추가해주세요.
                     </p>
                   ) : voicesLoading ? (
                     <div className="flex items-center gap-2 p-3">
                       <Loader2 size={14} className="text-primary animate-spin" />
-                      <span className="text-xs text-text-muted">음성 목록 불러오는 중...</span>
+                      <span className="text-xs text-text-muted">캐릭터에 어울리는 목소리 추천 중...</span>
                     </div>
                   ) : voicesError ? (
                     <p className="text-sm text-danger p-3 bg-danger/5 rounded-lg border border-danger/20">{voicesError}</p>
                   ) : (
                     <>
-                      <input
-                        type="text"
-                        value={voiceFilter}
-                        onChange={e => setVoiceFilter(e.target.value)}
-                        placeholder="이름, 성별로 검색..."
-                        className="w-full px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-                      />
-                      <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-lg p-1.5">
+                      {/* 선택된 음성 표시 */}
+                      {selectedVoice && (() => {
+                        const sv = filteredVoices.find(v => v.voice_id === selectedVoice) || displayVoices.find(v => v.voice_id === selectedVoice)
+                        if (!sv) return null
+                        const svName = sv.display_name || sv.name || selectedVoice
+                        const svGender = sv.gender || ''
+                        return (
+                          <div className="flex items-center gap-3 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
+                            <div className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shrink-0">
+                              {svGender.toLowerCase().startsWith('f') ? 'F' : svGender.toLowerCase().startsWith('m') ? 'M' : '?'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-primary truncate">{svName}</p>
+                              <p className="text-xs text-text-muted">{[sv.language, svGender].filter(Boolean).join(' · ')}</p>
+                            </div>
+                            <CheckCircle size={14} className="text-primary shrink-0" />
+                          </div>
+                        )
+                      })()}
+                      <div className="max-h-56 overflow-y-auto space-y-1 border border-border rounded-lg p-1.5">
                         {filteredVoices.length === 0 ? (
-                          <p className="text-xs text-text-muted text-center py-3">검색 결과가 없습니다</p>
-                        ) : filteredVoices.map(v => {
+                          <p className="text-xs text-text-muted text-center py-3">추천 음성을 불러오는 중...</p>
+                        ) : filteredVoices.map((v, idx) => {
                           const vid = v.voice_id
                           const isSelected = selectedVoice === vid
                           const name = v.display_name || v.name || vid
@@ -1956,6 +2405,7 @@ ${parsedText}
                                   : 'hover:bg-surface-light border border-transparent'
                               }`}
                             >
+                              <span className={`w-5 text-[11px] font-bold text-center shrink-0 ${idx < 3 ? 'text-warning' : 'text-text-muted/40'}`}>{idx + 1}</span>
                               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
                                 isSelected ? 'bg-primary text-white' : 'bg-surface-light text-text-muted border border-border'
                               }`}>
@@ -1969,10 +2419,10 @@ ${parsedText}
                                 <p className="text-xs text-text-muted truncate">{[lang, gender].filter(Boolean).join(' · ')}</p>
                               </div>
                               {v.preview_audio && (
-                                <button onClick={e => { e.stopPropagation(); playPreview(vid, v.preview_audio) }}
-                                  className={`p-1 rounded-md transition-all shrink-0 ${playingVoice === vid ? 'bg-primary/20 text-primary' : 'bg-surface-light text-text-muted hover:text-primary'}`}>
+                                <div role="button" onClick={e => { e.stopPropagation(); playPreview(vid, v.preview_audio) }}
+                                  className={`p-1 rounded-md transition-all shrink-0 cursor-pointer ${playingVoice === vid ? 'bg-primary/20 text-primary' : 'bg-surface-light text-text-muted hover:text-primary'}`}>
                                   {playingVoice === vid ? <Pause size={12} /> : <Play size={12} />}
-                                </button>
+                                </div>
                               )}
                               {isSelected && <CheckCircle size={12} className="text-primary shrink-0" />}
                             </button>
@@ -1980,8 +2430,7 @@ ${parsedText}
                         })}
                       </div>
                       <p className="text-xs text-text-muted">
-                        {recommendedVoices.length > 0 ? `AI 추천 ${filteredVoices.length}개` : `${filteredVoices.length}개 음성`}
-                        {voiceFilter && ` (필터: "${voiceFilter}")`}
+                        🎯 AI 추천 {filteredVoices.length}개 · 캐릭터에 어울리는 순서로 정렬
                       </p>
                     </>
                   )}
@@ -2003,7 +2452,7 @@ ${parsedText}
                           <p className="text-xs text-text-muted">{shortsVideo.duration || shortsScript?.duration}초</p>
                         </div>
                         <button
-                          onClick={runShortsGeneration}
+                          onClick={() => setCreditConfirm(true)}
                           disabled={loading.shorts}
                           className="px-3 py-1.5 text-sm font-medium rounded-lg bg-surface-light hover:bg-surface text-text-muted border border-border transition-all flex items-center gap-1"
                         >
@@ -2012,8 +2461,8 @@ ${parsedText}
                       </div>
                       {shortsVideo.url && (
                         <div className="flex flex-col items-center gap-3">
-                          <div className="w-full max-w-[200px] rounded-xl overflow-hidden border-2 border-amber-400/30 shadow-lg" style={{ aspectRatio: '9/16' }}>
-                            <video src={shortsVideo.url} controls className="w-full h-full object-cover" />
+                          <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-amber-400/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                            <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
                           </div>
                           <a href={shortsVideo.url} download="shorts_video.mp4" target="_blank" rel="noopener noreferrer"
                             className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 transition-all shadow-md shadow-amber-500/20">
@@ -2024,8 +2473,8 @@ ${parsedText}
                     </div>
                   ) : (
                     <button
-                      onClick={runShortsGeneration}
-                      disabled={!avatarConfirmed || !shortsScript || loading.shorts || loading.media}
+                      onClick={() => setCreditConfirm(true)}
+                      disabled={!avatarConfirmed || !selectedVoice || !shortsScript || loading.shorts || loading.media || !heygenReady}
                       className="w-full px-4 py-3 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none transition-all flex items-center justify-center gap-2"
                     >
                       {loading.shorts ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</> : <><Film size={16} /> 숏폼 영상 생성</>}
@@ -2034,12 +2483,27 @@ ${parsedText}
                   {!avatarConfirmed && !shortsVideo && (
                     <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>
                   )}
+                  {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
+                    <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
+                      <Loader2 size={14} className="text-primary animate-spin" />
+                      <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
+                    </div>
+                  )}
+                  {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
+                    <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
+                      <CheckCircle size={14} className="text-success" />
+                      <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>
+                    </div>
+                  )}
                 </div>
               </>
             )}
           </div>
         )}
-        <ErrorPanel errors={stepErrors.shorts} onRetry={retryMediaItem} retrying={retrying} />
+        <ErrorPanel errors={stepErrors.shorts} onRetry={(err) => {
+          if (err.channel === '아바타') { generateAvatar() }
+          else { retryMediaItem(err) }
+        }} retrying={retrying} />
       </div>
       </div>
 
@@ -2061,7 +2525,8 @@ ${parsedText}
           )}
         </button>
       </div>
-      </div>
+      </div>{/* 오른쪽 스텝 카드 끝 */}
+      </div>{/* flex 레이아웃 끝 */}
     </div>
   )
 }

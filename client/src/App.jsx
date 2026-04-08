@@ -7,6 +7,7 @@ import ExtractionResultPage from './pages/ExtractionResultPage'
 import SettingsPage from './pages/SettingsPage'
 import AnimationTestPage from './pages/AnimationTestPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
+import ShortsTestPage from './pages/ShortsTestPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -36,6 +37,7 @@ function AppLayout() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/animation-test" element={<AnimationTestPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
+          <Route path="/shorts/test" element={<ShortsTestPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
