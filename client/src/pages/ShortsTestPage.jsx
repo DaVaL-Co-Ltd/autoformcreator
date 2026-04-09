@@ -7,10 +7,11 @@ const mockScript = {
   title: '2024 AI 시장 핵심 분석',
   duration: '30',
   scenes: [
-    { sceneNumber: 1, narration: '안녕하세요. 오늘은 2024년 글로벌 AI 시장의 핵심 트렌드를 분석해보겠습니다.' },
-    { sceneNumber: 2, narration: '올해 글로벌 AI 시장은 184조 원을 돌파하며 역대 최대 규모를 기록했습니다.' },
-    { sceneNumber: 3, narration: '특히 생성형 AI가 전년 대비 67퍼센트 성장하면서 전체 시장을 이끌고 있습니다.' },
-    { sceneNumber: 4, narration: '전문가들은 2030년까지 AI 시장이 826조 원에 달할 것으로 전망하고 있습니다. 더 자세한 분석은 프로필 링크에서 확인하세요.' },
+    { sceneNumber: 1, type: 'avatar', narration: '안녕하세요! 오늘은 2024년 글로벌 AI 시장의 핵심 트렌드를 분석해보겠습니다.', keyword: '' },
+    { sceneNumber: 2, type: 'avatar_keyword', narration: '올해 글로벌 AI 시장은 184조 원을 돌파하며 역대 최대 규모를 기록했습니다.', keyword: '글로벌 AI 시장 184조 원 돌파' },
+    { sceneNumber: 3, type: 'infographic', narration: '특히 생성형 AI가 67퍼센트 성장하면서 전체 시장을 이끌고 있습니다.', keyword: '분야별 성장률', bullets: ['생성형 AI: +67.2%', '자연어처리: +41.8%', '컴퓨터 비전: +29.3%'] },
+    { sceneNumber: 4, type: 'avatar_keyword', narration: '아시아태평양 지역이 31.5퍼센트로 빠르게 추격하고 있습니다.', keyword: '아시아태평양 지역 31.5% 추격' },
+    { sceneNumber: 5, type: 'avatar', narration: '2030년까지 826조 원에 달할 전망입니다. 더 자세한 분석은 프로필 링크에서 확인하세요!', keyword: '' },
   ],
 }
 
@@ -23,8 +24,7 @@ export default function ShortsTestPage() {
   const [selectedVoice, setSelectedVoice] = useState(null)
   const [playingVoice, setPlayingVoice] = useState(null)
   const previewAudioRef = useRef(null)
-  const [subtitleStyle, setSubtitleStyle] = useState('dynamic')
-  const [subtitleSize, setSubtitleSize] = useState(32)
+  const [subtitleStyle, setSubtitleStyle] = useState('classic')
   const [generating, setGenerating] = useState(false)
   const abortRef = useRef(false)
   const [status, setStatus] = useState('')
@@ -79,19 +79,64 @@ export default function ShortsTestPage() {
     setGenerating(true)
     setError(null)
     setVideo(null)
-    setStatus('영상 생성 요청 중...')
+    setStatus('배경 소스 생성 중...')
     try {
+      // 1) 인포그래픽 씬 배경 이미지 생성 + HeyGen 업로드
+      const infographicScenes = mockScript.scenes.filter(s => s.type === 'infographic')
+      const infographicUrls = {}
+
+      if (infographicScenes.length > 0) {
+        setStatus('인포그래픽 배경 생성 중...')
+        const genRes = await fetch('/api/infographic/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenes: infographicScenes }),
+        })
+        const genData = await genRes.json()
+        console.log('[인포그래픽 생성]', genData)
+
+        for (const img of (genData.images || [])) {
+          if (img.error || !img.path) continue
+          setStatus(`인포그래픽 씬 ${img.sceneNumber} 업로드 중...`)
+          const uploadRes = await fetch('/api/infographic/upload-to-heygen', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_KEY },
+            body: JSON.stringify({ localPath: img.path }),
+          })
+          const uploadData = await uploadRes.json()
+          console.log(`[HeyGen 업로드 씬${img.sceneNumber}]`, uploadData)
+          const imgUrl = uploadData.data?.url
+          if (imgUrl) infographicUrls[img.sceneNumber] = imgUrl
+        }
+      }
+
+      // 2) 멀티씬 video_inputs 구성
+      setStatus('영상 생성 요청 중...')
+      const avatarBg = { type: 'color', value: '#1a1a2e' }
+
+      const videoInputs = mockScript.scenes.map(scene => {
+        if (scene.type === 'infographic' && infographicUrls[scene.sceneNumber]) {
+          return {
+            character: { type: 'talking_photo', talking_photo_id: selectedAvatar, scale: 0.001, offset: { x: 1.0, y: 1.0 } },
+            voice: { type: 'text', input_text: scene.narration, voice_id: selectedVoice },
+            background: { type: 'image', url: infographicUrls[scene.sceneNumber], fit: 'cover' },
+          }
+        } else {
+          return {
+            character: { type: 'talking_photo', talking_photo_id: selectedAvatar, scale: 3.0, offset: { x: 0.0, y: 0.0 } },
+            voice: { type: 'text', input_text: scene.narration, voice_id: selectedVoice },
+            background: avatarBg,
+          }
+        }
+      })
+
+      console.log('[HeyGen 요청] video_inputs:', JSON.stringify(videoInputs, null, 2))
       const res = await fetch('/api/heygen/video/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_KEY },
         body: JSON.stringify({
-          video_inputs: [{
-            character: { type: 'talking_photo', talking_photo_id: selectedAvatar },
-            voice: { type: 'text', input_text: narrationText, voice_id: selectedVoice },
-          }],
+          video_inputs: videoInputs,
           dimension: { width: 1080, height: 1920 },
-          caption: true,
-          subtitles: { preset_name: subtitleStyle, font_size: subtitleSize },
         }),
       })
       if (!res.ok) {
@@ -102,10 +147,9 @@ export default function ShortsTestPage() {
       const videoId = data.data?.video_id
       if (!videoId) throw new Error('video_id를 받지 못했습니다.')
 
-      // 폴링
+      // 폴링 (최대 20분)
       setStatus('영상 렌더링 중...')
-      let completedWait = 0
-      for (let i = 0; ; i++) {
+      for (let i = 0; i < 240; i++) {
         await new Promise(r => setTimeout(r, 5000))
         if (abortRef.current) { setStatus('중단됨'); setGenerating(false); return }
         const pollRes = await fetch(`/api/heygen/video/status/${videoId}`, {
@@ -114,17 +158,35 @@ export default function ShortsTestPage() {
         if (!pollRes.ok) continue
         const pollData = await pollRes.json()
         const st = pollData.data?.status
-        setStatus(`렌더링 중... (${i * 5}초 경과)`)
+        const elapsed = (i + 1) * 5
+        const min = Math.floor(elapsed / 60)
+        const sec = elapsed % 60
+        setStatus(`렌더링 중... (${min > 0 ? `${min}분 ` : ''}${sec}초 경과) [${st || 'processing'}]`)
         if (st === 'completed') {
-          const captionUrl = pollData.data?.video_url_caption
-          const videoUrl = pollData.data?.video_url
-          if (!captionUrl && completedWait < 12) {
-            completedWait++
-            setStatus(`자막 렌더링 대기 중... (${completedWait * 5}초)`)
-            continue
+          const rawUrl = pollData.data?.video_url
+          console.log('[HeyGen] 영상 완료, URL:', rawUrl)
+          setStatus('자막 번인 중...')
+          try {
+            const burnRes = await fetch('/api/subtitle/burn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videoUrl: rawUrl, scenes: mockScript.scenes, subtitleStyle }),
+            })
+            const burnData = await burnRes.json()
+            console.log('[자막 번인]', burnRes.ok ? '성공' : '실패', burnData)
+            if (burnRes.ok && burnData.url) {
+              setVideo({ url: burnData.url, urlRaw: rawUrl, duration: pollData.data?.duration, srtUrl: burnData.srtUrl })
+              setStatus('완료!')
+              setGenerating(false)
+              return
+            }
+          } catch (burnErr) {
+            console.error('[자막 번인 에러]', burnErr)
           }
-          setVideo({ url: captionUrl || videoUrl, urlNoCaption: videoUrl, duration: pollData.data?.duration, hasCaption: !!captionUrl })
-          setStatus('완료!')
+          // 자막 번인 실패 시 원본 영상 사용
+          console.log('[Fallback] 원본 영상 사용:', rawUrl)
+          setVideo({ url: rawUrl, duration: pollData.data?.duration })
+          setStatus('완료! (자막 번인 실패, 원본 영상)')
           setGenerating(false)
           return
         }
@@ -134,7 +196,7 @@ export default function ShortsTestPage() {
           throw new Error(errMsg)
         }
       }
-      // 여기까지 도달하지 않음 (무한 폴링)
+      throw new Error('렌더링 시간 초과 (20분) — HeyGen 서버가 혼잡할 수 있습니다. 잠시 후 다시 시도해주세요.')
     } catch (err) {
       setError(err.message)
       setStatus('')
@@ -154,12 +216,23 @@ export default function ShortsTestPage() {
       <div className="bg-surface rounded-xl border border-border p-5">
         <h2 className="text-base font-semibold text-text mb-3">대본 (30초)</h2>
         <div className="space-y-2">
-          {mockScript.scenes.map((s, i) => (
-            <div key={i} className="flex gap-2 text-sm">
-              <span className="text-xs font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded shrink-0">씬 {s.sceneNumber}</span>
-              <p className="text-text-muted">{s.narration}</p>
-            </div>
-          ))}
+          {mockScript.scenes.map((s, i) => {
+            const typeLabel = { avatar: '아바타', avatar_keyword: '키워드', infographic: '인포그래픽' }[s.type] || s.type
+            const typeColor = { avatar: 'text-primary bg-primary/10', avatar_keyword: 'text-warning bg-warning/10', infographic: 'text-success bg-success/10' }[s.type] || 'text-text-muted bg-surface-light'
+            return (
+              <div key={i} className="flex gap-2 text-sm items-start">
+                <div className="flex gap-1 shrink-0">
+                  <span className="text-xs font-bold text-text-muted bg-surface-light px-1.5 py-0.5 rounded">씬{s.sceneNumber}</span>
+                  <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${typeColor}`}>{typeLabel}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-text-muted">{s.narration}</p>
+                  {s.keyword && <p className="text-xs text-primary font-medium mt-0.5">키워드: {s.keyword}</p>}
+                  {s.bullets && <p className="text-xs text-success mt-0.5">항목: {s.bullets.join(', ')}</p>}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </div>
 
@@ -253,67 +326,34 @@ export default function ShortsTestPage() {
       {/* 자막 스타일 */}
       <div className="bg-surface rounded-xl border border-border p-5">
         <h2 className="text-base font-semibold text-text mb-3">자막 스타일</h2>
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex gap-3">
           {[
-            { value: 'classic', label: 'Classic' },
-            { value: 'modern', label: 'Modern' },
-            { value: 'bold', label: 'Bold' },
-            { value: 'minimal', label: 'Minimal' },
-            { value: 'dynamic', label: 'Dynamic' },
-            { value: 'karaoke', label: 'Karaoke' },
+            { value: 'classic', label: 'Classic', desc: '흰 글자 + 검정 반투명 박스' },
+            { value: 'classic2', label: 'Classic 2', desc: '흰 글자 + 외곽선 (배경 없음)' },
           ].map(s => (
             <button
               key={s.value}
               onClick={() => setSubtitleStyle(s.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all border ${subtitleStyle === s.value ? 'bg-primary/10 text-primary border-primary/30' : 'bg-surface-light text-text-muted border-border hover:border-primary/20'}`}
+              className={`flex-1 p-3 rounded-xl text-left transition-all border ${subtitleStyle === s.value ? 'bg-primary/10 border-primary/30' : 'bg-surface-light border-border hover:border-primary/20'}`}
             >
-              {s.label}
+              <p className={`text-sm font-semibold ${subtitleStyle === s.value ? 'text-primary' : 'text-text'}`}>{s.label}</p>
+              <p className="text-xs text-text-muted mt-0.5">{s.desc}</p>
             </button>
           ))}
         </div>
-        {/* 자막 미리보기 */}
-        <div className="bg-slate-900 rounded-xl p-6 flex items-end justify-center" style={{ height: 180 }}>
+        {/* 자막 미리보기 (맑은 고딕 기준) */}
+        <div className="bg-slate-900 rounded-xl flex items-end justify-center mt-4 pb-6 px-6" style={{ height: 140, fontFamily: '"Pretendard", "Malgun Gothic", sans-serif' }}>
           {subtitleStyle === 'classic' && (
             <div className="bg-black/70 px-4 py-2 rounded">
-              <p className="text-white text-sm font-medium text-center">안녕하세요. AI 시장을 분석합니다.</p>
+              <p className="text-white text-sm text-center" style={{ fontFamily: '"Pretendard", "Malgun Gothic", sans-serif' }}>안녕하세요. AI 시장을 분석합니다.</p>
             </div>
           )}
-          {subtitleStyle === 'modern' && (
-            <div className="bg-white/15 backdrop-blur-sm px-5 py-2.5 rounded-lg border border-white/20">
-              <p className="text-white text-sm font-medium text-center">안녕하세요. AI 시장을 분석합니다.</p>
-            </div>
-          )}
-          {subtitleStyle === 'bold' && (
+          {subtitleStyle === 'classic2' && (
             <div className="px-4 py-2">
-              <p className="text-white text-lg font-black text-center" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>안녕하세요. AI 시장을 분석합니다.</p>
-            </div>
-          )}
-          {subtitleStyle === 'minimal' && (
-            <div className="px-4 py-2">
-              <p className="text-white/90 text-xs font-light text-center tracking-wide">안녕하세요. AI 시장을 분석합니다.</p>
-            </div>
-          )}
-          {subtitleStyle === 'dynamic' && (
-            <div className="bg-primary/90 px-5 py-2.5 rounded-lg shadow-lg shadow-primary/30">
-              <p className="text-white text-sm font-bold text-center">안녕하세요. <span className="text-yellow-300">AI 시장</span>을 분석합니다.</p>
-            </div>
-          )}
-          {subtitleStyle === 'karaoke' && (
-            <div className="px-4 py-2">
-              <p className="text-sm font-bold text-center">
-                <span className="text-yellow-400">안녕하세요.</span>
-                <span className="text-white/40"> AI 시장을 분석합니다.</span>
-              </p>
+              <p className="text-white text-sm text-center" style={{ fontFamily: '"Pretendard", "Malgun Gothic", sans-serif', textShadow: '-1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000' }}>안녕하세요. AI 시장을 분석합니다.</p>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-3 mt-3">
-          <span className="text-sm text-text-muted shrink-0">글자 크기</span>
-          <input type="range" min={16} max={64} value={subtitleSize} onChange={e => setSubtitleSize(Number(e.target.value))}
-            className="flex-1 accent-primary" />
-          <span className="text-sm font-medium text-text w-8 text-center">{subtitleSize}</span>
-        </div>
-        <p className="text-xs text-text-muted mt-2 text-center">실제 자막은 HeyGen 엔진에서 렌더링되며, 위 미리보기와 다소 다를 수 있습니다.</p>
       </div>
 
       {/* 영상 생성 */}
@@ -356,13 +396,23 @@ export default function ShortsTestPage() {
             </div>
             {video.url && (
               <div className="flex flex-col items-center gap-3">
-                <div className="w-full max-w-[280px] rounded-xl overflow-hidden border-2 border-amber-400/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
-                  <video src={video.url} controls className="w-full h-full object-contain" />
+                <div className="w-full max-w-[280px] rounded-xl overflow-hidden border-2 border-primary/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                  <video src={video.url.startsWith('/') ? video.url : video.url} controls playsInline crossOrigin="anonymous" className="w-full h-full object-contain" />
                 </div>
-                <a href={video.url} download="shorts_test.mp4" target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 transition-all shadow-md shadow-amber-500/20">
-                  <Download size={14} /> 다운로드
-                </a>
+                <div className="flex items-center gap-2">
+                  <a href={video.url} download="shorts_final.mp4" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-dark transition-all">
+                    <Download size={14} /> {video.srtUrl ? '자막 포함' : '원본'} 다운로드
+                  </a>
+                  {video.urlRaw && (
+                    <a href={video.urlRaw} download="shorts_raw.mp4" target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface border border-border transition-all">
+                      <Download size={14} /> 원본
+                    </a>
+                  )}
+                </div>
+                {video.srtUrl && <p className="text-xs text-success">자막이 영상에 포함되었습니다</p>}
+                {!video.srtUrl && <p className="text-xs text-warning">자막 번인 실패 — 원본 영상입니다</p>}
               </div>
             )}
           </div>

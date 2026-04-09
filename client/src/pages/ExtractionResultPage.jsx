@@ -195,6 +195,68 @@ export default function ExtractionResultPage() {
     }
   }, [activeMenu, blogContent])
 
+  // 카드 이미지용 텍스트에서 ** 제거
+  const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
+
+  // 카드 제목을 2줄로 분리 (15자 이상이면 반드시 2줄)
+  const splitHeading = (text) => {
+    if (!text) return [text]
+    const parts = text.split(/([&:,])\s*/)
+    const tokens = []
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i]
+      if (/^[&:,]$/.test(p)) {
+        if (tokens.length > 0) tokens[tokens.length - 1] += p
+      } else if (p.trim()) {
+        tokens.push(p.trim())
+      }
+    }
+    if (tokens.length > 1) {
+      const totalLen = tokens.reduce((sum, t) => sum + t.length, 0)
+      let line1 = '', line2 = '', acc = 0
+      for (let i = 0; i < tokens.length; i++) {
+        acc += tokens[i].length
+        if (acc >= totalLen / 2 && !line2) {
+          line1 = tokens.slice(0, i + 1).join(' ')
+          line2 = tokens.slice(i + 1).join(' ')
+        }
+      }
+      if (line2) return [line1, line2]
+    }
+    if (text.length >= 15) {
+      const words = text.split(/\s+/)
+      if (words.length >= 2) {
+        const mid = Math.ceil(text.length / 2)
+        let line1 = words[0], best = 0
+        for (let i = 1; i < words.length; i++) {
+          const candidate = words.slice(0, i + 1).join(' ')
+          if (Math.abs(candidate.length - mid) <= Math.abs(line1.length - mid)) {
+            line1 = candidate
+            best = i
+          }
+        }
+        const line2 = words.slice(best + 1).join(' ')
+        if (line2) return [line1, line2]
+      }
+    }
+    return [text]
+  }
+
+  const renderCardHeading = (text, fontSize) => {
+    const clean = stripBold(text)
+    const lines = splitHeading(clean)
+    return (
+      <p className="font-black text-gray-800 leading-snug drop-shadow-sm" style={{ fontSize, letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
+        {lines.map((line, li) => (
+          <span key={li}>
+            {li > 0 && <br />}
+            {line}
+          </span>
+        ))}
+      </p>
+    )
+  }
+
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
     if (!text) return ''
@@ -245,119 +307,103 @@ export default function ExtractionResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ── 블로그 (실제 블로그 포스트 형태) ──
-  const renderBlog = () => (
+  // ── 블로그 (네이버 블로그 스타일) ──
+  const renderBlog = () => {
+    const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
+    const labels = ['INSIGHT', 'STUDY TIP', 'CORE', 'CHECK LIST', 'KEY POINT']
+    const accentColor = '#e57a00'
+
+    return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-10">
     <article className="max-w-3xl mx-auto">
       {/* 블로그 헤더 */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text leading-tight mb-3">{blogContent?.title}</h1>
-        {blogContent?.metaDescription && (
-          <p className="text-sm text-text-muted leading-relaxed">{blogContent.metaDescription}</p>
-        )}
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border">
-          <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-bold">A</div>
-          <div>
-            <p className="text-xs font-medium text-text">AutoCreator</p>
-            <p className="text-xs text-text-muted">{new Date().toLocaleDateString('ko-KR')}</p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => downloadAllImages('blog')} disabled={downloading}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-              <Download size={12} /> {downloading ? '저장중...' : '이미지 저장하기'}
-            </button>
-            <button onClick={() => copy(blogContent?.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n'), { richText: true })}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
-              {copied ? <CheckCircle size={12} /> : <Copy size={12} />} {copied ? '복사됨' : '복사'}
-            </button>
-          </div>
+        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{blogContent?.title}</h1>
+        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
+          <button onClick={() => downloadAllImages('blog')} disabled={downloading}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors">
+            <Download size={12} /> {downloading ? '저장중...' : '이미지 저장'}
+          </button>
+          <button onClick={() => copy(blogContent?.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n'), { richText: true })}
+            className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors">
+            {copied ? <CheckCircle size={12} /> : <Copy size={12} />} {copied ? '복사됨' : '복사'}
+          </button>
         </div>
       </div>
 
       {/* 블로그 본문 */}
-      <div className="space-y-8">
+      <div className="space-y-2">
         {(() => {
-          // 첫 번째 이미지를 기준으로 모든 섹션에서 동일한 배경 사용
           const firstImage = blogImages?.find(img => img.imageUrl)
           return blogContent?.sections?.map((section, i) => {
           const image = blogImages?.find(img => img.heading === section.heading)
           const bgImageUrl = firstImage?.imageUrl || image?.imageUrl
+          const hasOverlayImg = !!bgImageUrl
+          const keyword = stripBold(image?.keyPhrase || section.keyPhrase || section.heading)
+          const headingClean = stripBold(section.heading)
+          const isFirst = i === 0
+
           return (
             <section key={i}>
-              <h2 className="text-lg font-bold text-text mb-3 pb-2 border-b border-border">{section.heading}</h2>
-              {(() => {
-                const hasOverlayImg = !!bgImageUrl
-                const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
-                const keyword = image?.keyPhrase || section.keyPhrase || section.heading
-                const isFirst = i === 0
-                const labels = ['INSIGHT', 'STUDY TIP', 'CORE', 'CHECK LIST', 'KEY POINT']
-                // 첫 번째 배경색 기준으로 모든 강조색 통일
-                const bgAccentMap = {
-                  'bg-[#FFF3E0]': '#e57a00',
-                  'bg-[#E8F5E9]': '#2e7d32',
-                  'bg-[#E3F2FD]': '#1565c0',
-                  'bg-[#F3E5F5]': '#7b1fa2',
-                }
-                const firstBg = bgColors[0]
-                const accentColor = bgAccentMap[firstBg] || '#6366f1'
-
-                return (
-                  <div className="mb-4">
-                    {/* PNG 미리보기 */}
-                    {blogPngUrls[i] ? (
-                      <img src={blogPngUrls[i]} alt={section.heading} className="w-full rounded-xl shadow-sm" />
+              <h2 className="text-lg font-bold text-gray-900 mb-4">{headingClean}</h2>
+              <div className="mb-5">
+                {blogPngUrls[i] ? (
+                  <img src={blogPngUrls[i]} alt={headingClean} className="w-full rounded-xl shadow-sm" />
+                ) : (
+                  <div ref={el => blogImagesRef.current[i] = el} className="w-full aspect-square rounded-xl relative overflow-hidden shadow-sm" style={{ fontFamily: "'Pretendard', sans-serif" }}>
+                    {hasOverlayImg ? (
+                      <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
                     ) : (
-                      <div ref={el => blogImagesRef.current[i] = el} className="w-full aspect-square rounded-xl relative overflow-hidden shadow-sm" style={{ fontFamily: "'Pretendard', sans-serif" }}>
-                        {hasOverlayImg ? (
-                          <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
-                        ) : (
-                          <div className={`w-full h-full absolute inset-0 ${bgColors[i % 4]}`} />
-                        )}
-
-                        {isFirst ? (
-                          <>
-                            <div className="absolute inset-0 bg-white/35 backdrop-blur-[1px]" />
-                            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ wordBreak: 'keep-all' }}>
-                              <span className="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-3 bg-white shadow-sm" style={{ letterSpacing: '1.5px', color: accentColor }}>{labels[i % labels.length]}</span>
-                              <p className="font-black text-gray-800 leading-snug drop-shadow-sm" style={{ fontSize: 'clamp(28px, 8vw, 36px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}>{section.heading.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</p>
-                              <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
-                              <p className="text-lg text-gray-500 font-semibold">{keyword}</p>
-                              <div className="absolute bottom-5 flex gap-1.5">
-                                {(blogContent?.tags || []).slice(0, 3).map((tag, ti) => (
-                                  <span key={ti} className="px-3 py-1 bg-white/70 backdrop-blur-sm rounded-full text-xs text-gray-600 font-medium">#{tag}</span>
-                                ))}
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="w-[75%] h-[75%] rounded-full bg-white/[0.93] shadow-lg flex flex-col items-center justify-center text-center p-6 relative" style={{ wordBreak: 'keep-all' }}>
-                              <p className="font-black text-gray-800 leading-snug" style={{ fontSize: 'clamp(22px, 6vw, 30px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}>{section.heading.split(/([,:])\s*/).reduce((acc, tok) => { if (tok === ',' || tok === ':') { acc[acc.length - 1] += tok; } else if (tok) { acc.push(tok); } return acc; }, []).map((part, pi, arr) => <span key={pi}><span style={{ whiteSpace: 'nowrap' }}>{part}</span>{pi < arr.length - 1 ? ' ' : ''}</span>)}</p>
-                              <div className="w-10 h-1 rounded-full mt-2 mb-2" style={{ background: accentColor }} />
-                              <p className="text-base text-gray-500 font-semibold">{keyword}</p>
-                            </div>
+                      <div className={`w-full h-full absolute inset-0 ${bgColors[i % 4]}`} />
+                    )}
+                    {isFirst ? (
+                      <>
+                        <div className="absolute inset-0 bg-white/35 backdrop-blur-[1px]" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ wordBreak: 'keep-all' }}>
+                          <span className="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-3 bg-white shadow-sm" style={{ letterSpacing: '1.5px', color: accentColor }}>{labels[i % labels.length]}</span>
+                          {renderCardHeading(headingClean, 'clamp(28px, 8vw, 36px)')}
+                          <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
+                          <p className="text-lg text-gray-500 font-semibold">{keyword}</p>
+                          <div className="absolute bottom-5 flex gap-1.5">
+                            {(blogContent?.tags || []).slice(0, 3).map((tag, ti) => (
+                              <span key={ti} className="px-3 py-1 bg-white/70 backdrop-blur-sm rounded-full text-xs text-gray-600 font-medium">#{stripBold(tag)}</span>
+                            ))}
                           </div>
-                        )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-[75%] h-[75%] rounded-full bg-white/[0.93] shadow-lg flex flex-col items-center justify-center text-center p-6 relative" style={{ wordBreak: 'keep-all' }}>
+                          {renderCardHeading(headingClean, 'clamp(22px, 6vw, 30px)')}
+                          <div className="w-10 h-1 rounded-full mt-2 mb-2" style={{ background: accentColor }} />
+                          <p className="text-base text-gray-500 font-semibold">{keyword}</p>
+                        </div>
                       </div>
                     )}
                   </div>
-                )
-              })()}
-              {section.keyPhrase && (
-                <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
-                  <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
-                </div>
-              )}
-              <div className="text-sm text-text-muted leading-7 max-w-none">
+                )}
+              </div>
+              <div className="text-[15px] text-gray-700 leading-8 max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   rehypePlugins={[rehypeRaw]}
                   components={{
-                    strong: ({ children }) => <strong className="font-bold text-text">{children}</strong>,
-                    h2: ({ children }) => <h2 className="text-base font-bold text-text mt-4 mb-2">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-sm font-bold text-text mt-3 mb-1">{children}</h3>,
-                    ul: ({ children }) => <ul className="list-disc pl-5 my-2 space-y-1">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal pl-5 my-2 space-y-1">{children}</ol>,
-                    p: ({ children }) => <p className="mb-2">{children}</p>,
+                    strong: ({ children }) => <strong className="font-bold text-gray-900">{children}</strong>,
+                    h2: ({ children }) => <h2 className="text-base font-bold text-gray-900 mt-5 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-[15px] font-bold text-gray-800 mt-4 mb-2">{children}</h3>,
+                    ul: ({ children }) => <ul className="list-disc pl-5 my-3 space-y-1.5">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-5 my-3 space-y-1.5">{children}</ol>,
+                    li: ({ children }) => <li className="text-gray-700">{children}</li>,
+                    p: ({ children }) => <p className="mb-3">{children}</p>,
+                    blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 py-1 my-3 text-gray-600">{children}</blockquote>,
+                    table: ({ children }) => (
+                      <div className="my-4 overflow-x-auto">
+                        <table className="w-full text-sm border-collapse border border-gray-200 rounded-lg overflow-hidden">{children}</table>
+                      </div>
+                    ),
+                    thead: ({ children }) => <thead className="bg-gray-50">{children}</thead>,
+                    th: ({ children }) => <th className="px-4 py-2.5 text-left font-semibold text-gray-700 border border-gray-200">{children}</th>,
+                    td: ({ children }) => <td className="px-4 py-2.5 text-gray-600 border border-gray-200">{children}</td>,
                   }}
                 >{normalizeMd(section.content)}</ReactMarkdown>
               </div>
@@ -369,16 +415,26 @@ export default function ExtractionResultPage() {
 
       {/* 태그 */}
       {blogContent?.tags?.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-border">
-          {blogContent.tags.map((tag, i) => (
-            <span key={i} className="text-xs px-3 py-1.5 bg-primary/10 text-primary-light rounded-full flex items-center gap-1 hover:bg-primary/20 transition-colors cursor-pointer">
-              <Hash size={10} />{tag}
-            </span>
-          ))}
+        <div className="flex flex-wrap gap-2 mt-10 pt-6 border-t border-gray-100">
+          {blogContent.tags.map((tag, i) => {
+            const cleanTag = tag.replace(/^#/, '')
+            return (
+              <span
+                key={i}
+                onClick={() => { navigator.clipboard.writeText(cleanTag); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
+                className="text-xs px-3 py-1.5 bg-green-50 text-green-600 rounded-full flex items-center gap-1 hover:bg-green-100 transition-colors cursor-pointer active:scale-95"
+                title="클릭하면 태그가 복사됩니다"
+              >
+                <Hash size={10} />{cleanTag}
+              </span>
+            )
+          })}
         </div>
       )}
     </article>
-  )
+    </div>
+    )
+  }
 
   // ── 인스타그램 (카드 캐러셀 + 캡션) ──
   const renderInstagram = () => {

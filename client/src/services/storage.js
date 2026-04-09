@@ -83,6 +83,16 @@ export function deleteExtraction(id) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
 }
 
+export function updateUploadStatus(id, channel, info) {
+  const items = getExtractions().map(item => {
+    if (item.id !== id) return item
+    const uploadStatus = { ...(item.uploadStatus || {}) }
+    uploadStatus[channel] = info
+    return { ...item, uploadStatus }
+  })
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+}
+
 export function deleteExtractionChannel(id, channel) {
   const items = getExtractions().map(item => {
     if (item.id !== id) return item

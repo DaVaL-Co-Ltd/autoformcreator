@@ -34,6 +34,16 @@ async function generate4Channels(summary, rawText, emphasis, options = {}) {
 - 사실에 기반한 내용만 작성하세요.
 - 특정 대학교(예: 건국대, 성균관대 등)에만 해당하는 세부 내용은 최소화하세요. 여러 대학에 공통으로 적용되는 트렌드, 제도 변화, 일반적인 전략 등 공통적인 내용을 중심으로 작성하세요. 특정 대학은 예시로만 간단히 언급하세요.
 - 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
+
+## 블로그 제목 작성 규칙 (매우 중요)
+- 제목 형식: "핵심키워드, 소제목 설명문" (쉼표로 구분)
+- 검색량이 높은 핵심 키워드 1~2개를 제목 맨 앞에 배치하세요.
+- 쉼표(,) 뒤에 소제목으로 구체적인 설명을 충분히 붙이세요.
+- ":" 또는 "|"는 사용하지 마세요. 반드시 쉼표(,)로 구분하세요.
+- 연도, 대상 등 부가 정보는 키워드 뒤쪽에 배치하세요.
+- 좋은 예: "수능최저 국어 고득점, 내신과 선행까지 한번에 잡는 실속형 로드맵"
+- 좋은 예: "2026 대입 핵심 변화, 학생부종합전형 준비 전략 총정리"
+- 나쁜 예: "수능최저 준비 | 국어 고득점" ("|" 사용, 소제목이 너무 짧음)
 ${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
@@ -46,7 +56,7 @@ ${rawText.slice(0, 8000)}
 
 아래 JSON 형식으로 4개 채널 콘텐츠를 생성하세요:
 {
-  "blog": {"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
+  "blog": {"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
   "newsletter": {"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"},
   "instagram": {"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]},
   "shorts": {"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
@@ -95,7 +105,7 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
 
 // 실패한 채널들만 1회 API 호출로 통합 재생성
 const CHANNEL_SCHEMAS = {
-  blog: `"blog":{"title":"블로그 제목(SEO 최적화)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
+  blog: `"blog":{"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
   newsletter: `"newsletter":{"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트1","포인트2"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`,
   instagram: `"instagram":{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용 상세 작성)","caption":"인스타그램 캡션(이모지 포함)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}`,
   shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
@@ -160,9 +170,19 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis) 
 
 // 개별 채널 재시도용 함수들 (1개만 실패 시 사용)
 export async function generateBlogContent(summary, rawText, emphasis) {
-  const prompt = `당신은 전문 블로그 작가입니다. 아래 데이터를 바탕으로 블로그 글을 작성해주세요.
+  const prompt = `당신은 네이버 블로그 인기글 전문 작가입니다. 아래 데이터를 바탕으로 블로그 글을 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
+
+## 제목 작성 규칙 (매우 중요 — 반드시 지켜주세요)
+- 제목 형식: "핵심키워드, 소제목 설명문" (쉼표로 구분)
+- 검색량이 높은 핵심 키워드 1~2개를 제목 맨 앞에 배치하세요.
+- 쉼표(,) 뒤에 소제목으로 구체적인 설명을 충분히 붙이세요.
+- ":" 또는 "|"는 사용하지 마세요. 반드시 쉼표(,)로 구분하세요.
+- 연도, 대상 등 부가 정보는 키워드 뒤쪽에 배치하세요.
+- 좋은 예: "수능최저 국어 고득점, 내신과 선행까지 한번에 잡는 실속형 로드맵"
+- 좋은 예: "2026 대입 핵심 변화, 학생부종합전형 준비 전략 총정리"
+- 나쁜 예: "수능최저 준비 | 국어 고득점" ("|" 사용, 소제목이 너무 짧음)
 ${buildEmphasisInstruction(emphasis)}
 
 ## 요약 데이터
@@ -172,7 +192,7 @@ ${JSON.stringify(summary, null, 2)}
 ${rawText.slice(0, 3000)}
 
 반드시 아래 JSON 형식으로만 응답하세요:
-{"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약","content":"섹션 내용","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약"}`
+{"title":"블로그 제목(30자 이내, 핵심 키워드를 맨 앞에)","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약","content":"섹션 내용","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })

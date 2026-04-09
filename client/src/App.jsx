@@ -8,6 +8,9 @@ import SettingsPage from './pages/SettingsPage'
 import AnimationTestPage from './pages/AnimationTestPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
 import ShortsTestPage from './pages/ShortsTestPage'
+import BlogTestPage from './pages/BlogTestPage'
+import ContentPage from './pages/ContentPage'
+import DashboardPage from './pages/DashboardPage'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -31,13 +34,16 @@ function AppLayout() {
       <Header />
       <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-background">
         <Routes>
-          <Route path="/" element={<ExtractionPage />} />
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/extraction" element={<ExtractionPage />} />
           <Route path="/extraction/result" element={<ExtractionResultPage />} />
+          <Route path="/contents" element={<ContentPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/animation-test" element={<AnimationTestPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
           <Route path="/shorts/test" element={<ShortsTestPage />} />
+          <Route path="/blog/test" element={<BlogTestPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

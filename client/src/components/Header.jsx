@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { FileText, Settings, LogOut } from 'lucide-react'
+import { FileText, Settings, LogOut, FolderOpen, LayoutDashboard } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const pageTitles = {
@@ -34,9 +34,31 @@ export default function Header() {
         </div>
         <nav className="flex items-center gap-1">
           <button
+            onClick={() => navigate('/dashboard')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              location.pathname === '/' || location.pathname === '/dashboard'
+                ? 'bg-primary/10 text-primary'
+                : 'text-text-muted hover:bg-surface-light hover:text-text'
+            }`}
+          >
+            <LayoutDashboard size={15} />
+            <span className="hidden sm:inline">대시보드</span>
+          </button>
+          <button
+            onClick={() => navigate('/contents')}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              location.pathname === '/contents'
+                ? 'bg-primary/10 text-primary'
+                : 'text-text-muted hover:bg-surface-light hover:text-text'
+            }`}
+          >
+            <FolderOpen size={15} />
+            <span className="hidden sm:inline">콘텐츠 관리</span>
+          </button>
+          <button
             onClick={() => navigate('/extraction')}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-              location.pathname === '/' || location.pathname.startsWith('/extraction')
+              location.pathname.startsWith('/extraction')
                 ? 'bg-primary/10 text-primary'
                 : 'text-text-muted hover:bg-surface-light hover:text-text'
             }`}
