@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Users, MessageCircle, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
-  CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search,
+  FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
+  CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search, Loader2,
 } from 'lucide-react'
 import { getExtractions, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload } from '../utils/scheduledUploads'
 
 const channelConfig = {
-  all:       { label: '전체',        icon: FileText,      color: 'text-text',        bg: 'bg-surface-light' },
-  blog:      { label: '네이버 블로그', icon: FileText,      color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  band:      { label: '네이버 밴드',   icon: Users,         color: 'text-green-500',   bg: 'bg-green-500/10' },
-  kakao:     { label: '카카오톡',      icon: MessageCircle, color: 'text-yellow-400',  bg: 'bg-yellow-400/10' },
-  instagram: { label: '인스타그램',    icon: Image,         color: 'text-pink-400',    bg: 'bg-pink-400/10' },
-  shorts:    { label: '유튜브 숏츠',   icon: Film,          color: 'text-red-500',     bg: 'bg-red-500/10' },
+  all:        { label: '전체',        icon: FileText, color: 'text-text',        bg: 'bg-surface-light' },
+  blog:       { label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  newsletter: { label: '뉴스레터',     icon: Mail,     color: 'text-blue-500',    bg: 'bg-blue-500/10' },
+  instagram:  { label: '인스타그램',   icon: Image,    color: 'text-pink-400',    bg: 'bg-pink-400/10' },
+  shorts:     { label: '유튜브 숏츠',  icon: Film,     color: 'text-red-500',     bg: 'bg-red-500/10' },
 }
 
 const uploadStatusConfig = {
@@ -30,14 +29,28 @@ export default function ContentPage() {
   const [activeStatus, setActiveStatus] = useState('all')
   const [activeSource, setActiveSource] = useState('all')
   const [extractions, setExtractions] = useState([])
+  const [loading, setLoading] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
   const [uploadingId, setUploadingId] = useState(null) // extractionId-channel
   const [searchQuery, setSearchQuery] = useState('')
 
+  const refreshExtractions = async (showSpinner = false) => {
+    if (showSpinner) setLoading(true)
+    try {
+      const items = await getExtractions()
+      setExtractions(items)
+    } finally {
+      if (showSpinner) setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    setExtractions(getExtractions())
+    refreshExtractions(true)
+    const onFocus = () => refreshExtractions(false)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
 
   // 원본 파일 목록 추출
@@ -77,11 +90,13 @@ export default function ContentPage() {
   })
 
   // 상태별 개수
+  // 뉴스레터는 업로드 대상이 아니므로 상태 카운트에서 제외
+  const uploadableContents = allContents.filter(c => c.channel !== 'newsletter')
   const statusCounts = {
     all: allContents.length,
-    not_uploaded: allContents.filter(c => c.uploadStatus === 'not_uploaded').length,
-    scheduled: allContents.filter(c => c.uploadStatus === 'scheduled').length,
-    uploaded: allContents.filter(c => c.uploadStatus === 'uploaded').length,
+    not_uploaded: uploadableContents.filter(c => c.uploadStatus === 'not_uploaded').length,
+    scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled').length,
+    uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded').length,
   }
 
   const handleView = (item) => {
@@ -103,17 +118,17 @@ export default function ContentPage() {
     // 업로드 시뮬레이션 (실제 API 연동 시 교체)
     await new Promise(r => setTimeout(r, 1500))
 
-    updateUploadStatus(item.extractionId, item.channel, {
+    await updateUploadStatus(item.extractionId, item.channel, {
       status: 'uploaded',
       uploadedAt: new Date().toISOString(),
     })
-    setExtractions(getExtractions())
+    await refreshExtractions()
     setUploadingId(null)
   }
 
-  const handleScheduleSave = (extractionId, channel, info) => {
-    updateUploadStatus(extractionId, channel, info)
-    setExtractions(getExtractions())
+  const handleScheduleSave = async (extractionId, channel, info) => {
+    await updateUploadStatus(extractionId, channel, info)
+    await refreshExtractions()
     // scheduledUploads에도 저장 (예약 목록 페이지와 동기화)
     if (info.status === 'scheduled' && info.scheduledAt) {
       const target = scheduleTarget
@@ -126,15 +141,15 @@ export default function ContentPage() {
     }
   }
 
-  const handleCancelSchedule = (item) => {
-    updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
-    setExtractions(getExtractions())
+  const handleCancelSchedule = async (item) => {
+    await updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
+    await refreshExtractions()
   }
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return
-    deleteExtractionChannel(deleteTarget.extractionId, deleteTarget.channel)
-    setExtractions(getExtractions())
+    await deleteExtractionChannel(deleteTarget.extractionId, deleteTarget.channel)
+    await refreshExtractions()
     setDeleteTarget(null)
   }
 
@@ -143,6 +158,15 @@ export default function ContentPage() {
     const d = new Date(iso)
     return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) + ' ' +
       d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <Loader2 size={32} className="text-primary animate-spin" />
+        <p className="text-sm text-text-muted">콘텐츠 목록을 불러오는 중...</p>
+      </div>
+    )
   }
 
   return (
@@ -259,8 +283,16 @@ export default function ContentPage() {
 
                   {/* 인라인 액션 버튼들 */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* 미업로드: 예약 + 업로드 */}
-                    {item.uploadStatus === 'not_uploaded' && (
+                    {/* 뉴스레터는 업로드 대상이 아님 - 안내 뱃지만 표시 */}
+                    {item.channel === 'newsletter' && (
+                      <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted bg-surface-light border border-border">
+                        <Mail size={13} />
+                        콘텐츠만 생성
+                      </div>
+                    )}
+
+                    {/* 미업로드: 예약 + 업로드 (뉴스레터 제외) */}
+                    {item.channel !== 'newsletter' && item.uploadStatus === 'not_uploaded' && (
                       <>
                         <button
                           onClick={() => setScheduleTarget(item)}
@@ -287,8 +319,8 @@ export default function ContentPage() {
                       </>
                     )}
 
-                    {/* 예약 완료 - 클릭하면 상세 다이얼로그 */}
-                    {item.uploadStatus === 'scheduled' && (
+                    {/* 예약 완료 - 클릭하면 상세 다이얼로그 (뉴스레터 제외) */}
+                    {item.channel !== 'newsletter' && item.uploadStatus === 'scheduled' && (
                       <button
                         onClick={() => setEditScheduleTarget(item)}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
@@ -299,8 +331,8 @@ export default function ContentPage() {
                       </button>
                     )}
 
-                    {/* 업로드 완료 */}
-                    {item.uploadStatus === 'uploaded' && (
+                    {/* 업로드 완료 (뉴스레터 제외) */}
+                    {item.channel !== 'newsletter' && item.uploadStatus === 'uploaded' && (
                       <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
                         <CheckCircle size={13} />
                         업로드 완료

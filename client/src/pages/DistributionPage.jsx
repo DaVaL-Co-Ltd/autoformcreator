@@ -3,19 +3,17 @@ import { Send, CheckCircle, Clock, AlertCircle, ExternalLink, Calendar, RefreshC
 
 const platforms = [
   { id: 'naver-blog', name: '네이버 블로그', connected: true, icon: '📝', account: 'edu_expert' },
+  { id: 'newsletter', name: '뉴스레터', connected: true, icon: '📧', account: 'newsletter@edu.com' },
   { id: 'instagram', name: '인스타그램', connected: true, icon: '📷', account: '@edu_data' },
   { id: 'youtube', name: '유튜브', connected: true, icon: '▶️', account: '입시데이터랩' },
-  { id: 'band', name: '네이버 밴드', connected: true, icon: '👥', account: 'band@edu.com' },
-  { id: 'kakao', name: '카카오톡', connected: true, icon: '💬', account: 'kakao@edu.com' },
 ]
 
 const distributions = [
   { id: 1, title: '2026 수시 경쟁률, 이 학과가 가장 높다', platform: '네이버 블로그', status: 'published', date: '2026-03-18 09:00' },
   { id: 2, title: '수시 경쟁률 TOP 10 학과 카드뉴스', platform: '인스타그램', status: 'published', date: '2026-03-18 10:30' },
-  { id: 3, title: '입시 전문가가 알려주는 수시 전략', platform: '네이버 밴드', status: 'published', date: '2026-03-18 08:00' },
+  { id: 3, title: '주간 입시 브리핑 뉴스레터', platform: '뉴스레터', status: 'published', date: '2026-03-18 08:00' },
   { id: 4, title: '60초로 보는 수시 경쟁률 핵심', platform: '유튜브', status: 'scheduled', date: '2026-03-19 12:00' },
   { id: 5, title: '정시 배치 전략 가이드', platform: '네이버 블로그', status: 'scheduled', date: '2026-03-20 09:00' },
-  { id: 6, title: '커트라인으로 보는 지원 전략', platform: '카카오톡', status: 'failed', date: '2026-03-17 08:00' },
 ]
 
 const statusConfig = {

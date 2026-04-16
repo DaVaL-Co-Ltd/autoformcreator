@@ -15,8 +15,22 @@ const { createCanvas, GlobalFonts } = require('@napi-rs/canvas')
 const fontsDir = path.join(__dirname, 'fonts')
 GlobalFonts.registerFromPath(path.join(fontsDir, 'PretendardVariable.ttf'), 'Pretendard')
 
+// Supabase 클라이언트 (서버 전용)
+const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
+const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createSupabaseClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null
+
 const app = express()
-app.use(cors())
+
+// CORS: ALLOWED_ORIGINS 환경변수 있으면 제한, 없으면 전체 허용 (개발용)
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || null
+app.use(cors({
+  origin: allowedOrigins || true,
+  credentials: true,
+}))
 
 // JSON body for most routes (LlamaParse upload 제외)
 app.use((req, res, next) => {
@@ -1058,21 +1072,210 @@ app.post('/api/instagram/publish', async (req, res) => {
   })
 })
 
-// ===== YouTube Data API Proxy (현재 mock) =====
-app.post('/api/youtube/upload', async (req, res) => {
-  console.log('[YouTube] upload request:', req.body)
-  // TODO: 실제 YouTube Data API v3 videos.insert 호출 (resumable upload)
-  await new Promise(r => setTimeout(r, 3000))
-  res.json({
-    success: true,
-    mock: true,
-    videoId: `mock_${Date.now()}`,
-    url: `https://youtu.be/mock_${Date.now()}`,
-    snippet: req.body?.snippet || {},
+// ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
+const { google } = require('googleapis')
+
+// 환경변수 우선, 없으면 client_secret.json 파일 폴백 (개발 편의)
+const ytCredentials = (() => {
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return {
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+    }
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(__dirname, 'client_secret.json'), 'utf-8'))
+    return raw.web || raw.installed
+  } catch { return null }
+})()
+
+const YOUTUBE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/api/youtube/oauth/callback'
+let ytOAuth2Client = null
+let ytTokens = null
+
+// 토큰 저장소: Supabase 우선, 없으면 파일 폴백
+const ytTokenPath = path.join(__dirname, '.youtube_tokens.json')
+
+async function loadYtTokens() {
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', 'default').maybeSingle()
+      if (!error && data?.tokens) return data.tokens
+    } catch (err) { console.warn('[YouTube] Supabase 토큰 로드 실패:', err.message) }
+  }
+  try {
+    if (fs.existsSync(ytTokenPath)) return JSON.parse(fs.readFileSync(ytTokenPath, 'utf-8'))
+  } catch {}
+  return null
+}
+
+async function saveYtTokens(tokens) {
+  if (supabaseAdmin) {
+    try {
+      const { error } = await supabaseAdmin.from('youtube_tokens').upsert({
+        id: 'default',
+        tokens,
+        updated_at: new Date().toISOString(),
+      })
+      if (error) console.warn('[YouTube] Supabase 토큰 저장 실패:', error.message)
+      else return
+    } catch (err) { console.warn('[YouTube] Supabase 토큰 저장 오류:', err.message) }
+  }
+  try { fs.writeFileSync(ytTokenPath, JSON.stringify(tokens, null, 2)) } catch {}
+}
+
+async function clearYtTokens() {
+  if (supabaseAdmin) {
+    try { await supabaseAdmin.from('youtube_tokens').delete().eq('id', 'default') } catch {}
+  }
+  try { fs.unlinkSync(ytTokenPath) } catch {}
+}
+
+// 서버 시작 시 토큰 로드 (비동기)
+loadYtTokens().then(t => { if (t) ytTokens = t })
+
+function getYtOAuth2Client() {
+  if (!ytCredentials) return null
+  if (!ytOAuth2Client) {
+    ytOAuth2Client = new google.auth.OAuth2(
+      ytCredentials.client_id,
+      ytCredentials.client_secret,
+      YOUTUBE_REDIRECT_URI
+    )
+  }
+  if (ytTokens) ytOAuth2Client.setCredentials(ytTokens)
+  return ytOAuth2Client
+}
+
+// OAuth 인증 URL 생성
+app.get('/api/youtube/auth-url', (req, res) => {
+  const client = getYtOAuth2Client()
+  if (!client) return res.status(500).json({ error: 'client_secret.json not found' })
+  const url = client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube'],
   })
+  res.json({ url })
 })
 
-const PORT = 3001
+// OAuth 콜백
+app.get('/api/youtube/oauth/callback', async (req, res) => {
+  const { code, error } = req.query
+  console.log('[YouTube OAuth callback]', { hasCode: !!code, error })
+  if (error) return res.status(400).send(`<html><body><h2>인증 거부됨</h2><p>${error}</p></body></html>`)
+  if (!code) return res.status(400).send('Missing code')
+  try {
+    const client = getYtOAuth2Client()
+    const { tokens } = await client.getToken(code)
+    console.log('[YouTube OAuth] 토큰 획득 성공, scopes:', tokens.scope)
+    client.setCredentials(tokens)
+    ytTokens = tokens
+    await saveYtTokens(tokens)
+    console.log('[YouTube OAuth] 토큰 저장 완료')
+    res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+  } catch (err) {
+    console.error('[YouTube OAuth] 토큰 획득 실패:', err.message)
+    res.status(500).send(`<html><body><h2>인증 실패</h2><p>${err.message}</p></body></html>`)
+  }
+})
+
+// 인증 상태 확인
+app.get('/api/youtube/auth-status', (req, res) => {
+  res.json({ authenticated: !!ytTokens, hasCredentials: !!ytCredentials })
+})
+
+// 인증 해제
+app.post('/api/youtube/logout', async (req, res) => {
+  ytTokens = null
+  await clearYtTokens()
+  if (ytOAuth2Client) ytOAuth2Client.revokeCredentials().catch(() => {})
+  res.json({ success: true })
+})
+
+// 실제 업로드
+app.post('/api/youtube/upload', async (req, res) => {
+  // 평면 구조 또는 { snippet, status, videoUrl } 구조 모두 지원
+  const body = req.body || {}
+  const snippet = body.snippet || {}
+  const status = body.status || {}
+  const title = body.title || snippet.title
+  const description = body.description || snippet.description
+  const tags = body.tags || snippet.tags
+  const categoryId = body.categoryId || snippet.categoryId
+  const privacyStatus = body.privacyStatus || status.privacyStatus
+  const videoUrl = body.videoUrl
+
+  if (!ytTokens) return res.status(401).json({ error: 'YouTube 인증이 필요합니다. 먼저 Google 계정을 연결하세요.' })
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl이 필요합니다.' })
+
+  const client = getYtOAuth2Client()
+  const youtube = google.youtube({ version: 'v3', auth: client })
+
+  try {
+    // 영상 다운로드 (로컬 경로 또는 URL)
+    let videoBuffer
+    const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
+    if (localPath && fs.existsSync(localPath)) {
+      videoBuffer = fs.readFileSync(localPath)
+    } else {
+      const videoRes = await fetch(videoUrl)
+      if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
+      videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+    }
+
+    // 임시 파일로 저장 (스트림 필요)
+    const tmpPath = path.join(__dirname, '..', 'output', `yt_upload_${Date.now()}.mp4`)
+    fs.writeFileSync(tmpPath, videoBuffer)
+
+    console.log('[YouTube] 업로드 시작:', { title, tags, size: videoBuffer.length })
+
+    const response = await youtube.videos.insert({
+      part: ['snippet', 'status'],
+      requestBody: {
+        snippet: {
+          title: title || '숏폼 테스트',
+          description: description || '',
+          tags: tags || [],
+          categoryId: categoryId || '22',
+        },
+        status: {
+          privacyStatus: privacyStatus || 'private',
+          selfDeclaredMadeForKids: false,
+        },
+      },
+      media: {
+        body: fs.createReadStream(tmpPath),
+      },
+    })
+
+    // 임시 파일 삭제
+    setTimeout(() => { try { fs.unlinkSync(tmpPath) } catch {} }, 5000)
+
+    const videoId = response.data.id
+    console.log('[YouTube] 업로드 완료:', videoId)
+
+    res.json({
+      success: true,
+      videoId,
+      url: `https://youtu.be/${videoId}`,
+      snippet: response.data.snippet,
+    })
+  } catch (err) {
+    console.error('[YouTube] 업로드 실패 전체:', JSON.stringify({
+      code: err.code,
+      message: err.message,
+      status: err.status,
+      errors: err.errors,
+      response_data: err.response?.data,
+      response_status: err.response?.status,
+    }, null, 2))
+    const detail = err.response?.data?.error?.message || err.errors?.[0]?.message || err.message
+    res.status(err.code === 401 ? 401 : 500).json({ error: detail, code: err.code, fullError: err.response?.data })
+  }
+})
+
+const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
-  console.log(`Proxy server running on http://localhost:${PORT}`)
+  console.log(`Proxy server running on port ${PORT}`)
 })

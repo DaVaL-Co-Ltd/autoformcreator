@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react'
-import { Save, Link, User, AlertTriangle, CheckCircle, FileText, Youtube, X, Users, MessageCircle } from 'lucide-react'
+import { Save, Link, User, AlertTriangle, CheckCircle, FileText, Youtube, X, Share2, Mail } from 'lucide-react'
 import { Instagram } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { getAll, connect, disconnect } from '../utils/platformConnections'
+import { getAll, connect, disconnect, updateDisplay } from '../utils/platformConnections'
 
 const sections = [
-  { id: 'platforms', label: '플랫폼 연동', icon: Link },
+  { id: 'platforms', label: '플랫폼 계정 연동', icon: Link },
+  { id: 'newsletter_footer', label: '플랫폼 주소 연동', icon: Share2 },
   { id: 'account', label: '계정', icon: User },
+]
+
+// 뉴스레터 풋터에 노출할 소셜 링크 대상 플랫폼
+const FOOTER_PLATFORMS = [
+  { key: 'blog', name: '네이버 블로그', Icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-50', urlPlaceholder: 'https://m.blog.naver.com/...' },
+  { key: 'shorts', name: '유튜브', Icon: Youtube, color: 'text-red-500', bg: 'bg-red-50', urlPlaceholder: 'https://www.youtube.com/@...' },
+  { key: 'instagram', name: '인스타그램', Icon: Instagram, color: 'text-pink-500', bg: 'bg-pink-50', urlPlaceholder: 'https://instagram.com/...' },
 ]
 
 const PLATFORMS = [
@@ -18,24 +26,6 @@ const PLATFORMS = [
     iconBg: 'bg-emerald-50',
     scopes: '포스트 작성, 이미지 업로드',
     placeholder: '블로그 ID (예: my_blog)',
-  },
-  {
-    key: 'band',
-    name: '네이버 밴드',
-    Icon: Users,
-    iconColor: 'text-green-600',
-    iconBg: 'bg-green-50',
-    scopes: '게시글 작성, 사진/동영상 업로드',
-    placeholder: '밴드 이름 또는 ID',
-  },
-  {
-    key: 'kakao',
-    name: '카카오톡',
-    Icon: MessageCircle,
-    iconColor: 'text-yellow-500',
-    iconBg: 'bg-yellow-50',
-    scopes: '카카오톡 채널 메시지 발송, 게시물 작성',
-    placeholder: '카카오톡 채널 ID',
   },
   {
     key: 'instagram',
@@ -73,6 +63,24 @@ export default function SettingsPage() {
   const [modalInput, setModalInput] = useState('')
   const [modalError, setModalError] = useState('')
   const [confirmDisconnect, setConfirmDisconnect] = useState(null) // platformKey
+
+  // 뉴스레터 풋터 편집 상태
+  const [footerDrafts, setFooterDrafts] = useState(() => {
+    const all = getAll()
+    return FOOTER_PLATFORMS.reduce((acc, { key }) => {
+      acc[key] = { displayName: all[key]?.displayName || '', url: all[key]?.url || '' }
+      return acc
+    }, {})
+  })
+  const [footerSavedKey, setFooterSavedKey] = useState(null)
+
+  const handleFooterSave = (key) => {
+    const draft = footerDrafts[key]
+    updateDisplay(key, { displayName: draft.displayName.trim(), url: draft.url.trim() })
+    refreshConnections()
+    setFooterSavedKey(key)
+    setTimeout(() => setFooterSavedKey(prev => (prev === key ? null : prev)), 1500)
+  }
 
   // 비밀번호 변경
   const [currentPw, setCurrentPw] = useState('')
@@ -158,10 +166,10 @@ export default function SettingsPage() {
       <div className="flex-1 space-y-6">
         {activeSection === 'platforms' && (
           <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-text mb-1">플랫폼 연동</h3>
+            <h3 className="text-base font-semibold text-text mb-1">플랫폼 계정 연동</h3>
             <p className="text-sm text-text-muted mb-6">콘텐츠를 자동 배포할 플랫폼 계정을 연결하세요.</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
               {PLATFORMS.map(({ key, name, Icon, iconColor, iconBg, scopes, placeholder }) => {
                 const state = connections[key]
                 return (
@@ -222,6 +230,71 @@ export default function SettingsPage() {
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {activeSection === 'newsletter_footer' && (
+          <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
+            <h3 className="text-base font-semibold text-text mb-1">플랫폼 주소 연동</h3>
+            <p className="text-sm text-text-muted mb-6">뉴스레터 본문 맨 아래에 노출될 버튼의 표시 이름과 이동할 URL을 설정합니다.</p>
+
+            <div className="space-y-4">
+              {FOOTER_PLATFORMS.map(({ key, name, Icon, color, bg, urlPlaceholder }) => {
+                const draft = footerDrafts[key] || { displayName: '', url: '' }
+                const saved = footerSavedKey === key
+                return (
+                  <div key={key} className="p-5 bg-surface-light rounded-xl border border-border">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`p-2 rounded-xl ${bg}`}>
+                        <Icon size={18} className={color} />
+                      </div>
+                      <span className="text-sm font-semibold text-text">{name}</span>
+                      {saved && (
+                        <span className="ml-auto flex items-center gap-1 text-xs text-success">
+                          <CheckCircle size={14} /> 저장됨
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium text-text-muted mb-1.5 block">표시 이름</label>
+                        <input
+                          type="text"
+                          value={draft.displayName}
+                          onChange={e => setFooterDrafts(p => ({ ...p, [key]: { ...p[key], displayName: e.target.value } }))}
+                          placeholder="예: 블로그 바로가기"
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-text-muted mb-1.5 block">URL</label>
+                        <input
+                          type="url"
+                          value={draft.url}
+                          onChange={e => setFooterDrafts(p => ({ ...p, [key]: { ...p[key], url: e.target.value } }))}
+                          placeholder={urlPlaceholder}
+                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => handleFooterSave(key)}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark transition-all"
+                      >
+                        <Save size={13} /> 저장
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <p className="text-xs text-text-muted mt-5 p-3 bg-surface-light rounded-lg border border-border">
+              💡 여기서 설정한 표시 이름과 URL은 뉴스레터 미리보기 및 복사(이메일 붙여넣기)에 그대로 반영됩니다.
+            </p>
           </div>
         )}
 

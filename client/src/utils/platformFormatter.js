@@ -40,23 +40,27 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
 export function formatYouTubeRequest(shortsScript = {}, videoUrl = '') {
   const limits = PLATFORM_LIMITS.shorts
 
-  // 제목: script title + "#Shorts" 접미사
-  const rawTitle = shortsScript.title || '유튜브 숏츠'
+  // 제목: uploadTitle 우선, 없으면 script title
+  const rawTitle = shortsScript.uploadTitle || shortsScript.title || '유튜브 숏츠'
   const shortsTag = ' #Shorts'
   const titleBase = truncate(rawTitle, limits.titleMax - shortsTag.length)
   const title = titleBase.includes('#Shorts') ? titleBase : titleBase + shortsTag
 
-  // 설명: hook + 각 씬 나레이션 + cta 조합
-  const descParts = []
-  if (shortsScript.hook) descParts.push(shortsScript.hook)
-  if (Array.isArray(shortsScript.scenes)) {
-    shortsScript.scenes.forEach((scene, i) => {
-      if (scene.narration) descParts.push(`${i + 1}. ${scene.narration}`)
-    })
+  // 설명: uploadDescription 우선, 없으면 hook+scenes+cta 조합
+  let rawDescription
+  if (shortsScript.uploadDescription) {
+    rawDescription = shortsScript.uploadDescription
+  } else {
+    const descParts = []
+    if (shortsScript.hook) descParts.push(shortsScript.hook)
+    if (Array.isArray(shortsScript.scenes)) {
+      shortsScript.scenes.forEach((scene, i) => {
+        if (scene.narration) descParts.push(`${i + 1}. ${scene.narration}`)
+      })
+    }
+    if (shortsScript.cta) descParts.push(`\n${shortsScript.cta}`)
+    rawDescription = descParts.join('\n')
   }
-  if (shortsScript.cta) descParts.push(`\n${shortsScript.cta}`)
-
-  const rawDescription = descParts.join('\n')
   const description = truncate(rawDescription, limits.descriptionMax)
 
   // 태그: hashtags에서 # 제거 후 사용, Shorts 태그 추가

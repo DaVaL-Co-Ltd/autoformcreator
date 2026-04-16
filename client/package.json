@@ -13,6 +13,7 @@
     "@remotion/cli": "^4.0.448",
     "@remotion/player": "^4.0.448",
     "@remotion/renderer": "^4.0.448",
+    "@supabase/supabase-js": "^2.103.2",
     "axios": "^1.13.4",
     "html2canvas": "^1.4.1",
     "lodash": "^4.17.23",

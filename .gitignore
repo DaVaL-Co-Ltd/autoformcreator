@@ -7,6 +7,11 @@ dist/
 api/uploads/
 .omc/
 
+# OAuth secrets
+server/client_secret.json
+server/.youtube_tokens.json
+cloudflared.exe
+
 # 테스트 미디어 파일
 client/public/test-*.mp4
 client/public/test-*.mp3

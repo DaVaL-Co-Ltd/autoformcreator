@@ -14,9 +14,9 @@ export default function YouTubeUploadTestPage() {
   const [description, setDescription] = useState('')
   const [tags, setTags] = useState([])
   const [tagInput, setTagInput] = useState('')
-  const [privacy, setPrivacy] = useState('public') // 'public' | 'unlisted' | 'private'
-  const [videoFile, setVideoFile] = useState(null) // { file, preview, name, duration }
-  const [thumbnail, setThumbnail] = useState(null) // { file, preview, name }
+  const [privacy, setPrivacy] = useState('private')
+  const [videoFile, setVideoFile] = useState(null)
+  const [thumbnail, setThumbnail] = useState(null)
   const [isDraggingVideo, setIsDraggingVideo] = useState(false)
   const [isDraggingThumb, setIsDraggingThumb] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -24,13 +24,55 @@ export default function YouTubeUploadTestPage() {
   const [error, setError] = useState(null)
   const [sentBody, setSentBody] = useState(null)
   const [connection, setConnection] = useState({ connected: false, account: null })
+  const [ytAuth, setYtAuth] = useState({ authenticated: false, hasCredentials: false })
 
   const videoInputRef = useRef(null)
   const thumbInputRef = useRef(null)
 
+  // YouTube OAuth 인증 상태 확인
   useEffect(() => {
     setConnection(get('shorts'))
+    fetch(`${API_BASE}/api/youtube/auth-status`)
+      .then(r => r.json())
+      .then(setYtAuth)
+      .catch(() => {})
   }, [])
+
+  // Google 계정 연결
+  const connectGoogle = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/youtube/auth-url`)
+      const { url } = await res.json()
+      const popup = window.open(url, 'youtube-auth', 'width=600,height=700')
+      // 팝업 닫힘 + 주기적 auth-status 폴링
+      let pollCount = 0
+      const timer = setInterval(async () => {
+        pollCount++
+        try {
+          const r = await fetch(`${API_BASE}/api/youtube/auth-status`)
+          const st = await r.json()
+          if (st.authenticated) {
+            setYtAuth(st)
+            clearInterval(timer)
+            try { popup?.close() } catch {}
+            return
+          }
+        } catch {}
+        if (popup?.closed || pollCount > 120) {
+          clearInterval(timer)
+          // 마지막으로 한번 더 확인
+          fetch(`${API_BASE}/api/youtube/auth-status`).then(r => r.json()).then(setYtAuth).catch(() => {})
+        }
+      }, 1000)
+    } catch (err) {
+      setError('Google 인증 URL 생성 실패: ' + err.message)
+    }
+  }
+
+  const disconnectGoogle = async () => {
+    await fetch(`${API_BASE}/api/youtube/logout`, { method: 'POST' })
+    setYtAuth({ authenticated: false, hasCredentials: true })
+  }
 
   const tagsTotal = tags.join(',').length
 
@@ -91,31 +133,45 @@ export default function YouTubeUploadTestPage() {
   }
 
   const upload = async () => {
+    if (!ytAuth.authenticated) {
+      setError('Google 계정을 먼저 연결하세요.')
+      return
+    }
+    if (!videoFile) {
+      setError('영상 파일을 선택하세요.')
+      return
+    }
     setUploading(true)
     setError(null)
     setResult(null)
     setSentBody(null)
 
-    const shortsScript = { title, description, hashtags: tags }
-    const videoUrl = videoFile ? videoFile.preview : ''
-    const body = formatYouTubeRequest(shortsScript, videoUrl)
-    // Override with direct user inputs since formatYouTubeRequest rebuilds from script structure
-    const requestBody = {
-      ...body,
-      snippet: {
-        ...body.snippet,
-        title: title || body.snippet.title,
-        description: description || body.snippet.description,
-        tags: body.snippet.tags,
-      },
-      status: {
-        ...body.status,
-        privacyStatus: privacy,
-      },
-    }
-    setSentBody(requestBody)
-
     try {
+      // 1) 영상 파일을 서버에 업로드
+      const reader = new FileReader()
+      const base64 = await new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result.split(',')[1])
+        reader.readAsDataURL(videoFile.file)
+      })
+
+      const uploadRes = await fetch(`${API_BASE}/api/output/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: `yt_${Date.now()}.mp4`, data: base64, encoding: 'base64' }),
+      })
+      const uploadData = await uploadRes.json()
+      const videoUrl = uploadData.url // /output/yt_xxx.mp4
+
+      // 2) YouTube 업로드 요청
+      const requestBody = {
+        title: title || '숏폼 테스트',
+        description: description || '',
+        tags,
+        videoUrl,
+        privacyStatus: privacy,
+      }
+      setSentBody(requestBody)
+
       const res = await fetch(`${API_BASE}/api/youtube/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,7 +184,7 @@ export default function YouTubeUploadTestPage() {
         setError(data.error || '업로드 실패')
       }
     } catch (err) {
-      setError(`서버 연결 실패: ${err.message}`)
+      setError(`업로드 실패: ${err.message}`)
     }
     setUploading(false)
   }
@@ -154,16 +210,22 @@ export default function YouTubeUploadTestPage() {
       <div className="flex items-center gap-3 flex-wrap">
         <Youtube size={24} className="text-red-500" />
         <h1 className="text-2xl font-bold text-text">유튜브 숏츠 업로드 테스트</h1>
-        {connection.connected ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-            {connection.account || '연결됨'}
-          </span>
+        {ytAuth.authenticated ? (
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              Google 계정 연결됨
+            </span>
+            <button onClick={disconnectGoogle} className="text-xs text-text-muted hover:text-red-400 transition-colors">연결 해제</button>
+          </div>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
+          <button
+            onClick={connectGoogle}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20 transition-all"
+          >
             <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
-            계정 미연결 &mdash; <a href="/settings" className="underline hover:text-red-300">설정에서 연결</a>
-          </span>
+            Google 계정 연결
+          </button>
         )}
       </div>
 

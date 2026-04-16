@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, FileText, Image, Users, MessageCircle, Film, FolderOpen, Layers, Sparkles,
-  ExternalLink, ArrowRight, Upload, CheckCircle, Calendar, TrendingUp
+  LayoutDashboard, FileText, Image, Mail, Film, FolderOpen, Layers, Sparkles,
+  ExternalLink, ArrowRight, Upload, CheckCircle, Calendar, TrendingUp, Loader2
 } from 'lucide-react'
 import { getExtractions } from '../services/storage'
+import { getAll as getPlatformConnections } from '../utils/platformConnections'
 
 const platforms = [
   {
@@ -15,30 +16,15 @@ const platforms = [
     color: 'text-emerald-500',
     bg: 'bg-emerald-500/10',
     border: 'border-emerald-500/30',
-    account: 'edu_expert',
-    url: 'https://blog.naver.com/edu_expert',
   },
   {
-    key: 'band',
-    label: '네이버 밴드',
-    icon: Users,
-    emoji: '👥',
-    color: 'text-green-500',
-    bg: 'bg-green-500/10',
-    border: 'border-green-500/30',
-    account: 'band@edu.com',
-    url: 'https://band.us',
-  },
-  {
-    key: 'kakao',
-    label: '카카오톡',
-    icon: MessageCircle,
-    emoji: '💬',
-    color: 'text-yellow-400',
-    bg: 'bg-yellow-400/10',
-    border: 'border-yellow-400/30',
-    account: 'kakao@edu.com',
-    url: 'https://pf.kakao.com',
+    key: 'newsletter',
+    label: '뉴스레터',
+    icon: Mail,
+    emoji: '📧',
+    color: 'text-blue-500',
+    bg: 'bg-blue-500/10',
+    border: 'border-blue-500/30',
   },
   {
     key: 'instagram',
@@ -48,8 +34,6 @@ const platforms = [
     color: 'text-pink-400',
     bg: 'bg-pink-400/10',
     border: 'border-pink-400/30',
-    account: '@edu_data',
-    url: 'https://www.instagram.com/edu_data',
   },
   {
     key: 'shorts',
@@ -59,17 +43,33 @@ const platforms = [
     color: 'text-red-500',
     bg: 'bg-red-500/10',
     border: 'border-red-500/30',
-    account: '입시데이터랩',
-    url: 'https://www.youtube.com/@입시데이터랩',
   },
 ]
 
 export default function DashboardPage() {
   const navigate = useNavigate()
   const [extractions, setExtractions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
 
   useEffect(() => {
-    setExtractions(getExtractions())
+    let cancelled = false
+    const load = async (showSpinner = true) => {
+      if (showSpinner) setLoading(true)
+      try {
+        const items = await getExtractions()
+        if (!cancelled) setExtractions(items)
+      } catch {
+        if (!cancelled) setExtractions([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load(true)
+    // 페이지 포커스 시 재조회 (스피너 없이 백그라운드) — 설정 변경사항도 반영
+    const onFocus = () => { load(false); setPlatformConnections(getPlatformConnections()) }
+    window.addEventListener('focus', onFocus)
+    return () => { cancelled = true; window.removeEventListener('focus', onFocus) }
   }, [])
 
   // 통계 계산
@@ -80,9 +80,10 @@ export default function DashboardPage() {
     return acc
   }, {})
 
-  // 업로드 상태별 통계
+  // 업로드 상태별 통계 (뉴스레터는 업로드 대상이 아니므로 제외)
   const uploadStats = extractions.reduce((acc, ext) => {
     ext.channels.forEach(ch => {
+      if (ch.channel === 'newsletter') return
       const status = ext.uploadStatus?.[ch.channel]?.status || 'not_uploaded'
       acc[status] = (acc[status] || 0) + 1
     })
@@ -99,6 +100,7 @@ export default function DashboardPage() {
       time: new Date(ext.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       uploadStatus: ext.uploadStatus?.[ch.channel]?.status || 'not_uploaded',
       data: ext.data,
+      allUploadStatus: ext.uploadStatus || {},
     }))
   ).slice(0, 5)
 
@@ -109,11 +111,20 @@ export default function DashboardPage() {
     { label: '미업로드', value: uploadStats.not_uploaded || 0, icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light' },
   ]
 
-  const channelLabel = { blog: '네이버 블로그', instagram: '인스타그램', band: '네이버 밴드', kakao: '카카오톡', shorts: '유튜브 숏츠' }
+  const channelLabel = { blog: '네이버 블로그', newsletter: '뉴스레터', instagram: '인스타그램', shorts: '유튜브 숏츠' }
   const statusBadge = {
     not_uploaded: { label: '미업로드', className: 'bg-surface-light text-text-muted' },
     scheduled: { label: '예약됨', className: 'bg-info/10 text-info' },
     uploaded: { label: '완료', className: 'bg-success/10 text-success' },
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
+        <Loader2 size={32} className="text-primary animate-spin" />
+        <p className="text-sm text-text-muted">대시보드 데이터를 불러오는 중...</p>
+      </div>
+    )
   }
 
   return (
@@ -149,17 +160,20 @@ export default function DashboardPage() {
       </div>
 
       {/* 플랫폼별 현황 */}
-      <div className="grid grid-cols-6 gap-3">
-        {platforms.map((p, idx) => {
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {platforms.map((p) => {
           const Icon = p.icon
           const count = channelCounts[p.key] || 0
           const uploaded = extractions.reduce((acc, ext) => {
             if (ext.uploadStatus?.[p.key]?.status === 'uploaded') acc++
             return acc
           }, 0)
+          // 설정(플랫폼 주소 연동)에서 가져온 URL
+          const conn = platformConnections[p.key] || {}
+          const linkUrl = conn.url
 
           return (
-            <div key={p.key} className={`bg-surface rounded-xl border ${p.border} hover:shadow-md transition-all ${idx < 2 ? 'col-span-3' : 'col-span-2'}`}>
+            <div key={p.key} className={`bg-surface rounded-xl border ${p.border} hover:shadow-md transition-all`}>
               <div className="p-4">
                 {/* 상단: 플랫폼 정보 */}
                 <div className="flex items-center gap-3 mb-4">
@@ -168,33 +182,46 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-text">{p.label}</h3>
-                    <p className="text-xs text-text-muted truncate">{p.account}</p>
+                    {linkUrl && p.key !== 'newsletter' && (
+                      <p className="text-xs text-text-muted truncate">{linkUrl}</p>
+                    )}
                   </div>
-                  <a
-                    href={p.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${p.bg} ${p.color} hover:opacity-80 transition-opacity`}
-                  >
-                    바로가기 <ExternalLink size={11} />
-                  </a>
+                  {/* 뉴스레터는 바로가기 없음 / 나머지는 설정의 URL 사용 */}
+                  {p.key !== 'newsletter' && linkUrl && (
+                    <a
+                      href={linkUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium ${p.bg} ${p.color} hover:opacity-80 transition-opacity`}
+                    >
+                      바로가기 <ExternalLink size={11} />
+                    </a>
+                  )}
                 </div>
 
-                {/* 콘텐츠 수 */}
-                <div className="flex items-center gap-4">
-                  <div className="flex-1 bg-surface-light rounded-lg p-3">
+                {/* 콘텐츠 수 — 뉴스레터는 업로드 대상이 아니므로 생성 수만 표시 */}
+                {p.key === 'newsletter' ? (
+                  <div className="bg-surface-light rounded-lg p-3">
                     <p className="text-[11px] text-text-muted mb-0.5">생성됨</p>
                     <p className="text-lg font-bold text-text">{count}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
+                    <p className="text-[10px] text-text-muted mt-1">※ 복사해서 이메일로 발송</p>
                   </div>
-                  <div className="flex-1 bg-surface-light rounded-lg p-3">
-                    <p className="text-[11px] text-text-muted mb-0.5">업로드</p>
-                    <p className="text-lg font-bold text-success">{uploaded}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 bg-surface-light rounded-lg p-3">
+                      <p className="text-[11px] text-text-muted mb-0.5">생성됨</p>
+                      <p className="text-lg font-bold text-text">{count}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
+                    </div>
+                    <div className="flex-1 bg-surface-light rounded-lg p-3">
+                      <p className="text-[11px] text-text-muted mb-0.5">업로드</p>
+                      <p className="text-lg font-bold text-success">{uploaded}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
+                    </div>
+                    <div className="flex-1 bg-surface-light rounded-lg p-3">
+                      <p className="text-[11px] text-text-muted mb-0.5">대기</p>
+                      <p className="text-lg font-bold text-text-muted">{count - uploaded}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
+                    </div>
                   </div>
-                  <div className="flex-1 bg-surface-light rounded-lg p-3">
-                    <p className="text-[11px] text-text-muted mb-0.5">대기</p>
-                    <p className="text-lg font-bold text-text-muted">{count - uploaded}<span className="text-xs font-normal text-text-muted ml-0.5">개</span></p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           )
@@ -221,7 +248,14 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={i}
-                    onClick={() => navigate('/extraction/result', { state: { ...item.data, activeChannel: item.channel } })}
+                    onClick={() => navigate('/extraction/result', {
+                      state: {
+                        ...item.data,
+                        activeChannel: item.channel,
+                        extractionId: item.extractionId,
+                        uploadStatus: item.allUploadStatus,
+                      }
+                    })}
                     className="flex items-center gap-3 p-3 hover:bg-surface-light/50 transition-colors cursor-pointer"
                   >
                     <div className={`w-8 h-8 rounded-lg ${ch?.bg || 'bg-surface-light'} flex items-center justify-center shrink-0`}>

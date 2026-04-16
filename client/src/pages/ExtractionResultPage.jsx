@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Users, MessageCircle, Film, ArrowLeft, ArrowRight, Copy, Download,
+  FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink,
   Upload, Loader2, AlertCircle, Calendar, XCircle, RefreshCw, Eye, EyeOff
 } from 'lucide-react'
@@ -14,23 +14,28 @@ import { marked } from 'marked'
 import { saveExtraction, getExtractions, loadImages, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
+import { getAll as getPlatformConnections } from '../utils/platformConnections'
 
 const menuItems = [
-  { id: 'blog',      label: '네이버 블로그', icon: FileText,      color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  { id: 'band',      label: '네이버 밴드',   icon: Users,         color: 'text-green-500',   bg: 'bg-green-500/10' },
-  { id: 'kakao',     label: '카카오톡',      icon: MessageCircle, color: 'text-yellow-400',  bg: 'bg-yellow-400/10' },
-  { id: 'instagram', label: '인스타그램',    icon: Image,         color: 'text-pink-400',    bg: 'bg-pink-400/10' },
-  { id: 'shorts',    label: '유튜브 숏츠',   icon: Film,          color: 'text-red-500',     bg: 'bg-red-500/10' },
+  { id: 'blog',       label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  { id: 'newsletter', label: '뉴스레터',      icon: Mail,     color: 'text-blue-500',    bg: 'bg-blue-500/10' },
+  { id: 'instagram',  label: '인스타그램',    icon: Image,    color: 'text-pink-400',    bg: 'bg-pink-400/10' },
+  { id: 'shorts',     label: '유튜브 숏츠',   icon: Film,     color: 'text-red-500',     bg: 'bg-red-500/10' },
 ]
 
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const state = location.state || {}
-  const dataMap = { blog: state.blogContent, instagram: state.instagramContent, band: state.bandContent, kakao: state.kakaoContent, shorts: state.shortsScript }
+  const dataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
   const [copied, setCopied] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(null) // 뉴스레터의 제목/본문 복사 버튼을 구분
+  const flashCopied = (key) => {
+    setCopiedKey(key)
+    setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000)
+  }
   const [instaSlide, setInstaSlide] = useState(0)
   const [downloading, setDownloading] = useState(false)
   const blogImagesRef = useRef([])
@@ -48,9 +53,8 @@ export default function ExtractionResultPage() {
 
   const platformConfig = {
     blog: { name: '네이버 블로그', icon: '📝', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    newsletter: { name: '뉴스레터', icon: '📧', color: 'text-blue-500', bg: 'bg-blue-500/10' },
     instagram: { name: '인스타그램', icon: '📷', color: 'text-pink-400', bg: 'bg-pink-400/10' },
-    band: { name: '네이버 밴드', icon: '👥', color: 'text-green-500', bg: 'bg-green-500/10' },
-    kakao: { name: '카카오톡', icon: '💬', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
     shorts: { name: '유튜브 숏츠', icon: '▶️', color: 'text-red-500', bg: 'bg-red-500/10' },
   }
 
@@ -152,16 +156,6 @@ export default function ExtractionResultPage() {
         setUploadStatus(p => ({ ...p, shorts: 'error' }))
         setUploadError(`유튜브 숏츠 업로드 실패: ${err.message}`)
       }
-      return
-    }
-
-    try {
-      // band/kakao: 시뮬레이션 (공식 API 없음)
-      await new Promise(r => setTimeout(r, 2000))
-      setUploadStatus(p => ({ ...p, [channel]: 'done' }))
-    } catch (err) {
-      setUploadStatus(p => ({ ...p, [channel]: 'error' }))
-      setUploadError(`${platformConfig[channel]?.name} 업로드 실패: ${err.message}`)
     }
   }
 
@@ -205,7 +199,7 @@ export default function ExtractionResultPage() {
         }
       } else {
         // 인스타: 각 카드를 순서대로 캡처
-        const cards = instagramContent?.cards || []
+        const cards = instagramContent?.cards || instagramContent?.cardTopics || []
         const prevSlide = instaSlide
         for (let idx = 0; idx < cards.length; idx++) {
           setInstaSlide(idx)
@@ -225,7 +219,7 @@ export default function ExtractionResultPage() {
 
   const {
     parsedText, verification, summary,
-    blogContent, bandContent, kakaoContent, instagramContent,
+    blogContent, newsletterContent, instagramContent,
     shortsScript, blogImages: initialBlogImages, instagramImages,
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
@@ -236,19 +230,21 @@ export default function ExtractionResultPage() {
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
 
-  // blogImages / shorts 미디어가 없으면 IndexedDB에서 불러오기
+  // blogImages / shorts 미디어가 없으면 Supabase에서 불러오기
   useEffect(() => {
     const stateData = location.state
     if (!stateData) return
-    const extractions = getExtractions()
-    const match = extractions.find(e => e.fileName === stateData.fileName)
-    if (!match?.id) return
+    let cancelled = false
+    ;(async () => {
+      const extractions = await getExtractions()
+      const match = extractions.find(e => e.fileName === stateData.fileName)
+      if (!match?.data || cancelled) return
 
-    if (!blogImages?.length) {
-      loadImages(match.id).then(imgs => {
-        if (imgs?.length) setBlogImages(imgs)
-      })
-    }
+      if (!blogImages?.length && match.data.blogImages?.length) {
+        setBlogImages(match.data.blogImages)
+      }
+    })()
+    return () => { cancelled = true }
 
   }, [])
 
@@ -268,7 +264,7 @@ export default function ExtractionResultPage() {
 
   // 인스타 카드 HTML → PNG 변환
   const convertInstaCardsToPng = async () => {
-    const cards = instagramContent?.cards || []
+    const cards = instagramContent?.cards || instagramContent?.cardTopics || []
     if (cards.length === 0) return
     const prevSlide = instaSlide
     const urls = []
@@ -303,15 +299,20 @@ export default function ExtractionResultPage() {
     }
   }, [activeMenu, blogContent])
 
-  // ── 블로그 업로드 서버 상태 확인 ──
+  // ── 블로그 업로드 서버 상태 확인 (네이버 블로그 업로드 전용) ──
   const BLOG_UPLOAD_SERVER = 'http://localhost:3000'
   const checkBlogServer = () => {
     setBlogServerStatus('checking')
-    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET' })
+    // 블로그 탭일 때만 상태 체크
+    if (activeMenu !== 'blog') { setBlogServerStatus('offline'); return }
+    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000) })
       .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
       .catch(() => setBlogServerStatus('offline'))
   }
-  useEffect(() => { checkBlogServer() }, [])
+  useEffect(() => {
+    if (activeMenu === 'blog') checkBlogServer()
+    else setBlogServerStatus('offline')
+  }, [activeMenu])
 
   // ── compileBlogBody: sections → [IMG:N] 마커 포함 본문 생성 ──
   const compileBlogBody = (sections = []) => {
@@ -407,11 +408,10 @@ export default function ExtractionResultPage() {
   useEffect(() => {
     const stateData = location.state
     if (!stateData || !stateData.savedFromExtraction) return
-    const hasContent = stateData.blogContent || stateData.bandContent || stateData.kakaoContent || stateData.instagramContent || stateData.shortsScript
+    const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript
     if (!hasContent) return
 
-    const id = saveExtraction(stateData)
-    setExtractionId(id)
+    saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
   }, [])
 
   // 기존 추출 결과에서 왔으면 id와 uploadStatus를 location.state에서 가져옴
@@ -436,7 +436,7 @@ export default function ExtractionResultPage() {
     }
   }, [location.state])
 
-  if (!blogContent && !bandContent && !kakaoContent && !instagramContent && !shortsScript) {
+  if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -643,7 +643,7 @@ export default function ExtractionResultPage() {
 
   // ── 인스타그램 (카드 캐러셀 + 캡션) ──
   const renderInstagram = () => {
-    const cards = instagramContent?.cards || []
+    const cards = instagramContent?.cards || instagramContent?.cardTopics || []
     const currentCard = cards[instaSlide]
     const currentImage = instagramImages?.find(img => img.cardNumber === currentCard?.cardNumber)
 
@@ -718,12 +718,18 @@ export default function ExtractionResultPage() {
         <div className="grid grid-cols-5 gap-1.5 mt-4 px-3">
           {cards.map((card, i) => {
             const img = instagramImages?.find(im => im.cardNumber === card.cardNumber)
+            const isImageLoading = instagramImages && img && !img.imageUrl
             return (
               <button key={i} onClick={() => setInstaSlide(i)}
                 className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${i === instaSlide ? 'border-primary' : 'border-transparent'}`}
                 style={{ backgroundColor: card.backgroundColor || '#1a1a2e' }}>
                 {img?.imageUrl ? (
                   <img src={img.imageUrl} alt="" className="w-full h-full object-cover" />
+                ) : isImageLoading ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-1">
+                    <Loader2 size={12} className="text-white/60 animate-spin" />
+                    <span className="text-white/40 text-[9px]">준비 중</span>
+                  </div>
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <span className="text-white/60 text-xs font-bold">{card.cardNumber}</span>
@@ -782,39 +788,192 @@ export default function ExtractionResultPage() {
     )
   }
 
-  // ── 네이버 밴드 (커뮤니티 게시글) ──
-  const renderBand = () => (
+  // 뉴스레터 풋터 소셜 링크 (설정에서 읽어옴)
+  const INSTAGRAM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>'
+  const footerLinks = (() => {
+    const conn = getPlatformConnections()
+    return [
+      { key: 'blog', label: conn.blog?.displayName || '블로그 바로가기', url: conn.blog?.url || '#', bg: '#03C75A', badge: 'N', badgeBg: '#FFFFFF', badgeColor: '#03C75A' },
+      { key: 'shorts', label: conn.shorts?.displayName || '유튜브 바로가기', url: conn.shorts?.url || '#', bg: '#FF0000', badge: '▶', badgeBg: null, badgeColor: null },
+      { key: 'instagram', label: conn.instagram?.displayName || '인스타그램 바로가기', url: conn.instagram?.url || '#', bg: '#E4405F', badge: INSTAGRAM_SVG, badgeBg: null, badgeColor: null, isSvg: true },
+    ]
+  })()
+
+  // 뉴스레터 → 이메일에 붙여넣기 가능한 HTML 생성
+  const buildNewsletterHtml = (nl) => {
+    if (!nl) return ''
+    const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const bodyHtml = nl.body ? marked.parse(nl.body) : ''
+    const parts = []
+
+    // 헤더 (제목)
+    parts.push(`<div style="background:linear-gradient(to right,#E0F2FE,#F0F9FF);padding:32px 24px;text-align:center;border-radius:12px 12px 0 0;">
+      <h1 style="margin:0;font-size:24px;font-weight:700;color:#0F172A;">${esc(nl.headline || nl.subject || '')}</h1>
+      ${nl.preheader ? `<p style="margin:8px 0 0;font-size:14px;color:#64748B;">${esc(nl.preheader)}</p>` : ''}
+    </div>`)
+
+    // 본문 컨테이너 시작
+    parts.push(`<div style="padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Pretendard,sans-serif;color:#0F172A;line-height:1.7;">`)
+
+    // 인사말
+    if (nl.greeting) {
+      parts.push(`<p style="margin:0 0 20px;font-size:14px;">${esc(nl.greeting)}</p>`)
+    }
+
+    // 핵심 포인트
+    if (nl.keyPoints?.length > 0) {
+      parts.push(`<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;padding:20px;margin:0 0 20px;">
+        <p style="margin:0 0 12px;font-size:11px;font-weight:700;color:#0284C7;letter-spacing:0.05em;text-transform:uppercase;">KEY POINTS</p>
+        <ul style="margin:0;padding:0;list-style:none;">
+          ${nl.keyPoints.map(p => `<li style="padding:6px 0;font-size:14px;color:#0F172A;">✓ ${esc(p)}</li>`).join('')}
+        </ul>
+      </div>`)
+    }
+
+    // 본문
+    if (bodyHtml) {
+      parts.push(`<div style="font-size:14px;color:#334155;margin:0 0 20px;">${bodyHtml}</div>`)
+    }
+
+    // 데이터 하이라이트
+    if (nl.dataHighlights?.length > 0) {
+      parts.push(`<table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px;margin:0 0 20px;">
+        <tr>${nl.dataHighlights.map(d => `
+          <td style="background:#F1F5F9;border:1px solid #E2E8F0;border-radius:12px;padding:16px;text-align:center;">
+            <div style="font-size:22px;font-weight:700;color:#0EA5E9;">${esc(d.value)}</div>
+            <div style="font-size:12px;color:#64748B;margin-top:4px;">${esc(d.label)}</div>
+          </td>`).join('')}</tr>
+      </table>`)
+    }
+
+    // 소셜 링크 (블로그 / 유튜브 / 인스타그램) — 설정에서 읽은 값 사용
+    const linkCells = footerLinks.filter(l => l.url && l.url !== '#').map(l => {
+      let badge
+      if (l.isSvg) {
+        badge = `<span style="display:inline-block;margin-right:6px;vertical-align:middle;line-height:0;">${l.badge}</span>`
+      } else if (l.badgeBg) {
+        badge = `<span style="display:inline-block;width:16px;height:16px;line-height:16px;text-align:center;background:${l.badgeBg};color:${l.badgeColor};border-radius:3px;font-weight:900;font-size:11px;margin-right:6px;vertical-align:middle;">${esc(l.badge)}</span>`
+      } else {
+        badge = `<span style="margin-right:6px;vertical-align:middle;">${esc(l.badge)}</span>`
+      }
+      return `<td style="padding:0 6px;">
+        <a href="${esc(l.url)}" style="display:inline-block;padding:10px 18px;background:${l.bg};color:#FFFFFF;text-decoration:none;border-radius:8px;font-size:13px;font-weight:700;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+          ${badge}${esc(l.label)}
+        </a>
+      </td>`
+    }).join('')
+
+    if (linkCells) {
+      parts.push(`<div style="text-align:center;padding:28px 0 8px;border-top:1px solid #E2E8F0;margin-top:16px;">
+        <p style="margin:0 0 16px;font-size:13px;color:#64748B;">더 많은 콘텐츠는 여기서 만나보세요</p>
+        <table role="presentation" style="margin:0 auto;border-collapse:collapse;">
+          <tr>${linkCells}</tr>
+        </table>
+      </div>`)
+    }
+
+    parts.push(`</div>`)
+    return parts.join('\n')
+  }
+
+  const copyNewsletterHtml = async () => {
+    if (!newsletterContent) return
+    const html = buildNewsletterHtml(newsletterContent)
+    // 평문 버전 (HTML을 지원하지 않는 에디터용)
+    const plain = [
+      newsletterContent.headline || newsletterContent.subject,
+      newsletterContent.preheader,
+      '',
+      newsletterContent.greeting,
+      '',
+      ...(newsletterContent.keyPoints?.map(p => `✓ ${p}`) || []),
+      '',
+      newsletterContent.body,
+      '',
+      ...(newsletterContent.dataHighlights?.map(d => `${d.label}: ${d.value}`) || []),
+      '',
+      '── 더 많은 콘텐츠 ──',
+      ...footerLinks
+        .filter(l => l.url && l.url !== '#')
+        .map(l => `${l.badge} ${l.label}: ${l.url}`),
+    ].filter(Boolean).join('\n')
+
+    try {
+      const htmlBlob = new Blob([html], { type: 'text/html' })
+      const plainBlob = new Blob([plain], { type: 'text/plain' })
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': plainBlob }),
+      ])
+      flashCopied('newsletter-body')
+    } catch (err) {
+      // ClipboardItem을 지원하지 않는 환경(구형 브라우저) → 평문으로 폴백
+      navigator.clipboard.writeText(plain)
+      flashCopied('newsletter-body')
+    }
+  }
+
+  // ── 뉴스레터 (이메일 형태) ──
+  const renderNewsletter = () => (
     <div className="max-w-2xl mx-auto">
+      {/* 이메일 프레임 */}
       <div className="bg-surface rounded-xl border border-border shadow-sm overflow-hidden">
-        {/* 밴드 상단 바 (녹색 포인트) */}
-        <div className="bg-[#00BD5E] px-6 py-3 flex items-center gap-2">
-          <Users size={16} className="text-white" />
-          <p className="text-sm font-semibold text-white flex-1 truncate">네이버 밴드</p>
-          <button onClick={() => copy(JSON.stringify(bandContent, null, 2))} className="text-xs text-white/90 hover:text-white flex items-center gap-1">
-            <Copy size={11} /> 복사
+        {/* 이메일 상단 바 */}
+        <div className="bg-surface-light border-b border-border px-6 py-3 flex items-center gap-2">
+          <div className="flex gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-danger/60" />
+            <div className="w-3 h-3 rounded-full bg-warning/60" />
+            <div className="w-3 h-3 rounded-full bg-success/60" />
+          </div>
+          <p className="text-xs text-text-muted ml-3 flex-1 truncate">{newsletterContent?.subject}</p>
+          <button onClick={copyNewsletterHtml} className="text-xs text-text-muted hover:text-primary flex items-center gap-1" title="이메일 편집기(Gmail 등)에 붙여넣으면 서식이 유지됩니다">
+            {copiedKey === 'newsletter-body' ? <><CheckCircle size={11} /> 복사됨</> : <><Copy size={11} /> 복사</>}
           </button>
         </div>
 
-        {/* 제목 */}
-        <div className="px-8 py-6 border-b border-border">
-          <h2 className="text-xl font-bold text-text">{bandContent?.title}</h2>
+        {/* 제목/프리헤더 복사 영역 */}
+        {newsletterContent?.subject && (
+          <div className="border-b border-border px-6 py-3 bg-surface">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-bold text-text-muted w-12 shrink-0">제목</span>
+              <p className="text-sm text-text flex-1 truncate">{newsletterContent.subject}</p>
+              <button
+                onClick={() => { navigator.clipboard.writeText(newsletterContent.subject); flashCopied('newsletter-subject') }}
+                className="text-xs text-text-muted hover:text-primary flex items-center gap-1 shrink-0"
+                title="이메일 제목을 복사합니다"
+              >
+                {copiedKey === 'newsletter-subject' ? <><CheckCircle size={11} /> 복사됨</> : <><Copy size={11} /> 제목 복사</>}
+              </button>
+            </div>
+            {newsletterContent.preheader && (
+              <div className="flex items-center gap-3 mt-1.5">
+                <span className="text-[10px] font-bold text-text-muted w-12 shrink-0">프리헤더</span>
+                <p className="text-xs text-text-muted flex-1 truncate">{newsletterContent.preheader}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 이메일 헤더 */}
+        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-8 py-8 text-center">
+          <h2 className="text-xl font-bold text-text">{newsletterContent?.headline || newsletterContent?.subject}</h2>
+          {newsletterContent?.preheader && (
+            <p className="text-sm text-text-muted mt-2">{newsletterContent.preheader}</p>
+          )}
         </div>
 
-        {/* 본문 */}
+        {/* 이메일 본문 */}
         <div className="px-8 py-6 space-y-5">
-          {bandContent?.greeting && (
-            <p className="text-sm text-text">{bandContent.greeting}</p>
+          {newsletterContent?.greeting && (
+            <p className="text-sm text-text">{newsletterContent.greeting}</p>
           )}
 
-          <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{bandContent?.body}</div>
-
-          {bandContent?.keyPoints?.length > 0 && (
-            <div className="bg-green-500/5 rounded-lg p-5 border border-green-500/20">
-              <p className="text-xs font-bold text-green-500 mb-3 uppercase tracking-wide">핵심 포인트</p>
+          {newsletterContent?.keyPoints?.length > 0 && (
+            <div className="bg-primary/5 rounded-lg p-5 border border-primary/10">
+              <p className="text-xs font-bold text-primary-light mb-3 uppercase tracking-wide">KEY POINTS</p>
               <ul className="space-y-2.5">
-                {bandContent.keyPoints.map((point, i) => (
+                {newsletterContent.keyPoints.map((point, i) => (
                   <li key={i} className="text-sm text-text flex items-start gap-2.5">
-                    <CheckCircle size={15} className="text-green-500 shrink-0 mt-0.5" />
+                    <CheckCircle size={15} className="text-primary shrink-0 mt-0.5" />
                     {point}
                   </li>
                 ))}
@@ -822,65 +981,47 @@ export default function ExtractionResultPage() {
             </div>
           )}
 
-          {bandContent?.hashtags?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {bandContent.hashtags.map((tag, i) => (
-                <span key={i} className="text-xs text-green-500 hover:underline cursor-pointer">{tag}</span>
+          <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{newsletterContent?.body}</div>
+
+          {newsletterContent?.dataHighlights?.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 py-2">
+              {newsletterContent.dataHighlights.map((d, i) => (
+                <div key={i} className="bg-surface-light rounded-xl p-4 border border-border text-center">
+                  <p className="text-2xl font-bold text-primary-light">{d.value}</p>
+                  <p className="text-xs text-text-muted mt-1">{d.label}</p>
+                </div>
               ))}
             </div>
           )}
 
-          {bandContent?.cta && (
-            <div className="pt-5 border-t border-border">
-              <div className="bg-green-500/10 rounded-lg px-4 py-3 border border-green-500/20">
-                <p className="text-sm text-text">{bandContent.cta}</p>
+          {/* 소셜 링크 풋터 — 설정에서 편집 가능 */}
+          {footerLinks.some(l => l.url && l.url !== '#') && (
+            <div className="pt-6 border-t border-border text-center">
+              <p className="text-xs text-text-muted mb-4">더 많은 콘텐츠는 여기서 만나보세요</p>
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                {footerLinks.filter(l => l.url && l.url !== '#').map(l => (
+                  <a
+                    key={l.key}
+                    href={l.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90"
+                    style={{ background: l.bg }}
+                  >
+                    {l.isSvg ? (
+                      <span className="inline-flex items-center" dangerouslySetInnerHTML={{ __html: l.badge }} />
+                    ) : l.badgeBg ? (
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-sm font-black text-[11px]" style={{ background: l.badgeBg, color: l.badgeColor }}>{l.badge}</span>
+                    ) : (
+                      <span className="text-xs">{l.badge}</span>
+                    )}
+                    {l.label}
+                  </a>
+                ))}
               </div>
             </div>
           )}
         </div>
-      </div>
-    </div>
-  )
-
-  // ── 카카오톡 채널 (모바일 메시지 형태) ──
-  const renderKakao = () => (
-    <div className="max-w-md mx-auto space-y-4">
-      {/* 푸시 알림 미리보기 (상단 채팅 버블) */}
-      <div className="bg-[#FEE500] rounded-2xl px-5 py-4 shadow-md">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="w-7 h-7 rounded-full bg-black/10 flex items-center justify-center text-sm">💬</div>
-          <p className="text-xs font-semibold text-black/70 flex-1">카카오톡</p>
-          <button onClick={() => copy(JSON.stringify(kakaoContent, null, 2))} className="text-xs text-black/60 hover:text-black flex items-center gap-1">
-            <Copy size={11} /> 복사
-          </button>
-        </div>
-        <p className="text-sm font-bold text-black leading-snug">{kakaoContent?.title}</p>
-        <p className="text-xs text-black/70 mt-1 line-clamp-2">{kakaoContent?.message}</p>
-      </div>
-
-      {/* 메시지 카드 */}
-      <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
-        <div className="px-6 py-5 space-y-4">
-          <div className="text-sm text-text leading-7 whitespace-pre-wrap">{kakaoContent?.body}</div>
-
-          {kakaoContent?.highlight && (
-            <div className="bg-yellow-400/20 rounded-lg px-4 py-3 border-l-4 border-yellow-400">
-              <p className="text-sm font-semibold text-text">{kakaoContent.highlight}</p>
-            </div>
-          )}
-        </div>
-
-        {/* CTA 버튼 */}
-        {kakaoContent?.cta?.text && (
-          <div className="px-6 pb-6">
-            <button className="w-full bg-[#FEE500] hover:bg-yellow-300 text-black text-sm font-bold py-3 rounded-xl transition-colors">
-              {kakaoContent.cta.text}
-            </button>
-            {kakaoContent.cta.description && (
-              <p className="text-xs text-text-muted text-center mt-2">{kakaoContent.cta.description}</p>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )
@@ -928,8 +1069,10 @@ export default function ExtractionResultPage() {
   }
 
   const renderVideoPanel = (videoData, versionLabel) => {
-    const videoUrl = videoData?.combinedVideoUrl
+    // 다양한 형태 지원: combinedVideoUrl(옛 v2) / url(HeyGen, 데모) / videoUrl
+    const videoUrl = videoData?.combinedVideoUrl || videoData?.url || videoData?.videoUrl
     const timings = videoData?.sceneTimings || []
+    const isLoading = videoData && !videoUrl // 데이터는 있지만 URL이 아직 없음
     return (
       <div className="w-64 shrink-0">
         <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
@@ -944,6 +1087,11 @@ export default function ExtractionResultPage() {
               onEnded={handleShortsPause}
               onTimeUpdate={handleShortsTimeUpdate}
             />
+          ) : isLoading ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+              <Loader2 size={32} className="text-white/40 animate-spin mb-4" />
+              <p className="text-white/60 text-xs">영상 준비 중...</p>
+            </div>
           ) : (
             <>
               <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -1037,39 +1185,22 @@ export default function ExtractionResultPage() {
     </div>
   )
 
-  const renderContent = { blog: renderBlog, instagram: renderInstagram, band: renderBand, kakao: renderKakao, shorts: renderShorts }
+  const renderContent = { blog: renderBlog, newsletter: renderNewsletter, instagram: renderInstagram, shorts: renderShorts }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
-      {/* 상단 헤더 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/extraction')} className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors">
-            <ArrowLeft size={18} />
-          </button>
-          <div>
-            <p className="text-xs text-text-muted">소스 파일</p>
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-text">{fileName}</p>
-              {fileBase64 && (
-                <button
-                  onClick={handleDownload}
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
-                  title="원본 파일 다운로드"
-                >
-                  <Download size={13} />
-                  다운로드
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 채널 탭 */}
+      {/* 채널 탭 (뒤로가기 버튼과 통합) */}
       <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
+        <button
+          onClick={() => navigate('/extraction')}
+          className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors shrink-0"
+          title="콘텐츠 추출로 돌아가기"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <div className="w-px h-6 bg-border shrink-0" />
         {menuItems.map(({ id, label, icon: Icon, color, bg }) => {
-          const hasData = { blog: blogContent, instagram: instagramContent, band: bandContent, kakao: kakaoContent, shorts: shortsScript }[id]
+          const hasData = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }[id]
           return (
             <button
               key={id}
@@ -1107,8 +1238,8 @@ export default function ExtractionResultPage() {
         </div>
       )}
 
-      {/* 업로드 패널 */}
-      {dataMap[activeMenu] && (
+      {/* 업로드 패널 (뉴스레터는 업로드 대상이 아니므로 제외) */}
+      {dataMap[activeMenu] && activeMenu !== 'newsletter' && (
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -1177,7 +1308,7 @@ export default function ExtractionResultPage() {
                   {status !== 'done' && (
                     <button
                       onClick={() => {
-                        const contentMap = { blog: blogContent, instagram: instagramContent, band: bandContent, kakao: kakaoContent, shorts: shortsScript }
+                        const contentMap = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }
                         setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: isScheduled ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
                       }}
                       className="px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
