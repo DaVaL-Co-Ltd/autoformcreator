@@ -8,9 +8,9 @@ export default {
     ],
     theme: {
         extend: {
+            // ⚠️ 색상은 src/index.css의 @theme 블록에서 관리합니다.
+            // primary/background 등 공통 토큰을 여기에 정의하면 @theme 정의를 덮어쓰게 되니 주의.
             colors: {
-                primary: "#000000",
-                background: "#F0F2F5",
                 waiting: "#FACC15",
                 developing: "#A855F7",
                 completed: "#22C55E",
