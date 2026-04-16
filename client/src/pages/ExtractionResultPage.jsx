@@ -1,29 +1,33 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
+  FileText, Image, Users, MessageCircle, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink,
-  Upload, Loader2, AlertCircle
+  Upload, Loader2, AlertCircle, Calendar, XCircle, RefreshCw, Eye, EyeOff
 } from 'lucide-react'
+import ScheduleDialog from '../components/ScheduleDialog'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { marked } from 'marked'
-import { saveExtraction, getExtractions, loadImages } from '../services/storage'
+import { saveExtraction, getExtractions, loadImages, updateUploadStatus } from '../services/storage'
+import { create as createScheduledUpload } from '../utils/scheduledUploads'
+import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 
 const menuItems = [
-  { id: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10' },
-  { id: 'instagram', label: '인스타그램', icon: Image, color: 'text-pink-400', bg: 'bg-pink-400/10' },
-  { id: 'newsletter', label: '뉴스레터', icon: Mail, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-  { id: 'shorts', label: '숏폼', icon: Film, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+  { id: 'blog',      label: '네이버 블로그', icon: FileText,      color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  { id: 'band',      label: '네이버 밴드',   icon: Users,         color: 'text-green-500',   bg: 'bg-green-500/10' },
+  { id: 'kakao',     label: '카카오톡',      icon: MessageCircle, color: 'text-yellow-400',  bg: 'bg-yellow-400/10' },
+  { id: 'instagram', label: '인스타그램',    icon: Image,         color: 'text-pink-400',    bg: 'bg-pink-400/10' },
+  { id: 'shorts',    label: '유튜브 숏츠',   icon: Film,          color: 'text-red-500',     bg: 'bg-red-500/10' },
 ]
 
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const state = location.state || {}
-  const dataMap = { blog: state.blogContent, instagram: state.instagramContent, newsletter: state.newsletterContent, shorts: state.shortsScript }
+  const dataMap = { blog: state.blogContent, instagram: state.instagramContent, band: state.bandContent, kakao: state.kakaoContent, shorts: state.shortsScript }
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
   const [copied, setCopied] = useState(false)
@@ -35,20 +39,124 @@ export default function ExtractionResultPage() {
   const [instaPngUrls, setInstaPngUrls] = useState([])
   const [uploadStatus, setUploadStatus] = useState({}) // { blog: 'idle'|'loading'|'done'|'error', ... }
   const [uploadError, setUploadError] = useState(null)
+  const [extractionId, setExtractionId] = useState(null)
+  const [scheduleDialog, setScheduleDialog] = useState({ open: false, platform: 'blog', content: {} })
+  const [blogServerStatus, setBlogServerStatus] = useState('checking') // checking | online | offline
+  const [blogUploadResult, setBlogUploadResult] = useState(null) // { url } | null
+  const [blogTitle, setBlogTitle] = useState('')
+  const [blogBody, setBlogBody] = useState('')
 
   const platformConfig = {
-    blog: { name: '네이버 블로그', icon: '📝', color: 'text-primary-light', bg: 'bg-primary/10' },
+    blog: { name: '네이버 블로그', icon: '📝', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
     instagram: { name: '인스타그램', icon: '📷', color: 'text-pink-400', bg: 'bg-pink-400/10' },
-    newsletter: { name: '뉴스레터', icon: '📧', color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-    shorts: { name: '유튜브 Shorts', icon: '▶️', color: 'text-amber-400', bg: 'bg-amber-400/10' },
+    band: { name: '네이버 밴드', icon: '👥', color: 'text-green-500', bg: 'bg-green-500/10' },
+    kakao: { name: '카카오톡', icon: '💬', color: 'text-yellow-400', bg: 'bg-yellow-400/10' },
+    shorts: { name: '유튜브 숏츠', icon: '▶️', color: 'text-red-500', bg: 'bg-red-500/10' },
   }
 
   const handleUpload = async (channel) => {
     setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
     setUploadError(null)
+
+    if (channel === 'blog') {
+      try {
+        // blogPngUrls가 없으면 먼저 캡처
+        let pngUrls = blogPngUrls
+        if (!pngUrls.length) {
+          await convertBlogImagesToPng()
+          // convertBlogImagesToPng는 state를 set하므로 직접 캡처
+          const refs = blogImagesRef.current.filter(Boolean)
+          pngUrls = []
+          for (const el of refs) {
+            try {
+              const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+              pngUrls.push(url)
+            } catch { pngUrls.push(null) }
+          }
+        }
+
+        const formData = new FormData()
+        formData.append('title', blogTitle || blogContent?.title || '')
+        formData.append('content', blogBody || compileBlogBody(blogContent?.sections || []))
+        formData.append('tags', JSON.stringify((blogContent?.tags || []).map(t => t.replace(/^#/, ''))))
+        formData.append('showBrowser', 'true')
+
+        for (let i = 0; i < pngUrls.length; i++) {
+          const url = pngUrls[i]
+          if (!url) continue
+          const res = await fetch(url)
+          const blob = await res.blob()
+          formData.append('photos', new File([blob], `section_${i + 1}.png`, { type: 'image/png' }))
+        }
+
+        const response = await fetch(`${BLOG_UPLOAD_SERVER}/api/upload`, {
+          method: 'POST',
+          body: formData,
+        })
+        const data = await response.json()
+        if (data.success) {
+          setUploadStatus(p => ({ ...p, blog: 'done' }))
+          setBlogUploadResult({ url: data.url })
+        } else {
+          setUploadStatus(p => ({ ...p, blog: 'error' }))
+          setUploadError(`네이버 블로그 업로드 실패: ${data.error || '알 수 없는 오류'}`)
+        }
+      } catch (err) {
+        setUploadStatus(p => ({ ...p, blog: 'error' }))
+        setUploadError(`네이버 블로그 업로드 서버 연결 실패: ${err.message}`)
+      }
+      return
+    }
+
+    if (channel === 'instagram') {
+      try {
+        const instaImageUrls = instaPngUrls.filter(Boolean)
+        const formatted = formatInstagramRequest(instagramContent, instaImageUrls)
+        console.log('[ExtractionResultPage] 인스타그램 업로드 요청:', formatted)
+        const response = await fetch('http://localhost:3001/api/instagram/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formatted),
+        })
+        const data = await response.json()
+        if (data.success) {
+          setUploadStatus(p => ({ ...p, instagram: 'done' }))
+        } else {
+          setUploadStatus(p => ({ ...p, instagram: 'error' }))
+          setUploadError(`인스타그램 업로드 실패: ${data.error || '알 수 없는 오류'}`)
+        }
+      } catch (err) {
+        setUploadStatus(p => ({ ...p, instagram: 'error' }))
+        setUploadError(`인스타그램 업로드 실패: ${err.message}`)
+      }
+      return
+    }
+
+    if (channel === 'shorts') {
+      try {
+        const formatted = formatYouTubeRequest(shortsScript, shortsVideo?.url || '')
+        console.log('[ExtractionResultPage] 유튜브 숏츠 업로드 요청:', formatted)
+        const response = await fetch('http://localhost:3001/api/youtube/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formatted),
+        })
+        const data = await response.json()
+        if (data.success) {
+          setUploadStatus(p => ({ ...p, shorts: 'done' }))
+        } else {
+          setUploadStatus(p => ({ ...p, shorts: 'error' }))
+          setUploadError(`유튜브 숏츠 업로드 실패: ${data.error || '알 수 없는 오류'}`)
+        }
+      } catch (err) {
+        setUploadStatus(p => ({ ...p, shorts: 'error' }))
+        setUploadError(`유튜브 숏츠 업로드 실패: ${err.message}`)
+      }
+      return
+    }
+
     try {
-      // TODO: 실제 플랫폼 API 연동 (네이버 블로그 API, 인스타그램 Graph API 등)
-      // 현재는 시뮬레이션
+      // band/kakao: 시뮬레이션 (공식 API 없음)
       await new Promise(r => setTimeout(r, 2000))
       setUploadStatus(p => ({ ...p, [channel]: 'done' }))
     } catch (err) {
@@ -117,7 +225,7 @@ export default function ExtractionResultPage() {
 
   const {
     parsedText, verification, summary,
-    blogContent, newsletterContent, instagramContent,
+    blogContent, bandContent, kakaoContent, instagramContent,
     shortsScript, blogImages: initialBlogImages, instagramImages,
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
@@ -194,6 +302,33 @@ export default function ExtractionResultPage() {
       return () => clearTimeout(timer)
     }
   }, [activeMenu, blogContent])
+
+  // ── 블로그 업로드 서버 상태 확인 ──
+  const BLOG_UPLOAD_SERVER = 'http://localhost:3000'
+  const checkBlogServer = () => {
+    setBlogServerStatus('checking')
+    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET' })
+      .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
+      .catch(() => setBlogServerStatus('offline'))
+  }
+  useEffect(() => { checkBlogServer() }, [])
+
+  // ── compileBlogBody: sections → [IMG:N] 마커 포함 본문 생성 ──
+  const compileBlogBody = (sections = []) => {
+    return sections.map((s, i) => {
+      const heading = s.heading ? `${s.heading}\n` : ''
+      const content = s.content || ''
+      return `${heading}[IMG:${i + 1}]\n${content}`
+    }).join('\n\n---\n\n')
+  }
+
+  // blogTitle / blogBody 초기화 (blogContent 로드 시)
+  useEffect(() => {
+    if (blogContent) {
+      if (!blogTitle) setBlogTitle(blogContent.title || '')
+      if (!blogBody) setBlogBody(compileBlogBody(blogContent.sections || []))
+    }
+  }, [blogContent])
 
   // 카드 이미지용 텍스트에서 ** 제거
   const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
@@ -272,13 +407,36 @@ export default function ExtractionResultPage() {
   useEffect(() => {
     const stateData = location.state
     if (!stateData || !stateData.savedFromExtraction) return
-    const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript
+    const hasContent = stateData.blogContent || stateData.bandContent || stateData.kakaoContent || stateData.instagramContent || stateData.shortsScript
     if (!hasContent) return
 
-    saveExtraction(stateData)
+    const id = saveExtraction(stateData)
+    setExtractionId(id)
   }, [])
 
-  if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) {
+  // 기존 추출 결과에서 왔으면 id와 uploadStatus를 location.state에서 가져옴
+  const [scheduleInfo, setScheduleInfo] = useState({}) // { [channel]: { scheduledAt } }
+  useEffect(() => {
+    if (location.state?.extractionId) setExtractionId(location.state.extractionId)
+    if (location.state?.uploadStatus) {
+      const storedStatus = location.state.uploadStatus
+      const statusMap = {}
+      const schedMap = {}
+      Object.keys(storedStatus).forEach(ch => {
+        const info = storedStatus[ch]
+        if (info?.status === 'scheduled') {
+          statusMap[ch] = 'scheduled'
+          schedMap[ch] = { scheduledAt: info.scheduledAt }
+        } else if (info?.status === 'uploaded') {
+          statusMap[ch] = 'done'
+        }
+      })
+      setUploadStatus(statusMap)
+      setScheduleInfo(schedMap)
+    }
+  }, [location.state])
+
+  if (!blogContent && !bandContent && !kakaoContent && !instagramContent && !shortsScript) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
@@ -307,134 +465,181 @@ export default function ExtractionResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ── 블로그 (네이버 블로그 스타일) ──
+  // ── 블로그 (네이버 블로그 업로드 포맷) ──
   const renderBlog = () => {
     const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
     const labels = ['INSIGHT', 'STUDY TIP', 'CORE', 'CHECK LIST', 'KEY POINT']
     const accentColor = '#e57a00'
+    const sections = blogContent?.sections || []
+    const markerCount = (blogBody.match(/\[IMG:\d+\]/g) || []).length
 
     return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 sm:p-10">
-    <article className="max-w-3xl mx-auto">
-      {/* 블로그 헤더 */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 leading-tight">{blogContent?.title}</h1>
-        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-gray-100">
-          <button onClick={() => downloadAllImages('blog')} disabled={downloading}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors">
-            <Download size={12} /> {downloading ? '저장중...' : '이미지 저장'}
-          </button>
-          <button onClick={() => copy(blogContent?.sections?.map(s => `## ${s.heading}\n${s.content}`).join('\n\n'), { richText: true })}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-600 transition-colors">
-            {copied ? <CheckCircle size={12} /> : <Copy size={12} />} {copied ? '복사됨' : '복사'}
+      <div className="space-y-4">
+        {/* 실제 블로그 적용 결과 미리보기 */}
+        <div className="bg-white rounded-xl border border-border overflow-hidden">
+          <div className="p-6 sm:p-10">
+            <article className="max-w-3xl mx-auto" style={{ fontFamily: "'Pretendard', sans-serif" }}>
+              <h1 className="text-2xl font-bold text-gray-900 leading-tight mb-6 pb-3 border-b border-gray-100">
+                {blogTitle || '제목 없음'}
+              </h1>
+              <div className="space-y-4 text-[15px] text-gray-700 leading-8">
+                {(() => {
+                  const imgMarkerRe = /\[IMG:(\d+)\]/g
+                  const tokens = []
+                  let lastIndex = 0
+                  let match
+                  while ((match = imgMarkerRe.exec(blogBody)) !== null) {
+                    if (match.index > lastIndex) {
+                      tokens.push({ type: 'text', value: blogBody.slice(lastIndex, match.index) })
+                    }
+                    tokens.push({ type: 'image', index: parseInt(match[1], 10) - 1 })
+                    lastIndex = match.index + match[0].length
+                  }
+                  if (lastIndex < blogBody.length) {
+                    tokens.push({ type: 'text', value: blogBody.slice(lastIndex) })
+                  }
+                  return tokens.map((tok, i) => {
+                    if (tok.type === 'image') {
+                      const src = blogPngUrls[tok.index]
+                      return (
+                        <div key={i} className="my-6">
+                          {src ? (
+                            <img src={src} alt={`이미지 ${tok.index + 1}`} className="w-full rounded-xl shadow-sm" />
+                          ) : (
+                            <div className="w-full aspect-square rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 text-sm">
+                              이미지 {tok.index + 1} 준비 중...
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={i} className="whitespace-pre-wrap">
+                        {tok.value.split('\n').map((line, li) => {
+                          const trimmed = line.trim()
+                          if (!trimmed) return <div key={li} className="h-2" />
+                          if (/^---+$/.test(trimmed)) {
+                            return <hr key={li} className="my-6 border-t border-gray-200" />
+                          }
+                          if (trimmed.startsWith('## ')) {
+                            return <h2 key={li} className="text-lg font-bold text-gray-900 mt-6 mb-3">{trimmed.slice(3)}</h2>
+                          }
+                          if (trimmed.startsWith('# ')) {
+                            return <h1 key={li} className="text-xl font-bold text-gray-900 mt-6 mb-3">{trimmed.slice(2)}</h1>
+                          }
+                          const parts = trimmed.split(/(\*\*[^*]+\*\*)/g)
+                          return (
+                            <p key={li} className="mb-2">
+                              {parts.map((p, pi) => {
+                                if (p.startsWith('**') && p.endsWith('**')) {
+                                  return <strong key={pi} className="font-bold text-gray-900">{p.slice(2, -2)}</strong>
+                                }
+                                return <span key={pi}>{p}</span>
+                              })}
+                            </p>
+                          )
+                        })}
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+              {blogContent?.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-10 pt-6 border-t border-gray-100">
+                  {blogContent.tags.map((tag, i) => (
+                    <span key={i} className="text-xs px-3 py-1.5 bg-green-50 text-green-600 rounded-full flex items-center gap-1">
+                      <Hash size={10} />{tag.replace(/^#/, '')}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </article>
+          </div>
+        </div>
+
+        {/* 서버 상태 표시 */}
+        <div className={`rounded-xl border p-3 flex items-center gap-3 ${
+          blogServerStatus === 'online' ? 'bg-emerald-500/5 border-emerald-500/20' :
+          blogServerStatus === 'offline' ? 'bg-red-500/5 border-red-500/20' :
+          'bg-surface border-border'
+        }`}>
+          {blogServerStatus === 'checking' && <Loader2 size={14} className="text-text-muted animate-spin shrink-0" />}
+          {blogServerStatus === 'online' && <CheckCircle size={14} className="text-emerald-500 shrink-0" />}
+          {blogServerStatus === 'offline' && <XCircle size={14} className="text-red-400 shrink-0" />}
+          <p className="text-xs text-text flex-1">
+            업로드 서버 ({BLOG_UPLOAD_SERVER}):&nbsp;
+            <span className={blogServerStatus === 'online' ? 'text-emerald-500 font-medium' : blogServerStatus === 'offline' ? 'text-red-400 font-medium' : 'text-text-muted'}>
+              {blogServerStatus === 'checking' ? '확인 중...' : blogServerStatus === 'online' ? '정상' : '오프라인'}
+            </span>
+            {blogServerStatus === 'offline' && (
+              <span className="text-text-muted ml-2">— C:\daval\upload_blog 에서 <code className="bg-surface-light px-1 py-0.5 rounded font-mono text-[11px]">npm start</code> 실행 필요</span>
+            )}
+          </p>
+          <button onClick={checkBlogServer} className="p-1 rounded hover:bg-surface-light text-text-muted hover:text-text transition-colors" title="다시 확인">
+            <RefreshCw size={13} />
           </button>
         </div>
-      </div>
 
-      {/* 블로그 본문 */}
-      <div className="space-y-2">
-        {(() => {
-          const firstImage = blogImages?.find(img => img.imageUrl)
-          return blogContent?.sections?.map((section, i) => {
-          const image = blogImages?.find(img => img.heading === section.heading)
-          const bgImageUrl = firstImage?.imageUrl || image?.imageUrl
-          const hasOverlayImg = !!bgImageUrl
-          const keyword = stripBold(image?.keyPhrase || section.keyPhrase || section.heading)
-          const headingClean = stripBold(section.heading)
-          const isFirst = i === 0
+        {/* 편집 패널 (제목/본문/이미지/태그) - UI 숨김, 데이터는 업로드 시 사용 */}
+        <div className="hidden">
+          <input value={blogTitle} onChange={e => setBlogTitle(e.target.value)} />
+          <textarea value={blogBody} onChange={e => setBlogBody(e.target.value)} />
+        </div>
 
-          return (
-            <section key={i}>
-              <h2 className="text-lg font-bold text-gray-900 mb-4">{headingClean}</h2>
-              <div className="mb-5">
-                {blogPngUrls[i] ? (
-                  <img src={blogPngUrls[i]} alt={headingClean} className="w-full rounded-xl shadow-sm" />
+        {/* 숨겨진 렌더링 영역 (domToPng 캡처용) */}
+        <div style={{ position: 'absolute', left: '-10000px', top: 0, width: '600px', pointerEvents: 'none' }}>
+          {sections.map((section, i) => {
+            const firstImage = blogImages?.find(img => img.imageUrl)
+            const image = blogImages?.find(img => img.heading === section.heading)
+            const bgImageUrl = firstImage?.imageUrl || image?.imageUrl
+            const hasOverlayImg = !!bgImageUrl
+            const keyword = stripBold(image?.keyPhrase || section.keyPhrase || section.heading)
+            const headingClean = stripBold(section.heading)
+            const isFirst = i === 0
+            return (
+              <div
+                key={i}
+                ref={el => blogImagesRef.current[i] = el}
+                className="w-full aspect-square rounded-xl relative overflow-hidden"
+                style={{ fontFamily: "'Pretendard', sans-serif" }}
+              >
+                {hasOverlayImg ? (
+                  <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
                 ) : (
-                  <div ref={el => blogImagesRef.current[i] = el} className="w-full aspect-square rounded-xl relative overflow-hidden shadow-sm" style={{ fontFamily: "'Pretendard', sans-serif" }}>
-                    {hasOverlayImg ? (
-                      <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
-                    ) : (
-                      <div className={`w-full h-full absolute inset-0 ${bgColors[i % 4]}`} />
-                    )}
-                    {isFirst ? (
-                      <>
-                        <div className="absolute inset-0 bg-white/35 backdrop-blur-[1px]" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ wordBreak: 'keep-all' }}>
-                          <span className="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-3 bg-white shadow-sm" style={{ letterSpacing: '1.5px', color: accentColor }}>{labels[i % labels.length]}</span>
-                          {renderCardHeading(headingClean, 'clamp(28px, 8vw, 36px)')}
-                          <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
-                          <p className="text-lg text-gray-500 font-semibold">{keyword}</p>
-                          <div className="absolute bottom-5 flex gap-1.5">
-                            {(blogContent?.tags || []).slice(0, 3).map((tag, ti) => (
-                              <span key={ti} className="px-3 py-1 bg-white/70 backdrop-blur-sm rounded-full text-xs text-gray-600 font-medium">#{stripBold(tag)}</span>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-[75%] h-[75%] rounded-full bg-white/[0.93] shadow-lg flex flex-col items-center justify-center text-center p-6 relative" style={{ wordBreak: 'keep-all' }}>
-                          {renderCardHeading(headingClean, 'clamp(22px, 6vw, 30px)')}
-                          <div className="w-10 h-1 rounded-full mt-2 mb-2" style={{ background: accentColor }} />
-                          <p className="text-base text-gray-500 font-semibold">{keyword}</p>
-                        </div>
+                  <div className={`w-full h-full absolute inset-0 ${bgColors[i % 4]}`} />
+                )}
+                {isFirst ? (
+                  <>
+                    <div className="absolute inset-0 bg-white/35 backdrop-blur-[1px]" />
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center" style={{ wordBreak: 'keep-all' }}>
+                      <span className="inline-block px-3 py-1 rounded-lg text-sm font-bold mb-3 bg-white shadow-sm" style={{ letterSpacing: '1.5px', color: accentColor }}>{labels[i % labels.length]}</span>
+                      {renderCardHeading(headingClean, 'clamp(28px, 8vw, 36px)')}
+                      <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
+                      <p className="text-lg text-gray-500 font-semibold">{keyword}</p>
+                      <div className="absolute bottom-5 flex gap-1.5">
+                        {(blogContent?.tags || []).slice(0, 3).map((tag, ti) => (
+                          <span key={ti} className="px-3 py-1 bg-white/70 backdrop-blur-sm rounded-full text-xs text-gray-600 font-medium">#{stripBold(tag)}</span>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-[75%] h-[75%] rounded-full bg-white/[0.93] shadow-lg flex flex-col items-center justify-center text-center p-6 relative" style={{ wordBreak: 'keep-all' }}>
+                      {renderCardHeading(headingClean, 'clamp(22px, 6vw, 30px)')}
+                      <div className="w-10 h-1 rounded-full mt-2 mb-2" style={{ background: accentColor }} />
+                      <p className="text-base text-gray-500 font-semibold">{keyword}</p>
+                    </div>
                   </div>
                 )}
               </div>
-              <div className="text-[15px] text-gray-700 leading-8 max-w-none">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    strong: ({ children }) => <strong className="font-bold text-gray-900">{children}</strong>,
-                    h2: ({ children }) => <h2 className="text-base font-bold text-gray-900 mt-5 mb-2">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-[15px] font-bold text-gray-800 mt-4 mb-2">{children}</h3>,
-                    ul: ({ children }) => <ul className="list-disc pl-5 my-3 space-y-1.5">{children}</ul>,
-                    ol: ({ children }) => <ol className="list-decimal pl-5 my-3 space-y-1.5">{children}</ol>,
-                    li: ({ children }) => <li className="text-gray-700">{children}</li>,
-                    p: ({ children }) => <p className="mb-3">{children}</p>,
-                    blockquote: ({ children }) => <blockquote className="border-l-4 border-gray-300 pl-4 py-1 my-3 text-gray-600">{children}</blockquote>,
-                    table: ({ children }) => (
-                      <div className="my-4 overflow-x-auto">
-                        <table className="w-full text-sm border-collapse border border-gray-200 rounded-lg overflow-hidden">{children}</table>
-                      </div>
-                    ),
-                    thead: ({ children }) => <thead className="bg-gray-50">{children}</thead>,
-                    th: ({ children }) => <th className="px-4 py-2.5 text-left font-semibold text-gray-700 border border-gray-200">{children}</th>,
-                    td: ({ children }) => <td className="px-4 py-2.5 text-gray-600 border border-gray-200">{children}</td>,
-                  }}
-                >{normalizeMd(section.content)}</ReactMarkdown>
-              </div>
-            </section>
-          )
-        })
-        })()}
-      </div>
-
-      {/* 태그 */}
-      {blogContent?.tags?.length > 0 && (
-        <div className="flex flex-wrap gap-2 mt-10 pt-6 border-t border-gray-100">
-          {blogContent.tags.map((tag, i) => {
-            const cleanTag = tag.replace(/^#/, '')
-            return (
-              <span
-                key={i}
-                onClick={() => { navigator.clipboard.writeText(cleanTag); setCopied(true); setTimeout(() => setCopied(false), 1500) }}
-                className="text-xs px-3 py-1.5 bg-green-50 text-green-600 rounded-full flex items-center gap-1 hover:bg-green-100 transition-colors cursor-pointer active:scale-95"
-                title="클릭하면 태그가 복사됩니다"
-              >
-                <Hash size={10} />{cleanTag}
-              </span>
             )
           })}
         </div>
-      )}
-    </article>
-    </div>
+      </div>
     )
   }
+
 
   // ── 인스타그램 (카드 캐러셀 + 캡션) ──
   const renderInstagram = () => {
@@ -577,45 +782,39 @@ export default function ExtractionResultPage() {
     )
   }
 
-  // ── 뉴스레터 (이메일 형태) ──
-  const renderNewsletter = () => (
+  // ── 네이버 밴드 (커뮤니티 게시글) ──
+  const renderBand = () => (
     <div className="max-w-2xl mx-auto">
-      {/* 이메일 프레임 */}
       <div className="bg-surface rounded-xl border border-border shadow-sm overflow-hidden">
-        {/* 이메일 상단 바 */}
-        <div className="bg-surface-light border-b border-border px-6 py-3 flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-danger/60" />
-            <div className="w-3 h-3 rounded-full bg-warning/60" />
-            <div className="w-3 h-3 rounded-full bg-success/60" />
-          </div>
-          <p className="text-xs text-text-muted ml-3 flex-1 truncate">{newsletterContent?.subject}</p>
-          <button onClick={() => copy(JSON.stringify(newsletterContent, null, 2))} className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
+        {/* 밴드 상단 바 (녹색 포인트) */}
+        <div className="bg-[#00BD5E] px-6 py-3 flex items-center gap-2">
+          <Users size={16} className="text-white" />
+          <p className="text-sm font-semibold text-white flex-1 truncate">네이버 밴드</p>
+          <button onClick={() => copy(JSON.stringify(bandContent, null, 2))} className="text-xs text-white/90 hover:text-white flex items-center gap-1">
             <Copy size={11} /> 복사
           </button>
         </div>
 
-        {/* 이메일 헤더 */}
-        <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-8 py-8 text-center">
-          <h2 className="text-xl font-bold text-text">{newsletterContent?.headline || newsletterContent?.subject}</h2>
-          {newsletterContent?.preheader && (
-            <p className="text-sm text-text-muted mt-2">{newsletterContent.preheader}</p>
-          )}
+        {/* 제목 */}
+        <div className="px-8 py-6 border-b border-border">
+          <h2 className="text-xl font-bold text-text">{bandContent?.title}</h2>
         </div>
 
-        {/* 이메일 본문 */}
+        {/* 본문 */}
         <div className="px-8 py-6 space-y-5">
-          {newsletterContent?.greeting && (
-            <p className="text-sm text-text">{newsletterContent.greeting}</p>
+          {bandContent?.greeting && (
+            <p className="text-sm text-text">{bandContent.greeting}</p>
           )}
 
-          {newsletterContent?.keyPoints?.length > 0 && (
-            <div className="bg-primary/5 rounded-lg p-5 border border-primary/10">
-              <p className="text-xs font-bold text-primary-light mb-3 uppercase tracking-wide">KEY POINTS</p>
+          <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{bandContent?.body}</div>
+
+          {bandContent?.keyPoints?.length > 0 && (
+            <div className="bg-green-500/5 rounded-lg p-5 border border-green-500/20">
+              <p className="text-xs font-bold text-green-500 mb-3 uppercase tracking-wide">핵심 포인트</p>
               <ul className="space-y-2.5">
-                {newsletterContent.keyPoints.map((point, i) => (
+                {bandContent.keyPoints.map((point, i) => (
                   <li key={i} className="text-sm text-text flex items-start gap-2.5">
-                    <CheckCircle size={15} className="text-primary shrink-0 mt-0.5" />
+                    <CheckCircle size={15} className="text-green-500 shrink-0 mt-0.5" />
                     {point}
                   </li>
                 ))}
@@ -623,25 +822,65 @@ export default function ExtractionResultPage() {
             </div>
           )}
 
-          <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{newsletterContent?.body}</div>
-
-          {newsletterContent?.dataHighlights?.length > 0 && (
-            <div className="grid grid-cols-2 gap-3 py-2">
-              {newsletterContent.dataHighlights.map((d, i) => (
-                <div key={i} className="bg-surface-light rounded-xl p-4 border border-border text-center">
-                  <p className="text-2xl font-bold text-primary-light">{d.value}</p>
-                  <p className="text-xs text-text-muted mt-1">{d.label}</p>
-                </div>
+          {bandContent?.hashtags?.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {bandContent.hashtags.map((tag, i) => (
+                <span key={i} className="text-xs text-green-500 hover:underline cursor-pointer">{tag}</span>
               ))}
             </div>
           )}
 
-          {newsletterContent?.closingNote && (
+          {bandContent?.cta && (
             <div className="pt-5 border-t border-border">
-              <p className="text-sm text-text-muted">{newsletterContent.closingNote}</p>
+              <div className="bg-green-500/10 rounded-lg px-4 py-3 border border-green-500/20">
+                <p className="text-sm text-text">{bandContent.cta}</p>
+              </div>
             </div>
           )}
         </div>
+      </div>
+    </div>
+  )
+
+  // ── 카카오톡 채널 (모바일 메시지 형태) ──
+  const renderKakao = () => (
+    <div className="max-w-md mx-auto space-y-4">
+      {/* 푸시 알림 미리보기 (상단 채팅 버블) */}
+      <div className="bg-[#FEE500] rounded-2xl px-5 py-4 shadow-md">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-7 h-7 rounded-full bg-black/10 flex items-center justify-center text-sm">💬</div>
+          <p className="text-xs font-semibold text-black/70 flex-1">카카오톡</p>
+          <button onClick={() => copy(JSON.stringify(kakaoContent, null, 2))} className="text-xs text-black/60 hover:text-black flex items-center gap-1">
+            <Copy size={11} /> 복사
+          </button>
+        </div>
+        <p className="text-sm font-bold text-black leading-snug">{kakaoContent?.title}</p>
+        <p className="text-xs text-black/70 mt-1 line-clamp-2">{kakaoContent?.message}</p>
+      </div>
+
+      {/* 메시지 카드 */}
+      <div className="bg-surface rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="px-6 py-5 space-y-4">
+          <div className="text-sm text-text leading-7 whitespace-pre-wrap">{kakaoContent?.body}</div>
+
+          {kakaoContent?.highlight && (
+            <div className="bg-yellow-400/20 rounded-lg px-4 py-3 border-l-4 border-yellow-400">
+              <p className="text-sm font-semibold text-text">{kakaoContent.highlight}</p>
+            </div>
+          )}
+        </div>
+
+        {/* CTA 버튼 */}
+        {kakaoContent?.cta?.text && (
+          <div className="px-6 pb-6">
+            <button className="w-full bg-[#FEE500] hover:bg-yellow-300 text-black text-sm font-bold py-3 rounded-xl transition-colors">
+              {kakaoContent.cta.text}
+            </button>
+            {kakaoContent.cta.description && (
+              <p className="text-xs text-text-muted text-center mt-2">{kakaoContent.cta.description}</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -773,14 +1012,14 @@ export default function ExtractionResultPage() {
             const sceneAudio = shortsNarration?.find(n => n.sceneNumber === scene.sceneNumber)
             const isActive = combinedVideoUrl && i === currentScene
             return (
-              <div key={i} className={`p-4 rounded-lg border transition-all ${isActive ? 'bg-amber-400/5 border-amber-400/30' : 'bg-surface border-border'}`}>
+              <div key={i} className={`p-4 rounded-lg border transition-all ${isActive ? 'bg-red-500/5 border-red-500/30' : 'bg-surface border-border'}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-amber-400/30 text-amber-400' : 'bg-amber-400/20 text-amber-400'}`}>{scene.sceneNumber}</span>
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-red-500/30 text-red-500' : 'bg-red-500/20 text-red-500'}`}>{scene.sceneNumber}</span>
                   <span className="text-xs text-text-muted">{scene.duration}초</span>
-                  {isActive && <span className="text-xs text-amber-400 font-medium animate-pulse">재생중</span>}
+                  {isActive && <span className="text-xs text-red-500 font-medium animate-pulse">재생중</span>}
                 </div>
                 <p className="text-sm text-text mb-1">{scene.narration}</p>
-                {scene.textOverlay && <p className="text-xs text-amber-400 font-medium mb-2">[자막] {scene.textOverlay}</p>}
+                {scene.textOverlay && <p className="text-xs text-red-500 font-medium mb-2">[자막] {scene.textOverlay}</p>}
                 {sceneAudio?.audioUrl && !combinedVideoUrl && (
                   <audio controls className="w-full h-8 mt-2" src={sceneAudio.audioUrl} />
                 )}
@@ -798,7 +1037,7 @@ export default function ExtractionResultPage() {
     </div>
   )
 
-  const renderContent = { blog: renderBlog, instagram: renderInstagram, newsletter: renderNewsletter, shorts: renderShorts }
+  const renderContent = { blog: renderBlog, instagram: renderInstagram, band: renderBand, kakao: renderKakao, shorts: renderShorts }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -830,7 +1069,7 @@ export default function ExtractionResultPage() {
       {/* 채널 탭 */}
       <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
         {menuItems.map(({ id, label, icon: Icon, color, bg }) => {
-          const hasData = { blog: blogContent, instagram: instagramContent, newsletter: newsletterContent, shorts: shortsScript }[id]
+          const hasData = { blog: blogContent, instagram: instagramContent, band: bandContent, kakao: kakaoContent, shorts: shortsScript }[id]
           return (
             <button
               key={id}
@@ -851,14 +1090,22 @@ export default function ExtractionResultPage() {
         })}
       </div>
 
-      {/* 콘텐츠 영역 */}
-      <div>
-        {renderContent[activeMenu]?.() || (
-          <div className="flex items-center justify-center h-96 text-text-muted text-sm">
-            이 채널의 콘텐츠가 아직 생성되지 않았습니다.
+      {/* 블로그 업로드 성공 배너 */}
+      {blogUploadResult && (
+        <div className="flex items-start gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+          <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-text">네이버 블로그 업로드 성공!</p>
+            {blogUploadResult.url && (
+              <a href={blogUploadResult.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1 mt-1 text-xs text-emerald-500 hover:underline font-medium break-all">
+                {blogUploadResult.url} <ExternalLink size={11} className="shrink-0" />
+              </a>
+            )}
           </div>
-        )}
-      </div>
+          <button onClick={() => setBlogUploadResult(null)} className="text-xs text-text-muted hover:text-text px-2 py-1 rounded border border-border">닫기</button>
+        </div>
+      )}
 
       {/* 업로드 패널 */}
       {dataMap[activeMenu] && (
@@ -882,45 +1129,107 @@ export default function ExtractionResultPage() {
               const ch = activeMenu
               const cfg = platformConfig[ch]
               const status = uploadStatus[ch]
+              const sched = scheduleInfo[ch]
               if (!cfg) return null
+              const fmtDate = (iso) => {
+                if (!iso) return ''
+                const d = new Date(iso)
+                return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+              }
+              const isScheduled = status === 'scheduled'
               return (
                 <div className="flex items-center gap-3 flex-1">
-                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border border-border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : 'bg-surface-light'}`}>
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : isScheduled ? 'bg-info/5 border-info/20' : 'bg-surface-light border-border'}`}>
                     <span className="text-lg">{cfg.icon}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text">{cfg.name}</p>
                       <p className="text-xs text-text-muted">
-                        {status === 'done' ? '업로드 완료' : status === 'error' ? '업로드 실패' : '업로드 대기'}
+                        {status === 'done' ? '업로드 완료' :
+                         status === 'error' ? '업로드 실패' :
+                         isScheduled ? `예약 완료 · ${fmtDate(sched?.scheduledAt)}` :
+                         '업로드 대기'}
                       </p>
                     </div>
-                    {status === 'done' && <CheckCircle size={16} className="text-success shrink-0" />}
                     {status === 'error' && <AlertCircle size={16} className="text-danger shrink-0" />}
+                    {isScheduled && <Calendar size={16} className="text-info shrink-0" />}
                   </div>
-                  <button
-                    onClick={() => handleUpload(ch)}
-                    disabled={status === 'loading'}
-                    className={`px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0
-                      ${status === 'done'
-                        ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
-                        : status === 'loading'
-                          ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                          : 'bg-gradient-to-r from-primary to-primary-dark text-white hover:shadow-lg hover:shadow-primary/25'
-                      }`}
-                  >
-                    {status === 'loading' ? (
-                      <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                    ) : status === 'done' ? (
-                      <><CheckCircle size={14} /> 완료</>
-                    ) : (
-                      <><Upload size={14} /> {cfg.name}에 업로드</>
-                    )}
-                  </button>
+                  {!isScheduled && (
+                    <button
+                      onClick={() => handleUpload(ch)}
+                      disabled={status === 'loading'}
+                      className={`px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0
+                        ${status === 'done'
+                          ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
+                          : status === 'loading'
+                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                            : 'bg-gradient-to-r from-primary to-primary-dark text-white hover:shadow-lg hover:shadow-primary/25'
+                        }`}
+                    >
+                      {status === 'loading' ? (
+                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                      ) : status === 'done' ? (
+                        <><CheckCircle size={14} /> 완료</>
+                      ) : (
+                        <><Upload size={14} /> {cfg.name}에 업로드</>
+                      )}
+                    </button>
+                  )}
+                  {status !== 'done' && (
+                    <button
+                      onClick={() => {
+                        const contentMap = { blog: blogContent, instagram: instagramContent, band: bandContent, kakao: kakaoContent, shorts: shortsScript }
+                        setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: isScheduled ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
+                      }}
+                      className="px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
+                    >
+                      <Calendar size={14} />
+                      {isScheduled ? '예약 상세' : '예약 업로드'}
+                    </button>
+                  )}
                 </div>
               )
             })()}
           </div>
         </div>
       )}
+
+      {/* 콘텐츠 영역 */}
+      <div>
+        {renderContent[activeMenu]?.() || (
+          <div className="flex items-center justify-center h-96 text-text-muted text-sm">
+            이 채널의 콘텐츠가 아직 생성되지 않았습니다.
+          </div>
+        )}
+      </div>
+
+      {/* 예약 업로드 다이얼로그 */}
+      <ScheduleDialog
+        open={scheduleDialog.open}
+        mode={scheduleDialog.mode || 'create'}
+        initialDatetime={scheduleDialog.initialDatetime}
+        onClose={() => setScheduleDialog(s => ({ ...s, open: false }))}
+        defaultPlatform={scheduleDialog.platform}
+        content={scheduleDialog.content}
+        lockPlatform={true}
+        onSave={({ platform, scheduledAt, content }) => {
+          if (extractionId) {
+            updateUploadStatus(extractionId, platform, { status: 'scheduled', scheduledAt })
+          }
+          createScheduledUpload({ platform, content, scheduledAt, extractionId })
+          // 로컬 state 즉시 반영
+          setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
+          setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
+        }}
+        onDelete={scheduleDialog.mode === 'edit' ? () => {
+          const platform = scheduleDialog.platform
+          if (extractionId) {
+            updateUploadStatus(extractionId, platform, { status: 'not_uploaded' })
+          }
+          setUploadStatus(p => { const n = { ...p }; delete n[platform]; return n })
+          setScheduleInfo(p => { const n = { ...p }; delete n[platform]; return n })
+        } : undefined}
+      />
+
     </div>
   )
 }

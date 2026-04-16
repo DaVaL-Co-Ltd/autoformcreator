@@ -602,11 +602,11 @@ function splitNarration(text, maxCharsPerLine = 18) {
 
 // 스타일별 FFmpeg force_style 매핑 (9:16 유튜브 쇼츠 기준)
 function getForceStyle(style) {
-  const sz = 12
+  const sz = 10
   const base = `FontName=Pretendard Variable,FontSize=${sz},Alignment=2,MarginV=20`
   const styles = {
     classic:  `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,BorderStyle=3,BackColour=&HB0000000`,
-    classic2: `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=0`,
+    classic2: `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=0.5,Shadow=0`,
   }
   return styles[style] || styles.classic
 }
@@ -688,8 +688,13 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 }
 
 app.post('/api/subtitle/burn', async (req, res) => {
-  const { videoUrl, scenes, subtitleStyle } = req.body
+  const { videoUrl, scenes, subtitleStyle, animatedTitles } = req.body
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
+  // animatedTitles: [{ sceneNumber, localPath }] — WebM 알파 영상 오버레이
+  const animatedTitleMap = {}
+  if (Array.isArray(animatedTitles)) {
+    animatedTitles.forEach(t => { if (t.sceneNumber && t.localPath && fs.existsSync(t.localPath)) animatedTitleMap[t.sceneNumber] = t.localPath })
+  }
 
   const outputDir2 = path.join(__dirname, '..', 'output')
   if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
@@ -726,8 +731,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     })
 
-    // 3) SRT 생성 — 나레이션을 최대 3줄 단위로 분할
-    const maxLinesPerBlock = 3
+    // 3) SRT 생성 — 기본 2줄, 총 3줄이면 3줄 유지, 4줄 이상이면 2줄씩 분할
     const maxCharsPerLine = 16
     let srtContent = ''
     let srtIdx = 1
@@ -737,10 +741,11 @@ app.post('/api/subtitle/burn', async (req, res) => {
     for (const scene of scenes) {
       const sceneDur = (scene.narration.length / totalChars) * duration
       const lines = splitNarration(scene.narration, maxCharsPerLine)
-      // 3줄씩 묶어서 블록으로 나눔
+      // 블록 분할: 2줄 기본, 3줄은 그대로 유지, 4줄 이상은 2줄씩
       const blocks = []
-      for (let j = 0; j < lines.length; j += maxLinesPerBlock) {
-        blocks.push(lines.slice(j, j + maxLinesPerBlock).join('\n'))
+      const linesPerBlock = lines.length === 3 ? 3 : 2
+      for (let j = 0; j < lines.length; j += linesPerBlock) {
+        blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
       }
       const blockChars = blocks.map(b => b.replace(/\n/g, '').length)
       const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
@@ -765,17 +770,22 @@ app.post('/api/subtitle/burn', async (req, res) => {
 
     fs.writeFileSync(srtPath, srtContent, 'utf8')
 
-    // 4) 타이틀 오버레이 이미지 생성 (avatar_keyword 씬)
+    // 4) 타이틀 오버레이 생성 (avatar_keyword 씬) — animatedTitles 있으면 WebM, 없으면 PNG
     const titleOverlays = []
     let titleTime = 0
     for (const scene of scenes) {
       const sceneDur = (scene.narration.length / totalChars) * duration
       if (scene.type === 'avatar_keyword' && scene.keyword) {
-        const titlePath = path.join(outputDir2, `title_overlay_${ts}_${scene.sceneNumber}.png`)
-        const designIdx = (scene.sceneNumber - 1) % titleDesigns.length
-        const paletteIdx = (scene.sceneNumber - 1) % titlePalettes.length
-        generateTitleOverlay(scene.keyword, titleDesigns[designIdx], titlePalettes[paletteIdx], titlePath)
-        titleOverlays.push({ path: titlePath, start: titleTime, end: titleTime + sceneDur })
+        const animatedPath = animatedTitleMap[scene.sceneNumber]
+        if (animatedPath) {
+          titleOverlays.push({ path: animatedPath, start: titleTime, end: titleTime + sceneDur, animated: true, cleanup: false })
+        } else {
+          const titlePath = path.join(outputDir2, `title_overlay_${ts}_${scene.sceneNumber}.png`)
+          const designIdx = (scene.sceneNumber - 1) % titleDesigns.length
+          const paletteIdx = (scene.sceneNumber - 1) % titlePalettes.length
+          generateTitleOverlay(scene.keyword, titleDesigns[designIdx], titlePalettes[paletteIdx], titlePath)
+          titleOverlays.push({ path: titlePath, start: titleTime, end: titleTime + sceneDur, animated: false, cleanup: true })
+        }
       }
       titleTime += sceneDur
     }
@@ -785,20 +795,26 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const fontsDirEscaped = path.join(__dirname, 'fonts').replace(/\\/g, '/').replace(/:/g, '\\:')
     const forceStyle = getForceStyle(subtitleStyle || 'classic')
 
-    // FFmpeg 필터 구성: 자막 + 타이틀 오버레이
+    // FFmpeg 필터 구성: 자막 + 타이틀 오버레이 (애니메이션 WebM은 itsoffset으로 타이밍 맞춤)
     let filterComplex = ''
     const inputs = ['-i', inputPath]
-    titleOverlays.forEach((t, i) => {
-      inputs.push('-i', t.path)
+    titleOverlays.forEach((t) => {
+      if (t.animated) {
+        // WebM 알파 영상: itsoffset으로 씬 시작 시간에 맞추고, 씬 길이만큼 반복
+        inputs.push('-itsoffset', t.start.toFixed(3), '-stream_loop', '-1', '-i', t.path)
+      } else {
+        inputs.push('-i', t.path)
+      }
     })
 
     if (titleOverlays.length > 0) {
-      // overlay 체인: [0]에 자막 → 타이틀 이미지 순차 오버레이
+      // overlay 체인: [0]에 자막 → 타이틀 순차 오버레이
       let chain = `[0:v]subtitles='${srtPathEscaped}':fontsdir='${fontsDirEscaped}':force_style='${forceStyle}'[sub]`
       let prevLabel = 'sub'
       titleOverlays.forEach((t, i) => {
         const nextLabel = i < titleOverlays.length - 1 ? `t${i}` : 'out'
-        chain += `;[${prevLabel}][${i + 1}:v]overlay=0:0:enable='between(t,${t.start.toFixed(2)},${t.end.toFixed(2)})'[${nextLabel}]`
+        const fmt = t.animated ? ':format=auto' : ''
+        chain += `;[${prevLabel}][${i + 1}:v]overlay=0:0${fmt}:enable='between(t,${t.start.toFixed(2)},${t.end.toFixed(2)})'[${nextLabel}]`
         prevLabel = nextLabel
       })
       filterComplex = chain
@@ -826,8 +842,8 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     }
 
-    // 타이틀 임시 파일 정리
-    titleOverlays.forEach(t => { try { fs.unlinkSync(t.path) } catch {} })
+    // 타이틀 임시 파일 정리 (PNG만 삭제, 애니메이션 WebM은 보존)
+    titleOverlays.forEach(t => { if (t.cleanup) { try { fs.unlinkSync(t.path) } catch {} } })
 
     // 5) 응답
     const size = fs.statSync(outputPath).size
@@ -839,6 +855,112 @@ app.post('/api/subtitle/burn', async (req, res) => {
   } catch (err) {
     try { fs.unlinkSync(inputPath) } catch {}
     try { fs.unlinkSync(srtPath) } catch {}
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== Remotion 서버사이드 렌더링 =====
+let remotionBundleUrl = null
+let remotionBundleMtime = 0
+
+function getRemotionSourceMtime() {
+  const remotionDir = path.join(__dirname, '..', 'client', 'src', 'remotion')
+  let maxMtime = 0
+  const walk = (dir) => {
+    try {
+      const files = fs.readdirSync(dir)
+      for (const f of files) {
+        const full = path.join(dir, f)
+        const stat = fs.statSync(full)
+        if (stat.isDirectory()) walk(full)
+        else maxMtime = Math.max(maxMtime, stat.mtimeMs)
+      }
+    } catch {}
+  }
+  walk(remotionDir)
+  return maxMtime
+}
+
+app.post('/api/remotion/render', async (req, res) => {
+  const { compositionId, props, durationInFrames = 240, fps = 30, transparent = false } = req.body
+  if (!compositionId) return res.status(400).json({ error: 'Missing compositionId' })
+
+  const outputDir2 = path.join(__dirname, '..', 'output')
+  if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
+
+  try {
+    const { bundle } = await import('@remotion/bundler')
+    const { renderMedia, selectComposition } = await import('@remotion/renderer')
+
+    // 번들 캐싱 + 소스 변경 시 자동 재번들링
+    const sourceMtime = getRemotionSourceMtime()
+    if (!remotionBundleUrl || sourceMtime > remotionBundleMtime) {
+      console.log(`[Remotion] ${remotionBundleUrl ? '소스 변경 감지, 재번들링' : '번들링 시작'}...`)
+      const entryPoint = path.join(__dirname, '..', 'client', 'src', 'remotion', 'index.jsx')
+      remotionBundleUrl = await bundle({
+        entryPoint,
+        onProgress: (p) => { if (p % 20 === 0) console.log(`[Remotion] 번들 진행: ${p}%`) },
+      })
+      remotionBundleMtime = sourceMtime
+      console.log('[Remotion] 번들 완료:', remotionBundleUrl)
+    }
+
+    // 컴포지션 선택
+    const composition = await selectComposition({
+      serveUrl: remotionBundleUrl,
+      id: compositionId,
+      inputProps: props || {},
+    })
+
+    // durationInFrames / fps 오버라이드
+    composition.durationInFrames = durationInFrames
+    composition.fps = fps
+
+    const ts = Date.now()
+    const ext = transparent ? 'webm' : 'mp4'
+    const codec = transparent ? 'vp8' : 'h264'
+    const outputPath = path.join(outputDir2, `remotion_${compositionId}_${ts}.${ext}`)
+
+    console.log(`[Remotion] 렌더 시작: ${compositionId} (${durationInFrames}f, ${fps}fps, ${codec}${transparent ? ', transparent' : ''})`)
+    await renderMedia({
+      composition,
+      serveUrl: remotionBundleUrl,
+      codec,
+      outputLocation: outputPath,
+      inputProps: props || {},
+      imageFormat: transparent ? 'png' : 'jpeg',
+      pixelFormat: transparent ? 'yuva420p' : 'yuv420p',
+    })
+    console.log(`[Remotion] 렌더 완료: ${outputPath}`)
+
+    const size = fs.statSync(outputPath).size
+    res.json({ url: `/output/remotion_${compositionId}_${ts}.${ext}`, filePath: outputPath, size })
+  } catch (err) {
+    console.error('[Remotion] 렌더 에러:', err)
+    // 번들 에러 시 캐시 초기화
+    if (err.message?.includes('bundle')) remotionBundleUrl = null
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Remotion 렌더링 결과 MP4 → HeyGen 업로드
+app.post('/api/remotion/upload-to-heygen', async (req, res) => {
+  const apiKey = req.headers['x-api-key']
+  const { localPath } = req.body
+  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key' })
+  if (!localPath || !fs.existsSync(localPath)) return res.status(400).json({ error: 'File not found' })
+
+  try {
+    const buffer = fs.readFileSync(localPath)
+    const response = await fetch('https://upload.heygen.com/v1/asset', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'video/mp4' },
+      body: buffer,
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
@@ -920,6 +1042,35 @@ app.post('/api/output/upload', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }))
+
+// ===== Instagram Graph API Proxy (현재 mock - 실제 API 키 받으면 교체) =====
+app.post('/api/instagram/publish', async (req, res) => {
+  console.log('[Instagram] publish request:', req.body)
+  // TODO: 실제 Meta Graph API 호출
+  // 1) POST {ig-user-id}/media (create container)
+  // 2) POST {ig-user-id}/media_publish (publish container)
+  await new Promise(r => setTimeout(r, 1500))
+  res.json({
+    success: true,
+    mock: true,
+    mediaId: `mock_${Date.now()}`,
+    permalink: `https://instagram.com/p/mock_${Date.now()}/`,
+  })
+})
+
+// ===== YouTube Data API Proxy (현재 mock) =====
+app.post('/api/youtube/upload', async (req, res) => {
+  console.log('[YouTube] upload request:', req.body)
+  // TODO: 실제 YouTube Data API v3 videos.insert 호출 (resumable upload)
+  await new Promise(r => setTimeout(r, 3000))
+  res.json({
+    success: true,
+    mock: true,
+    videoId: `mock_${Date.now()}`,
+    url: `https://youtu.be/mock_${Date.now()}`,
+    snippet: req.body?.snippet || {},
+  })
+})
 
 const PORT = 3001
 app.listen(PORT, () => {

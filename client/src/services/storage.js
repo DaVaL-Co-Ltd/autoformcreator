@@ -38,7 +38,8 @@ export function saveExtraction(data) {
 
   const channels = []
   if (data.blogContent) channels.push({ channel: 'blog', title: data.blogContent.title })
-  if (data.newsletterContent) channels.push({ channel: 'newsletter', title: data.newsletterContent.subject })
+  if (data.bandContent) channels.push({ channel: 'band', title: data.bandContent.title })
+  if (data.kakaoContent) channels.push({ channel: 'kakao', title: data.kakaoContent.title })
   if (data.instagramContent) channels.push({ channel: 'instagram', title: `카드뉴스 ${data.instagramContent.cards?.length || 0}장` })
   if (data.shortsScript) channels.push({ channel: 'shorts', title: data.shortsScript.title })
 
@@ -103,7 +104,8 @@ export function deleteExtractionChannel(id, channel) {
     // data에서 해당 채널 데이터 제거
     const channelDataKeys = {
       blog: 'blogContent',
-      newsletter: 'newsletterContent',
+      band: 'bandContent',
+      kakao: 'kakaoContent',
       instagram: 'instagramContent',
       shorts: 'shortsScript',
     }

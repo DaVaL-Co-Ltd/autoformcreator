@@ -3,23 +3,33 @@ import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Play, Pause, ToggleLeft, ToggleRight, Download
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Play, Pause, ToggleLeft, ToggleRight, Download,
+  Users, MessageCircle
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
 import {
   generateAllContent, retryFailedChannels,
-  generateBlogContent, generateNewsletterContent, generateInstagramContent,
-  generateShortsScript
+  generateBlogContent, generateBandContent, generateKakaoContent,
+  generateInstagramContent, generateShortsScript
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
 
 const steps = [
+  { id: 0, label: '채널 선택', icon: CheckCircle, desc: '작업할 채널을 선택하세요' },
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
   { id: 2, label: '문서 분석', icon: Brain, desc: 'PDF 텍스트 추출 및 데이터 검증' },
   { id: 3, label: '콘텐츠 생성', icon: PenTool, desc: '콘텐츠 텍스트 생성' },
   { id: 4, label: '이미지 생성', icon: ImageIcon, desc: '블로그/인스타그램 이미지 생성' },
   { id: 5, label: '숏폼 생성', icon: Film, desc: '숏폼 영상 생성' },
+]
+
+const CHANNEL_OPTIONS = [
+  { key: 'blog',      label: '네이버 블로그', icon: FileText,      color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
+  { key: 'band',      label: '네이버 밴드',   icon: Users,         color: 'text-green-600',   bg: 'bg-green-600/10',   border: 'border-green-600/30' },
+  { key: 'kakao',     label: '카카오톡',      icon: MessageCircle, color: 'text-yellow-500',  bg: 'bg-yellow-500/10',  border: 'border-yellow-500/30' },
+  { key: 'instagram', label: '인스타그램',    icon: ImageIcon,     color: 'text-pink-500',    bg: 'bg-pink-500/10',    border: 'border-pink-500/30' },
+  { key: 'shorts',    label: '유튜브 숏츠',   icon: Film,          color: 'text-red-500',     bg: 'bg-red-500/10',     border: 'border-red-500/30' },
 ]
 
 // AI 서비스별 색상 매핑
@@ -91,18 +101,6 @@ const mockBlogContent = {
   summary: '글로벌 AI 시장 $184.0B 달성, 2030년 $826.7B 전망',
 }
 
-const mockNewsletterContent = {
-  subject: '[데모] AI 시장 $184B 돌파 - 주간 AI 브리핑',
-  preheader: '생성형 AI 67.2% 성장, 글로벌 시장 분석',
-  greeting: '안녕하세요, AI 트렌드 구독자 여러분!',
-  headline: '2024 AI 시장, 사상 최대 규모 달성',
-  keyPoints: ['시장 규모 $184.0B 달성', '생성형 AI 67.2% 성장', '2030년 $826.7B 전망'],
-  body: '올해 글로벌 AI 시장이 전례 없는 성장을 기록했습니다.',
-  dataHighlights: [{ label: '시장 규모', value: '$184.0B' }, { label: '성장률', value: '+32.4%' }],
-  cta: { text: '전체 보고서 보기', description: '상세 분석 확인하기' },
-  closingNote: '다음 주에도 최신 AI 트렌드로 찾아뵙겠습니다.',
-}
-
 const mockInstagramContent = {
   title: '[데모] 2024 AI 시장 핵심 분석',
   body: '2024년 글로벌 AI 시장이 **$184.0B**를 달성하며 역대 최대 규모를 기록했습니다.\n\n생성형 AI가 **67.2%**의 성장률로 시장을 견인하고 있으며, 2030년까지 **$826.7B**에 도달할 전망입니다.\n\n북미가 38.2%로 최대 시장이지만, 아시아태평양이 31.5%로 빠르게 추격 중입니다.',
@@ -116,6 +114,23 @@ const mockInstagramContent = {
     { cardNumber: 5, headline: '아태 추격', content: '빠른 성장세로 2위 달성', dataPoint: '31.5%' },
     { cardNumber: 6, headline: '엔터프라이즈 AI', content: 'B2B AI 솔루션 수요 급증', dataPoint: '도입 가속화' },
   ],
+}
+
+const mockBandContent = {
+  title: '[데모] 2024 AI 시장, 멤버 여러분도 주목하세요! 👀',
+  greeting: '안녕하세요 멤버 여러분! 😊',
+  body: '오늘은 2024년 글로벌 AI 시장 핵심 인사이트를 공유합니다.\n\n📊 올해 AI 시장이 **$184.0B** 규모로 전년 대비 32.4% 성장했어요.\n\n특히 생성형 AI가 67.2% 성장률로 시장을 주도하고 있습니다.\n\n2030년에는 $826.7B까지 성장할 전망이라고 하니, 지금이 관심 가질 타이밍이에요! 🚀',
+  keyPoints: ['2024년 AI 시장 $184.0B 달성', '생성형 AI +67.2% 폭발 성장', '2030년 $826.7B 전망'],
+  hashtags: ['#AI시장', '#생성형AI', '#테크트렌드'],
+  cta: '여러분은 어떻게 생각하시나요? 댓글로 의견 남겨주세요! 💬',
+}
+
+const mockKakaoContent = {
+  title: '[데모] 2024 AI 시장 핵심',
+  message: '📊 AI 시장 $184B 돌파! 생성형 AI가 주도',
+  body: '🚀 2024 AI 시장 핵심\n\n✅ 시장 규모 $184.0B\n(전년 대비 +32.4%)\n\n✅ 생성형 AI 폭발 성장\n(+67.2%)\n\n✅ 2030년 $826.7B 전망\n\n지금이 AI 투자 타이밍!',
+  highlight: '생성형 AI가 67.2% 성장으로 시장을 주도합니다',
+  cta: { text: '자세히 보기', description: '전체 리포트 확인' },
 }
 
 const mockShortsScript = {
@@ -252,7 +267,9 @@ export default function ExtractionPage() {
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
-  const [currentStep, setCurrentStep] = useState(1)
+  const [currentStep, setCurrentStep] = useState(0)
+  const [selectedChannels, setSelectedChannels] = useState({ blog: true, band: true, kakao: true, instagram: true, shorts: true })
+  const [channelsConfirmed, setChannelsConfirmed] = useState(false)
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
@@ -271,14 +288,14 @@ export default function ExtractionPage() {
   const [confirmDialog, setConfirmDialog] = useState(null)
   const [creditConfirm, setCreditConfirm] = useState(false) // 크레딧 소모 확인 팝업
   const [previewImage, setPreviewImage] = useState(null)
-  const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'newsletter' | 'instagram' | 'shorts' | null
+  const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
 
   // 프롬프트 설정 (각 Step별)
   const [promptOpen, setPromptOpen] = useState({})
   const [promptSettings, setPromptSettings] = useState({
     analysis: { focus: '', extra: '' },
     summary: { keywords: '', style: 'auto', extra: '' },
-    content: { tone: 'auto', commonExtra: '', blogExtra: '', instaExtra: '', newsletterExtra: '', shortsExtra: '' },
+    content: { tone: 'auto', commonExtra: '', blogExtra: '', bandExtra: '', kakaoExtra: '', instaExtra: '', shortsExtra: '' },
     media: { imageStyle: 'pastel', mainColor: 'auto', extra: '' },
     shorts: { videoStyle: 'avatar', narrationTone: 'auto', extra: '' },
   })
@@ -290,7 +307,8 @@ export default function ExtractionPage() {
   const [verification, setVerification] = useState(null)
   const [summary, setSummary] = useState(null)
   const [blogContent, setBlogContent] = useState(null)
-  const [newsletterContent, setNewsletterContent] = useState(null)
+  const [bandContent, setBandContent] = useState(null)
+  const [kakaoContent, setKakaoContent] = useState(null)
   const [instagramContent, setInstagramContent] = useState(null)
   const [shortsScript, setShortsScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
@@ -305,6 +323,8 @@ export default function ExtractionPage() {
   const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id
   const [heygenReady, setHeygenReady] = useState(false)
   const [heygenUploading, setHeygenUploading] = useState(false)
+  const [subtitleStyle, setSubtitleStyle] = useState('style1')
+  const [subtitleFont, setSubtitleFont] = useState('default')
 
   // step 4까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -341,7 +361,7 @@ export default function ExtractionPage() {
   const resetFromStep = (step) => {
     setCurrentStep(step)
     if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setEditingText(false) }
-    if (step <= 3) { setBlogContent(null); setNewsletterContent(null); setInstagramContent(null); setShortsScript(null) }
+    if (step <= 3) { setBlogContent(null); setInstagramContent(null); setShortsScript(null) }
     if (step <= 4) { setBlogImages(null); setInstagramImages(null); setMediaGenerationDone(false); setMediaItemLoading({}) }
     if (step <= 5) { setShortsVideo(null); setAvatarImage(null); setAvatarPrompt(''); setAvatarConfirmed(false) }
     // 에러도 초기화
@@ -352,14 +372,14 @@ export default function ExtractionPage() {
   }
 
   const handleFile = (f) => {
-    const supportedExts = ['.pdf', '.hwp', '.hwpx', '.docx', '.doc', '.pptx', '.ppt']
+    const supportedExts = ['.pdf', '.hwp', '.hwpx', '.docx', '.doc', '.pptx', '.ppt', '.jpg', '.jpeg', '.png', '.webp']
     const ext = f?.name?.toLowerCase().match(/\.[^.]+$/)?.[0]
     if (f && ext && supportedExts.includes(ext)) {
       setFile(f)
       resetFromStep(2)
       clearStepErrors('upload')
     } else {
-      addStepErrors('upload', [{ service: 'upload', message: '지원되는 파일 형식: PDF, HWP, DOCX, PPTX' }])
+      addStepErrors('upload', [{ service: 'upload', message: '지원되는 파일 형식: PDF, HWP, DOCX, PPTX, JPG, PNG, WEBP' }])
     }
   }
 
@@ -481,13 +501,11 @@ export default function ExtractionPage() {
 
     if (demoMode) {
       await delay(MOCK_DELAY)
-      setBlogContent(mockBlogContent)
-      await delay(300)
-      setNewsletterContent(mockNewsletterContent)
-      await delay(300)
-      setInstagramContent(mockInstagramContent)
-      await delay(300)
-      setShortsScript(mockShortsScript)
+      if (selectedChannels.blog) { setBlogContent(mockBlogContent); await delay(300) }
+      if (selectedChannels.band) { setBandContent(mockBandContent); await delay(300) }
+      if (selectedChannels.kakao) { setKakaoContent(mockKakaoContent); await delay(300) }
+      if (selectedChannels.instagram) { setInstagramContent(mockInstagramContent); await delay(300) }
+      if (selectedChannels.shorts) { setShortsScript(mockShortsScript); await delay(300) }
       setCurrentStep(4)
       setStepLoading('content', false)
       return
@@ -495,15 +513,16 @@ export default function ExtractionPage() {
 
     const errors = []
     const channelMap = [
-      { key: 'blog', label: '블로그', setter: setBlogContent },
-      { key: 'newsletter', label: '뉴스레터', setter: setNewsletterContent },
+      { key: 'blog', label: '네이버 블로그', setter: setBlogContent },
+      { key: 'band', label: '네이버 밴드', setter: setBandContent },
+      { key: 'kakao', label: '카카오톡', setter: setKakaoContent },
       { key: 'instagram', label: '인스타그램', setter: setInstagramContent },
       { key: 'shorts', label: '숏폼 대본', setter: setShortsScript },
-    ]
+    ].filter(c => selectedChannels[c.key])
 
     try {
       // 1회 API 호출로 5개 채널 통합 생성
-      const allContent = await generateAllContent(summary, parsedText, emphasisText, { tone: promptSettings.content.tone, commonExtra: promptSettings.content.commonExtra, blogExtra: promptSettings.content.blogExtra, instaExtra: promptSettings.content.instaExtra, newsletterExtra: promptSettings.content.newsletterExtra, shortsExtra: promptSettings.content.shortsExtra })
+      const allContent = await generateAllContent(summary, parsedText, emphasisText, { tone: promptSettings.content.tone, commonExtra: promptSettings.content.commonExtra, blogExtra: promptSettings.content.blogExtra, bandExtra: promptSettings.content.bandExtra, kakaoExtra: promptSettings.content.kakaoExtra, instaExtra: promptSettings.content.instaExtra, shortsExtra: promptSettings.content.shortsExtra })
 
       let anySuccess = false
       for (const ch of channelMap) {
@@ -533,8 +552,8 @@ export default function ExtractionPage() {
   }
 
   // 라벨 → API 키 매핑
-  const labelToKey = { '블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
-  const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript }
+  const labelToKey = { '네이버 블로그': 'blog', '네이버 밴드': 'band', '카카오톡': 'kakao', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
+  const keyToSetter = { blog: setBlogContent, band: setBandContent, kakao: setKakaoContent, instagram: setInstagramContent, shorts: setShortsScript }
 
   // Step 3 재시도 — 실패한 채널을 모아서 1회 API 호출
   const retryAllFailedContent = async () => {
@@ -543,8 +562,9 @@ export default function ExtractionPage() {
 
     if (demoMode) {
       const mockMap = {
-        '블로그': { data: mockBlogContent, setter: setBlogContent },
-        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
+        '네이버 블로그': { data: mockBlogContent, setter: setBlogContent },
+        '네이버 밴드': { data: mockBandContent, setter: setBandContent },
+        '카카오톡': { data: mockKakaoContent, setter: setKakaoContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
       }
@@ -601,8 +621,9 @@ export default function ExtractionPage() {
   const retryContentChannel = async (err) => {
     if (demoMode) {
       const mockMap = {
-        '블로그': { data: mockBlogContent, setter: setBlogContent },
-        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
+        '네이버 블로그': { data: mockBlogContent, setter: setBlogContent },
+        '네이버 밴드': { data: mockBandContent, setter: setBandContent },
+        '카카오톡': { data: mockKakaoContent, setter: setKakaoContent },
         '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
         '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
       }
@@ -651,10 +672,11 @@ export default function ExtractionPage() {
 
   // Step 3 개별 채널 재생성 (성공한 채널도 다시 생성)
   const regenerateChannel = async (channelKey) => {
-    const mockMap = { blog: mockBlogContent, newsletter: mockNewsletterContent, instagram: mockInstagramContent, shorts: mockShortsScript }
+    const mockMap = { blog: mockBlogContent, band: mockBandContent, kakao: mockKakaoContent, instagram: mockInstagramContent, shorts: mockShortsScript }
     const fnMap = {
       blog: () => generateBlogContent(summary, parsedText, emphasisText),
-      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText),
+      band: () => generateBandContent(summary, parsedText, emphasisText),
+      kakao: () => generateKakaoContent(summary, parsedText, emphasisText),
       instagram: () => generateInstagramContent(summary, parsedText, emphasisText),
       shorts: () => generateShortsScript(summary, parsedText, emphasisText),
     }
@@ -691,13 +713,13 @@ export default function ExtractionPage() {
       instaImg: instagramImages?.length > 0,
     }
 
-    if (!alreadyDone.blogImg) {
+    if (selectedChannels.blog && !alreadyDone.blogImg) {
       tasks.push(
         { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
       )
     }
 
-    if (!alreadyDone.instaImg && instagramContent?.cardTopics?.length) {
+    if (selectedChannels.instagram && !alreadyDone.instaImg && instagramContent?.cardTopics?.length) {
       tasks.push(
         { key: 'instaImg', service: 'gemini', channel: '인스타 카드', fn: () => generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }), setter: setInstagramImages },
       )
@@ -1305,12 +1327,13 @@ ${parsedText}
     const incomplete = []
     if (!parsedText && !verification) incomplete.push('문서 분석')
     if (!summary) incomplete.push('핵심 요약')
-    if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) incomplete.push('콘텐츠 생성')
+    if (!blogContent && !bandContent && !kakaoContent && !instagramContent && !shortsScript) incomplete.push('콘텐츠 생성')
     else {
-      if (!blogContent) incomplete.push('블로그 콘텐츠')
-      if (!newsletterContent) incomplete.push('뉴스레터 콘텐츠')
-      if (!instagramContent) incomplete.push('인스타그램 콘텐츠')
-      if (!shortsScript) incomplete.push('숏폼 대본')
+      if (selectedChannels.blog && !blogContent) incomplete.push('네이버 블로그 콘텐츠')
+      if (selectedChannels.band && !bandContent) incomplete.push('네이버 밴드 콘텐츠')
+      if (selectedChannels.kakao && !kakaoContent) incomplete.push('카카오톡 콘텐츠')
+      if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
+      if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
     if (!blogImages?.some(i => i.imageUrl)) incomplete.push('블로그 이미지')
     if (!instagramImages?.length) incomplete.push('인스타 카드 이미지')
@@ -1364,7 +1387,7 @@ ${parsedText}
     navigate('/extraction/result', {
       state: {
         parsedText, verification, summary,
-        blogContent, newsletterContent, instagramContent,
+        blogContent, bandContent, kakaoContent, instagramContent,
         shortsScript,
         blogImages, instagramImages, shortsVideo,
         fileName: file?.name || (demoMode ? 'demo_report.pdf' : undefined),
@@ -1397,7 +1420,13 @@ ${parsedText}
   )
 
 
-  const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
+  const hasAnyContent = blogContent || bandContent || kakaoContent || instagramContent || shortsScript
+
+  // 선택된 채널에 따라 스텝 번호 동적 계산 (Step 0은 채널 선택)
+  const visibleStepIds = [0, 1, 2, 3]
+  if (selectedChannels.blog || selectedChannels.instagram) visibleStepIds.push(4)
+  if (selectedChannels.shorts) visibleStepIds.push(5)
+  const displayStepNum = (id) => visibleStepIds.indexOf(id)
 
   return (
     <div className="w-full">
@@ -1448,11 +1477,15 @@ ${parsedText}
         {/* 스텝 인디케이터 */}
         <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
           <div className="flex items-center gap-1 flex-1">
-            {steps.map((step, i) => {
+            {steps.filter(s => {
+              if (s.id === 4) return selectedChannels.blog || selectedChannels.instagram
+              if (s.id === 5) return selectedChannels.shorts
+              return true
+            }).map((step, i, arr) => {
               const Icon = step.icon
               const isActive = step.id === currentStep
               const isDone = step.id < currentStep
-              const hasError = stepErrors[['upload', 'upload', 'analysis', 'content', 'media', 'shorts'][step.id]]?.length > 0
+              const hasError = stepErrors[['select', 'upload', 'analysis', 'content', 'media', 'shorts'][step.id]]?.length > 0
               return (
                 <div key={step.id} className="flex items-center flex-1">
                   <button
@@ -1468,7 +1501,7 @@ ${parsedText}
                      <Icon size={14} />}
                     <span className="hidden sm:inline">{step.label}</span>
                   </button>
-                  {i < steps.length - 1 && <ArrowRight size={12} className="text-text-muted mx-1 shrink-0" />}
+                  {i < arr.length - 1 && <ArrowRight size={12} className="text-text-muted mx-1 shrink-0" />}
                 </div>
               )
             })}
@@ -1485,15 +1518,71 @@ ${parsedText}
         {/* 스텝 카드들 */}
         <div className="space-y-6">
 
+      {/* Step 0: 채널 선택 */}
+      <div id="step-0" className={`bg-surface rounded-xl border transition-all ${currentStep === 0 ? 'border-primary/40' : 'border-border'}`}>
+        <div className="flex items-center justify-between gap-4 p-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className={`p-1.5 rounded-lg ${channelsConfirmed ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
+              <CheckCircle size={14} />
+            </div>
+            <div>
+              <h3 className="font-semibold text-text text-sm">Step 0. 채널 선택</h3>
+              <p className="text-[11px] text-text-muted">작업할 채널을 선택하세요</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {CHANNEL_OPTIONS.map(ch => {
+              const Icon = ch.icon
+              const isSelected = selectedChannels[ch.key]
+              return (
+                <button
+                  key={ch.key}
+                  onClick={() => { setSelectedChannels(p => ({ ...p, [ch.key]: !p[ch.key] })); setChannelsConfirmed(false) }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                    isSelected
+                      ? `${ch.bg} ${ch.border} ${ch.color}`
+                      : 'bg-surface-light border-border text-text-muted hover:border-primary/20'
+                  }`}
+                >
+                  <Icon size={12} />
+                  {ch.label}
+                  {isSelected && <CheckCircle size={10} />}
+                </button>
+              )
+            })}
+            {!channelsConfirmed ? (
+              <button
+                onClick={() => {
+                  if (Object.values(selectedChannels).filter(Boolean).length === 0) return
+                  setChannelsConfirmed(true)
+                  setCurrentStep(1)
+                }}
+                disabled={Object.values(selectedChannels).filter(Boolean).length === 0}
+                className="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-1"
+              >
+                <CheckCircle size={11} /> 확정
+              </button>
+            ) : (
+              <button
+                onClick={() => { setChannelsConfirmed(false); setCurrentStep(0) }}
+                className="px-3 py-1.5 bg-surface-light text-text-muted text-xs font-medium rounded-lg hover:bg-surface hover:text-text transition-all border border-border flex items-center gap-1"
+              >
+                <RefreshCw size={11} /> 변경
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Step 1: PDF Upload (프롬프트 없음) */}
-      <div id="step-1" className={`bg-surface rounded-xl border transition-all ${currentStep === 1 ? 'border-primary/40' : 'border-border'}`}>
+      <div id="step-1" className={`bg-surface rounded-xl border transition-all ${currentStep === 1 ? 'border-primary/40' : 'border-border'} ${currentStep < 1 ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-lg ${file ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
               <Upload size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step 1. 문서 업로드</h3>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(1)}. 문서 업로드</h3>
               <p className="text-xs text-text-muted">분석할 문서 파일을 업로드하세요</p>
             </div>
           </div>
@@ -1526,11 +1615,11 @@ ${parsedText}
                   onDrop={handleDrop}
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt" onChange={handleFileInput} />
+                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
                   <Upload size={28} className="mx-auto mb-3 text-text-muted" />
                   <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
 
-                  <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX 지원</p>
+                  <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
                 </div>
               )}
             </>
@@ -1567,7 +1656,7 @@ ${parsedText}
               <Brain size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step 2. 문서 분석 & 요약</h3>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(2)}. 문서 분석 & 요약</h3>
               <p className="text-xs text-text-muted">PDF 텍스트 추출, 데이터 검증 및 핵심 요약</p>
             </div>
           </div>
@@ -1732,8 +1821,9 @@ ${parsedText}
           {PF('공통 추가 지시', { optional: true, type: 'textarea', placeholder: '모든 채널에 공통 적용', value: promptSettings.content.commonExtra, onChange: v => updatePrompt('content', 'commonExtra', v) })}
           <div className="border-t border-border/30 my-1" />
           {PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
+          {PF('👥 네이버 밴드', { optional: true, type: 'textarea', placeholder: '커뮤니티 소통 톤 등', value: promptSettings.content.bandExtra, onChange: v => updatePrompt('content', 'bandExtra', v) })}
+          {PF('💬 카카오톡', { optional: true, type: 'textarea', placeholder: '짧은 푸시 메시지 등', value: promptSettings.content.kakaoExtra, onChange: v => updatePrompt('content', 'kakaoExtra', v) })}
           {PF('📷 인스타', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
-          {PF('📧 뉴스레터', { optional: true, type: 'textarea', placeholder: 'CTA 문구 등', value: promptSettings.content.newsletterExtra, onChange: v => updatePrompt('content', 'newsletterExtra', v) })}
           {PF('🎬 숏폼', { optional: true, type: 'textarea', placeholder: '후킹 문구 등', value: promptSettings.content.shortsExtra, onChange: v => updatePrompt('content', 'shortsExtra', v) })}
         </div>
         <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === 3 ? 'border-primary/40' : 'border-border'} ${currentStep < 3 ? 'opacity-50' : ''}`}>
@@ -1743,18 +1833,21 @@ ${parsedText}
               <PenTool size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step 3. 콘텐츠 생성</h3>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(3)}. 콘텐츠 생성</h3>
               <p className="text-xs text-text-muted">컨텐츠에 적합한 문구 생성</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
 
-            {hasAnyContent && (
-              <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.content?.length ? 'text-warning' : 'text-success'}`}>
-                {stepErrors.content?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
-                {4 - (stepErrors.content?.length || 0)}/4 채널 생성 완료
-              </span>
-            )}
+            {hasAnyContent && (() => {
+              const total = Object.values(selectedChannels).filter(Boolean).length
+              return (
+                <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.content?.length ? 'text-warning' : 'text-success'}`}>
+                  {stepErrors.content?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
+                  {total - (stepErrors.content?.length || 0)}/{total} 채널 생성 완료
+                </span>
+              )
+            })()}
             {currentStep === 3 && !hasAnyContent && (
               <button
                 onClick={runContentGeneration}
@@ -1779,11 +1872,12 @@ ${parsedText}
           <div className="p-5">
             <div className="space-y-2">
               {[
-                { key: 'blog', label: '블로그', icon: FileText, color: 'text-primary-light bg-primary/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
-                { key: 'newsletter', label: '뉴스레터', icon: FileText, color: 'text-success bg-success/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
+                { key: 'blog', label: '네이버 블로그', icon: FileText, color: 'text-emerald-500 bg-emerald-500/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
+                { key: 'band', label: '네이버 밴드', icon: Users, color: 'text-green-500 bg-green-500/10', data: bandContent, detail: bandContent ? `${bandContent.keyPoints?.length || 0}개 포인트` : null },
+                { key: 'kakao', label: '카카오톡', icon: MessageCircle, color: 'text-yellow-400 bg-yellow-400/10', data: kakaoContent, detail: kakaoContent ? '메시지 작성' : null },
                 { key: 'instagram', label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? `본문 작성` : null },
-                { key: 'shorts', label: '숏폼 대본', icon: Film, color: 'text-warning bg-warning/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
-              ].map((ch, i) => {
+                { key: 'shorts', label: '숏폼 대본', icon: Film, color: 'text-red-500 bg-red-500/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
+              ].filter(ch => selectedChannels[ch.key]).map((ch, i) => {
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
                 const failed = !ch.data && !!errObj
@@ -1851,7 +1945,6 @@ ${parsedText}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-light">
                   <span className="text-sm font-semibold text-text">
                     {contentPreview === 'blog' && '📝 블로그 미리보기'}
-                    {contentPreview === 'newsletter' && '📧 뉴스레터 미리보기'}
                     {contentPreview === 'instagram' && '📷 인스타그램 미리보기'}
                     {contentPreview === 'shorts' && '🎬 숏폼 대본 미리보기'}
                   </span>
@@ -1878,35 +1971,6 @@ ${parsedText}
                           {blogContent.tags.map((tag, i) => <span key={i} className="text-xs px-2 py-0.5 bg-surface-light rounded-full text-text-muted">#{tag}</span>)}
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {/* 뉴스레터 */}
-                  {contentPreview === 'newsletter' && newsletterContent && (
-                    <div className="space-y-3">
-                      <div>
-                        <h4 className="text-base font-bold text-text">{newsletterContent.subject}</h4>
-                        {newsletterContent.preheader && <p className="text-xs text-text-muted">{newsletterContent.preheader}</p>}
-                      </div>
-                      {newsletterContent.greeting && <p className="text-sm text-text">{newsletterContent.greeting}</p>}
-                      {newsletterContent.headline && <p className="text-sm font-semibold text-text">{newsletterContent.headline}</p>}
-                      {newsletterContent.keyPoints?.length > 0 && (
-                        <ul className="list-disc list-inside space-y-1">
-                          {newsletterContent.keyPoints.map((pt, i) => <li key={i} className="text-sm text-text-muted">{pt}</li>)}
-                        </ul>
-                      )}
-                      {newsletterContent.body && <p className="text-sm text-text-muted whitespace-pre-wrap">{newsletterContent.body}</p>}
-                      {newsletterContent.dataHighlights?.length > 0 && (
-                        <div className="grid grid-cols-2 gap-2">
-                          {newsletterContent.dataHighlights.map((d, i) => (
-                            <div key={i} className="bg-surface-light rounded-lg p-2 text-center">
-                              <p className="text-xs text-text-muted">{d.label}</p>
-                              <p className="text-sm font-bold text-text">{d.value}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {newsletterContent.closingNote && <p className="text-xs text-text-muted italic">{newsletterContent.closingNote}</p>}
                     </div>
                   )}
 
@@ -1992,6 +2056,7 @@ ${parsedText}
       </div>
 
       {/* Step 4: Media Generation */}
+      {(selectedChannels.blog || selectedChannels.instagram) && (
       <div id="step-4" className="flex gap-4 items-stretch">
         <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
           <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 이미지 설정</p>
@@ -2006,7 +2071,7 @@ ${parsedText}
               <ImageIcon size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step 4. 이미지 생성</h3>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(4)}. 이미지 생성</h3>
               <p className="text-xs text-text-muted">블로그/인스타그램 이미지 생성</p>
             </div>
           </div>
@@ -2043,7 +2108,7 @@ ${parsedText}
         {currentStep >= 4 && (
           <div className="p-5 space-y-4">
             {/* 블로그 이미지 */}
-            {(() => {
+            {selectedChannels.blog && (() => {
               const failed = stepErrors.media?.some(e => e.channel === '블로그 이미지')
               const isLoading = mediaItemLoading['블로그 이미지']
               const ok = blogImages?.some(i => i.imageUrl)
@@ -2090,7 +2155,7 @@ ${parsedText}
             })()}
 
             {/* 인스타 카드 */}
-            {(() => {
+            {selectedChannels.instagram && (() => {
               const failed = stepErrors.media?.some(e => e.channel === '인스타 카드')
               const isLoading = mediaItemLoading['인스타 카드']
               const ok = instagramImages?.length > 0
@@ -2144,22 +2209,19 @@ ${parsedText}
         <ErrorPanel errors={stepErrors.media} onRetry={retryMediaItem} retrying={retrying} />
       </div>
       </div>
+      )}
 
       {/* Step 5: 숏폼 생성 (아바타 + 목소리 + 영상) */}
-      <div id="step-5" className="flex gap-4 items-stretch">
-        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 5 ? 'opacity-50 pointer-events-none' : ''}`}>
-          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 숏폼 설정</p>
-          {PF('나레이션 톤', { type: 'select', value: promptSettings.shorts.narrationTone, onChange: v => updatePrompt('shorts', 'narrationTone', v), options: [{ value: 'auto', label: '자동' }, { value: 'bright', label: '밝고 에너지 넘치는' }, { value: 'calm', label: '차분하고 신뢰감 있는' }, { value: 'humor', label: '유머러스한' }] })}
-          {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '프로필 링크 CTA 등', value: promptSettings.shorts.extra, onChange: v => updatePrompt('shorts', 'extra', v) })}
-        </div>
-        <div className={`flex-1 min-w-0 bg-surface rounded-2xl border transition-all shadow-sm ${currentStep === 5 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-40 pointer-events-none' : ''}`}>
+      {selectedChannels.shorts && (
+      <div id="step-5">
+        <div className={`bg-surface rounded-2xl border transition-all shadow-sm ${currentStep === 5 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex items-center gap-4">
             <div className={`p-2.5 rounded-xl ${shortsVideo ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
               <Film size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step 5. 숏폼 생성</h3>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(5)}. 숏폼 생성</h3>
               <p className="text-xs text-text-muted">아바타 + 나레이션 + HeyGen 영상</p>
             </div>
           </div>
@@ -2172,15 +2234,6 @@ ${parsedText}
               <p className="text-xs text-text-muted">Step 3에서 숏폼 대본이 생성되어야 합니다.</p>
             ) : (
               <>
-                {/* 대본 미리보기 */}
-                <div className="flex items-center gap-3 p-3 bg-surface-light rounded-lg border border-border">
-                  <Film size={14} className="text-primary shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text truncate">{shortsScript.title}</p>
-                    <p className="text-xs text-text-muted">{shortsScript.duration}초 · {shortsScript.scenes?.length}개 씬</p>
-                  </div>
-                </div>
-
                 {/* 5-1: 아바타 생성 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -2328,10 +2381,81 @@ ${parsedText}
                   )}
                 </div>
 
-                {/* 5-3: 영상 생성 */}
+                {/* 5-3: 자막 스타일 선택 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">3</span>
+                    <p className="text-base font-semibold text-text">자막 스타일</p>
+                    {subtitleStyle && <CheckCircle size={14} className="text-success" />}
+                  </div>
+                  {/* 폰트 선택 */}
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold text-text-muted">폰트</p>
+                    {[
+                      { value: 'default', label: '기본', style: {} },
+                      { value: 'bold', label: '볼드', style: { fontFamily: 'A2z, sans-serif', fontWeight: 700 } },
+                      { value: 'dongle', label: '동글', style: { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } },
+                      { value: 'handwriting', label: '손글씨', style: { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } },
+                      { value: 'gothic', label: '고딕', style: { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } },
+                    ].map(f => {
+                      const isSel = subtitleFont === f.value
+                      return (
+                        <button
+                          key={f.value}
+                          onClick={() => setSubtitleFont(f.value)}
+                          style={f.style}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${isSel ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-surface-light border-border text-text-muted hover:border-primary/20'}`}
+                        >
+                          {f.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {/* 스타일 카드 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'style1', label: 'Style1', desc: '흰 글자 + 검정 반투명 박스' },
+                      { value: 'style2', label: 'Style2', desc: '흰 글자 + 외곽선 (배경 없음)' },
+                    ].map(s => {
+                      const isSelected = subtitleStyle === s.value
+                      const fontStyle =
+                        subtitleFont === 'bold' ? { fontFamily: 'A2z, sans-serif', fontWeight: 700 } :
+                        subtitleFont === 'dongle' ? { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } :
+                        subtitleFont === 'handwriting' ? { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } :
+                        subtitleFont === 'gothic' ? { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } : {}
+                      return (
+                        <button
+                          key={s.value}
+                          onClick={() => setSubtitleStyle(s.value)}
+                          className={`flex flex-col gap-2 p-3 rounded-xl transition-all border ${isSelected ? 'bg-primary/10 border-primary/30 shadow-sm' : 'bg-surface-light border-border hover:border-primary/20'}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-text'}`}>{s.label}</p>
+                            {isSelected && <CheckCircle size={14} className="text-primary" />}
+                          </div>
+                          <p className="text-[11px] text-text-muted text-left">{s.desc}</p>
+                          <div className="bg-slate-400 rounded-lg px-2 py-2 flex items-center justify-center">
+                            {s.value === 'style1' && (
+                              <div className="bg-black/70 px-3 py-1.5 rounded">
+                                <p className="text-white text-xs font-medium text-center" style={fontStyle}>안녕하세요 AI 분석입니다</p>
+                              </div>
+                            )}
+                            {s.value === 'style2' && (
+                              <div className="px-3 py-1.5">
+                                <p className="text-white text-xs font-bold text-center" style={{ ...fontStyle, textShadow: '0 0 1px rgba(0,0,0,1), 0 0 1px rgba(0,0,0,0.8)' }}>안녕하세요 AI 분석입니다</p>
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* 5-4: 영상 생성 */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">4</span>
                     <p className="text-base font-semibold text-text">영상 생성</p>
                     {shortsVideo && <CheckCircle size={14} className="text-success" />}
                   </div>
@@ -2353,11 +2477,11 @@ ${parsedText}
                       </div>
                       {shortsVideo.url && (
                         <div className="flex flex-col items-center gap-3">
-                          <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-amber-400/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                          <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
                             <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
                           </div>
                           <a href={shortsVideo.url} download="shorts_video.mp4" target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600 transition-all shadow-md shadow-amber-500/20">
+                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-all shadow-md shadow-red-500/20">
                             <Download size={14} /> 다운로드
                           </a>
                         </div>
@@ -2398,6 +2522,7 @@ ${parsedText}
         }} retrying={retrying} />
       </div>
       </div>
+      )}
 
       {/* View Results Button - 콘텐츠 또는 미디어가 하나라도 있으면 활성화, 로딩 중이면 비활성 */}
       <div className="flex justify-end">

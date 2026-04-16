@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@remotion/cli": "^4.0.448",
+    "@remotion/player": "^4.0.448",
+    "@remotion/renderer": "^4.0.448",
     "axios": "^1.13.4",
     "html2canvas": "^1.4.1",
     "lodash": "^4.17.23",
@@ -22,6 +25,7 @@
     "react-router-dom": "^7.13.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
+    "remotion": "^4.0.448",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {

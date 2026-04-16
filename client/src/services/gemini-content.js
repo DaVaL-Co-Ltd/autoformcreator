@@ -19,15 +19,16 @@ function buildOptionsInstruction(options = {}) {
   if (options.commonExtra) parts.push(`공통 지시: ${options.commonExtra}`)
   if (options.blogExtra) parts.push(`블로그 추가 지시: ${options.blogExtra}`)
   if (options.instaExtra) parts.push(`인스타그램 추가 지시: ${options.instaExtra}`)
-  if (options.newsletterExtra) parts.push(`뉴스레터 추가 지시: ${options.newsletterExtra}`)
+  if (options.bandExtra) parts.push(`네이버 밴드 추가 지시: ${options.bandExtra}`)
+  if (options.kakaoExtra) parts.push(`카카오톡 채널 추가 지시: ${options.kakaoExtra}`)
   if (options.shortsExtra) parts.push(`숏폼 추가 지시: ${options.shortsExtra}`)
-  return parts.length > 0 ? '\n## 사용자 설정\n' + parts.join('\n') : ''
+  return parts.length > 0 ? '\n## ⚠️ 사용자 설정 (최우선 적용 - 아래 모든 기본 가이드라인보다 우선합니다)\n' + parts.join('\n') + '\n위 사용자 설정은 다른 모든 규칙(채널별 기본 톤, 어조 등)보다 우선해서 적용해야 합니다.\n' : ''
 }
 
-// 1차: 4개 채널 (블로그, 뉴스레터, 인스타그램, 숏폼)
+// 1차: 5개 채널 (블로그, 네이버 밴드, 카카오톡 채널, 인스타그램, 숏폼)
 async function generate4Channels(summary, rawText, emphasis, options = {}) {
   const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 4개 채널의 콘텐츠를 작성해주세요.
+  const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 5개 채널의 콘텐츠를 작성해주세요.
 
 ## 핵심 규칙
 - 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
@@ -54,10 +55,11 @@ ${rawText.slice(0, 8000)}
 
 ---
 
-아래 JSON 형식으로 4개 채널 콘텐츠를 생성하세요:
+아래 JSON 형식으로 5개 채널 콘텐츠를 생성하세요:
 {
   "blog": {"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
-  "newsletter": {"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"},
+  "band": {"title":"밴드 게시글 제목","greeting":"멤버 친근한 인사말","body":"본문(마크다운, 이모지 적절히 활용, 3~5문단)","keyPoints":["포인트1","포인트2","포인트3"],"hashtags":["#태그1","#태그2","#태그3"],"cta":"댓글/참여 유도 문구"},
+  "kakao": {"title":"카카오톡 채널 메시지 제목(짧게)","message":"푸시/미리보기용 짧은 메시지(50자 이내)","body":"본문(짧고 간결, 줄바꿈 많이, 이모지 활용, 읽기 쉽게)","highlight":"강조할 핵심 한 줄","cta":{"text":"버튼 텍스트(짧게)","description":"버튼 설명"}},
   "instagram": {"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]},
   "shorts": {"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
 }
@@ -76,10 +78,18 @@ ${rawText.slice(0, 8000)}
   * 중간 씬들: 핵심 내용 전달. visualDescription은 내용과 어울리는 배경 이미지 묘사 (교실, 차트, 책 등). 텍스트 없이 시각적 이미지 위주로.
   * 마지막 씬: 마무리/CTA (예: "더 많은 정보는 프로필에서 확인하세요!"). visualDescription은 고양이 캐릭터가 손 흔들며 작별하는 애니메이션.
 - 첫 번째와 마지막 씬의 visualDescription만 고양이 캐릭터 애니메이션으로, 중간 씬은 배경 이미지로 묘사하세요.
+- 네이버 밴드는 (사용자 설정이 없는 경우에 한해) 친근하고 커뮤니티 멤버와 소통하는 어조로 작성하고 이모지를 적절히 활용하며 3~5문단으로 구성하세요.
+- 카카오톡 채널 메시지는 (사용자 설정이 없는 경우에 한해) 짧고 임팩트 있게, 줄바꿈을 자주 넣어 모바일 가독성을 최우선으로 하세요. 이모지를 활용하세요.
+- ⚠️ 사용자 설정(글의 어조, 추가 지시사항)이 있으면 위의 채널별 기본 톤보다 사용자 설정을 무조건 우선 적용하세요.
 - 반드시 위 JSON 구조만 출력하세요.`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 32768, jsonMode: true })
-  return parseJSON(result, null)
+  console.log('[Gemini 4채널] raw 응답 길이:', result?.length, '미리보기:', result?.slice(0, 500))
+  const parsed = parseJSON(result, null)
+  if (!parsed) {
+    console.error('[Gemini 4채널] JSON 파싱 실패. 전체 응답:', result)
+  }
+  return parsed
 }
 
 // 4개 채널 콘텐츠 생성
@@ -91,13 +101,14 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null
 
   if (!four) {
-    console.error('[Gemini] 4채널 에러:', fourResult.reason?.message)
+    console.error('[Gemini] 4채널 에러 - status:', fourResult.status, 'reason:', fourResult.reason, 'value:', fourResult.value)
     throw new Error('콘텐츠 생성 결과를 파싱하지 못했습니다.')
   }
 
   return {
     blog: four?.blog || null,
-    newsletter: four?.newsletter || null,
+    band: four?.band || null,
+    kakao: four?.kakao || null,
     instagram: four?.instagram || null,
     shorts: four?.shorts || null,
   }
@@ -106,13 +117,15 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
 // 실패한 채널들만 1회 API 호출로 통합 재생성
 const CHANNEL_SCHEMAS = {
   blog: `"blog":{"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
-  newsletter: `"newsletter":{"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트1","포인트2"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`,
+  band: `"band":{"title":"밴드 게시글 제목","greeting":"멤버 친근한 인사말","body":"본문(마크다운, 이모지 적절히 활용, 3~5문단)","keyPoints":["포인트1","포인트2","포인트3"],"hashtags":["#태그1","#태그2","#태그3"],"cta":"댓글/참여 유도 문구"}`,
+  kakao: `"kakao":{"title":"카카오톡 채널 메시지 제목(짧게)","message":"푸시/미리보기용 짧은 메시지(50자 이내)","body":"본문(짧고 간결, 줄바꿈 많이, 이모지 활용)","highlight":"강조할 핵심 한 줄","cta":{"text":"버튼 텍스트(짧게)","description":"버튼 설명"}}`,
   instagram: `"instagram":{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용 상세 작성)","caption":"인스타그램 캡션(이모지 포함)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}`,
   shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
 }
 
 const CHANNEL_LABELS = {
-  blog: '블로그', newsletter: '뉴스레터', instagram: '인스타그램 게시글(본문+카드 소재 6~10개)',
+  blog: '네이버 블로그', band: '네이버 밴드 게시글', kakao: '카카오톡 메시지',
+  instagram: '인스타그램 게시글(본문+카드 소재 6~10개)',
   shorts: '숏폼 대본(20~30초, 3~4씬)',
 }
 
@@ -198,8 +211,9 @@ ${rawText.slice(0, 3000)}
   return parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })
 }
 
-export async function generateNewsletterContent(summary, rawText, emphasis) {
-  const prompt = `당신은 뉴스레터 전문 에디터입니다. 아래 데이터를 바탕으로 뉴스레터를 작성해주세요.
+export async function generateBandContent(summary, rawText, emphasis) {
+  const prompt = `당신은 네이버 밴드 커뮤니티 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 밴드 게시글을 작성해주세요.
+친근하고 커뮤니티 멤버와 소통하는 어조로, 이모지를 적절히 활용하여 3~5문단으로 구성하세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
 ${buildEmphasisInstruction(emphasis)}
 
@@ -210,10 +224,29 @@ ${JSON.stringify(summary, null, 2)}
 ${rawText.slice(0, 3000)}
 
 반드시 아래 JSON 형식으로만 응답하세요:
-{"subject":"이메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`
+{"title":"밴드 게시글 제목","greeting":"멤버 친근한 인사말","body":"본문(마크다운, 이모지 적절히 활용, 3~5문단)","keyPoints":["포인트1","포인트2","포인트3"],"hashtags":["#태그1","#태그2","#태그3"],"cta":"댓글/참여 유도 문구"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return parseJSON(result, { subject: '뉴스레터 생성 실패', keyPoints: [], body: '', dataHighlights: [] })
+  return parseJSON(result, { title: '네이버 밴드 생성 실패', greeting: '', body: '', keyPoints: [], hashtags: [], cta: '' })
+}
+
+export async function generateKakaoContent(summary, rawText, emphasis) {
+  const prompt = `당신은 카카오톡 채널 메시지 전문가입니다. 아래 데이터를 바탕으로 카카오톡 채널 메시지를 작성해주세요.
+짧고 임팩트 있게, 줄바꿈을 자주 넣어 모바일 가독성을 최우선으로 하세요. 이모지를 활용하세요.
+모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
+${buildEmphasisInstruction(emphasis)}
+
+## 요약 데이터
+${JSON.stringify(summary, null, 2)}
+
+## 원본 텍스트
+${rawText.slice(0, 3000)}
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{"title":"카카오톡 채널 메시지 제목(짧게)","message":"푸시/미리보기용 짧은 메시지(50자 이내)","body":"본문(짧고 간결, 줄바꿈 많이, 이모지 활용)","highlight":"강조할 핵심 한 줄","cta":{"text":"버튼 텍스트(짧게)","description":"버튼 설명"}}`
+
+  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
+  return parseJSON(result, { title: '카카오톡 채널 생성 실패', message: '', body: '', highlight: '', cta: { text: '', description: '' } })
 }
 
 export async function generateInstagramContent(summary, rawText, emphasis) {

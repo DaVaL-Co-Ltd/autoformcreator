@@ -59,8 +59,17 @@ function getFileMimeType(file) {
     '.ppt': 'application/vnd.ms-powerpoint',
     '.hwp': 'application/x-hwp',
     '.hwpx': 'application/x-hwpx',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
   }
   return mimeMap[ext] || file.type || 'application/octet-stream'
+}
+
+function isImageFile(file) {
+  const ext = file.name?.toLowerCase().match(/\.[^.]+$/)?.[0]
+  return ['.jpg', '.jpeg', '.png', '.webp'].includes(ext)
 }
 
 // ── Gemini: 멀티모달 문서 분석 (base64 인라인) ──
@@ -81,7 +90,7 @@ async function geminiParsePDF(file) {
   const mimeType = getFileMimeType(file)
 
   // Gemini가 지원하지 않는 형식(HWP 등)은 스킵
-  const geminiSupported = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.ms-powerpoint']
+  const geminiSupported = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.ms-powerpoint', 'image/jpeg', 'image/png', 'image/webp']
   if (!geminiSupported.includes(mimeType)) {
     throw new Error(`Gemini는 ${file.name?.split('.').pop()?.toUpperCase()} 형식을 지원하지 않습니다.`)
   }
@@ -161,6 +170,11 @@ ${geminiText}
 
 // ── 메인: LlamaParse + Gemini 병렬 분석 → 통합 ──
 export async function parsePDF(file) {
+  // 이미지 파일은 Gemini 비전으로만 처리 (LlamaParse 스킵)
+  if (isImageFile(file)) {
+    return await geminiParsePDF(file)
+  }
+
   const [llamaResult, geminiResult] = await Promise.allSettled([
     llamaParsePDF(file),
     geminiParsePDF(file),

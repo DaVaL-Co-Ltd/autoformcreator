@@ -8,9 +8,15 @@ import SettingsPage from './pages/SettingsPage'
 import AnimationTestPage from './pages/AnimationTestPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
 import ShortsTestPage from './pages/ShortsTestPage'
+import ShortsTest2Page from './pages/ShortsTest2Page'
 import BlogTestPage from './pages/BlogTestPage'
+import NaverBlogUploadTestPage from './pages/NaverBlogUploadTestPage'
+import InstagramUploadTestPage from './pages/InstagramUploadTestPage'
+import YouTubeUploadTestPage from './pages/YouTubeUploadTestPage'
 import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
+import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
+import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Loader2 } from 'lucide-react'
 
 function ProtectedRoute({ children }) {
@@ -29,6 +35,8 @@ function ProtectedRoute({ children }) {
 }
 
 function AppLayout() {
+  useScheduledUploader()
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       <Header />
@@ -40,10 +48,15 @@ function AppLayout() {
           <Route path="/extraction/result" element={<ExtractionResultPage />} />
           <Route path="/contents" element={<ContentPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/animation-test" element={<AnimationTestPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
           <Route path="/shorts/test" element={<ShortsTestPage />} />
+          <Route path="/shorts/test2" element={<ShortsTest2Page />} />
           <Route path="/blog/test" element={<BlogTestPage />} />
+          <Route path="/blog/upload-test" element={<NaverBlogUploadTestPage />} />
+          <Route path="/instagram/upload-test" element={<InstagramUploadTestPage />} />
+          <Route path="/youtube/upload-test" element={<YouTubeUploadTestPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

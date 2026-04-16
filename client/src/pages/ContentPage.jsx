@@ -1,98 +1,27 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
+  FileText, Image, Users, MessageCircle, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
   CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search,
-  ChevronDown, ChevronUp
 } from 'lucide-react'
 import { getExtractions, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
+import ScheduleDialog from '../components/ScheduleDialog'
+import { create as createScheduledUpload } from '../utils/scheduledUploads'
 
 const channelConfig = {
-  all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
-  blog: { label: '블로그', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10' },
-  instagram: { label: '인스타그램', icon: Image, color: 'text-pink-400', bg: 'bg-pink-400/10' },
-  newsletter: { label: '뉴스레터', icon: Mail, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-  shorts: { label: '숏폼', icon: Film, color: 'text-amber-400', bg: 'bg-amber-400/10' },
+  all:       { label: '전체',        icon: FileText,      color: 'text-text',        bg: 'bg-surface-light' },
+  blog:      { label: '네이버 블로그', icon: FileText,      color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  band:      { label: '네이버 밴드',   icon: Users,         color: 'text-green-500',   bg: 'bg-green-500/10' },
+  kakao:     { label: '카카오톡',      icon: MessageCircle, color: 'text-yellow-400',  bg: 'bg-yellow-400/10' },
+  instagram: { label: '인스타그램',    icon: Image,         color: 'text-pink-400',    bg: 'bg-pink-400/10' },
+  shorts:    { label: '유튜브 숏츠',   icon: Film,          color: 'text-red-500',     bg: 'bg-red-500/10' },
 }
 
 const uploadStatusConfig = {
   all: { label: '전체', icon: null, color: 'text-text' },
   not_uploaded: { label: '미업로드', icon: Upload, color: 'text-text-muted', badge: 'bg-surface-light text-text-muted border-border' },
-  scheduled: { label: '예약됨', icon: Calendar, color: 'text-info', badge: 'bg-info/10 text-info border-info/30' },
+  scheduled: { label: '예약 완료', icon: Calendar, color: 'text-info', badge: 'bg-info/10 text-info border-info/30' },
   uploaded: { label: '업로드 완료', icon: CheckCircle, color: 'text-success', badge: 'bg-success/10 text-success border-success/30' },
-}
-
-function ScheduleModal({ item, onClose, onSave }) {
-  const [date, setDate] = useState('')
-  const [time, setTime] = useState('09:00')
-
-  const handleSave = () => {
-    if (!date) return
-    onSave(item.extractionId, item.channel, {
-      status: 'scheduled',
-      scheduledAt: `${date}T${time}:00`,
-    })
-    onClose()
-  }
-
-  // 오늘 이후만 선택 가능
-  const today = new Date().toISOString().split('T')[0]
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-sm p-6">
-        <button onClick={onClose} className="absolute top-4 right-4 p-1 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors">
-          <X size={16} />
-        </button>
-
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-2 rounded-xl bg-info/10">
-            <Calendar size={20} className="text-info" />
-          </div>
-          <div>
-            <h3 className="text-base font-semibold text-text">업로드 예약</h3>
-            <p className="text-xs text-text-muted">{channelConfig[item.channel]?.label} · {item.title?.slice(0, 30)}</p>
-          </div>
-        </div>
-
-        <div className="space-y-3 mb-6">
-          <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">날짜</label>
-            <input
-              type="date"
-              min={today}
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-light text-sm text-text focus:outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-muted mb-1.5">시간</label>
-            <input
-              type="time"
-              value={time}
-              onChange={e => setTime(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-light text-sm text-text focus:outline-none focus:border-primary/50 transition-colors"
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-lg border border-border text-sm font-medium text-text-muted hover:bg-surface-light transition-colors">
-            취소
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!date}
-            className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${date ? 'bg-info text-white hover:bg-info/90' : 'bg-surface-light text-text-muted cursor-not-allowed'}`}
-          >
-            예약 설정
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function ContentPage() {
@@ -103,9 +32,9 @@ export default function ContentPage() {
   const [extractions, setExtractions] = useState([])
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
+  const [editScheduleTarget, setEditScheduleTarget] = useState(null)
   const [uploadingId, setUploadingId] = useState(null) // extractionId-channel
   const [searchQuery, setSearchQuery] = useState('')
-  const [expandedId, setExpandedId] = useState(null)
 
   useEffect(() => {
     setExtractions(getExtractions())
@@ -156,7 +85,15 @@ export default function ContentPage() {
   }
 
   const handleView = (item) => {
-    navigate('/extraction/result', { state: { ...item.data, activeChannel: item.channel } })
+    const ext = extractions.find(e => e.id === item.extractionId)
+    navigate('/extraction/result', {
+      state: {
+        ...item.data,
+        activeChannel: item.channel,
+        extractionId: item.extractionId,
+        uploadStatus: ext?.uploadStatus || {},
+      }
+    })
   }
 
   const handleUpload = async (item) => {
@@ -177,6 +114,16 @@ export default function ContentPage() {
   const handleScheduleSave = (extractionId, channel, info) => {
     updateUploadStatus(extractionId, channel, info)
     setExtractions(getExtractions())
+    // scheduledUploads에도 저장 (예약 목록 페이지와 동기화)
+    if (info.status === 'scheduled' && info.scheduledAt) {
+      const target = scheduleTarget
+      createScheduledUpload({
+        platform: channel,
+        content: { title: target?.title || '' },
+        scheduledAt: new Date(info.scheduledAt).toISOString(),
+        extractionId,
+      })
+    }
   }
 
   const handleCancelSchedule = (item) => {
@@ -245,7 +192,7 @@ export default function ContentPage() {
 
       {/* 채널 탭 + 검색 */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-        <div className="flex items-center gap-1 bg-surface rounded-xl border border-border p-1.5 flex-1 overflow-x-auto">
+        <div className="flex items-center gap-1 bg-surface rounded-xl border border-border p-1.5 overflow-x-auto shrink-0">
           {Object.entries(channelConfig).map(([key, { label, icon: Icon, color }]) => (
             <button
               key={key}
@@ -261,50 +208,18 @@ export default function ContentPage() {
             </button>
           ))}
         </div>
-        <div className="relative shrink-0">
+        <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
             placeholder="검색..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full sm:w-48 pl-8 pr-3 py-2.5 rounded-xl border border-border bg-surface text-xs text-text placeholder:text-text-muted/50 focus:outline-none focus:border-primary/40 transition-colors"
+            className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-border bg-surface text-xs text-text placeholder:text-text-muted/50 focus:outline-none focus:border-primary/40 transition-colors"
           />
         </div>
       </div>
 
-      {/* 원본 자료 필터 */}
-      {sourceFiles.length > 1 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-text-muted mr-1">
-            <FolderOpen size={14} />
-            <span className="text-xs font-medium">원본</span>
-          </div>
-          <button
-            onClick={() => setActiveSource('all')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border
-              ${activeSource === 'all'
-                ? 'bg-primary/15 border-primary/40 text-primary-light'
-                : 'border-border text-text-muted hover:border-primary/30'
-              }`}
-          >
-            전체
-          </button>
-          {sourceFiles.map(src => (
-            <button
-              key={src}
-              onClick={() => setActiveSource(src)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border max-w-48 truncate
-                ${activeSource === src
-                  ? 'bg-primary/15 border-primary/40 text-primary-light'
-                  : 'border-border text-text-muted hover:border-primary/30'
-                }`}
-            >
-              {src}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* 콘텐츠 목록 */}
       {filtered.length > 0 ? (
@@ -315,7 +230,6 @@ export default function ContentPage() {
             const statusCfg = uploadStatusConfig[item.uploadStatus] || uploadStatusConfig.not_uploaded
             const StatusIcon = statusCfg.icon
             const isUploading = uploadingId === `${item.extractionId}-${item.channel}`
-            const isExpanded = expandedId === `${item.extractionId}-${item.channel}`
 
             return (
               <div
@@ -343,47 +257,11 @@ export default function ContentPage() {
                     </div>
                   </div>
 
-                  {/* 업로드 상태 뱃지 */}
-                  <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium shrink-0 ${statusCfg.badge}`}>
-                    {StatusIcon && <StatusIcon size={12} />}
-                    {statusCfg.label}
-                    {item.uploadStatus === 'scheduled' && item.scheduledAt && (
-                      <span className="text-[10px] opacity-70 ml-0.5">{formatScheduledDate(item.scheduledAt)}</span>
-                    )}
-                  </div>
-
-                  {/* 액션 버튼 토글 */}
-                  <button
-                    onClick={() => setExpandedId(isExpanded ? null : `${item.extractionId}-${item.channel}`)}
-                    className="p-2 rounded-lg hover:bg-surface-light text-text-muted transition-colors shrink-0"
-                  >
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </button>
-                </div>
-
-                {/* 확장 액션 영역 */}
-                {isExpanded && (
-                  <div className="px-3 pb-3 pt-0">
-                    <div className="flex items-center gap-2 p-3 bg-surface-light rounded-lg border border-border/50">
-                      {/* 모바일 상태 표시 */}
-                      <div className={`sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium ${statusCfg.badge}`}>
-                        {StatusIcon && <StatusIcon size={12} />}
-                        {statusCfg.label}
-                      </div>
-
-                      <div className="flex-1" />
-
-                      {/* 결과 보기 */}
-                      <button
-                        onClick={() => handleView(item)}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted hover:text-text hover:bg-surface transition-colors border border-border"
-                      >
-                        <Eye size={13} />
-                        결과 보기
-                      </button>
-
-                      {/* 업로드 예약 (미업로드일 때만) */}
-                      {item.uploadStatus === 'not_uploaded' && (
+                  {/* 인라인 액션 버튼들 */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* 미업로드: 예약 + 업로드 */}
+                    {item.uploadStatus === 'not_uploaded' && (
+                      <>
                         <button
                           onClick={() => setScheduleTarget(item)}
                           className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-info hover:bg-info/10 transition-colors border border-info/30"
@@ -391,21 +269,6 @@ export default function ContentPage() {
                           <Calendar size={13} />
                           예약
                         </button>
-                      )}
-
-                      {/* 예약 취소 (예약됨일 때) */}
-                      {item.uploadStatus === 'scheduled' && (
-                        <button
-                          onClick={() => handleCancelSchedule(item)}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted hover:bg-surface transition-colors border border-border"
-                        >
-                          <X size={13} />
-                          예약 취소
-                        </button>
-                      )}
-
-                      {/* 바로 업로드 (업로드 완료가 아닐 때) */}
-                      {item.uploadStatus !== 'uploaded' && (
                         <button
                           onClick={() => handleUpload(item)}
                           disabled={isUploading}
@@ -421,28 +284,40 @@ export default function ContentPage() {
                             <><Upload size={13} /> 업로드</>
                           )}
                         </button>
-                      )}
+                      </>
+                    )}
 
-                      {/* 업로드 완료 상태 */}
-                      {item.uploadStatus === 'uploaded' && (
-                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
-                          <CheckCircle size={13} />
-                          업로드 완료
-                          {item.uploadedAt && <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>}
-                        </div>
-                      )}
-
-                      {/* 삭제 */}
+                    {/* 예약 완료 - 클릭하면 상세 다이얼로그 */}
+                    {item.uploadStatus === 'scheduled' && (
                       <button
-                        onClick={() => setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title })}
-                        className="p-2 rounded-lg hover:bg-danger/10 text-text-muted hover:text-danger transition-colors"
-                        title="삭제"
+                        onClick={() => setEditScheduleTarget(item)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
                       >
-                        <Trash2 size={14} />
+                        <Calendar size={13} />
+                        예약 완료
+                        {item.scheduledAt && <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>}
                       </button>
-                    </div>
+                    )}
+
+                    {/* 업로드 완료 */}
+                    {item.uploadStatus === 'uploaded' && (
+                      <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
+                        <CheckCircle size={13} />
+                        업로드 완료
+                        {item.uploadedAt && <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>}
+                      </div>
+                    )}
+
+                    {/* 삭제 */}
+                    <button
+                      onClick={() => setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title })}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted hover:text-danger hover:bg-danger/10 transition-colors border border-border hover:border-danger/30"
+                    >
+                      <Trash2 size={13} />
+                      삭제
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
             )
           })}
@@ -465,14 +340,44 @@ export default function ContentPage() {
         </div>
       )}
 
-      {/* 예약 모달 */}
-      {scheduleTarget && (
-        <ScheduleModal
-          item={scheduleTarget}
-          onClose={() => setScheduleTarget(null)}
-          onSave={handleScheduleSave}
-        />
-      )}
+      {/* 예약 모달 (신규) */}
+      <ScheduleDialog
+        open={!!scheduleTarget}
+        onClose={() => setScheduleTarget(null)}
+        defaultPlatform={scheduleTarget?.channel}
+        lockPlatform={true}
+        content={{ title: scheduleTarget?.title }}
+        onSave={({ scheduledAt }) => {
+          if (!scheduleTarget) return
+          handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
+            status: 'scheduled',
+            scheduledAt,
+          })
+        }}
+      />
+
+      {/* 예약 상세/수정 모달 */}
+      <ScheduleDialog
+        open={!!editScheduleTarget}
+        mode="edit"
+        onClose={() => setEditScheduleTarget(null)}
+        defaultPlatform={editScheduleTarget?.channel}
+        lockPlatform={true}
+        content={{ title: editScheduleTarget?.title }}
+        initialDatetime={editScheduleTarget?.scheduledAt}
+        onSave={({ scheduledAt }) => {
+          if (!editScheduleTarget) return
+          handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
+            status: 'scheduled',
+            scheduledAt,
+          })
+        }}
+        onDelete={() => {
+          if (!editScheduleTarget) return
+          handleCancelSchedule(editScheduleTarget)
+        }}
+      />
+
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (

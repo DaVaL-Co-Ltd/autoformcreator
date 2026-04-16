@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard, FileText, Image, Mail, Film, FolderOpen, Layers, Sparkles,
+  LayoutDashboard, FileText, Image, Users, MessageCircle, Film, FolderOpen, Layers, Sparkles,
   ExternalLink, ArrowRight, Upload, CheckCircle, Calendar, TrendingUp
 } from 'lucide-react'
 import { getExtractions } from '../services/storage'
@@ -12,11 +12,33 @@ const platforms = [
     label: '네이버 블로그',
     icon: FileText,
     emoji: '📝',
-    color: 'text-primary-light',
-    bg: 'bg-primary/10',
-    border: 'border-primary/30',
+    color: 'text-emerald-500',
+    bg: 'bg-emerald-500/10',
+    border: 'border-emerald-500/30',
     account: 'edu_expert',
     url: 'https://blog.naver.com/edu_expert',
+  },
+  {
+    key: 'band',
+    label: '네이버 밴드',
+    icon: Users,
+    emoji: '👥',
+    color: 'text-green-500',
+    bg: 'bg-green-500/10',
+    border: 'border-green-500/30',
+    account: 'band@edu.com',
+    url: 'https://band.us',
+  },
+  {
+    key: 'kakao',
+    label: '카카오톡',
+    icon: MessageCircle,
+    emoji: '💬',
+    color: 'text-yellow-400',
+    bg: 'bg-yellow-400/10',
+    border: 'border-yellow-400/30',
+    account: 'kakao@edu.com',
+    url: 'https://pf.kakao.com',
   },
   {
     key: 'instagram',
@@ -30,24 +52,13 @@ const platforms = [
     url: 'https://www.instagram.com/edu_data',
   },
   {
-    key: 'newsletter',
-    label: '뉴스레터',
-    icon: Mail,
-    emoji: '📧',
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-400/10',
-    border: 'border-emerald-400/30',
-    account: 'newsletter@edu.com',
-    url: 'https://resend.com',
-  },
-  {
     key: 'shorts',
-    label: '유튜브 숏폼',
+    label: '유튜브 숏츠',
     icon: Film,
     emoji: '▶️',
-    color: 'text-amber-400',
-    bg: 'bg-amber-400/10',
-    border: 'border-amber-400/30',
+    color: 'text-red-500',
+    bg: 'bg-red-500/10',
+    border: 'border-red-500/30',
     account: '입시데이터랩',
     url: 'https://www.youtube.com/@입시데이터랩',
   },
@@ -98,7 +109,7 @@ export default function DashboardPage() {
     { label: '미업로드', value: uploadStats.not_uploaded || 0, icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light' },
   ]
 
-  const channelLabel = { blog: '블로그', instagram: '인스타그램', newsletter: '뉴스레터', shorts: '숏폼' }
+  const channelLabel = { blog: '네이버 블로그', instagram: '인스타그램', band: '네이버 밴드', kakao: '카카오톡', shorts: '유튜브 숏츠' }
   const statusBadge = {
     not_uploaded: { label: '미업로드', className: 'bg-surface-light text-text-muted' },
     scheduled: { label: '예약됨', className: 'bg-info/10 text-info' },
@@ -138,8 +149,8 @@ export default function DashboardPage() {
       </div>
 
       {/* 플랫폼별 현황 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {platforms.map(p => {
+      <div className="grid grid-cols-6 gap-3">
+        {platforms.map((p, idx) => {
           const Icon = p.icon
           const count = channelCounts[p.key] || 0
           const uploaded = extractions.reduce((acc, ext) => {
@@ -148,7 +159,7 @@ export default function DashboardPage() {
           }, 0)
 
           return (
-            <div key={p.key} className={`bg-surface rounded-xl border ${p.border} hover:shadow-md transition-all`}>
+            <div key={p.key} className={`bg-surface rounded-xl border ${p.border} hover:shadow-md transition-all ${idx < 2 ? 'col-span-3' : 'col-span-2'}`}>
               <div className="p-4">
                 {/* 상단: 플랫폼 정보 */}
                 <div className="flex items-center gap-3 mb-4">
