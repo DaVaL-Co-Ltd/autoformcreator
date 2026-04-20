@@ -1413,6 +1413,36 @@ app.post('/api/scheduled/create', async (req, res) => {
     if (!platform || !extractionId || !scheduledAt) {
       return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
     }
+
+    // 중복 방지: 동일 extraction_id + platform의 pending 예약이 있으면 update
+    const { data: existingList } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .select('*')
+      .eq('extraction_id', extractionId)
+      .eq('platform', platform)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+
+    if (existingList && existingList.length > 0) {
+      const first = existingList[0]
+      // 중복된 나머지 pending 정리
+      if (existingList.length > 1) {
+        const extraIds = existingList.slice(1).map(r => r.id)
+        await supabaseAdmin.from('scheduled_uploads').delete().in('id', extraIds)
+      }
+      const { data, error } = await supabaseAdmin
+        .from('scheduled_uploads')
+        .update({
+          scheduled_at: scheduledAt,
+          content: content || first.content || {},
+        })
+        .eq('id', first.id)
+        .select()
+        .single()
+      if (error) throw error
+      return res.json(data)
+    }
+
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
       .insert({

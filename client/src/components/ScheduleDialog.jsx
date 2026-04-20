@@ -110,7 +110,24 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
               type="datetime-local"
               value={datetime}
               min={minDatetime}
-              onChange={e => setDatetime(e.target.value)}
+              step="300"
+              onChange={e => {
+                // 5분 단위로 반올림
+                const d = new Date(e.target.value)
+                if (!isNaN(d.getTime())) {
+                  const mins = d.getMinutes()
+                  const rounded = Math.round(mins / 5) * 5
+                  d.setMinutes(rounded, 0, 0)
+                  const y = d.getFullYear()
+                  const m = String(d.getMonth() + 1).padStart(2, '0')
+                  const day = String(d.getDate()).padStart(2, '0')
+                  const hh = String(d.getHours()).padStart(2, '0')
+                  const mm = String(d.getMinutes()).padStart(2, '0')
+                  setDatetime(`${y}-${m}-${day}T${hh}:${mm}`)
+                } else {
+                  setDatetime(e.target.value)
+                }
+              }}
               className="w-full px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
             />
           </div>
