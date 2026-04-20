@@ -1126,6 +1126,9 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
     childIds.push(d.id)
   }
 
+  // 자식 미디어들이 FINISHED 될 때까지 대기
+  await waitForMediaReady(childIds)
+
   const carouselRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1139,6 +1142,9 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
   const carousel = await carouselRes.json()
   if (!carouselRes.ok || !carousel.id) throw new Error(`캐러셀 컨테이너 생성 실패: ${JSON.stringify(carousel)}`)
 
+  // 캐러셀 컨테이너도 FINISHED 될 때까지 대기
+  await waitForMediaReady([carousel.id])
+
   const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1147,6 +1153,23 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
   const pub = await pubRes.json()
   if (!pubRes.ok || !pub.id) throw new Error(`캐러셀 게시 실패: ${JSON.stringify(pub)}`)
   return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+}
+
+// 미디어 컨테이너가 게시 준비될 때까지 대기 (최대 60초)
+async function waitForMediaReady(mediaIds, maxWait = 60000) {
+  const interval = 2000
+  const start = Date.now()
+  for (const id of mediaIds) {
+    while (Date.now() - start < maxWait) {
+      const r = await fetch(`${IG_GRAPH_BASE}/${id}?fields=status_code&access_token=${IG_ACCESS_TOKEN}`)
+      const d = await r.json()
+      if (d.status_code === 'FINISHED') break
+      if (d.status_code === 'ERROR' || d.status_code === 'EXPIRED') {
+        throw new Error(`미디어 처리 실패 (${id}): ${d.status_code}`)
+      }
+      await new Promise(res => setTimeout(res, interval))
+    }
+  }
 }
 
 // base64 data URL을 Supabase Storage에 업로드 후 공개 URL 반환
