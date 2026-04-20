@@ -105,7 +105,6 @@ export default function DashboardPage() {
   ).slice(0, 5)
 
   const overviewStats = [
-    { label: '원본 자료', value: sourceFiles.length, icon: FolderOpen, color: 'text-primary-light', bg: 'bg-primary/10' },
     { label: '총 콘텐츠', value: allContents.length, icon: Layers, color: 'text-info', bg: 'bg-info/10' },
     { label: '업로드 완료', value: uploadStats.uploaded || 0, icon: CheckCircle, color: 'text-success', bg: 'bg-success/10' },
     { label: '미업로드', value: uploadStats.not_uploaded || 0, icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light' },

@@ -47,7 +47,7 @@ export default function Header() {
           <button
             onClick={() => navigate('/contents')}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-              location.pathname === '/contents'
+              location.pathname.startsWith('/contents')
                 ? 'bg-primary/10 text-primary'
                 : 'text-text-muted hover:bg-surface-light hover:text-text'
             }`}

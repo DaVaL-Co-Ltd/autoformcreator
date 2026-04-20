@@ -22,7 +22,7 @@ export async function uploadToBlog(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
-  const blog = ext.blogContent
+  const blog = ext.data?.blogContent || ext.blogContent
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
   const formData = new FormData()
@@ -31,7 +31,7 @@ export async function uploadToBlog(extractionId) {
   formData.append('tags', JSON.stringify(blog.tags || blog.hashtags || []))
   formData.append('showBrowser', 'false')
 
-  const images = ext.blogImages || []
+  const images = ext.data?.blogImages || ext.blogImages || []
   for (let i = 0; i < images.length; i++) {
     const img = images[i]
     const imgUrl = img?.url || img?.src
@@ -62,24 +62,39 @@ export async function uploadToYoutube(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
-  const video = ext.shortsVideo
-  const script = ext.shortsScript
+  const video = ext.data?.shortsVideo || ext.shortsVideo
+  const script = ext.data?.shortsScript || ext.shortsScript
   if (!video?.url) throw new Error('숏폼 영상이 없습니다')
 
-  const title = script?.title || ext.fileName || '숏폼 영상'
-  const description = (script?.scenes || []).map(s => s.narration).filter(Boolean).join(' ').slice(0, 5000)
-  const tags = script?.tags || script?.hashtags || []
+  const rawTitle = script?.uploadTitle || script?.title || ext.fileName || '숏폼 영상'
+  const title = rawTitle.includes('#Shorts') ? rawTitle.slice(0, 100) : `${rawTitle} #Shorts`.slice(0, 100)
+
+  const descParts = []
+  if (script?.hook) descParts.push(script.hook)
+  if (Array.isArray(script?.scenes)) {
+    script.scenes.forEach((s, i) => s.narration && descParts.push(`${i + 1}. ${s.narration}`))
+  }
+  if (script?.cta) descParts.push(`\n${script.cta}`)
+  const description = (script?.uploadDescription || descParts.join('\n') || '').slice(0, 5000)
+
+  const rawTags = (script?.hashtags || script?.tags || []).map(t => String(t).replace(/^#/, ''))
+  if (!rawTags.includes('Shorts')) rawTags.unshift('Shorts')
+
+  const requestBody = {
+    snippet: {
+      title,
+      description,
+      tags: rawTags,
+      categoryId: '22',
+    },
+    status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+    videoUrl: video.url,
+  }
 
   const res = await fetch(`${API_BASE}/api/youtube/upload`, {
     method: 'POST',
     headers: apiHeaders(),
-    body: JSON.stringify({
-      title,
-      description,
-      tags,
-      videoUrl: video.url,
-      privacyStatus: 'private',
-    }),
+    body: JSON.stringify(requestBody),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok || !data.success) {
@@ -88,10 +103,33 @@ export async function uploadToYoutube(extractionId) {
   return { url: data.url, videoId: data.videoId }
 }
 
+export async function uploadToInstagram(extractionId) {
+  const ext = await getExtractionById(extractionId)
+  if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
+
+  const images = ((ext.data?.instagramImages || ext.instagramImages) || []).map(img => img?.url || img?.imageUrl).filter(Boolean)
+  if (!images.length) throw new Error('인스타그램 이미지가 없습니다')
+
+  const igContent = ext.data?.instagramContent || ext.instagramContent || {}
+  const hashtags = (igContent.hashtags || []).map(t => String(t).startsWith('#') ? t : `#${t}`).join(' ')
+  const caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
+
+  const res = await fetch(`${API_BASE}/api/instagram/publish`, {
+    method: 'POST',
+    headers: apiHeaders(),
+    body: JSON.stringify({ imageUrls: images, caption }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `인스타그램 업로드 실패 (${res.status})`)
+  }
+  return { url: data.permalink, mediaId: data.mediaId }
+}
+
 export async function uploadToPlatform(platform, extractionId) {
   if (platform === 'blog') return uploadToBlog(extractionId)
   if (platform === 'shorts') return uploadToYoutube(extractionId)
-  if (platform === 'instagram') throw new Error('인스타그램 자동 업로드는 아직 구현되지 않았습니다')
+  if (platform === 'instagram') return uploadToInstagram(extractionId)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')
   throw new Error(`알 수 없는 플랫폼: ${platform}`)
 }

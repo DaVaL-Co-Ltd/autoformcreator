@@ -1656,15 +1656,42 @@ app.post('/api/scheduled/run', async (req, res) => {
         }
 
         // 성공 처리
+        const uploadedAtIso = new Date().toISOString()
         await supabaseAdmin
           .from('scheduled_uploads')
           .update({
             status: 'completed',
             uploaded_url: uploadResult?.url || null,
-            uploaded_at: new Date().toISOString(),
+            uploaded_at: uploadedAtIso,
             error: null,
           })
           .eq('id', item.id)
+
+        // extractions.upload_status 에도 업로드 완료 반영 (콘텐츠 관리에서 표시용)
+        if (item.extraction_id) {
+          try {
+            const { data: extRow } = await supabaseAdmin
+              .from('extractions')
+              .select('upload_status')
+              .eq('id', item.extraction_id)
+              .maybeSingle()
+            const newStatus = {
+              ...(extRow?.upload_status || {}),
+              [item.platform]: {
+                status: 'uploaded',
+                uploadedAt: uploadedAtIso,
+                uploadedUrl: uploadResult?.url || null,
+              },
+            }
+            await supabaseAdmin
+              .from('extractions')
+              .update({ upload_status: newStatus })
+              .eq('id', item.extraction_id)
+          } catch (e) {
+            console.warn('[extractions.upload_status 업데이트 실패]', e.message)
+          }
+        }
+
         results.push({ id: item.id, ok: true, url: uploadResult?.url })
 
       } catch (uploadErr) {

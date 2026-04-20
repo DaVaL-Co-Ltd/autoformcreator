@@ -4,7 +4,7 @@ import {
   FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
   CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search, Loader2,
 } from 'lucide-react'
-import { getExtractions, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
+import { getExtractionsPaged, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload } from '../utils/scheduledUploads'
 
@@ -27,34 +27,38 @@ export default function ContentPage() {
   const navigate = useNavigate()
   const [activeChannel, setActiveChannel] = useState('all')
   const [activeStatus, setActiveStatus] = useState('all')
-  const [activeSource, setActiveSource] = useState('all')
   const [extractions, setExtractions] = useState([])
   const [loading, setLoading] = useState(true)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
-  const [uploadingId, setUploadingId] = useState(null) // extractionId-channel
+  const [uploadingIds, setUploadingIds] = useState(new Set()) // 동시 업로드 지원
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const refreshExtractions = async (showSpinner = false) => {
+  const [totalExtractions, setTotalExtractions] = useState(0)
+
+  const refreshExtractions = async (showSpinner = false, page = currentPage, size = pageSize) => {
     if (showSpinner) setLoading(true)
     try {
-      const items = await getExtractions()
+      const { items, total } = await getExtractionsPaged({ page, pageSize: size })
       setExtractions(items)
+      setTotalExtractions(total)
     } finally {
       if (showSpinner) setLoading(false)
     }
   }
 
   useEffect(() => {
-    refreshExtractions(true)
-    const onFocus = () => refreshExtractions(false)
+    refreshExtractions(true, currentPage, pageSize)
+  }, [currentPage, pageSize])
+
+  useEffect(() => {
+    const onFocus = () => refreshExtractions(false, currentPage, pageSize)
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [])
-
-  // 원본 파일 목록 추출
-  const sourceFiles = [...new Set(extractions.map(e => e.fileName))]
+  }, [currentPage, pageSize])
 
   // 추출 데이터를 채널별 콘텐츠 목록으로 변환
   const allContents = extractions.flatMap(ext =>
@@ -80,7 +84,6 @@ export default function ContentPage() {
   // 필터 적용
   const filtered = allContents.filter(c => {
     if (activeChannel !== 'all' && c.channel !== activeChannel) return false
-    if (activeSource !== 'all' && c.source !== activeSource) return false
     if (activeStatus !== 'all' && c.uploadStatus !== activeStatus) return false
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
@@ -101,19 +104,20 @@ export default function ContentPage() {
 
   const handleView = (item) => {
     const ext = extractions.find(e => e.id === item.extractionId)
-    navigate('/extraction/result', {
+    navigate('/contents/view', {
       state: {
         ...item.data,
         activeChannel: item.channel,
         extractionId: item.extractionId,
         uploadStatus: ext?.uploadStatus || {},
+        fromContents: true,
       }
     })
   }
 
   const handleUpload = async (item) => {
     const key = `${item.extractionId}-${item.channel}`
-    setUploadingId(key)
+    setUploadingIds(prev => new Set(prev).add(key))
     try {
       const { uploadToPlatform } = await import('../services/platformUploaders')
       const result = await uploadToPlatform(item.channel, item.extractionId)
@@ -126,7 +130,11 @@ export default function ContentPage() {
     } catch (err) {
       alert(`업로드 실패: ${err.message}`)
     }
-    setUploadingId(null)
+    setUploadingIds(prev => {
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
   }
 
   const handleScheduleSave = async (extractionId, channel, info) => {
@@ -192,7 +200,7 @@ export default function ContentPage() {
       {/* 상태 요약 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { key: 'all', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10', label: '전체', onClick: () => { setActiveStatus('all'); setActiveChannel('all'); setActiveSource('all'); setSearchQuery('') } },
+          { key: 'all', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10', label: '전체', onClick: () => { setActiveStatus('all'); setActiveChannel('all'); setSearchQuery('') } },
           { key: 'not_uploaded', icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light', label: '미업로드' },
           { key: 'scheduled', icon: Calendar, color: 'text-info', bg: 'bg-info/10', label: '예약됨' },
           { key: 'uploaded', icon: CheckCircle, color: 'text-success', bg: 'bg-success/10', label: '업로드 완료' },
@@ -245,8 +253,24 @@ export default function ContentPage() {
             className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-border bg-surface text-xs text-text placeholder:text-text-muted/50 focus:outline-none focus:border-primary/40 transition-colors"
           />
         </div>
+        <select
+          value={pageSize}
+          onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}
+          className="px-3 py-2.5 bg-surface border border-border rounded-xl text-xs text-text focus:outline-none focus:border-primary/40 transition-colors shrink-0"
+        >
+          <option value={10}>10개씩</option>
+          <option value={30}>30개씩</option>
+          <option value={50}>50개씩</option>
+        </select>
       </div>
 
+      {/* 총 개수 표시 */}
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-end">
+          <span className="text-xs text-text-muted">(총 {totalExtractions}개)</span>
+          <span className="text-xs text-text-muted">(총 {totalExtractions}개)</span>
+        </div>
+      )}
 
       {/* 콘텐츠 목록 */}
       {filtered.length > 0 ? (
@@ -256,7 +280,7 @@ export default function ContentPage() {
             const ChannelIcon = channel.icon
             const statusCfg = uploadStatusConfig[item.uploadStatus] || uploadStatusConfig.not_uploaded
             const StatusIcon = statusCfg.icon
-            const isUploading = uploadingId === `${item.extractionId}-${item.channel}`
+            const isUploading = uploadingIds.has(`${item.extractionId}-${item.channel}`)
 
             return (
               <div
@@ -279,7 +303,6 @@ export default function ContentPage() {
                     </div>
                     <h4 className="text-sm font-medium text-text truncate hover:text-primary-light transition-colors">{item.title}</h4>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] text-text-muted truncate">{item.source}</span>
                       <span className="text-[11px] text-text-muted shrink-0">{item.date} {item.time}</span>
                     </div>
                   </div>
@@ -356,6 +379,32 @@ export default function ContentPage() {
               </div>
             )
           })}
+          {/* 페이지 네비게이션 */}
+          {totalExtractions > pageSize && (
+            <div className="flex items-center justify-center gap-1 pt-4">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >이전</button>
+              {Array.from({ length: Math.ceil(totalExtractions / pageSize) }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`min-w-[36px] px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    currentPage === page
+                      ? 'bg-primary text-white border-primary'
+                      : 'border-border text-text-muted hover:bg-surface-light'
+                  }`}
+                >{page}</button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalExtractions / pageSize), p + 1))}
+                disabled={currentPage >= Math.ceil(totalExtractions / pageSize)}
+                className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >다음</button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center h-80 text-center bg-surface rounded-xl border border-border">

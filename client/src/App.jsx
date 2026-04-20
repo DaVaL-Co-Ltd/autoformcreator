@@ -43,6 +43,7 @@ function AppLayout() {
           <Route path="/extraction" element={<ExtractionPage />} />
           <Route path="/extraction/result" element={<ExtractionResultPage />} />
           <Route path="/contents" element={<ContentPage />} />
+          <Route path="/contents/view" element={<ExtractionResultPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />

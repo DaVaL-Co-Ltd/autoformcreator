@@ -158,17 +158,34 @@ export async function saveExtraction(data) {
   return inserted.id
 }
 
+// 기존 호환: 전체 목록 (작은 limit)
 export async function getExtractions() {
   const { data, error } = await supabase
     .from('extractions')
-    .select('*')
+    .select('id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo')
     .order('created_at', { ascending: false })
-    .limit(100)
+    .limit(50)
   if (error) {
     console.error('[Supabase getExtractions] 실패:', error)
     return []
   }
   return data.map(rowToItem)
+}
+
+// 페이지네이션: 필요한 페이지만 조회
+export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+  const { data, error, count } = await supabase
+    .from('extractions')
+    .select('id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(from, to)
+  if (error) {
+    console.error('[Supabase getExtractionsPaged] 실패:', error)
+    return { items: [], total: 0 }
+  }
+  return { items: data.map(rowToItem), total: count || 0 }
 }
 
 export async function getExtractionById(id) {

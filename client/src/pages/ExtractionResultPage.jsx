@@ -144,6 +144,13 @@ export default function ExtractionResultPage() {
         const data = await response.json()
         if (data.success) {
           setUploadStatus(p => ({ ...p, instagram: 'done' }))
+          if (extractionId) {
+            updateUploadStatus(extractionId, 'instagram', {
+              status: 'uploaded',
+              uploadedAt: new Date().toISOString(),
+              uploadedUrl: data.permalink || null,
+            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+          }
         } else {
           setUploadStatus(p => ({ ...p, instagram: 'error' }))
           setUploadError(`인스타그램 업로드 실패: ${data.error || '알 수 없는 오류'}`)
@@ -176,6 +183,13 @@ export default function ExtractionResultPage() {
         if (data.success) {
           setUploadStatus(p => ({ ...p, shorts: 'done' }))
           const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
+          if (extractionId) {
+            updateUploadStatus(extractionId, 'shorts', {
+              status: 'uploaded',
+              uploadedAt: new Date().toISOString(),
+              uploadedUrl: ytUrl,
+            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+          }
           if (ytUrl) {
             console.log('[YouTube 업로드 완료]', ytUrl)
             alert(`✅ 유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
@@ -504,8 +518,8 @@ export default function ExtractionResultPage() {
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <p className="text-text-muted mb-4">결과 데이터가 없습니다.</p>
-          <button onClick={() => navigate('/extraction')} className="px-4 py-2 bg-primary text-white rounded-lg text-sm">
-            콘텐츠 추출로 이동
+          <button onClick={() => navigate(location.state?.fromContents ? '/contents' : '/extraction')} className="px-4 py-2 bg-primary text-white rounded-lg text-sm">
+            {location.state?.fromContents ? '콘텐츠 관리로 이동' : '콘텐츠 추출로 이동'}
           </button>
         </div>
       </div>
@@ -1255,9 +1269,9 @@ export default function ExtractionResultPage() {
       {/* 채널 탭 (뒤로가기 버튼과 통합) */}
       <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
-          onClick={() => navigate('/extraction')}
+          onClick={() => navigate(location.state?.fromContents ? '/contents' : '/extraction')}
           className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors shrink-0"
-          title="콘텐츠 추출로 돌아가기"
+          title={location.state?.fromContents ? '콘텐츠 관리로 돌아가기' : '콘텐츠 추출로 돌아가기'}
         >
           <ArrowLeft size={18} />
         </button>
