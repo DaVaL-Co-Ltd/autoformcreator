@@ -23,3 +23,7 @@ services:
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: HEYGEN_API_KEY
+        sync: false
+      - key: LLAMAPARSE_API_KEY
+        sync: false

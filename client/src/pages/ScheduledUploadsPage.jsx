@@ -62,23 +62,23 @@ function UploadCard({ item, onRefresh }) {
   const PlatformIcon = platform.icon
   const StatusIcon = status.icon
 
-  const handleCancel = () => {
-    remove(item.id)
+  const handleCancel = async () => {
+    await remove(item.id).catch(err => console.error(err))
     onRefresh()
   }
 
-  const handleImmediateUpload = () => {
-    update(item.id, { scheduledAt: new Date().toISOString() })
+  const handleImmediateUpload = async () => {
+    await update(item.id, { scheduledAt: new Date().toISOString() }).catch(err => console.error(err))
     onRefresh()
   }
 
-  const handleRetry = () => {
-    update(item.id, { status: 'pending', error: null, scheduledAt: new Date().toISOString() })
+  const handleRetry = async () => {
+    await update(item.id, { status: 'pending', error: null, scheduledAt: new Date().toISOString() }).catch(err => console.error(err))
     onRefresh()
   }
 
-  const handleDelete = () => {
-    remove(item.id)
+  const handleDelete = async () => {
+    await remove(item.id).catch(err => console.error(err))
     onRefresh()
   }
 
@@ -161,8 +161,9 @@ function UploadCard({ item, onRefresh }) {
 export default function ScheduledUploadsPage() {
   const [items, setItems] = useState([])
 
-  const refresh = useCallback(() => {
-    setItems(getAll())
+  const refresh = useCallback(async () => {
+    const data = await getAll()
+    setItems(data)
   }, [])
 
   useEffect(() => {

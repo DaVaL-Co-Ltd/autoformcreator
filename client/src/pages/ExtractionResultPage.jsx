@@ -12,7 +12,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { marked } from 'marked'
 import { saveExtraction, getExtractions, loadImages, updateUploadStatus } from '../services/storage'
-import { create as createScheduledUpload } from '../utils/scheduledUploads'
+import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
 
@@ -114,12 +114,31 @@ export default function ExtractionResultPage() {
 
     if (channel === 'instagram') {
       try {
-        const instaImageUrls = instaPngUrls.filter(Boolean)
-        const formatted = formatInstagramRequest(instagramContent, instaImageUrls)
+        // PNG가 아직 변환 안 됐으면 먼저 변환
+        let urls = instaPngUrls.filter(Boolean)
+        if (!urls.length && instagramContent?.cards?.length) {
+          await convertInstaCardsToPng()
+          // state 업데이트는 비동기이므로 한 번 더 기다림
+          await new Promise(r => setTimeout(r, 200))
+          urls = (instaCardsRef.current || []).filter(Boolean).length
+            ? instaPngUrls.filter(Boolean)
+            : []
+        }
+        if (!urls.length) {
+          // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한번 직접 변환
+          urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async el => {
+            try { return await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }) } catch { return null }
+          }))).filter(Boolean)
+        }
+        if (!urls.length) throw new Error('인스타그램 카드 이미지가 없습니다. 먼저 인스타그램 탭을 열어주세요.')
+        const formatted = formatInstagramRequest(instagramContent, urls)
         console.log('[ExtractionResultPage] 인스타그램 업로드 요청:', formatted)
         const response = await fetch('http://localhost:3001/api/instagram/publish', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-app-secret': import.meta.env.VITE_API_SECRET || '',
+          },
           body: JSON.stringify(formatted),
         })
         const data = await response.json()
@@ -138,16 +157,33 @@ export default function ExtractionResultPage() {
 
     if (channel === 'shorts') {
       try {
-        const formatted = formatYouTubeRequest(shortsScript, shortsVideo?.url || '')
+        // 상대 경로면 현재 origin을 붙여 절대 URL로 변환 (서버 fetch 가능하도록)
+        let absVideoUrl = shortsVideo?.url || ''
+        if (absVideoUrl.startsWith('/')) {
+          absVideoUrl = `${window.location.origin}${absVideoUrl}`
+        }
+        const formatted = formatYouTubeRequest(shortsScript, absVideoUrl)
         console.log('[ExtractionResultPage] 유튜브 숏츠 업로드 요청:', formatted)
         const response = await fetch('http://localhost:3001/api/youtube/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-app-secret': import.meta.env.VITE_API_SECRET || '',
+          },
           body: JSON.stringify(formatted),
         })
         const data = await response.json()
         if (data.success) {
           setUploadStatus(p => ({ ...p, shorts: 'done' }))
+          const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
+          if (ytUrl) {
+            console.log('[YouTube 업로드 완료]', ytUrl)
+            alert(`✅ 유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
+            try { await navigator.clipboard.writeText(ytUrl) } catch {}
+            window.open(ytUrl, '_blank')
+          } else {
+            alert('업로드 완료 (URL 없음)')
+          }
         } else {
           setUploadStatus(p => ({ ...p, shorts: 'error' }))
           setUploadError(`유튜브 숏츠 업로드 실패: ${data.error || '알 수 없는 오류'}`)
@@ -404,13 +440,16 @@ export default function ExtractionResultPage() {
   }
 
   // 결과 저장은 ExtractionPage에서 navigateToResults 시 1회만 수행
-  // savedFromExtraction 플래그가 있을 때만 저장
+  // savedFromExtraction 플래그가 있을 때만 저장 (ref로 StrictMode 중복 실행 방지)
+  const saveOnceRef = useRef(false)
   useEffect(() => {
+    if (saveOnceRef.current) return
     const stateData = location.state
     if (!stateData || !stateData.savedFromExtraction) return
     const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript
     if (!hasContent) return
 
+    saveOnceRef.current = true
     saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
   }, [])
 
@@ -435,6 +474,30 @@ export default function ExtractionResultPage() {
       setScheduleInfo(schedMap)
     }
   }, [location.state])
+
+  // extractionId가 있으면 서버에서 예약 정보 다시 불러오기 (새로고침 후 복원)
+  useEffect(() => {
+    if (!extractionId) return
+    ;(async () => {
+      try {
+        const all = await getAllScheduledUploads()
+        const mine = (all || []).filter(s => s.extractionId === extractionId && s.status !== 'completed' && s.status !== 'failed')
+        if (!mine.length) return
+        setUploadStatus(prev => {
+          const next = { ...prev }
+          mine.forEach(s => { next[s.platform] = 'scheduled' })
+          return next
+        })
+        setScheduleInfo(prev => {
+          const next = { ...prev }
+          mine.forEach(s => { next[s.platform] = { scheduledAt: s.scheduledAt, id: s.id } })
+          return next
+        })
+      } catch (err) {
+        console.warn('[예약 정보 복원 실패]', err)
+      }
+    })()
+  }, [extractionId])
 
   if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) {
     return (
@@ -1342,11 +1405,27 @@ export default function ExtractionResultPage() {
         defaultPlatform={scheduleDialog.platform}
         content={scheduleDialog.content}
         lockPlatform={true}
-        onSave={({ platform, scheduledAt, content }) => {
-          if (extractionId) {
-            updateUploadStatus(extractionId, platform, { status: 'scheduled', scheduledAt })
+        onSave={async ({ platform, scheduledAt, content }) => {
+          let id = extractionId
+          // extractionId가 없으면 즉시 Supabase에 저장
+          if (!id) {
+            try {
+              id = await saveExtraction(location.state || {})
+              setExtractionId(id)
+            } catch (err) {
+              alert(`콘텐츠 저장 실패: ${err.message}`)
+              return
+            }
           }
-          createScheduledUpload({ platform, content, scheduledAt, extractionId })
+          if (!id) {
+            alert('콘텐츠 저장에 실패했습니다. 다시 시도해주세요.')
+            return
+          }
+          await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
+          await createScheduledUpload({ platform, content, scheduledAt, extractionId: id }).catch(err => {
+            console.error('[예약 생성 실패]', err)
+            alert(`예약 생성 실패: ${err.message}`)
+          })
           // 로컬 state 즉시 반영
           setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
           setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))

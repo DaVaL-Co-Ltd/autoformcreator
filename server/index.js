@@ -40,17 +40,36 @@ app.use((req, res, next) => {
   express.json({ limit: '150mb' })(req, res, next)
 })
 
+// API 시크릿 검증 미들웨어 (/api/* 엔드포인트 보호)
+// 예외: /health, /api/youtube/oauth/callback (Google이 리디렉트하는 공개 엔드포인트)
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next()
+  if (req.path === '/api/youtube/oauth/callback') return next()
+  if (req.path === '/api/youtube/auth-url') return next()
+  if (req.path === '/api/youtube/auth-status') return next()
+  const expected = process.env.API_SECRET
+  if (!expected) return next() // dev 편의: 미설정 시 통과
+  const provided = req.headers['x-app-secret']
+  if (provided !== expected) {
+    console.log(`[AUTH FAIL] path=${req.path} provided=${provided?.slice(0, 20)} expected=${expected?.slice(0, 20)}`)
+    return res.status(401).json({ error: 'Unauthorized: invalid x-app-secret' })
+  }
+  next()
+})
+
 // LlamaParse Proxy - Upload (forward multipart as-is)
 app.post('/api/llamaparse/upload', (req, res) => {
   const chunks = []
   req.on('data', chunk => chunks.push(chunk))
   req.on('end', async () => {
     try {
+      const apiKey = process.env.LLAMAPARSE_API_KEY
+      if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
       const body = Buffer.concat(chunks)
       const response = await fetch('https://api.cloud.llamaindex.ai/api/v1/parsing/upload', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${req.headers['x-api-key']}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': req.headers['content-type'],
         },
         body,
@@ -67,8 +86,10 @@ app.post('/api/llamaparse/upload', (req, res) => {
 // LlamaParse Proxy - Job Status
 app.get('/api/llamaparse/job/:jobId', async (req, res) => {
   try {
+    const apiKey = process.env.LLAMAPARSE_API_KEY
+    if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
     const response = await fetch(`https://api.cloud.llamaindex.ai/api/v1/parsing/job/${req.params.jobId}`, {
-      headers: { Authorization: `Bearer ${req.headers['x-api-key']}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     })
     const data = await response.json()
     if (!response.ok) return res.status(response.status).json(data)
@@ -81,8 +102,10 @@ app.get('/api/llamaparse/job/:jobId', async (req, res) => {
 // LlamaParse Proxy - Job Result
 app.get('/api/llamaparse/job/:jobId/result/markdown', async (req, res) => {
   try {
+    const apiKey = process.env.LLAMAPARSE_API_KEY
+    if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
     const response = await fetch(`https://api.cloud.llamaindex.ai/api/v1/parsing/job/${req.params.jobId}/result/markdown`, {
-      headers: { Authorization: `Bearer ${req.headers['x-api-key']}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     })
     const data = await response.json()
     if (!response.ok) return res.status(response.status).json(data)
@@ -122,8 +145,8 @@ app.post('/api/output/save', (req, res) => {
 
 // ===== HeyGen Voices Proxy =====
 app.get('/api/heygen/voices', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/voices', {
       headers: { 'X-Api-Key': apiKey },
@@ -141,8 +164,8 @@ app.get('/api/heygen/voices', async (req, res) => {
 
 // ===== HeyGen Video Generate Proxy =====
 app.post('/api/heygen/video/generate', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/video/generate', {
       method: 'POST',
@@ -159,8 +182,8 @@ app.post('/api/heygen/video/generate', async (req, res) => {
 
 // ===== HeyGen Video Status Proxy =====
 app.get('/api/heygen/video/status/:videoId', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${req.params.videoId}`, {
       headers: { 'X-Api-Key': apiKey },
@@ -175,8 +198,8 @@ app.get('/api/heygen/video/status/:videoId', async (req, res) => {
 
 // ===== HeyGen 프리셋 아바타 목록 =====
 app.get('/api/heygen/preset-avatars', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/avatars', {
       headers: { 'X-Api-Key': apiKey },
@@ -197,8 +220,8 @@ app.get('/api/heygen/preset-avatars', async (req, res) => {
 
 // ===== HeyGen 커스텀 아바타 목록 (슬롯 확인용) =====
 app.get('/api/heygen/avatar-list', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/avatars', {
       headers: { 'X-Api-Key': apiKey },
@@ -215,8 +238,8 @@ app.get('/api/heygen/avatar-list', async (req, res) => {
 
 // ===== HeyGen 아바타 상태 확인 (avatars 목록에서 조회) =====
 app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/avatars', {
       headers: { 'X-Api-Key': apiKey },
@@ -237,8 +260,8 @@ app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
 
 // ===== HeyGen 테스트용: 성공한 이미지 직접 업로드 =====
 app.post('/api/heygen/upload-test-avatar', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const imgPath = path.join(__dirname, '..', 'output', 'avatar_1775569832756.png')
     const buffer = fs.readFileSync(imgPath)
@@ -257,8 +280,8 @@ app.post('/api/heygen/upload-test-avatar', async (req, res) => {
 
 // ===== HeyGen Upload Asset (base64 or filePath → binary → HeyGen) =====
 app.post('/api/heygen/upload-asset', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const { base64, filePath, mimeType } = req.body
     let buffer
@@ -285,8 +308,8 @@ app.post('/api/heygen/upload-asset', async (req, res) => {
 
 // ===== HeyGen Avatar Group 생성 (image_key → talking_photo_id) =====
 app.post('/api/heygen/avatar-group/create', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key header' })
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch('https://api.heygen.com/v2/photo_avatar/avatar_group/create', {
       method: 'POST',
@@ -572,9 +595,9 @@ function escapeXml(str) {
 
 // ===== 인포그래픽 이미지 → HeyGen 업로드 → URL 반환 =====
 app.post('/api/infographic/upload-to-heygen', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
+  const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key' })
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   if (!localPath || !fs.existsSync(localPath)) return res.status(400).json({ error: 'File not found' })
 
   try {
@@ -959,9 +982,9 @@ app.post('/api/remotion/render', async (req, res) => {
 
 // Remotion 렌더링 결과 MP4 → HeyGen 업로드
 app.post('/api/remotion/upload-to-heygen', async (req, res) => {
-  const apiKey = req.headers['x-api-key']
+  const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
-  if (!apiKey) return res.status(400).json({ error: 'Missing x-api-key' })
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   if (!localPath || !fs.existsSync(localPath)) return res.status(400).json({ error: 'File not found' })
 
   try {
@@ -1057,19 +1080,112 @@ app.post('/api/output/upload', (req, res) => {
 // Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
-// ===== Instagram Graph API Proxy (현재 mock - 실제 API 키 받으면 교체) =====
-app.post('/api/instagram/publish', async (req, res) => {
-  console.log('[Instagram] publish request:', req.body)
-  // TODO: 실제 Meta Graph API 호출
-  // 1) POST {ig-user-id}/media (create container)
-  // 2) POST {ig-user-id}/media_publish (publish container)
-  await new Promise(r => setTimeout(r, 1500))
-  res.json({
-    success: true,
-    mock: true,
-    mediaId: `mock_${Date.now()}`,
-    permalink: `https://instagram.com/p/mock_${Date.now()}/`,
+// ===== Instagram Graph API =====
+const IG_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN
+const IG_BUSINESS_ID = process.env.INSTAGRAM_BUSINESS_ID
+const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+
+// 이미지 업로드 (단일 또는 캐러셀)
+async function publishInstagramPost({ imageUrls = [], caption = '' }) {
+  if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
+    throw new Error('Instagram 환경변수(INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID) 미설정')
+  }
+  if (!imageUrls.length) throw new Error('이미지 URL이 없습니다')
+
+  const urls = imageUrls.filter(Boolean)
+  if (urls.length === 1) {
+    // 단일 이미지
+    const createRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: urls[0], caption, access_token: IG_ACCESS_TOKEN }),
+    })
+    const created = await createRes.json()
+    if (!createRes.ok || !created.id) throw new Error(`컨테이너 생성 실패: ${JSON.stringify(created)}`)
+
+    const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ creation_id: created.id, access_token: IG_ACCESS_TOKEN }),
+    })
+    const pub = await pubRes.json()
+    if (!pubRes.ok || !pub.id) throw new Error(`게시 실패: ${JSON.stringify(pub)}`)
+    return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+  }
+
+  // 캐러셀 (여러 이미지)
+  const childIds = []
+  for (const url of urls) {
+    const r = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token: IG_ACCESS_TOKEN }),
+    })
+    const d = await r.json()
+    if (!r.ok || !d.id) throw new Error(`캐러셀 자식 생성 실패: ${JSON.stringify(d)}`)
+    childIds.push(d.id)
+  }
+
+  const carouselRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      media_type: 'CAROUSEL',
+      children: childIds.join(','),
+      caption,
+      access_token: IG_ACCESS_TOKEN,
+    }),
   })
+  const carousel = await carouselRes.json()
+  if (!carouselRes.ok || !carousel.id) throw new Error(`캐러셀 컨테이너 생성 실패: ${JSON.stringify(carousel)}`)
+
+  const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creation_id: carousel.id, access_token: IG_ACCESS_TOKEN }),
+  })
+  const pub = await pubRes.json()
+  if (!pubRes.ok || !pub.id) throw new Error(`캐러셀 게시 실패: ${JSON.stringify(pub)}`)
+  return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+}
+
+// base64 data URL을 Supabase Storage에 업로드 후 공개 URL 반환
+async function uploadDataUrlToStorage(dataUrl, filename) {
+  if (!supabaseAdmin) throw new Error('Supabase 미설정')
+  if (!dataUrl?.startsWith('data:')) return dataUrl // 이미 URL이면 그대로
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) throw new Error('잘못된 data URL')
+  const [, mime, b64] = match
+  const buf = Buffer.from(b64, 'base64')
+  const ext = mime.split('/')[1] || 'png'
+  const path = `instagram/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const { error } = await supabaseAdmin.storage.from('extraction-images').upload(path, buf, {
+    contentType: mime,
+    upsert: false,
+  })
+  if (error) throw new Error(`스토리지 업로드 실패: ${error.message}`)
+  const { data: pub } = supabaseAdmin.storage.from('extraction-images').getPublicUrl(path)
+  return pub?.publicUrl
+}
+
+app.post('/api/instagram/publish', async (req, res) => {
+  try {
+    const { imageUrls = [], caption } = req.body
+    // data URL이면 Supabase에 업로드 후 공개 URL로 변환
+    const publicUrls = []
+    for (const url of imageUrls) {
+      if (typeof url === 'string' && url.startsWith('data:')) {
+        publicUrls.push(await uploadDataUrlToStorage(url))
+      } else if (url) {
+        publicUrls.push(url)
+      }
+    }
+    const result = await publishInstagramPost({ imageUrls: publicUrls, caption })
+    res.json({ success: true, ...result, uploadedUrls: publicUrls })
+  } catch (err) {
+    console.error('[Instagram] 업로드 실패:', err.message)
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 // ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
@@ -1272,6 +1388,247 @@ app.post('/api/youtube/upload', async (req, res) => {
     }, null, 2))
     const detail = err.response?.data?.error?.message || err.errors?.[0]?.message || err.message
     res.status(err.code === 401 ? 401 : 500).json({ error: detail, code: err.code, fullError: err.response?.data })
+  }
+})
+
+// ======================================================================
+// 예약 업로드 (Scheduled Uploads) — Supabase 기반
+// ======================================================================
+
+const API_SECRET = process.env.API_SECRET || ''
+
+function requireApiSecret(req, res, next) {
+  const provided = req.headers['x-api-secret']
+  if (!API_SECRET || provided !== API_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+  next()
+}
+
+// 예약 생성
+app.post('/api/scheduled/create', async (req, res) => {
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+  try {
+    const { platform, extractionId, content, scheduledAt } = req.body
+    if (!platform || !extractionId || !scheduledAt) {
+      return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
+    }
+    const { data, error } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .insert({
+        platform,
+        extraction_id: extractionId,
+        content: content || {},
+        scheduled_at: scheduledAt,
+        status: 'pending',
+      })
+      .select()
+      .single()
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// 예약 목록
+app.get('/api/scheduled/list', async (req, res) => {
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .select('*')
+      .order('scheduled_at', { ascending: true })
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// 예약 삭제
+app.delete('/api/scheduled/:id', async (req, res) => {
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+  try {
+    const { error } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .delete()
+      .eq('id', req.params.id)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// 예약 수정
+app.patch('/api/scheduled/:id', async (req, res) => {
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+  try {
+    const { scheduledAt, status, content } = req.body
+    const patch = {}
+    if (scheduledAt) patch.scheduled_at = scheduledAt
+    if (status) patch.status = status
+    if (content) patch.content = content
+    const { data, error } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .update(patch)
+      .eq('id', req.params.id)
+      .select()
+      .single()
+    if (error) throw error
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GitHub Actions 호출 — 예약된 업로드 실행 (글로벌 x-app-secret 미들웨어로 인증)
+app.post('/api/scheduled/run', async (req, res) => {
+  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+
+  try {
+    // 실행 시각 도달한 pending 항목 조회
+    const nowIso = new Date().toISOString()
+    const { data: dueItems, error: fetchErr } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .select('*')
+      .eq('status', 'pending')
+      .lte('scheduled_at', nowIso)
+      .order('scheduled_at', { ascending: true })
+      .limit(10)
+
+    if (fetchErr) throw fetchErr
+
+    const results = []
+    for (const item of (dueItems || [])) {
+      // 업로드 중으로 표시
+      await supabaseAdmin
+        .from('scheduled_uploads')
+        .update({ status: 'uploading', attempts: (item.attempts || 0) + 1 })
+        .eq('id', item.id)
+
+      try {
+        let uploadResult = null
+
+        // 플랫폼별 업로드 실행
+        if (item.platform === 'shorts' || item.platform === 'youtube') {
+          const c = item.content || {}
+          let videoUrl = c.videoUrl
+          let title = c.title
+          let description = c.description
+          let tags = c.tags
+
+          // content에 videoUrl 없으면 extractions 테이블에서 조회
+          if (!videoUrl && item.extraction_id) {
+            const { data: ext } = await supabaseAdmin
+              .from('extractions')
+              .select('shorts_video, shorts_script')
+              .eq('id', item.extraction_id)
+              .maybeSingle()
+            const sv = ext?.shorts_video
+            const ss = ext?.shorts_script
+            videoUrl = sv?.url || sv?.videoUrl
+            if (!title) title = ss?.uploadTitle || ss?.title
+            if (!description && ss) {
+              const parts = []
+              if (ss.hook) parts.push(ss.hook)
+              if (Array.isArray(ss.scenes)) ss.scenes.forEach((s, i) => s.narration && parts.push(`${i + 1}. ${s.narration}`))
+              if (ss.cta) parts.push(`\n${ss.cta}`)
+              description = parts.join('\n')
+            }
+            if (!tags?.length) tags = (ss?.hashtags || []).map(t => t.replace(/^#/, ''))
+          }
+
+          if (!videoUrl) throw new Error('videoUrl 없음')
+
+          const client = getYtOAuth2Client()
+          if (!client) throw new Error('YouTube 인증 필요')
+          const youtube = google.youtube({ version: 'v3', auth: client })
+          const { Readable } = require('stream')
+          const videoRes = await fetch(videoUrl)
+          if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
+          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+          const stream = Readable.from(videoBuffer)
+
+          const finalTitle = (title || '숏폼 영상').slice(0, 100)
+          const titleWithShorts = finalTitle.includes('#Shorts') ? finalTitle : `${finalTitle} #Shorts`.slice(0, 100)
+          const finalTags = Array.isArray(tags) ? tags : []
+          if (!finalTags.includes('Shorts')) finalTags.unshift('Shorts')
+
+          const response = await youtube.videos.insert({
+            part: ['snippet', 'status'],
+            requestBody: {
+              snippet: {
+                title: titleWithShorts,
+                description: (description || '').slice(0, 5000),
+                tags: finalTags,
+                categoryId: '22',
+              },
+              status: { privacyStatus: c.privacyStatus || 'public', selfDeclaredMadeForKids: false },
+            },
+            media: { body: stream },
+          })
+          uploadResult = { url: `https://youtu.be/${response.data.id}`, videoId: response.data.id }
+
+        } else if (item.platform === 'blog' || item.platform === 'naver') {
+          throw new Error('네이버 블로그 서버 업로드 미구현 (브라우저 기반)')
+
+        } else if (item.platform === 'instagram') {
+          const c = item.content || {}
+          let imageUrls = c.imageUrls || []
+          let caption = c.caption || ''
+
+          // content에 이미지 없으면 extraction에서 조회
+          if (!imageUrls.length && item.extraction_id) {
+            const { data: ext } = await supabaseAdmin
+              .from('extractions')
+              .select('instagram_images, instagram_content')
+              .eq('id', item.extraction_id)
+              .maybeSingle()
+            const igImgs = ext?.instagram_images || []
+            imageUrls = igImgs.map(img => img?.url || img?.imageUrl).filter(Boolean)
+            const igContent = ext?.instagram_content
+            if (!caption && igContent) {
+              const hashtags = (igContent.hashtags || []).map(t => String(t).startsWith('#') ? t : `#${t}`).join(' ')
+              caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
+            }
+          }
+
+          const result = await publishInstagramPost({ imageUrls, caption })
+          uploadResult = { url: result.permalink, mediaId: result.mediaId }
+
+        } else {
+          throw new Error(`지원하지 않는 플랫폼: ${item.platform}`)
+        }
+
+        // 성공 처리
+        await supabaseAdmin
+          .from('scheduled_uploads')
+          .update({
+            status: 'completed',
+            uploaded_url: uploadResult?.url || null,
+            uploaded_at: new Date().toISOString(),
+            error: null,
+          })
+          .eq('id', item.id)
+        results.push({ id: item.id, ok: true, url: uploadResult?.url })
+
+      } catch (uploadErr) {
+        await supabaseAdmin
+          .from('scheduled_uploads')
+          .update({
+            status: 'failed',
+            error: uploadErr.message,
+          })
+          .eq('id', item.id)
+        results.push({ id: item.id, ok: false, error: uploadErr.message })
+      }
+    }
+
+    res.json({ processed: results.length, results })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 

@@ -175,8 +175,8 @@ const mockInstagramImages = [
 ]
 
 const mockShortsVideo = {
-  url: '/output/demo_shorts.mp4',
-  videoUrl: '/output/demo_shorts.mp4',
+  url: '/test.mp4',
+  videoUrl: '/test.mp4',
   duration: '30',
   status: 'completed',
   isDemo: true,
@@ -845,11 +845,10 @@ DO NOT:
     setHeygenAvatarId(null)
     setHeygenReady(false)
     setHeygenUploading(true)
-    const HEYGEN_API_KEY = import.meta.env.VITE_HEYGEN_API_KEY
-    if (!avatarImage || !HEYGEN_API_KEY) { setHeygenUploading(false); return }
+    if (!avatarImage) { setHeygenUploading(false); return }
     try {
       // 테스트용: 서버에서 성공한 이미지를 업로드하고 기존 아바타가 있으면 재사용
-      const listRes = await fetch('/api/heygen/avatar-list', { headers: { 'x-api-key': HEYGEN_API_KEY } })
+      const listRes = await fetch('/api/heygen/avatar-list')
       if (listRes.ok) {
         const listData = await listRes.json()
         const existingCustom = listData.custom || []
@@ -863,7 +862,7 @@ DO NOT:
       // 기존 아바타 없으면 성공한 이미지로 새로 생성
       const uploadRes = await fetch('/api/heygen/upload-test-avatar', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+        headers: { 'Content-Type': 'application/json' },
       })
       if (!uploadRes.ok) throw new Error('업로드 실패')
       const uploadData = await uploadRes.json()
@@ -871,7 +870,7 @@ DO NOT:
       if (!imageKey) throw new Error('image_key 없음')
       const groupRes = await fetch('/api/heygen/avatar-group/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
       })
       if (!groupRes.ok) throw new Error('Group 생성 실패')
@@ -883,9 +882,7 @@ DO NOT:
       for (let i = 0; i < 18; i++) {
         await new Promise(r => setTimeout(r, 10000))
         try {
-          const statusRes = await fetch(`/api/heygen/avatar-status/${groupId}`, {
-            headers: { 'x-api-key': HEYGEN_API_KEY },
-          })
+          const statusRes = await fetch(`/api/heygen/avatar-status/${groupId}`)
           if (statusRes.ok) {
             const statusData = await statusRes.json()
             if (statusData.ready) { setHeygenReady(true); setHeygenUploading(false); return }
@@ -902,7 +899,6 @@ DO NOT:
 
   // Step 5-3: 숏폼 영상 생성 (HeyGen)
   const runShortsGeneration = async () => {
-    const HEYGEN_API_KEY = import.meta.env.VITE_HEYGEN_API_KEY
     if (!shortsScript) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: '숏폼 대본이 없습니다.' }])
       return
@@ -924,10 +920,6 @@ DO NOT:
       addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: '아바타를 먼저 생성해주세요.' }])
       return
     }
-    if (!HEYGEN_API_KEY) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: 'HeyGen API 키가 설정되지 않았습니다.' }])
-      return
-    }
     setStepLoading('shorts', true)
     clearStepErrors('shorts')
     setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
@@ -944,7 +936,7 @@ DO NOT:
 
         const uploadRes = await fetch('/api/heygen/upload-asset', {
           method: 'POST',
-          headers: { 'Content-Type': 'image/png', 'x-api-key': HEYGEN_API_KEY },
+          headers: { 'Content-Type': 'image/png' },
           body: blob,
         })
         if (!uploadRes.ok) throw new Error('HeyGen 이미지 업로드 실패')
@@ -954,7 +946,7 @@ DO NOT:
 
         const groupRes = await fetch('/api/heygen/avatar-group/create', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
         })
         if (!groupRes.ok) {
@@ -973,9 +965,7 @@ DO NOT:
         for (let i = 0; i < 36; i++) {
           await new Promise(r => setTimeout(r, 5000))
           try {
-            const statusRes = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`, {
-              headers: { 'x-api-key': HEYGEN_API_KEY },
-            })
+            const statusRes = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`)
             if (statusRes.ok) {
               const statusData = await statusRes.json()
               if (statusData.ready) break
@@ -992,7 +982,7 @@ DO NOT:
       for (let attempt = 0; attempt < 3; attempt++) {
         const generateRes = await fetch('/api/heygen/video/generate', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': HEYGEN_API_KEY },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             video_inputs: [{
               character: {
@@ -1020,7 +1010,7 @@ DO NOT:
           for (let j = 0; j < 6; j++) {
             await new Promise(r => setTimeout(r, 5000))
             try {
-              const sr = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`, { headers: { 'x-api-key': HEYGEN_API_KEY } })
+              const sr = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`)
               if (sr.ok && (await sr.json()).ready) break
             } catch { /* 계속 */ }
           }
@@ -1035,9 +1025,7 @@ DO NOT:
       let videoCompleted = false
       for (let i = 0; i < 120; i++) {
         await new Promise(r => setTimeout(r, 5000))
-        const pollRes = await fetch(`/api/heygen/video/status/${videoId}`, {
-          headers: { 'x-api-key': HEYGEN_API_KEY },
-        })
+        const pollRes = await fetch(`/api/heygen/video/status/${videoId}`)
         if (!pollRes.ok) continue
         const pollData = await pollRes.json()
         const status = pollData.data?.status
@@ -1073,14 +1061,12 @@ DO NOT:
   const previewAudioRef = useRef(null)
   const voicesFetched = useRef(false)
 
-  const HEYGEN_KEY = import.meta.env.VITE_HEYGEN_API_KEY
-
   // voice 목록 로드 (1회)
   useEffect(() => {
-    if (voicesFetched.current || !HEYGEN_KEY) return
+    if (voicesFetched.current) return
     voicesFetched.current = true
     setVoicesLoading(true)
-    fetch('/api/heygen/voices', { headers: { 'x-api-key': HEYGEN_KEY } })
+    fetch('/api/heygen/voices')
       .then(r => r.json())
       .then(data => {
         const voices = data?.data?.voices || data?.data?.list || []
@@ -1091,7 +1077,7 @@ DO NOT:
       })
       .catch(err => setVoicesError(err.message))
       .finally(() => setVoicesLoading(false))
-  }, [HEYGEN_KEY])
+  }, [])
 
   // 아바타 확정 시 → Gemini로 어울리는 voice 추천
   useEffect(() => {
@@ -2467,10 +2453,6 @@ ${parsedText}
                   {!avatarConfirmed ? (
                     <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
                       아바타를 먼저 생성하고 확정하면 어울리는 목소리를 추천해드립니다.
-                    </p>
-                  ) : !HEYGEN_KEY ? (
-                    <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
-                      <code>VITE_HEYGEN_API_KEY</code>를 .env.local에 추가해주세요.
                     </p>
                   ) : voicesLoading ? (
                     <div className="flex items-center gap-2 p-3">

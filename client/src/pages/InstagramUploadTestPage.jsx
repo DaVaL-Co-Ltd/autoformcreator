@@ -119,7 +119,10 @@ export default function InstagramUploadTestPage() {
     try {
       const res = await fetch(`${API_BASE}/api/instagram/publish`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-app-secret': import.meta.env.VITE_API_SECRET || '',
+        },
         body: JSON.stringify(body),
       })
       const data = await res.json()

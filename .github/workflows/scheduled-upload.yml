@@ -1,0 +1,39 @@
+name: Scheduled Upload Runner
+
+on:
+  schedule:
+    # 매 5분마다 실행
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # 수동 실행도 허용
+
+jobs:
+  run-scheduled-uploads:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Call Render server to process due uploads
+        env:
+          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+          API_SECRET: ${{ secrets.API_SECRET }}
+        run: |
+          if [ -z "$RENDER_API_URL" ] || [ -z "$API_SECRET" ]; then
+            echo "::error::RENDER_API_URL or API_SECRET is not set"
+            exit 1
+          fi
+
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-app-secret: $API_SECRET" \
+            "$RENDER_API_URL/api/scheduled/run" \
+            -d '{}')
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "HTTP $http_code"
+          echo "$body"
+
+          if [ "$http_code" != "200" ]; then
+            echo "::error::Server returned HTTP $http_code"
+            exit 1
+          fi

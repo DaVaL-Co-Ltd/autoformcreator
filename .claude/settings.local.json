@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.heygen.com)",
+      "WebFetch(domain:help.heygen.com)",
+      "Read(//c/Users/고지민/Downloads/**)",
+      "WebFetch(domain:docs.heygen.com)",
+      "WebFetch(domain:noonnu.cc)",
+      "Read(//c/daval/upload_blog//**)",
+      "Read(//c/daval/upload_blog/**)"
+    ]
+  }
+}

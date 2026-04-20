@@ -1,6 +1,5 @@
 import { callGeminiWithFallback } from './gemini-core'
 
-const LLAMAPARSE_API_KEY = import.meta.env.VITE_LLAMAPARSE_API_KEY
 const LLAMAPARSE_PROXY = 'http://localhost:3001/api/llamaparse'
 
 
@@ -14,7 +13,6 @@ async function llamaParsePDF(file) {
 
   const uploadRes = await fetch(`${LLAMAPARSE_PROXY}/upload`, {
     method: 'POST',
-    headers: { 'x-api-key': LLAMAPARSE_API_KEY },
     body: formData,
   })
 
@@ -28,9 +26,7 @@ async function llamaParsePDF(file) {
   let attempts = 0
   while (status !== 'SUCCESS' && attempts < 60) {
     await new Promise(r => setTimeout(r, 2000))
-    const statusRes = await fetch(`${LLAMAPARSE_PROXY}/job/${jobId}`, {
-      headers: { 'x-api-key': LLAMAPARSE_API_KEY },
-    })
+    const statusRes = await fetch(`${LLAMAPARSE_PROXY}/job/${jobId}`)
     const statusData = await statusRes.json()
     status = statusData.status
     if (status === 'ERROR') throw new Error('LlamaParse 분석 실패')
@@ -39,9 +35,7 @@ async function llamaParsePDF(file) {
 
   if (status !== 'SUCCESS') throw new Error('LlamaParse 시간 초과')
 
-  const resultRes = await fetch(`${LLAMAPARSE_PROXY}/job/${jobId}/result/markdown`, {
-    headers: { 'x-api-key': LLAMAPARSE_API_KEY },
-  })
+  const resultRes = await fetch(`${LLAMAPARSE_PROXY}/job/${jobId}/result/markdown`)
 
   if (!resultRes.ok) throw new Error('LlamaParse 결과 조회 실패')
   const result = await resultRes.json()

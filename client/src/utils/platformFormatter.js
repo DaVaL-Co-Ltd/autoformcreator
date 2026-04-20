@@ -23,9 +23,15 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
     imageCount: imageUrls.length,
   })
 
+  // caption + hashtags 합쳐서 최종 caption 생성 (인스타는 별도 태그 필드 없음)
+  const tagText = hashtags
+    .map(t => (String(t).startsWith('#') ? t : `#${t}`))
+    .join(' ')
+  const fullCaption = tagText ? `${caption}\n\n${tagText}` : caption
+
   return {
     type: imageUrls.length > 1 ? 'carousel' : 'image',
-    caption,
+    caption: fullCaption,
     hashtags,
     imageUrls,
   }

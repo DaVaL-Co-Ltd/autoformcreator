@@ -114,15 +114,18 @@ export default function ContentPage() {
   const handleUpload = async (item) => {
     const key = `${item.extractionId}-${item.channel}`
     setUploadingId(key)
-
-    // 업로드 시뮬레이션 (실제 API 연동 시 교체)
-    await new Promise(r => setTimeout(r, 1500))
-
-    await updateUploadStatus(item.extractionId, item.channel, {
-      status: 'uploaded',
-      uploadedAt: new Date().toISOString(),
-    })
-    await refreshExtractions()
+    try {
+      const { uploadToPlatform } = await import('../services/platformUploaders')
+      const result = await uploadToPlatform(item.channel, item.extractionId)
+      await updateUploadStatus(item.extractionId, item.channel, {
+        status: 'uploaded',
+        uploadedAt: new Date().toISOString(),
+        uploadedUrl: result?.url || null,
+      })
+      await refreshExtractions()
+    } catch (err) {
+      alert(`업로드 실패: ${err.message}`)
+    }
     setUploadingId(null)
   }
 
