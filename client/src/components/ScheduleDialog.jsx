@@ -99,39 +99,66 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           </div>
         )}
 
-        {/* Datetime picker */}
-        {!immediate && (
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-text-muted mb-2">
-              <Clock size={14} className="inline mr-1 -mt-0.5" />
-              예약 시간
-            </label>
-            <input
-              type="datetime-local"
-              value={datetime}
-              min={minDatetime}
-              step="300"
-              onChange={e => {
-                // 5분 단위로 반올림
-                const d = new Date(e.target.value)
-                if (!isNaN(d.getTime())) {
-                  const mins = d.getMinutes()
-                  const rounded = Math.round(mins / 5) * 5
-                  d.setMinutes(rounded, 0, 0)
-                  const y = d.getFullYear()
-                  const m = String(d.getMonth() + 1).padStart(2, '0')
-                  const day = String(d.getDate()).padStart(2, '0')
-                  const hh = String(d.getHours()).padStart(2, '0')
-                  const mm = String(d.getMinutes()).padStart(2, '0')
-                  setDatetime(`${y}-${m}-${day}T${hh}:${mm}`)
-                } else {
-                  setDatetime(e.target.value)
-                }
-              }}
-              className="w-full px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
-        )}
+        {/* Datetime picker (날짜 + 시 + 분 5분 단위) */}
+        {!immediate && (() => {
+          // datetime 문자열("YYYY-MM-DDTHH:mm") 파싱 (없으면 현재 시각 기준 5분 반올림)
+          const parts = (() => {
+            if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
+              const [d, t] = datetime.split('T')
+              const [h, m] = t.split(':')
+              return { date: d, hour: h, minute: m.slice(0, 2) }
+            }
+            const now = new Date()
+            now.setMinutes(Math.ceil(now.getMinutes() / 5) * 5, 0, 0)
+            const y = now.getFullYear()
+            const mo = String(now.getMonth() + 1).padStart(2, '0')
+            const da = String(now.getDate()).padStart(2, '0')
+            return {
+              date: `${y}-${mo}-${da}`,
+              hour: String(now.getHours()).padStart(2, '0'),
+              minute: String(now.getMinutes()).padStart(2, '0'),
+            }
+          })()
+          const updateParts = (next) => {
+            setDatetime(`${next.date}T${next.hour}:${next.minute}`)
+          }
+          const today = new Date().toISOString().slice(0, 10)
+          return (
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-text-muted mb-2">
+                <Clock size={14} className="inline mr-1 -mt-0.5" />
+                예약 시간
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={parts.date}
+                  min={today}
+                  onChange={e => updateParts({ ...parts, date: e.target.value })}
+                  className="flex-1 px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+                />
+                <select
+                  value={parts.hour}
+                  onChange={e => updateParts({ ...parts, hour: e.target.value })}
+                  className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+                >
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
+                    <option key={h} value={h}>{h}시</option>
+                  ))}
+                </select>
+                <select
+                  value={parts.minute}
+                  onChange={e => updateParts({ ...parts, minute: e.target.value })}
+                  className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+                >
+                  {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map(m => (
+                    <option key={m} value={m}>{m}분</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Content preview */}
         {content?.title && (
