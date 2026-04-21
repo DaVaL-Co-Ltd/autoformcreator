@@ -1654,7 +1654,16 @@ app.post('/api/scheduled/run', async (req, res) => {
             const blog = ext?.blog_content
             if (blog) {
               title = title || blog.title
-              content = content || (blog.body || blog.content || '')
+              let raw = blog.body || blog.content || ''
+              if (!raw && Array.isArray(blog.sections)) {
+                raw = blog.sections.map(s => {
+                  const heading = s.heading ? `${s.heading}\n` : ''
+                  const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
+                  const body = s.content || ''
+                  return `${heading}${keyPhrase}${body}`
+                }).join('\n\n---\n\n')
+              }
+              content = content || raw
                 .replace(/```[\s\S]*?```/g, '')
                 .replace(/^#{1,6}\s+/gm, '')
                 .replace(/\*\*([^*]+)\*\*/g, '$1')

@@ -26,7 +26,17 @@ export async function uploadToBlog(extractionId) {
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
   const title = blog.title || '제목 없음'
-  const content = stripMarkdown(blog.body || blog.content || '')
+  // sections 배열을 하나의 본문으로 합치기
+  let rawContent = blog.body || blog.content || ''
+  if (!rawContent && Array.isArray(blog.sections)) {
+    rawContent = blog.sections.map(s => {
+      const heading = s.heading ? `${s.heading}\n` : ''
+      const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
+      const body = s.content || ''
+      return `${heading}${keyPhrase}${body}`
+    }).join('\n\n---\n\n')
+  }
+  const content = stripMarkdown(rawContent)
   const tags = blog.tags || blog.hashtags || []
 
   const res = await fetch(`${API_BASE}/api/naver/publish`, {
