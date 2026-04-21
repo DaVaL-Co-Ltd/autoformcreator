@@ -4,7 +4,7 @@ import {
   FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
   CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search, Loader2,
 } from 'lucide-react'
-import { getExtractionsPaged, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
+import { getAllExtractions, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload } from '../utils/scheduledUploads'
 
@@ -37,28 +37,25 @@ export default function ContentPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const [totalExtractions, setTotalExtractions] = useState(0)
-
-  const refreshExtractions = async (showSpinner = false, page = currentPage, size = pageSize) => {
+  const refreshExtractions = async (showSpinner = false) => {
     if (showSpinner) setLoading(true)
     try {
-      const { items, total } = await getExtractionsPaged({ page, pageSize: size })
+      const items = await getAllExtractions()
       setExtractions(items)
-      setTotalExtractions(total)
     } finally {
       if (showSpinner) setLoading(false)
     }
   }
 
   useEffect(() => {
-    refreshExtractions(true, currentPage, pageSize)
-  }, [currentPage, pageSize])
+    refreshExtractions(true)
+  }, [])
 
   useEffect(() => {
-    const onFocus = () => refreshExtractions(false, currentPage, pageSize)
+    const onFocus = () => refreshExtractions(false)
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [currentPage, pageSize])
+  }, [])
 
   // 추출 데이터를 채널별 콘텐츠 목록으로 변환
   const allContents = extractions.flatMap(ext =>
@@ -92,6 +89,10 @@ export default function ContentPage() {
     return true
   })
 
+  const totalContents = filtered.length
+  const totalPages = Math.max(1, Math.ceil(totalContents / pageSize))
+  const pagedContents = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+
   // 상태별 개수
   // 뉴스레터는 업로드 대상이 아니므로 상태 카운트에서 제외
   const uploadableContents = allContents.filter(c => c.channel !== 'newsletter')
@@ -101,6 +102,16 @@ export default function ContentPage() {
     scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled').length,
     uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded').length,
   }
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [activeChannel, activeStatus, searchQuery, pageSize])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages)
+    }
+  }, [currentPage, totalPages])
 
   const handleView = (item) => {
     const ext = extractions.find(e => e.id === item.extractionId)
@@ -265,17 +276,16 @@ export default function ContentPage() {
       </div>
 
       {/* 총 개수 표시 */}
-      {filtered.length > 0 && (
+      {totalContents > 0 && (
         <div className="flex items-center justify-end">
-          <span className="text-xs text-text-muted">(총 {totalExtractions}개)</span>
-          <span className="text-xs text-text-muted">(총 {totalExtractions}개)</span>
+          <span className="text-xs text-text-muted">(총 {totalContents}개)</span>
         </div>
       )}
 
       {/* 콘텐츠 목록 */}
-      {filtered.length > 0 ? (
+      {totalContents > 0 ? (
         <div className="space-y-2">
-          {filtered.map((item, idx) => {
+          {pagedContents.map((item, idx) => {
             const channel = channelConfig[item.channel] || channelConfig.all
             const ChannelIcon = channel.icon
             const statusCfg = uploadStatusConfig[item.uploadStatus] || uploadStatusConfig.not_uploaded
@@ -379,14 +389,14 @@ export default function ContentPage() {
             )
           })}
           {/* 페이지 네비게이션 */}
-          {totalExtractions > pageSize && (
+          {totalContents > pageSize && (
             <div className="flex items-center justify-center gap-1 pt-4">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >이전</button>
-              {Array.from({ length: Math.ceil(totalExtractions / pageSize) }, (_, i) => i + 1).map(page => (
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
                 <button
                   key={page}
                   onClick={() => setCurrentPage(page)}
@@ -398,8 +408,8 @@ export default function ContentPage() {
                 >{page}</button>
               ))}
               <button
-                onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalExtractions / pageSize), p + 1))}
-                disabled={currentPage >= Math.ceil(totalExtractions / pageSize)}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
                 className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >다음</button>
             </div>

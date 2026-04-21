@@ -1,5 +1,7 @@
 import { supabase, BUCKETS } from './supabase'
 
+const EXTRACTION_LIST_COLUMNS = 'id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo'
+
 // ===== Helpers =====
 const b64ToBlob = (dataUrl) => {
   if (!dataUrl?.startsWith?.('data:')) return null
@@ -162,7 +164,7 @@ export async function saveExtraction(data) {
 export async function getExtractions() {
   const { data, error } = await supabase
     .from('extractions')
-    .select('id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo')
+    .select(EXTRACTION_LIST_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(50)
   if (error) {
@@ -173,12 +175,38 @@ export async function getExtractions() {
 }
 
 // 페이지네이션: 필요한 페이지만 조회
+export async function getAllExtractions() {
+  const batchSize = 100
+  const items = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('extractions')
+      .select(EXTRACTION_LIST_COLUMNS)
+      .order('created_at', { ascending: false })
+      .range(from, from + batchSize - 1)
+
+    if (error) {
+      console.error('[Supabase getAllExtractions] ?ㅽ뙣:', error)
+      return []
+    }
+
+    items.push(...data.map(rowToItem))
+
+    if (data.length < batchSize) break
+    from += batchSize
+  }
+
+  return items
+}
+
 export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
   const { data, error, count } = await supabase
     .from('extractions')
-    .select('id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo', { count: 'exact' })
+    .select(EXTRACTION_LIST_COLUMNS, { count: 'exact' })
     .order('created_at', { ascending: false })
     .range(from, to)
   if (error) {

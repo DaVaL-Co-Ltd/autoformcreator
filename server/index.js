@@ -1196,7 +1196,7 @@ app.post('/api/naver/publish', async (req, res) => {
   try {
     const { title, content, tags } = req.body
     if (!title || !content) return res.status(400).json({ success: false, error: 'title, content 필수' })
-    const { uploadToNaverBlog } = require('./services/naver-blog')
+    const { uploadToNaverBlog } = await import('./services/naver-blog.js')
     const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
     res.json({ success: true, url: result.url })
   } catch (err) {
@@ -1679,7 +1679,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
           if (!title || !content) throw new Error('블로그 제목/본문이 없습니다')
 
-          const { uploadToNaverBlog } = require('./services/naver-blog')
+          const { uploadToNaverBlog } = await import('./services/naver-blog.js')
           const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
           uploadResult = { url: result.url }
 
