@@ -25,31 +25,14 @@ export async function uploadToBlog(extractionId) {
   const blog = ext.data?.blogContent || ext.blogContent
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
-  const formData = new FormData()
-  formData.append('title', blog.title || '제목 없음')
-  formData.append('content', stripMarkdown(blog.body || blog.content || ''))
-  formData.append('tags', JSON.stringify(blog.tags || blog.hashtags || []))
-  formData.append('showBrowser', 'false')
+  const title = blog.title || '제목 없음'
+  const content = stripMarkdown(blog.body || blog.content || '')
+  const tags = blog.tags || blog.hashtags || []
 
-  const images = ext.data?.blogImages || ext.blogImages || []
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i]
-    const imgUrl = img?.url || img?.src
-    if (!imgUrl) continue
-    try {
-      const r = await fetch(imgUrl)
-      if (!r.ok) continue
-      const blob = await r.blob()
-      const ext = (blob.type.split('/')[1] || 'png').split('+')[0]
-      formData.append('photos', blob, `image_${i + 1}.${ext}`)
-    } catch (err) {
-      console.warn(`[uploadToBlog] 이미지 ${i + 1} 다운로드 실패:`, err.message)
-    }
-  }
-
-  const res = await fetch(`${UPLOAD_BLOG_SERVER}/api/upload`, {
+  const res = await fetch(`${API_BASE}/api/naver/publish`, {
     method: 'POST',
-    body: formData,
+    headers: apiHeaders(),
+    body: JSON.stringify({ title, content, tags }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok || !data.success) {

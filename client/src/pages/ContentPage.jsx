@@ -299,7 +299,6 @@ export default function ContentPage() {
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className={`text-[11px] font-semibold ${channel.color}`}>{channel.label}</span>
                       {item.cards && <span className="text-[11px] text-text-muted">{item.cards}장</span>}
-                      {item.duration && <span className="text-[11px] text-text-muted">{item.duration}</span>}
                     </div>
                     <h4 className="text-sm font-medium text-text truncate hover:text-primary-light transition-colors">{item.title}</h4>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -339,7 +338,7 @@ export default function ContentPage() {
                           {isUploading ? (
                             <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> 업로드 중...</>
                           ) : (
-                            <><Upload size={13} /> 업로드</>
+                            <><Upload size={13} /> 즉시 업로드</>
                           )}
                         </button>
                       </>

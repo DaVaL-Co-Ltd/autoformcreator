@@ -1191,6 +1191,20 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
   return pub?.publicUrl
 }
 
+// ===== Naver Blog Publish (Playwright) =====
+app.post('/api/naver/publish', async (req, res) => {
+  try {
+    const { title, content, tags } = req.body
+    if (!title || !content) return res.status(400).json({ success: false, error: 'title, content 필수' })
+    const { uploadToNaverBlog } = require('./services/naver-blog')
+    const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
+    res.json({ success: true, url: result.url })
+  } catch (err) {
+    console.error('[Naver Blog] 업로드 실패:', err.message)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 app.post('/api/instagram/publish', async (req, res) => {
   try {
     const { imageUrls = [], caption } = req.body
@@ -1625,7 +1639,40 @@ app.post('/api/scheduled/run', async (req, res) => {
           uploadResult = { url: `https://youtu.be/${response.data.id}`, videoId: response.data.id }
 
         } else if (item.platform === 'blog' || item.platform === 'naver') {
-          throw new Error('네이버 블로그 서버 업로드 미구현 (브라우저 기반)')
+          const c = item.content || {}
+          let title = c.title
+          let content = c.body || c.content
+          let tags = c.tags
+
+          // extraction에서 블로그 콘텐츠 조회
+          if ((!title || !content) && item.extraction_id) {
+            const { data: ext } = await supabaseAdmin
+              .from('extractions')
+              .select('blog_content')
+              .eq('id', item.extraction_id)
+              .maybeSingle()
+            const blog = ext?.blog_content
+            if (blog) {
+              title = title || blog.title
+              content = content || (blog.body || blog.content || '')
+                .replace(/```[\s\S]*?```/g, '')
+                .replace(/^#{1,6}\s+/gm, '')
+                .replace(/\*\*([^*]+)\*\*/g, '$1')
+                .replace(/\*([^*]+)\*/g, '$1')
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                .replace(/`([^`]+)`/g, '$1')
+                .replace(/^>\s+/gm, '')
+                .replace(/^[-*]\s+/gm, '• ')
+                .trim()
+              tags = tags || blog.tags || blog.hashtags || []
+            }
+          }
+
+          if (!title || !content) throw new Error('블로그 제목/본문이 없습니다')
+
+          const { uploadToNaverBlog } = require('./services/naver-blog')
+          const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
+          uploadResult = { url: result.url }
 
         } else if (item.platform === 'instagram') {
           const c = item.content || {}
