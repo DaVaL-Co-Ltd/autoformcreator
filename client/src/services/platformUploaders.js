@@ -22,20 +22,31 @@ export async function uploadToBlog(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
-  const blog = ext.data?.blogContent || ext.blogContent
+  const blog = ext.data?.blogContent || ext.blogContent || ext.blog_content
+  console.log('[uploadToBlog] blog 구조:', blog)
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
-  const title = blog.title || '제목 없음'
-  // sections 배열을 하나의 본문으로 합치기
+  const title = blog.title || blog.uploadTitle || '제목 없음'
+  // 여러 구조 대응: body / content / sections 배열
   let rawContent = blog.body || blog.content || ''
   if (!rawContent && Array.isArray(blog.sections)) {
     rawContent = blog.sections.map(s => {
-      const heading = s.heading ? `${s.heading}\n` : ''
+      const heading = s.heading ? `## ${s.heading}\n\n` : ''
       const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
-      const body = s.content || ''
+      const body = s.content || s.body || ''
       return `${heading}${keyPhrase}${body}`
-    }).join('\n\n---\n\n')
+    }).join('\n\n')
   }
+  if (!rawContent && blog.summary) {
+    rawContent = blog.summary
+  }
+
+  console.log('[uploadToBlog] title:', title, 'content length:', rawContent.length)
+
+  if (!title || !rawContent) {
+    throw new Error(`블로그 제목 또는 본문 없음 (title: "${title}", content length: ${rawContent.length})`)
+  }
+
   const content = stripMarkdown(rawContent)
   const tags = blog.tags || blog.hashtags || []
 
