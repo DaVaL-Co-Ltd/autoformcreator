@@ -24,3 +24,7 @@ client/public/scene*-bg.png
 client/public/shorts-combined.html
 client/public/test*.mp4
 output/
+
+# 네이버 세션 쿠키 (절대 커밋 금지)
+tools/naver-cookies.json
+
