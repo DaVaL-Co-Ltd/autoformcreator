@@ -144,7 +144,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 개요 통계 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full">
         {overviewStats.map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className="bg-surface rounded-xl border border-border p-4 hover:border-primary/20 transition-colors">
             <div className="flex items-center justify-between mb-2">
