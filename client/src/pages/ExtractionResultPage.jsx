@@ -11,7 +11,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { marked } from 'marked'
-import { saveExtraction, getExtractions, loadImages, updateUploadStatus } from '../services/storage'
+import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
@@ -55,7 +55,11 @@ const footerLinkMeta = {
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const state = location.state || {}
+  const [resolvedState, setResolvedState] = useState(location.state || null)
+  const [isPageLoading, setIsPageLoading] = useState(
+    Boolean(location.state?.fromContents && location.state?.extractionId)
+  )
+  const state = resolvedState || location.state || {}
   const dataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
@@ -86,6 +90,53 @@ export default function ExtractionResultPage() {
     instagram: { name: '인스타그램', icon: '📷', color: 'text-pink-400', bg: 'bg-pink-400/10' },
     shorts: { name: '유튜브 숏츠', icon: '▶️', color: 'text-red-500', bg: 'bg-red-500/10' },
   }
+
+  useEffect(() => {
+    const stateData = location.state || null
+    let cancelled = false
+
+    if (!stateData) {
+      setResolvedState(null)
+      setIsPageLoading(false)
+      return () => { cancelled = true }
+    }
+
+    if (!stateData.fromContents || !stateData.extractionId) {
+      setResolvedState(stateData)
+      setIsPageLoading(false)
+      return () => { cancelled = true }
+    }
+
+    setIsPageLoading(true)
+
+    ;(async () => {
+      try {
+        const extraction = await getExtractionById(stateData.extractionId)
+        if (cancelled) return
+
+        if (extraction?.data) {
+          setResolvedState({
+            ...extraction.data,
+            activeChannel: stateData.activeChannel,
+            extractionId: stateData.extractionId,
+            uploadStatus: stateData.uploadStatus || extraction.uploadStatus || {},
+            fromContents: true,
+          })
+        } else {
+          setResolvedState(stateData)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[ExtractionResultPage 상세 데이터 복원 실패]', err)
+          setResolvedState(stateData)
+        }
+      } finally {
+        if (!cancelled) setIsPageLoading(false)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [location.state])
 
   const handleUpload = async (channel) => {
     setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
@@ -327,7 +378,7 @@ export default function ExtractionResultPage() {
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
     fileName, fileBase64,
-  } = location.state || {}
+  } = state
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
@@ -335,21 +386,10 @@ export default function ExtractionResultPage() {
 
   // blogImages / shorts 미디어가 없으면 Supabase에서 불러오기
   useEffect(() => {
-    const stateData = location.state
-    if (!stateData) return
-    let cancelled = false
-    ;(async () => {
-      const extractions = await getExtractions()
-      const match = extractions.find(e => e.fileName === stateData.fileName)
-      if (!match?.data || cancelled) return
-
-      if (!blogImages?.length && match.data.blogImages?.length) {
-        setBlogImages(match.data.blogImages)
-      }
-    })()
-    return () => { cancelled = true }
-
-  }, [])
+    setBlogImages(initialBlogImages || null)
+    setShortsVideo(initialShortsVideo || null)
+    setShortsNarration(initialShortsNarration || null)
+  }, [initialBlogImages, initialShortsVideo, initialShortsNarration])
 
   // 블로그 이미지 HTML → PNG 변환
   const convertBlogImagesToPng = async () => {
@@ -522,9 +562,9 @@ export default function ExtractionResultPage() {
   // 기존 추출 결과에서 왔으면 id와 uploadStatus를 location.state에서 가져옴
   const [scheduleInfo, setScheduleInfo] = useState({}) // { [channel]: { scheduledAt } }
   useEffect(() => {
-    if (location.state?.extractionId) setExtractionId(location.state.extractionId)
-    if (location.state?.uploadStatus) {
-      const storedStatus = location.state.uploadStatus
+    if (state?.extractionId) setExtractionId(state.extractionId)
+    if (state?.uploadStatus) {
+      const storedStatus = state.uploadStatus
       const statusMap = {}
       const schedMap = {}
       Object.keys(storedStatus).forEach(ch => {
@@ -540,7 +580,7 @@ export default function ExtractionResultPage() {
       if (Object.keys(statusMap).length) setUploadStatus(prev => ({ ...prev, ...statusMap }))
       if (Object.keys(schedMap).length) setScheduleInfo(prev => ({ ...prev, ...schedMap }))
     }
-  }, [location.state])
+  }, [state])
 
   // extractionId가 있으면 서버에서 예약 정보 다시 불러오기 (새로고침 후 복원)
   useEffect(() => {
@@ -577,7 +617,27 @@ export default function ExtractionResultPage() {
     }
   }, [activeMenu, instagramContent])
 
-  if (!location.state) {
+  useEffect(() => {
+    const nextDataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
+    const nextMenu = state.activeChannel && nextDataMap[state.activeChannel]
+      ? state.activeChannel
+      : menuItems.find(m => nextDataMap[m.id])?.id || 'blog'
+    setActiveMenu(prev => (nextDataMap[prev] ? prev : nextMenu))
+  }, [state])
+
+  if (isPageLoading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 size={40} className="mx-auto text-primary animate-spin mb-4" />
+          <h2 className="text-xl font-semibold text-text mb-2">콘텐츠 불러오는 중</h2>
+          <p className="text-text-muted">상세보기용 콘텐츠 데이터를 먼저 복원하고 있습니다.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!state || Object.keys(state).length === 0) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="text-center">
@@ -1129,9 +1189,9 @@ export default function ExtractionResultPage() {
     <div className="space-y-6 max-w-7xl mx-auto w-full">
       <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
-          onClick={() => navigate(location.state?.fromContents ? '/contents' : '/extraction')}
+          onClick={() => navigate(state?.fromContents ? '/contents' : '/extraction')}
           className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors shrink-0"
-          title={location.state?.fromContents ? '콘텐츠 관리로 돌아가기' : '콘텐츠 추출로 돌아가기'}
+          title={state?.fromContents ? '콘텐츠 관리로 돌아가기' : '콘텐츠 추출로 돌아가기'}
         >
           <ArrowLeft size={18} />
         </button>
@@ -1279,7 +1339,7 @@ export default function ExtractionResultPage() {
           let id = extractionId
           if (!id) {
             try {
-              id = await saveExtraction(location.state || {})
+              id = await saveExtraction(state || {})
               setExtractionId(id)
             } catch (err) {
               alert(`콘텐츠 저장 실패: ${err.message}`)
