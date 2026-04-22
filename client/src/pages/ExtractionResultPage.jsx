@@ -17,6 +17,7 @@ import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformF
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -30,6 +31,18 @@ const ensureTagArray = (value) => {
 }
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
+const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
+const BLOG_IMAGE_CAPTURE_TIMEOUT_MS = 15000
+const BLOG_UPLOAD_REQUEST_TIMEOUT_MS = 120000
+const API_RESPONSE_TIMEOUT_MS = 10000
+
+async function captureElementPng(el, label) {
+  return withTimeout(
+    () => domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }),
+    BLOG_IMAGE_CAPTURE_TIMEOUT_MS,
+    label
+  )
+}
 
 function formatBlogUploadError(data, fallbackMessage) {
   const message = getApiErrorMessage(data, fallbackMessage)
@@ -153,7 +166,7 @@ export default function ExtractionResultPage() {
           pngUrls = []
           for (const el of refs) {
             try {
-              const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+              const url = await captureElementPng(el, `Blog image capture ${pngUrls.length + 1}`)
               pngUrls.push(url)
             } catch { pngUrls.push(null) }
           }
@@ -166,14 +179,14 @@ export default function ExtractionResultPage() {
         let response
         if (USE_REMOTE_BLOG_PUBLISH) {
           const remoteContent = content.replace(/\[IMG:\d+\]\s*/g, '').trim()
-          response = await fetch(`${API_BASE}/api/naver/publish`, {
+          response = await fetchWithTimeout(`${API_BASE}/api/naver/publish`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'x-app-secret': import.meta.env.VITE_API_SECRET || '',
             },
             body: JSON.stringify({ title, content: remoteContent, tags }),
-          })
+          }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
         } else {
           const formData = new FormData()
           formData.append('title', title)
@@ -184,18 +197,23 @@ export default function ExtractionResultPage() {
           for (let i = 0; i < pngUrls.length; i++) {
             const url = pngUrls[i]
             if (!url) continue
-            const res = await fetch(url)
+            const res = await fetchWithTimeout(url, {}, BLOG_IMAGE_CAPTURE_TIMEOUT_MS, `Blog image fetch ${i + 1}`)
             const blob = await res.blob()
             formData.append('photos', new File([blob], `section_${i + 1}.png`, { type: 'image/png' }))
           }
 
-          response = await fetch(`${BLOG_UPLOAD_SERVER}/api/upload`, {
+          response = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
+            headers: BLOG_UPLOAD_HEADERS,
             method: 'POST',
             body: formData,
-          })
+          }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request')
         }
 
-        const data = await readApiResponse(response)
+        const data = await withTimeout(
+          () => readApiResponse(response),
+          API_RESPONSE_TIMEOUT_MS,
+          'Upload response parsing'
+        )
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
           setBlogUploadResult({
@@ -228,22 +246,26 @@ export default function ExtractionResultPage() {
         }
         if (!urls.length) {
           // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한번 직접 변환
-          urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async el => {
-            try { return await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }) } catch { return null }
+          urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async (el, index) => {
+            try { return await captureElementPng(el, `Instagram image capture ${index + 1}`) } catch { return null }
           }))).filter(Boolean)
         }
         if (!urls.length) throw new Error('인스타그램 카드 이미지가 없습니다. 먼저 인스타그램 탭을 열어주세요.')
         const formatted = formatInstagramRequest(instagramContent, urls)
         console.log('[ExtractionResultPage] 인스타그램 업로드 요청:', formatted)
-        const response = await fetch(`${API_BASE}/api/instagram/publish`, {
+        const response = await fetchWithTimeout(`${API_BASE}/api/instagram/publish`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-app-secret': import.meta.env.VITE_API_SECRET || '',
           },
           body: JSON.stringify(formatted),
-        })
-        const data = await readApiResponse(response)
+        }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Instagram upload request')
+        const data = await withTimeout(
+          () => readApiResponse(response),
+          API_RESPONSE_TIMEOUT_MS,
+          'Instagram upload response parsing'
+        )
         if (data.success) {
           setUploadStatus(p => ({ ...p, instagram: 'done' }))
           if (extractionId) {
@@ -275,15 +297,19 @@ export default function ExtractionResultPage() {
         }
         const formatted = formatYouTubeRequest(shortsScript, absVideoUrl)
         console.log('[ExtractionResultPage] 유튜브 숏츠 업로드 요청:', formatted)
-        const response = await fetch(`${API_BASE}/api/youtube/upload`, {
+        const response = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'x-app-secret': import.meta.env.VITE_API_SECRET || '',
           },
           body: JSON.stringify(formatted),
-        })
-        const data = await readApiResponse(response)
+        }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'YouTube upload request')
+        const data = await withTimeout(
+          () => readApiResponse(response),
+          API_RESPONSE_TIMEOUT_MS,
+          'YouTube upload response parsing'
+        )
         if (data.success) {
           setUploadStatus(p => ({ ...p, shorts: 'done' }))
           const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
@@ -317,11 +343,7 @@ export default function ExtractionResultPage() {
     setDownloading(true)
     try {
       const captureElement = async (el, filename) => {
-        const dataUrl = await domToPng(el, {
-          scale: 2,
-          quality: 1,
-          fetchOptions: { mode: 'cors' },
-        })
+        const dataUrl = await captureElementPng(el, `Download capture ${filename}`)
         const link = document.createElement('a')
         link.download = filename
         link.href = dataUrl
@@ -383,6 +405,10 @@ export default function ExtractionResultPage() {
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
+  const shortsVideoRef = useRef(null)
+  const shortsAudioRefs = useRef([])
+  const [currentScene, setCurrentScene] = useState(-1)
+  const playingSceneRef = useRef(-1)
 
   // blogImages / shorts 미디어가 없으면 Supabase에서 불러오기
   useEffect(() => {
@@ -398,7 +424,7 @@ export default function ExtractionResultPage() {
     const urls = []
     for (const el of refs) {
       try {
-        const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+        const url = await captureElementPng(el, `Blog image preload ${urls.length + 1}`)
         urls.push(url)
       } catch { urls.push(null) }
     }
@@ -417,7 +443,7 @@ export default function ExtractionResultPage() {
       const el = instaCardsRef.current[i]
       if (!el) { urls.push(null); continue }
       try {
-        const url = await domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } })
+        const url = await captureElementPng(el, `Instagram image preload ${i + 1}`)
         urls.push(url)
       } catch { urls.push(null) }
     }
@@ -1030,11 +1056,6 @@ export default function ExtractionResultPage() {
       </div>
     </div>
   )
-
-  const shortsVideoRef = useRef(null)
-  const shortsAudioRefs = useRef([])
-  const [currentScene, setCurrentScene] = useState(-1)
-  const playingSceneRef = useRef(-1)
 
   const combinedVideoUrl = shortsVideo?.combinedVideoUrl
   const sceneTimings = shortsVideo?.sceneTimings || []

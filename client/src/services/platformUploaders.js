@@ -1,12 +1,16 @@
 import { getExtractionById } from './storage'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${UPLOAD_BLOG_SERVER}/api/upload`
+const BLOG_UPLOAD_REQUEST_TIMEOUT_MS = 120000
+const API_RESPONSE_TIMEOUT_MS = 10000
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', 'x-app-secret': API_SECRET, ...extra })
 const blogHeaders = { 'x-autoform-client': 'web-client' }
@@ -53,7 +57,7 @@ export async function uploadToBlog(extractionId) {
   const normalizedTags = (blog.tags || blog.hashtags || []).map(tag => String(tag).replace(/^#/, ''))
 
   if (USE_REMOTE_BLOG_PUBLISH) {
-    const remoteRes = await fetch(`${API_BASE}/api/naver/publish`, {
+    const remoteRes = await fetchWithTimeout(`${API_BASE}/api/naver/publish`, {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({
@@ -61,9 +65,9 @@ export async function uploadToBlog(extractionId) {
         content: normalizedContent,
         tags: normalizedTags,
       }),
-    })
+    }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Remote blog upload request')
 
-    const remoteData = await readApiResponse(remoteRes)
+    const remoteData = await withTimeout(() => readApiResponse(remoteRes), API_RESPONSE_TIMEOUT_MS, 'Remote upload response parsing')
     if (!remoteRes.ok || !remoteData.success) {
       throw new Error(`${getApiErrorMessage(remoteData, `네이버 블로그 업로드 실패 (${remoteRes.status})`)} [source=${remoteData?.source || BLOG_UPLOAD_SOURCE} endpoint=${remoteData?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
     }
@@ -84,7 +88,7 @@ export async function uploadToBlog(extractionId) {
     if (!imgUrl) continue
 
     try {
-      const response = await fetch(imgUrl)
+      const response = await fetchWithTimeout(imgUrl, {}, MEDIA_DOWNLOAD_TIMEOUT_MS, `Blog image download ${i + 1}`)
       if (!response.ok) continue
       const blob = await response.blob()
       const extName = (blob.type.split('/')[1] || 'png').split('+')[0]
@@ -94,15 +98,15 @@ export async function uploadToBlog(extractionId) {
     }
   }
 
-  const res = await fetch(`${UPLOAD_BLOG_SERVER}/api/upload`, {
+  const res = await fetchWithTimeout(`${UPLOAD_BLOG_SERVER}/api/upload`, {
     method: 'POST',
     headers: blogHeaders,
     body: formData,
-  }).catch(() => {
+  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request').catch(() => {
     throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요. [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
   })
 
-  const data = await readApiResponse(res)
+  const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'Desktop helper response parsing')
   if (!res.ok || !data.success) {
     throw new Error(`${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`)} [source=${data?.source || BLOG_UPLOAD_SOURCE} endpoint=${data?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
   }
@@ -145,13 +149,13 @@ export async function uploadToYoutube(extractionId) {
     videoUrl: video.url?.startsWith('/output/') && API_BASE ? `${API_BASE}${video.url}` : video.url,
   }
 
-  const res = await fetch(`${API_BASE}/api/youtube/upload`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
     method: 'POST',
     headers: apiHeaders(),
     body: JSON.stringify(requestBody),
-  })
+  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'YouTube upload request')
 
-  const data = await readApiResponse(res)
+  const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'YouTube upload response parsing')
   if (!res.ok || !data.success) {
     throw new Error(getApiErrorMessage(data, `YouTube 업로드 실패 (${res.status})`))
   }
@@ -172,13 +176,13 @@ export async function uploadToInstagram(extractionId) {
   const hashtags = (igContent.hashtags || []).map(tag => String(tag).startsWith('#') ? tag : `#${tag}`).join(' ')
   const caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
 
-  const res = await fetch(`${API_BASE}/api/instagram/publish`, {
+  const res = await fetchWithTimeout(`${API_BASE}/api/instagram/publish`, {
     method: 'POST',
     headers: apiHeaders(),
     body: JSON.stringify({ imageUrls: images.slice(0, 1), caption }),
-  })
+  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Instagram upload request')
 
-  const data = await readApiResponse(res)
+  const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'Instagram upload response parsing')
   if (!res.ok || !data.success) {
     throw new Error(getApiErrorMessage(data, `인스타그램 업로드 실패 (${res.status})`))
   }
