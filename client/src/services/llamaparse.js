@@ -1,6 +1,7 @@
 import { callGeminiWithFallback } from './gemini-core'
 
-const LLAMAPARSE_PROXY = 'http://localhost:3001/api/llamaparse'
+const API_BASE = import.meta.env.VITE_SERVER_URL || ''
+const LLAMAPARSE_PROXY = `${API_BASE}/api/llamaparse`
 
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY

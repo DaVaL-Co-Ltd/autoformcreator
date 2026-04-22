@@ -1,9 +1,13 @@
 import { getExtractionById } from './storage'
+import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer'
+import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
-const UPLOAD_BLOG_SERVER = import.meta.env.VITE_UPLOAD_BLOG_SERVER || 'http://localhost:3000'
+const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
+const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', 'x-app-secret': API_SECRET, ...extra })
+const blogHeaders = { 'x-autoform-client': 'web-client' }
 
 function stripMarkdown(md) {
   return (md || '')
@@ -14,51 +18,93 @@ function stripMarkdown(md) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/^>\s+/gm, '')
-    .replace(/^[-*]\s+/gm, '• ')
+    .replace(/^[-*]\s+/gm, '??')
     .trim()
 }
 
+// 네이버 블로그는 본인 PC에서 실행 중인 로컬 RPA 서버(localhost:3000)로 직접 요청한다.
+// Oracle/legacy remote upload server path is intentionally disabled during Render/Vercel-only testing.
 export async function uploadToBlog(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
   const blog = ext.data?.blogContent || ext.blogContent || ext.blog_content
-  console.log('[uploadToBlog] blog 구조:', blog)
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
   const title = blog.title || blog.uploadTitle || '제목 없음'
-  // 여러 구조 대응: body / content / sections 배열
   let rawContent = blog.body || blog.content || ''
   if (!rawContent && Array.isArray(blog.sections)) {
-    rawContent = blog.sections.map(s => {
-      const heading = s.heading ? `## ${s.heading}\n\n` : ''
-      const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
-      const body = s.content || s.body || ''
+    rawContent = blog.sections.map(section => {
+      const heading = section.heading ? `## ${section.heading}\n\n` : ''
+      const keyPhrase = section.keyPhrase ? `${section.keyPhrase}\n\n` : ''
+      const body = section.content || section.body || ''
       return `${heading}${keyPhrase}${body}`
     }).join('\n\n')
   }
-  if (!rawContent && blog.summary) {
-    rawContent = blog.summary
-  }
-
-  console.log('[uploadToBlog] title:', title, 'content length:', rawContent.length)
+  if (!rawContent && blog.summary) rawContent = blog.summary
 
   if (!title || !rawContent) {
-    throw new Error(`블로그 제목 또는 본문 없음 (title: "${title}", content length: ${rawContent.length})`)
+    throw new Error('블로그 제목 또는 본문이 없습니다')
   }
 
-  const content = stripMarkdown(rawContent)
-  const tags = blog.tags || blog.hashtags || []
+  const normalizedContent = stripMarkdown(rawContent)
+  const normalizedTags = (blog.tags || blog.hashtags || []).map(tag => String(tag).replace(/^#/, ''))
 
-  const res = await fetch(`${API_BASE}/api/naver/publish`, {
+  if (USE_REMOTE_BLOG_PUBLISH) {
+    const remoteRes = await fetch(`${API_BASE}/api/naver/publish`, {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        title,
+        content: normalizedContent,
+        tags: normalizedTags,
+      }),
+    })
+
+    const remoteData = await readApiResponse(remoteRes)
+    if (!remoteRes.ok || !remoteData.success) {
+      throw new Error(getApiErrorMessage(remoteData, `네이버 블로그 업로드 실패 (${remoteRes.status})`))
+    }
+
+    return { url: remoteData.url }
+  }
+
+  const formData = new FormData()
+  formData.append('title', title)
+  formData.append('content', normalizedContent)
+  formData.append('tags', JSON.stringify(normalizedTags))
+  formData.append('showBrowser', 'false')
+
+  const images = ext.data?.blogImages || ext.blogImages || []
+  for (let i = 0; i < images.length; i += 1) {
+    const img = images[i]
+    const imgUrl = img?.url || img?.src
+    if (!imgUrl) continue
+
+    try {
+      const response = await fetch(imgUrl)
+      if (!response.ok) continue
+      const blob = await response.blob()
+      const extName = (blob.type.split('/')[1] || 'png').split('+')[0]
+      formData.append('photos', blob, `image_${i + 1}.${extName}`)
+    } catch (err) {
+      console.warn(`[uploadToBlog] 이미지 ${i + 1} 다운로드 실패:`, err.message)
+    }
+  }
+
+  const res = await fetch(`${UPLOAD_BLOG_SERVER}/api/upload`, {
     method: 'POST',
-    headers: apiHeaders(),
-    body: JSON.stringify({ title, content, tags }),
+    headers: blogHeaders,
+    body: formData,
+  }).catch(() => {
+    throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요.`)
   })
-  const data = await res.json().catch(() => ({}))
+
+  const data = await readApiResponse(res)
   if (!res.ok || !data.success) {
-    throw new Error(data.error || `네이버 블로그 업로드 실패 (${res.status})`)
+    throw new Error(getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`))
   }
+
   return { url: data.url }
 }
 
@@ -68,20 +114,22 @@ export async function uploadToYoutube(extractionId) {
 
   const video = ext.data?.shortsVideo || ext.shortsVideo
   const script = ext.data?.shortsScript || ext.shortsScript
-  if (!video?.url) throw new Error('숏폼 영상이 없습니다')
+  if (!video?.url) throw new Error('쇼츠 영상이 없습니다')
 
-  const rawTitle = script?.uploadTitle || script?.title || ext.fileName || '숏폼 영상'
+  const rawTitle = script?.uploadTitle || script?.title || ext.fileName || '쇼츠 영상'
   const title = rawTitle.includes('#Shorts') ? rawTitle.slice(0, 100) : `${rawTitle} #Shorts`.slice(0, 100)
 
   const descParts = []
   if (script?.hook) descParts.push(script.hook)
   if (Array.isArray(script?.scenes)) {
-    script.scenes.forEach((s, i) => s.narration && descParts.push(`${i + 1}. ${s.narration}`))
+    script.scenes.forEach((scene, index) => {
+      if (scene.narration) descParts.push(`${index + 1}. ${scene.narration}`)
+    })
   }
   if (script?.cta) descParts.push(`\n${script.cta}`)
   const description = (script?.uploadDescription || descParts.join('\n') || '').slice(0, 5000)
 
-  const rawTags = (script?.hashtags || script?.tags || []).map(t => String(t).replace(/^#/, ''))
+  const rawTags = (script?.hashtags || script?.tags || []).map(tag => String(tag).replace(/^#/, ''))
   if (!rawTags.includes('Shorts')) rawTags.unshift('Shorts')
 
   const requestBody = {
@@ -92,7 +140,7 @@ export async function uploadToYoutube(extractionId) {
       categoryId: '22',
     },
     status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
-    videoUrl: video.url,
+    videoUrl: video.url?.startsWith('/output/') && API_BASE ? `${API_BASE}${video.url}` : video.url,
   }
 
   const res = await fetch(`${API_BASE}/api/youtube/upload`, {
@@ -100,10 +148,12 @@ export async function uploadToYoutube(extractionId) {
     headers: apiHeaders(),
     body: JSON.stringify(requestBody),
   })
-  const data = await res.json().catch(() => ({}))
+
+  const data = await readApiResponse(res)
   if (!res.ok || !data.success) {
-    throw new Error(data.error || `YouTube 업로드 실패 (${res.status})`)
+    throw new Error(getApiErrorMessage(data, `YouTube 업로드 실패 (${res.status})`))
   }
+
   return { url: data.url, videoId: data.videoId }
 }
 
@@ -111,11 +161,13 @@ export async function uploadToInstagram(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
-  const images = ((ext.data?.instagramImages || ext.instagramImages) || []).map(img => img?.url || img?.imageUrl).filter(Boolean)
+  const images = ((ext.data?.instagramImages || ext.instagramImages) || [])
+    .map(img => img?.url || img?.imageUrl)
+    .filter(Boolean)
   if (!images.length) throw new Error('인스타그램 이미지가 없습니다')
 
   const igContent = ext.data?.instagramContent || ext.instagramContent || {}
-  const hashtags = (igContent.hashtags || []).map(t => String(t).startsWith('#') ? t : `#${t}`).join(' ')
+  const hashtags = (igContent.hashtags || []).map(tag => String(tag).startsWith('#') ? tag : `#${tag}`).join(' ')
   const caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
 
   const res = await fetch(`${API_BASE}/api/instagram/publish`, {
@@ -123,10 +175,12 @@ export async function uploadToInstagram(extractionId) {
     headers: apiHeaders(),
     body: JSON.stringify({ imageUrls: images, caption }),
   })
-  const data = await res.json().catch(() => ({}))
+
+  const data = await readApiResponse(res)
   if (!res.ok || !data.success) {
-    throw new Error(data.error || `인스타그램 업로드 실패 (${res.status})`)
+    throw new Error(getApiErrorMessage(data, `인스타그램 업로드 실패 (${res.status})`))
   }
+
   return { url: data.permalink, mediaId: data.mediaId }
 }
 
@@ -135,5 +189,5 @@ export async function uploadToPlatform(platform, extractionId) {
   if (platform === 'shorts') return uploadToYoutube(extractionId)
   if (platform === 'instagram') return uploadToInstagram(extractionId)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')
-  throw new Error(`알 수 없는 플랫폼: ${platform}`)
+  throw new Error(`지원하지 않는 플랫폼: ${platform}`)
 }

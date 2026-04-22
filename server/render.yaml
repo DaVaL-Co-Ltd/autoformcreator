@@ -17,7 +17,13 @@ services:
         sync: false
       - key: GOOGLE_REDIRECT_URI
         sync: false
+      - key: API_SECRET
+        sync: false
       - key: ALLOWED_ORIGINS
+        sync: false
+      - key: INSTAGRAM_ACCESS_TOKEN
+        sync: false
+      - key: INSTAGRAM_BUSINESS_ID
         sync: false
       - key: SUPABASE_URL
         sync: false

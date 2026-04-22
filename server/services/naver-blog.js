@@ -1,6 +1,3 @@
-/**
- * 네이버 블로그 자동 업로드 서비스 (ES Module)
- */
 import { chromium } from 'playwright'
 import path from 'path'
 import fs from 'fs'
@@ -17,19 +14,84 @@ const BROWSER_ARGS = [
   '--disable-dev-shm-usage',
 ]
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-const randomDelay = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min
+const TITLE_TEXT = '\uC81C\uBAA9'
+const BODY_TEXT = '\uBCF8\uBB38'
+const PUBLISH_TEXT = '\uBC1C\uD589'
+const TAG_TEXT = '\uD0DC\uADF8'
+
+const TITLE_SELECTORS = [
+  '.se-section-documentTitle .se-text-paragraph',
+  `.se-placeholder:has-text("${TITLE_TEXT}")`,
+  `[placeholder*="${TITLE_TEXT}"]`,
+  '.tit_input',
+  `textarea[placeholder*="${TITLE_TEXT}"]`,
+  `input[placeholder*="${TITLE_TEXT}"]`,
+]
+
+const BODY_SELECTORS = [
+  '.se-section-text .se-text-paragraph',
+  `.se-placeholder:has-text("${BODY_TEXT}")`,
+  `[placeholder*="${BODY_TEXT}"]`,
+  '.content_input',
+]
+
+const PUBLISH_SELECTORS = [
+  '[data-click-area="tpb.publish"]',
+  `button:has-text("${PUBLISH_TEXT}")`,
+  '.btn_publish',
+  '[class*="publish"]',
+]
+
+const POPUP_ROOT_SELECTOR = '[data-group="popupLayer"]'
+const HELP_OVERLAY_ROOT_SELECTOR = '.container__HW_tc'
+const POPUP_BLOCKING_SELECTOR = '.se-popup-dim, [data-group="popupLayer"], .container__HW_tc'
+const POPUP_CLOSE_SELECTOR = '[aria-label*="\uB2EB\uAE30"], .se-popup-close, .btn_close, [class*="close"], [data-click-area*="close"]'
+const POPUP_SAFE_BUTTON_PATTERNS = [
+  /\uC0C8\s*\uAE00/,
+  /\uCDE8\uC18C/,
+  /\uB2EB\uAE30/,
+  /\uD655\uC778/,
+  /\uB098\uC911\uC5D0/,
+]
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function randomDelay(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min
+}
+
+function typeMultiline(page, text) {
+  const lines = String(text).split(/\r?\n/)
+
+  return lines.reduce(async (previous, line, index) => {
+    await previous
+    await page.keyboard.type(line, { delay: 20 })
+
+    if (index < lines.length - 1) {
+      await page.keyboard.press('Enter')
+    }
+  }, Promise.resolve())
+}
 
 function ensureDebugDir() {
-  if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true })
+  if (!fs.existsSync(DEBUG_DIR)) {
+    fs.mkdirSync(DEBUG_DIR, { recursive: true })
+  }
 }
 
 async function validateCookies() {
-  if (!fs.existsSync(COOKIES_PATH)) throw new Error('naver-cookies.json 파일이 없습니다.')
+  if (!fs.existsSync(COOKIES_PATH)) {
+    throw new Error('naver-cookies.json file is missing.')
+  }
+
   const storage = JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf8'))
-  if (!storage.cookies?.length) throw new Error('쿠키 데이터가 비어있습니다')
+  if (!storage.cookies?.length) {
+    throw new Error('Saved Naver cookies are empty.')
+  }
+
   return storage
 }
 
@@ -38,20 +100,448 @@ async function saveDebug(page, name) {
     ensureDebugDir()
     const ts = Date.now()
     await page.screenshot({ path: path.join(DEBUG_DIR, `${ts}-${name}.png`), fullPage: true })
-    const html = await page.content()
-    fs.writeFileSync(path.join(DEBUG_DIR, `${ts}-${name}.html`), html)
-    console.log(`[디버그] 스크린샷 저장: ${ts}-${name}.png`)
-  } catch (e) {
-    console.warn('스크린샷 실패:', e.message)
+    fs.writeFileSync(path.join(DEBUG_DIR, `${ts}-${name}.html`), await page.content(), 'utf8')
+    console.log(`[Naver Blog] Saved debug snapshot: ${ts}-${name}.png`)
+  } catch (error) {
+    console.warn('[Naver Blog] Failed to save debug snapshot:', error.message)
   }
 }
 
+function getEditorTargets(page) {
+  const frames = page
+    .frames()
+    .filter((frame) => frame !== page.mainFrame())
+    .sort((left, right) => {
+      const leftName = left.name() || ''
+      const rightName = right.name() || ''
+      const leftPriority = leftName === 'mainFrame' ? 0 : leftName.includes('mainFrame') ? 1 : 2
+      const rightPriority = rightName === 'mainFrame' ? 0 : rightName.includes('mainFrame') ? 1 : 2
+      return leftPriority - rightPriority
+    })
+    .map((frame, index) => ({
+      label: `frame:${frame.name() || index}`,
+      scope: frame,
+    }))
+
+  return [...frames, { label: 'page', scope: page }]
+}
+
+function isPopupInterceptionError(error) {
+  return /intercepts pointer events/i.test(error?.message || '')
+}
+
+async function evaluatePopupAction(scope) {
+  return scope.evaluate(
+    ({ closeSelector, helpRootSelector, patterns, rootSelector }) => {
+      const isVisible = (element) => {
+        if (!(element instanceof Element)) {
+          return false
+        }
+
+        const style = window.getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+      }
+
+      const isClickable = (element) => {
+        if (!(element instanceof HTMLElement)) {
+          return false
+        }
+
+        const style = window.getComputedStyle(element)
+        return isVisible(element) && style.pointerEvents !== 'none' && !element.hasAttribute('disabled')
+      }
+
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+      const popupRoots = Array.from(document.querySelectorAll(rootSelector)).filter(isVisible)
+      const helpRoots = Array.from(document.querySelectorAll(helpRootSelector))
+        .filter((root) => isVisible(root) && root.querySelector('.se-help-title'))
+
+      if (popupRoots.length === 0 && helpRoots.length === 0) {
+        return null
+      }
+
+      const roots = [...popupRoots, ...helpRoots]
+      const buttons = roots.flatMap((root) => Array.from(root.querySelectorAll('button')).filter(isClickable))
+      const compiledPatterns = patterns.map((pattern) => new RegExp(pattern, 'i'))
+
+      for (const matcher of compiledPatterns) {
+        const matchedButton = buttons.find((button) =>
+          matcher.test(normalize(button.textContent || button.getAttribute('aria-label')))
+        )
+        if (matchedButton) {
+          matchedButton.click()
+          return { action: 'button', text: normalize(matchedButton.textContent || matchedButton.getAttribute('aria-label')) }
+        }
+      }
+
+      const closeButton = roots
+        .flatMap((root) => Array.from(root.querySelectorAll(closeSelector)).filter(isClickable))
+        .find(Boolean)
+
+      if (closeButton) {
+        closeButton.click()
+        return { action: 'close' }
+      }
+
+      const dim = popupRoots
+        .flatMap((root) => Array.from(root.querySelectorAll('.se-popup-dim')).filter(isClickable))
+        .find(Boolean)
+
+      if (dim) {
+        dim.click()
+        return { action: 'dim' }
+      }
+
+      const helpRoot = helpRoots.find(Boolean)
+      if (helpRoot instanceof HTMLElement) {
+        helpRoot.style.setProperty('display', 'none', 'important')
+        helpRoot.style.setProperty('pointer-events', 'none', 'important')
+        helpRoot.setAttribute('data-autoform-dismissed', 'true')
+        return { action: 'hide-help' }
+      }
+
+      return { action: 'visible' }
+    },
+    {
+      closeSelector: POPUP_CLOSE_SELECTOR,
+      helpRootSelector: HELP_OVERLAY_ROOT_SELECTOR,
+      patterns: POPUP_SAFE_BUTTON_PATTERNS.map((pattern) => pattern.source),
+      rootSelector: POPUP_ROOT_SELECTOR,
+    }
+  )
+}
+
+async function dismissEditorPopups(page, targets = getEditorTargets(page)) {
+  const dismissals = []
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let changed = false
+
+    try {
+      await page.keyboard.press('Escape')
+      changed = true
+      await sleep(150)
+    } catch {}
+
+    for (const target of targets) {
+      try {
+        const result = await evaluatePopupAction(target.scope)
+        if (result) {
+          dismissals.push(result.text ? `${target.label}:${result.action}:${result.text}` : `${target.label}:${result.action}`)
+          changed = true
+        }
+      } catch {}
+    }
+
+    if (!changed) {
+      break
+    }
+
+    await sleep(400)
+  }
+
+  if (dismissals.length > 0) {
+    console.log(`[Naver Blog] Popup recovery actions: ${dismissals.join(', ')}`)
+  }
+}
+
+async function focusByDom(field) {
+  await field.evaluate((element) => {
+    if (!(element instanceof HTMLElement)) {
+      return
+    }
+
+    element.focus()
+    element.click?.()
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+  })
+}
+
+async function clickPublishButtonByDom(scope, which = 'first') {
+  return scope.evaluate(({ publishText, whichButton }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) {
+        return false
+      }
+
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0
+    }
+
+    const isEnabled = (element) => {
+      if (element instanceof HTMLButtonElement) {
+        return !element.disabled
+      }
+
+      return !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true'
+    }
+    const getText = (element) => normalize(element.textContent || element.getAttribute?.('aria-label') || element.getAttribute?.('value'))
+    const getClickArea = (element) => normalize(element.getAttribute?.('data-click-area'))
+    const getClassName = (element) => normalize(element.className)
+    const getCandidates = (root) => Array.from(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"], [data-click-area], [class*="publish"]'))
+      .filter((element) => element instanceof HTMLElement)
+      .filter((element) => isVisible(element) && isEnabled(element))
+      .map((element) => {
+        const text = getText(element)
+        const className = getClassName(element)
+        const clickArea = getClickArea(element)
+        const rect = element.getBoundingClientRect()
+        const lowerClass = className.toLowerCase()
+        const lowerClickArea = clickArea.toLowerCase()
+        const looksLikePublish =
+          text.includes(publishText) ||
+          lowerClass.includes('publish') ||
+          lowerClickArea.includes('publish')
+
+        return looksLikePublish ? { element, rect, text, clickArea } : null
+      })
+      .filter(Boolean)
+
+    const sortCandidates = (candidates) => candidates.sort((left, right) => {
+      if (whichButton === 'last') {
+        return right.rect.top - left.rect.top || right.rect.left - left.rect.left
+      }
+
+      return left.rect.top - right.rect.top || left.rect.left - right.rect.left
+    })
+
+    if (whichButton === 'last') {
+      const panelRoot = Array.from(document.querySelectorAll('body *'))
+        .filter((element) => element instanceof HTMLElement)
+        .filter(isVisible)
+        .find((element) => {
+          const text = normalize(element.textContent)
+          return text.includes('카테고리') && text.includes('공개 설정') && text.includes('발행 시간')
+        })
+
+      if (panelRoot) {
+        const panelRect = panelRoot.getBoundingClientRect()
+        const panelCandidates = getCandidates(panelRoot)
+          .map((candidate) => {
+            const isBottomArea = candidate.rect.top >= panelRect.top + panelRect.height * 0.65
+            const isRightArea = candidate.rect.left >= panelRect.left + panelRect.width * 0.45
+            const score =
+              (candidate.text.includes(publishText) ? 4 : 0) +
+              (candidate.clickArea.toLowerCase().includes('publish') ? 6 : 0) +
+              (String(candidate.element.tagName || '').toLowerCase() === 'button' ? 2 : 0) +
+              (isBottomArea ? 10 : 0) +
+              (isRightArea ? 6 : 0)
+
+            return { ...candidate, score }
+          })
+          .sort((left, right) => right.score - left.score || right.rect.top - left.rect.top || right.rect.left - left.rect.left)
+
+        if (panelCandidates[0]) {
+          const target = panelCandidates[0]
+          target.element.focus()
+          target.element.click()
+          target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+          return {
+            clickArea: target.clickArea,
+            text: target.text,
+            top: Math.round(target.rect.top),
+          }
+        }
+      }
+    }
+
+    const publishCandidates = sortCandidates(getCandidates(document))
+
+    const target = publishCandidates[0]
+    if (!target) {
+      return null
+    }
+
+    target.element.focus()
+    target.element.click()
+    target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+    return {
+      clickArea: target.clickArea,
+      text: target.text,
+      top: Math.round(target.rect.top),
+    }
+  }, { publishText: PUBLISH_TEXT, whichButton: which })
+}
+
+async function withPopupRecovery(page, targets, action, label, options = {}) {
+  const attempts = options.attempts || 4
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await dismissEditorPopups(page, targets)
+
+    try {
+      return await action()
+    } catch (error) {
+      if (!isPopupInterceptionError(error) || attempt === attempts) {
+        throw error
+      }
+
+      console.warn(`[Naver Blog] ${label} was blocked by a popup. Retrying (${attempt}/${attempts})`)
+      await dismissEditorPopups(page, targets)
+      await sleep(250 * attempt)
+    }
+  }
+}
+
+async function resolveWriteUrls(page) {
+  await page.goto('https://www.naver.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await sleep(randomDelay(1500, 2500))
+
+  await page.goto('https://blog.naver.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await sleep(randomDelay(2000, 3000))
+
+  const blogUrl = await page.evaluate(() => {
+    const anchor =
+      document.querySelector('a[href*="blog.naver.com/"][href*="PostList"]') ||
+      document.querySelector('a[href*="blog.naver.com/"][class*="myMenu"]') ||
+      document.querySelector('.link_my a, .my_blog a, a.link_blog_home')
+    return anchor?.href || null
+  })
+
+  return [
+    'https://blog.naver.com/GoBlogWrite.naver',
+    blogUrl ? `${blogUrl.replace(/\/+$/, '')}?Redirect=Write` : null,
+  ].filter(Boolean)
+}
+
+async function focusAndType(page, targets, selectors, text, fieldName) {
+  const attempts = []
+
+  for (const target of targets) {
+    for (const selector of selectors) {
+      try {
+        const field = target.scope.locator(selector).first()
+        await field.waitFor({ state: 'visible', timeout: 3000 })
+
+        try {
+          await withPopupRecovery(
+            page,
+            targets,
+            () => field.click({ timeout: 3000 }),
+            `${fieldName} click via ${target.label} -> ${selector}`
+          )
+        } catch (error) {
+          if (!isPopupInterceptionError(error)) {
+            throw error
+          }
+
+          await dismissEditorPopups(page, targets)
+          await focusByDom(field)
+        }
+
+        await sleep(300)
+        await typeMultiline(page, text)
+        console.log(`[Naver Blog] Filled ${fieldName} via ${target.label} -> ${selector}`)
+        return
+      } catch (error) {
+        attempts.push(`${target.label} -> ${selector}: ${error.message}`)
+      }
+    }
+  }
+
+  throw new Error(`Unable to focus ${fieldName}. ${attempts.slice(0, 6).join(' | ')}`)
+}
+
+async function clickPublishButton(page, targets, which = 'first') {
+  const attempts = []
+
+  for (const target of targets) {
+    try {
+      const button = target.scope.getByRole('button', { name: /\uBC1C\uD589/ })[which]()
+      try {
+        await withPopupRecovery(page, targets, () => button.click({ timeout: 3000 }), `publish button (${which}) via ${target.label}`)
+      } catch (error) {
+        if (!isPopupInterceptionError(error)) {
+          throw error
+        }
+
+        await dismissEditorPopups(page, targets)
+        await focusByDom(button)
+      }
+      console.log(`[Naver Blog] Clicked publish button via ${target.label} (${which})`)
+      return
+    } catch (error) {
+      attempts.push(`${target.label} -> role=button[name*=publish]: ${error.message}`)
+    }
+
+    for (const selector of PUBLISH_SELECTORS) {
+      try {
+        const button = target.scope.locator(selector)[which]()
+        try {
+          await withPopupRecovery(
+            page,
+            targets,
+            () => button.click({ timeout: 3000 }),
+            `publish button (${which}) via ${target.label} -> ${selector}`
+          )
+        } catch (error) {
+          if (!isPopupInterceptionError(error)) {
+            throw error
+          }
+
+          await dismissEditorPopups(page, targets)
+          await focusByDom(button)
+        }
+        console.log(`[Naver Blog] Clicked publish button via ${target.label} -> ${selector} (${which})`)
+        return
+      } catch (error) {
+        attempts.push(`${target.label} -> ${selector}: ${error.message}`)
+      }
+    }
+
+    try {
+      const result = await clickPublishButtonByDom(target.scope, which)
+      if (result) {
+        console.log(
+          `[Naver Blog] Clicked publish button via ${target.label} -> dom (${which}) top=${result.top} text="${result.text}" area="${result.clickArea}"`
+        )
+        return
+      }
+    } catch (error) {
+      attempts.push(`${target.label} -> dom-publish: ${error.message}`)
+    }
+  }
+
+  throw new Error(`Unable to click publish button. ${attempts.slice(0, 6).join(' | ')}`)
+}
+
+async function fillTags(page, targets, tags) {
+  if (!Array.isArray(tags) || tags.length === 0) {
+    return
+  }
+
+  for (const target of targets) {
+    try {
+      const tagInput = target.scope.locator(`input[placeholder*="${TAG_TEXT}"]`).first()
+      await withPopupRecovery(page, targets, () => tagInput.click({ timeout: 3000 }), `tag input via ${target.label}`)
+
+      for (const tag of tags.slice(0, 10)) {
+        await page.keyboard.type(String(tag), { delay: 25 })
+        await page.keyboard.press('Enter')
+        await sleep(150)
+      }
+
+      console.log(`[Naver Blog] Filled tags via ${target.label}`)
+      return
+    } catch {}
+  }
+
+  console.warn('[Naver Blog] Failed to set tags. Continuing without tags.')
+}
+
 export async function uploadToNaverBlog({ title, content, tags = [] }) {
-  if (!title) throw new Error('제목이 필요합니다')
-  if (!content) throw new Error('본문이 필요합니다')
+  if (!title) {
+    throw new Error('Title is required.')
+  }
+
+  if (!content) {
+    throw new Error('Content is required.')
+  }
 
   const storage = await validateCookies()
-
   const browser = await chromium.launch({ headless: true, args: BROWSER_ARGS })
 
   try {
@@ -69,225 +559,81 @@ export async function uploadToNaverBlog({ title, content, tags = [] }) {
     })
 
     const page = await context.newPage()
+    let currentStep = 'initialize'
 
-    // 1) 네이버 접속 → 로그인 확인
-    await page.goto('https://www.naver.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
-    await sleep(randomDelay(1500, 2500))
-
-    // 2) 블로그 작성 페이지 (본인 블로그 ID 기반으로 이동)
-    // 우선 blog.naver.com 메인에서 본인 블로그 주소 추출
-    await page.goto('https://blog.naver.com', { waitUntil: 'domcontentloaded', timeout: 30000 })
-    await sleep(randomDelay(2000, 3000))
-
-    // 본인 블로그 링크 찾기 (예: https://blog.naver.com/BLOG_ID)
-    const blogUrl = await page.evaluate(() => {
-      const anchor = document.querySelector('a[href*="blog.naver.com/"][href*="PostList"]')
-        || document.querySelector('a[href*="blog.naver.com/"][class*="myMenu"]')
-        || document.querySelector('.link_my a, .my_blog a, a.link_blog_home')
-      return anchor?.href || null
-    })
-
-    // 바로 글쓰기 페이지 시도
-    const writeUrls = [
-      'https://blog.naver.com/GoBlogWrite.naver',
-      blogUrl ? `${blogUrl.replace(/\/+$/, '')}?Redirect=Write` : null,
-    ].filter(Boolean)
-
-    let loadedUrl = null
-    for (const url of writeUrls) {
-      try {
-        console.log(`[Naver Blog] 페이지 시도: ${url}`)
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 })
-        await sleep(3000)
-        loadedUrl = page.url()
-        console.log(`[Naver Blog] 로드됨: ${loadedUrl}`)
-        break
-      } catch (e) {
-        console.warn(`[Naver Blog] 페이지 로드 실패: ${e.message}`)
-      }
-    }
-
-    // 임시저장 글 복구 팝업 닫기
-    await sleep(2000)
     try {
-      const cancelBtn = await page.waitForSelector('button:has-text("취소"), button:has-text("새 글 작성")', { timeout: 3000 })
-      if (cancelBtn) {
-        await cancelBtn.click()
-        console.log('[Naver Blog] 팝업 닫음')
-      }
-    } catch {}
-    await sleep(2000)
+      currentStep = 'resolve-write-url'
+      const writeUrls = await resolveWriteUrls(page)
+      let loadedUrl = null
 
-    // 3) iframe 찾기 - 여러 가능성 시도
-    const frames = page.frames()
-    console.log(`[Naver Blog] iframe 개수: ${frames.length}, URLs:`, frames.map(f => f.url()).slice(0, 5))
-
-    // 스크린샷 저장 (디버그)
-    await saveDebug(page, 'editor-loaded')
-
-    // iframe 후보들
-    const iframeCandidates = [
-      page.frameLocator('iframe#mainFrame'),
-      page.frameLocator('iframe[name="mainFrame"]'),
-      page.frameLocator('iframe'),
-    ]
-
-    // 제목 입력 셀렉터 후보
-    const titleSelectors = [
-      '.se-section-documentTitle .se-text-paragraph',
-      '.se-placeholder:has-text("제목")',
-      '[placeholder*="제목"]',
-      '.tit_input',
-      'textarea[placeholder*="제목"]',
-      'input[placeholder*="제목"]',
-    ]
-
-    let titleFilled = false
-    for (const iframe of iframeCandidates) {
-      for (const sel of titleSelectors) {
+      for (const url of writeUrls) {
         try {
-          await iframe.locator(sel).first().click({ timeout: 3000 })
-          await sleep(500)
-          for (const ch of title) {
-            await page.keyboard.type(ch, { delay: randomDelay(30, 80) })
-          }
-          titleFilled = true
-          console.log(`[Naver Blog] 제목 입력 성공: ${sel}`)
+          console.log(`[Naver Blog] Opening editor candidate: ${url}`)
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 })
+          await sleep(3000)
+          loadedUrl = page.url()
+          console.log(`[Naver Blog] Editor loaded: ${loadedUrl}`)
           break
-        } catch (e) {}
-      }
-      if (titleFilled) break
-    }
-
-    // 페이지 레벨 셀렉터도 시도
-    if (!titleFilled) {
-      for (const sel of titleSelectors) {
-        try {
-          await page.locator(sel).first().click({ timeout: 3000 })
-          await sleep(500)
-          for (const ch of title) {
-            await page.keyboard.type(ch, { delay: randomDelay(30, 80) })
-          }
-          titleFilled = true
-          console.log(`[Naver Blog] 제목 입력 성공 (page): ${sel}`)
-          break
-        } catch (e) {}
-      }
-    }
-
-    if (!titleFilled) {
-      await saveDebug(page, 'title-fail')
-      throw new Error('제목 입력 필드를 찾을 수 없습니다. 네이버 에디터 구조가 변경되었을 가능성이 있습니다.')
-    }
-
-    // 본문 입력
-    await sleep(randomDelay(500, 1200))
-    const bodySelectors = [
-      '.se-section-text .se-text-paragraph',
-      '.se-placeholder:has-text("본문")',
-      '[placeholder*="본문"]',
-      '.content_input',
-    ]
-
-    let bodyFilled = false
-    for (const iframe of iframeCandidates) {
-      for (const sel of bodySelectors) {
-        try {
-          await iframe.locator(sel).first().click({ timeout: 3000 })
-          await sleep(500)
-          for (const ch of content) {
-            await page.keyboard.type(ch, { delay: randomDelay(20, 60) })
-          }
-          bodyFilled = true
-          console.log(`[Naver Blog] 본문 입력 성공: ${sel}`)
-          break
-        } catch (e) {}
-      }
-      if (bodyFilled) break
-    }
-
-    if (!bodyFilled) {
-      // Tab 누르고 본문 영역으로 이동 시도
-      await page.keyboard.press('Tab')
-      await sleep(500)
-      await page.keyboard.type(content, { delay: randomDelay(20, 60) })
-      console.log('[Naver Blog] 본문 입력 Tab fallback')
-      bodyFilled = true
-    }
-
-    await saveDebug(page, 'content-filled')
-
-    // 4) 발행 버튼
-    await sleep(randomDelay(1500, 2500))
-    const publishSelectors = [
-      'button:has-text("발행")',
-      '.btn_publish',
-      '[class*="publish"]',
-    ]
-
-    let published = false
-    for (const iframe of iframeCandidates) {
-      for (const sel of publishSelectors) {
-        try {
-          await iframe.locator(sel).first().click({ timeout: 3000 })
-          published = true
-          console.log(`[Naver Blog] 발행 버튼 클릭: ${sel}`)
-          break
-        } catch (e) {}
-      }
-      if (published) break
-    }
-
-    if (!published) {
-      await saveDebug(page, 'publish-fail')
-      throw new Error('발행 버튼을 찾을 수 없습니다')
-    }
-
-    // 발행 팝업 대기
-    await sleep(randomDelay(2000, 3500))
-
-    // 태그 입력 (옵션)
-    if (tags.length > 0) {
-      try {
-        for (const iframe of iframeCandidates) {
-          try {
-            const tagInput = iframe.locator('input[placeholder*="태그"]').first()
-            await tagInput.click({ timeout: 3000 })
-            for (const tag of tags.slice(0, 10)) {
-              await page.keyboard.type(tag, { delay: randomDelay(30, 80) })
-              await page.keyboard.press('Enter')
-              await sleep(randomDelay(200, 500))
-            }
-            break
-          } catch {}
+        } catch (error) {
+          console.warn(`[Naver Blog] Failed to open ${url}: ${error.message}`)
         }
-      } catch (e) {
-        console.warn('태그 입력 실패 (무시):', e.message)
       }
-    }
 
-    // 최종 발행 버튼
-    await sleep(randomDelay(1000, 2000))
-    for (const iframe of iframeCandidates) {
+      if (!loadedUrl) {
+        throw new Error('Unable to open the Naver blog editor.')
+      }
+
+      currentStep = 'capture-editor'
+      await saveDebug(page, 'editor-loaded')
+
+      currentStep = 'discover-targets'
+      const targets = getEditorTargets(page)
+      console.log('[Naver Blog] Editor targets:', targets.map((target) => target.label).join(', '))
+
+      currentStep = 'dismiss-popup'
+      await dismissEditorPopups(page, targets)
+      await sleep(1000)
+
+      currentStep = 'fill-title'
+      await focusAndType(page, targets, TITLE_SELECTORS, title, 'title')
+
+      currentStep = 'fill-body'
+      await sleep(randomDelay(500, 1200))
       try {
-        await iframe.locator('button:has-text("발행"), .confirm_btn__Nevj2').last().click({ timeout: 5000 })
-        break
-      } catch {}
-    }
+        await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
+      } catch (error) {
+        await page.keyboard.press('Tab')
+        await sleep(500)
+        await page.keyboard.type(content, { delay: randomDelay(20, 60) })
+        console.warn('[Naver Blog] Body field fallback used after selector failure:', error.message)
+      }
 
-    // 완료 URL 대기
-    try {
-      await page.waitForURL(/blog\.naver\.com\/.+\/\d+/, { timeout: 60000 })
-    } catch {
-      await saveDebug(page, 'after-publish')
-      // URL이 패턴에 안 맞아도 현재 URL 반환
-    }
-    const url = page.url()
+      currentStep = 'open-publish-dialog'
+      await sleep(randomDelay(1500, 2500))
+      await clickPublishButton(page, targets, 'first')
 
-    return { url }
-  } catch (err) {
-    console.error('[Naver Blog] 오류:', err.message)
-    throw err
+      currentStep = 'fill-tags'
+      await sleep(randomDelay(1200, 2000))
+      await fillTags(page, targets, tags)
+
+      currentStep = 'confirm-publish'
+      await sleep(randomDelay(1000, 2000))
+      await clickPublishButton(page, targets, 'last')
+
+      currentStep = 'await-result'
+      try {
+        await page.waitForURL(/blog\.naver\.com\/.+\/\d+/, { timeout: 60000 })
+      } catch {
+        await saveDebug(page, 'after-publish')
+      }
+
+      return { url: page.url() }
+    } catch (error) {
+      await saveDebug(page, `failure-${currentStep}`)
+      throw error
+    } finally {
+      await context.close()
+    }
   } finally {
     await browser.close()
   }

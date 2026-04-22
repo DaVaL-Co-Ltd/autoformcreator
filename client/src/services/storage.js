@@ -1,6 +1,7 @@
 import { supabase, BUCKETS } from './supabase'
 
 const EXTRACTION_LIST_COLUMNS = 'id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo'
+const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
 // ===== Helpers =====
 const b64ToBlob = (dataUrl) => {
@@ -102,7 +103,7 @@ async function uploadVideoToStorage(video) {
   if (url.includes('.supabase.co/storage/')) { console.log('[영상 업로드] 이미 Supabase URL'); return video }
 
   try {
-    const fetchUrl = url.startsWith('/output/') ? `http://localhost:3001${url}` : url
+    const fetchUrl = url.startsWith('/output/') ? `${API_BASE}${url}` : url
     console.log('[영상 fetch]', fetchUrl)
     const res = await fetch(fetchUrl)
     if (!res.ok) { console.warn('[영상 가져오기 실패]', res.status); return video }
@@ -175,32 +176,6 @@ export async function getExtractions() {
 }
 
 // 페이지네이션: 필요한 페이지만 조회
-export async function getAllExtractions() {
-  const batchSize = 100
-  const items = []
-  let from = 0
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('extractions')
-      .select(EXTRACTION_LIST_COLUMNS)
-      .order('created_at', { ascending: false })
-      .range(from, from + batchSize - 1)
-
-    if (error) {
-      console.error('[Supabase getAllExtractions] ?ㅽ뙣:', error)
-      return []
-    }
-
-    items.push(...data.map(rowToItem))
-
-    if (data.length < batchSize) break
-    from += batchSize
-  }
-
-  return items
-}
-
 export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1

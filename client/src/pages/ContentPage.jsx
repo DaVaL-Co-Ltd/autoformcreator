@@ -1,66 +1,47 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  FileText, Image, Mail, Film, Trash2, Sparkles, FolderOpen, AlertTriangle, X,
-  CheckCircle, Clock, Upload, Calendar, ArrowRight, ExternalLink, Eye, Search, Loader2,
+  AlertTriangle,
+  Calendar,
+  CheckCircle,
+  FileText,
+  Film,
+  FolderOpen,
+  Image,
+  Loader2,
+  Mail,
+  Search,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
 } from 'lucide-react'
-import { getAllExtractions, deleteExtractionChannel, updateUploadStatus } from '../services/storage'
+import { deleteExtractionChannel, getExtractionsPaged, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload } from '../utils/scheduledUploads'
 
 const channelConfig = {
-  all:        { label: '전체',        icon: FileText, color: 'text-text',        bg: 'bg-surface-light' },
-  blog:       { label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-  newsletter: { label: '뉴스레터',     icon: Mail,     color: 'text-blue-500',    bg: 'bg-blue-500/10' },
-  instagram:  { label: '인스타그램',   icon: Image,    color: 'text-pink-400',    bg: 'bg-pink-400/10' },
-  shorts:     { label: '유튜브 숏츠',  icon: Film,     color: 'text-red-500',     bg: 'bg-red-500/10' },
+  all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
+  blog: { label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+  newsletter: { label: '뉴스레터', icon: Mail, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+  instagram: { label: '인스타그램', icon: Image, color: 'text-pink-400', bg: 'bg-pink-400/10' },
+  shorts: { label: '유튜브 쇼츠', icon: Film, color: 'text-red-500', bg: 'bg-red-500/10' },
 }
 
 const uploadStatusConfig = {
-  all: { label: '전체', icon: null, color: 'text-text' },
-  not_uploaded: { label: '미업로드', icon: Upload, color: 'text-text-muted', badge: 'bg-surface-light text-text-muted border-border' },
-  scheduled: { label: '예약 완료', icon: Calendar, color: 'text-info', badge: 'bg-info/10 text-info border-info/30' },
-  uploaded: { label: '업로드 완료', icon: CheckCircle, color: 'text-success', badge: 'bg-success/10 text-success border-success/30' },
+  all: { label: '전체' },
+  not_uploaded: { label: '미업로드', icon: Upload },
+  scheduled: { label: '예약 완료', icon: Calendar },
+  uploaded: { label: '업로드 완료', icon: CheckCircle },
 }
 
-export default function ContentPage() {
-  const navigate = useNavigate()
-  const [activeChannel, setActiveChannel] = useState('all')
-  const [activeStatus, setActiveStatus] = useState('all')
-  const [extractions, setExtractions] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [scheduleTarget, setScheduleTarget] = useState(null)
-  const [editScheduleTarget, setEditScheduleTarget] = useState(null)
-  const [uploadingIds, setUploadingIds] = useState(new Set()) // 동시 업로드 지원
-  const [pageSize, setPageSize] = useState(10)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState('')
+const EXTRACTION_BATCH_SIZE = 10
 
-  const refreshExtractions = async (showSpinner = false) => {
-    if (showSpinner) setLoading(true)
-    try {
-      const items = await getAllExtractions()
-      setExtractions(items)
-    } finally {
-      if (showSpinner) setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    refreshExtractions(true)
-  }, [])
-
-  useEffect(() => {
-    const onFocus = () => refreshExtractions(false)
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
-
-  // 추출 데이터를 채널별 콘텐츠 목록으로 변환
-  const allContents = extractions.flatMap(ext =>
+function toContentItems(extractions) {
+  return extractions.flatMap(ext =>
     ext.channels.map(ch => {
       const uploadInfo = ext.uploadStatus?.[ch.channel] || { status: 'not_uploaded' }
+
       return {
         extractionId: ext.id,
         channel: ch.channel,
@@ -69,58 +50,128 @@ export default function ContentPage() {
         date: new Date(ext.createdAt).toLocaleDateString('ko-KR'),
         time: new Date(ext.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
         cards: ch.channel === 'instagram' ? ext.data?.instagramContent?.cards?.length : null,
-        duration: ch.channel === 'shorts' ? ext.data?.shortsScript?.duration : null,
         data: ext.data,
         uploadStatus: uploadInfo.status,
+        uploadStatusMap: ext.uploadStatus || {},
         scheduledAt: uploadInfo.scheduledAt || null,
         uploadedAt: uploadInfo.uploadedAt || null,
       }
     })
   )
+}
 
-  // 필터 적용
-  const filtered = allContents.filter(c => {
-    if (activeChannel !== 'all' && c.channel !== activeChannel) return false
-    if (activeStatus !== 'all' && c.uploadStatus !== activeStatus) return false
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      if (!c.title?.toLowerCase().includes(q) && !c.source?.toLowerCase().includes(q)) return false
+function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
+  if (activeChannel !== 'all' && item.channel !== activeChannel) return false
+  if (activeStatus !== 'all' && item.uploadStatus !== activeStatus) return false
+  if (searchQuery) {
+    const query = searchQuery.toLowerCase()
+    if (!item.title?.toLowerCase().includes(query) && !item.source?.toLowerCase().includes(query)) return false
+  }
+  return true
+}
+
+export default function ContentPage() {
+  const navigate = useNavigate()
+  const [activeChannel, setActiveChannel] = useState('all')
+  const [activeStatus, setActiveStatus] = useState('all')
+  const [contents, setContents] = useState([])
+  const [hasNextPage, setHasNextPage] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [scheduleTarget, setScheduleTarget] = useState(null)
+  const [editScheduleTarget, setEditScheduleTarget] = useState(null)
+  const [uploadingIds, setUploadingIds] = useState(new Set())
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const refreshContents = async (
+    showSpinner = false,
+    page = currentPage,
+    size = pageSize,
+    channel = activeChannel,
+    status = activeStatus,
+    query = searchQuery,
+  ) => {
+    if (showSpinner) setLoading(true)
+
+    try {
+      const startIndex = (page - 1) * size
+      const endIndex = startIndex + size
+      const pageItems = []
+      let matchedCount = 0
+      let extractionPage = 1
+      let nextPageFound = false
+
+      while (true) {
+        const { items } = await getExtractionsPaged({
+          page: extractionPage,
+          pageSize: EXTRACTION_BATCH_SIZE,
+        })
+
+        if (!items.length) break
+
+        const matchedBatch = toContentItems(items).filter(item =>
+          matchesFilters(item, channel, status, query)
+        )
+        const nextMatchedCount = matchedCount + matchedBatch.length
+
+        if (nextMatchedCount > startIndex && pageItems.length < size) {
+          const sliceStart = Math.max(0, startIndex - matchedCount)
+          pageItems.push(...matchedBatch.slice(sliceStart, sliceStart + (size - pageItems.length)))
+        }
+
+        matchedCount = nextMatchedCount
+
+        if (matchedCount > endIndex) {
+          nextPageFound = true
+          break
+        }
+
+        if (items.length < EXTRACTION_BATCH_SIZE) break
+        extractionPage += 1
+      }
+
+      if (page > 1 && pageItems.length === 0) {
+        setCurrentPage(page - 1)
+        return
+      }
+
+      setContents(pageItems)
+      setHasNextPage(nextPageFound)
+    } finally {
+      if (showSpinner) setLoading(false)
     }
-    return true
-  })
+  }
 
-  const totalContents = filtered.length
-  const totalPages = Math.max(1, Math.ceil(totalContents / pageSize))
-  const pagedContents = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  useEffect(() => {
+    refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+  }, [currentPage, pageSize, activeChannel, activeStatus, searchQuery])
 
-  // 상태별 개수
-  // 뉴스레터는 업로드 대상이 아니므로 상태 카운트에서 제외
-  const uploadableContents = allContents.filter(c => c.channel !== 'newsletter')
+  useEffect(() => {
+    const onFocus = () => {
+      refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+    }
+
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [currentPage, pageSize, activeChannel, activeStatus, searchQuery])
+
+  const uploadableContents = contents.filter(c => c.channel !== 'newsletter')
   const statusCounts = {
-    all: allContents.length,
+    all: contents.length,
     not_uploaded: uploadableContents.filter(c => c.uploadStatus === 'not_uploaded').length,
     scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled').length,
     uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded').length,
   }
 
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [activeChannel, activeStatus, searchQuery, pageSize])
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages)
-    }
-  }, [currentPage, totalPages])
-
   const handleView = (item) => {
-    const ext = extractions.find(e => e.id === item.extractionId)
     navigate('/contents/view', {
       state: {
         ...item.data,
         activeChannel: item.channel,
         extractionId: item.extractionId,
-        uploadStatus: ext?.uploadStatus || {},
+        uploadStatus: item.uploadStatusMap || {},
         fromContents: true,
       }
     })
@@ -129,18 +180,22 @@ export default function ContentPage() {
   const handleUpload = async (item) => {
     const key = `${item.extractionId}-${item.channel}`
     setUploadingIds(prev => new Set(prev).add(key))
+
     try {
       const { uploadToPlatform } = await import('../services/platformUploaders')
       const result = await uploadToPlatform(item.channel, item.extractionId)
+
       await updateUploadStatus(item.extractionId, item.channel, {
         status: 'uploaded',
         uploadedAt: new Date().toISOString(),
         uploadedUrl: result?.url || null,
       })
-      await refreshExtractions()
+
+      await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     } catch (err) {
       alert(`업로드 실패: ${err.message}`)
     }
+
     setUploadingIds(prev => {
       const next = new Set(prev)
       next.delete(key)
@@ -150,8 +205,8 @@ export default function ContentPage() {
 
   const handleScheduleSave = async (extractionId, channel, info) => {
     await updateUploadStatus(extractionId, channel, info)
-    await refreshExtractions()
-    // scheduledUploads에도 저장 (예약 목록 페이지와 동기화)
+    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+
     if (info.status === 'scheduled' && info.scheduledAt) {
       const target = scheduleTarget
       createScheduledUpload({
@@ -165,21 +220,23 @@ export default function ContentPage() {
 
   const handleCancelSchedule = async (item) => {
     await updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
-    await refreshExtractions()
+    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
   }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
     await deleteExtractionChannel(deleteTarget.extractionId, deleteTarget.channel)
-    await refreshExtractions()
+    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     setDeleteTarget(null)
   }
 
   const formatScheduledDate = (iso) => {
     if (!iso) return ''
     const d = new Date(iso)
-    return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) + ' ' +
-      d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    return `${d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })}`
   }
 
   if (loading) {
@@ -193,7 +250,6 @@ export default function ContentPage() {
 
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
-      {/* 페이지 헤더 */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-text flex items-center gap-2">
           <FolderOpen size={22} className="text-primary-light" />
@@ -208,17 +264,31 @@ export default function ContentPage() {
         </button>
       </div>
 
-      {/* 상태 요약 카드 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { key: 'all', icon: FileText, color: 'text-primary-light', bg: 'bg-primary/10', label: '전체', onClick: () => { setActiveStatus('all'); setActiveChannel('all'); setSearchQuery('') } },
-          { key: 'not_uploaded', icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light', label: '미업로드' },
-          { key: 'scheduled', icon: Calendar, color: 'text-info', bg: 'bg-info/10', label: '예약됨' },
-          { key: 'uploaded', icon: CheckCircle, color: 'text-success', bg: 'bg-success/10', label: '업로드 완료' },
-        ].map(({ key, icon: Icon, color, bg, label, onClick }) => (
+          {
+            key: 'all',
+            icon: FileText,
+            bg: 'bg-primary/10',
+            color: 'text-primary-light',
+            label: '전체',
+            onClick: () => {
+              setActiveStatus('all')
+              setActiveChannel('all')
+              setSearchQuery('')
+              setCurrentPage(1)
+            },
+          },
+          { key: 'not_uploaded', icon: Upload, bg: 'bg-surface-light', color: 'text-text-muted', label: '미업로드' },
+          { key: 'scheduled', icon: Calendar, bg: 'bg-info/10', color: 'text-info', label: '예약 완료' },
+          { key: 'uploaded', icon: CheckCircle, bg: 'bg-success/10', color: 'text-success', label: '업로드 완료' },
+        ].map(({ key, icon: Icon, bg, color, label, onClick }) => (
           <button
             key={key}
-            onClick={onClick || (() => setActiveStatus(activeStatus === key ? 'all' : key))}
+            onClick={onClick || (() => {
+              setActiveStatus(activeStatus === key ? 'all' : key)
+              setCurrentPage(1)
+            })}
             className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
               activeStatus === key || (key === 'all' && activeStatus === 'all' && activeChannel === 'all')
                 ? 'border-primary/40 bg-primary/5'
@@ -236,37 +306,47 @@ export default function ContentPage() {
         ))}
       </div>
 
-      {/* 채널 탭 + 검색 */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="flex items-center gap-1 bg-surface rounded-xl border border-border p-1.5 overflow-x-auto shrink-0">
-          {Object.entries(channelConfig).map(([key, { label, icon: Icon, color }]) => (
+          {Object.entries(channelConfig).map(([key, { label, icon: Icon }]) => (
             <button
               key={key}
-              onClick={() => setActiveChannel(key)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap
-                ${activeChannel === key
+              onClick={() => {
+                setActiveChannel(key)
+                setCurrentPage(1)
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                activeChannel === key
                   ? 'bg-primary/15 text-primary-light'
                   : 'text-text-muted hover:text-text hover:bg-surface-light'
-                }`}
+              }`}
             >
               <Icon size={14} />
               {label}
             </button>
           ))}
         </div>
+
         <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           <input
             type="text"
-            placeholder="검색..."
+            placeholder="검색.."
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={e => {
+              setSearchQuery(e.target.value)
+              setCurrentPage(1)
+            }}
             className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-border bg-surface text-xs text-text placeholder:text-text-muted/50 focus:outline-none focus:border-primary/40 transition-colors"
           />
         </div>
+
         <select
           value={pageSize}
-          onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1) }}
+          onChange={e => {
+            setPageSize(Number(e.target.value))
+            setCurrentPage(1)
+          }}
           className="px-3 py-2.5 bg-surface border border-border rounded-xl text-xs text-text focus:outline-none focus:border-primary/40 transition-colors shrink-0"
         >
           <option value={10}>10개씩</option>
@@ -275,21 +355,11 @@ export default function ContentPage() {
         </select>
       </div>
 
-      {/* 총 개수 표시 */}
-      {totalContents > 0 && (
-        <div className="flex items-center justify-end">
-          <span className="text-xs text-text-muted">(총 {totalContents}개)</span>
-        </div>
-      )}
-
-      {/* 콘텐츠 목록 */}
-      {totalContents > 0 ? (
+      {contents.length > 0 ? (
         <div className="space-y-2">
-          {pagedContents.map((item, idx) => {
+          {contents.map((item, idx) => {
             const channel = channelConfig[item.channel] || channelConfig.all
             const ChannelIcon = channel.icon
-            const statusCfg = uploadStatusConfig[item.uploadStatus] || uploadStatusConfig.not_uploaded
-            const StatusIcon = statusCfg.icon
             const isUploading = uploadingIds.has(`${item.extractionId}-${item.channel}`)
 
             return (
@@ -297,28 +367,25 @@ export default function ContentPage() {
                 key={`${item.extractionId}-${item.channel}-${idx}`}
                 className="bg-surface rounded-xl border border-border hover:border-primary/20 transition-all"
               >
-                {/* 메인 행 */}
                 <div className="flex items-center gap-3 p-3">
-                  {/* 채널 아이콘 */}
                   <div className={`w-12 h-12 shrink-0 rounded-lg ${channel.bg} flex items-center justify-center`}>
                     <ChannelIcon size={20} className={channel.color} />
                   </div>
 
-                  {/* 정보 */}
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleView(item)}>
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className={`text-[11px] font-semibold ${channel.color}`}>{channel.label}</span>
-                      {item.cards && <span className="text-[11px] text-text-muted">{item.cards}장</span>}
+                      {item.cards ? <span className="text-[11px] text-text-muted">{item.cards}장</span> : null}
                     </div>
-                    <h4 className="text-sm font-medium text-text truncate hover:text-primary-light transition-colors">{item.title}</h4>
+                    <h4 className="text-sm font-medium text-text truncate hover:text-primary-light transition-colors">
+                      {item.title}
+                    </h4>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-text-muted shrink-0">{item.date} {item.time}</span>
                     </div>
                   </div>
 
-                  {/* 인라인 액션 버튼들 */}
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* 뉴스레터는 업로드 대상이 아님 - 안내 뱃지만 표시 */}
                     {item.channel === 'newsletter' && (
                       <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted bg-surface-light border border-border">
                         <Mail size={13} />
@@ -326,7 +393,6 @@ export default function ContentPage() {
                       </div>
                     )}
 
-                    {/* 미업로드: 예약 + 업로드 (뉴스레터 제외) */}
                     {item.channel !== 'newsletter' && item.uploadStatus === 'not_uploaded' && (
                       <>
                         <button
@@ -346,15 +412,20 @@ export default function ContentPage() {
                           }`}
                         >
                           {isUploading ? (
-                            <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> 업로드 중...</>
+                            <>
+                              <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                              업로드 중...
+                            </>
                           ) : (
-                            <><Upload size={13} /> 즉시 업로드</>
+                            <>
+                              <Upload size={13} />
+                              즉시 업로드
+                            </>
                           )}
                         </button>
                       </>
                     )}
 
-                    {/* 예약 완료 - 클릭하면 상세 다이얼로그 (뉴스레터 제외) */}
                     {item.channel !== 'newsletter' && item.uploadStatus === 'scheduled' && (
                       <button
                         onClick={() => setEditScheduleTarget(item)}
@@ -362,20 +433,22 @@ export default function ContentPage() {
                       >
                         <Calendar size={13} />
                         예약 완료
-                        {item.scheduledAt && <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>}
+                        {item.scheduledAt ? (
+                          <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
+                        ) : null}
                       </button>
                     )}
 
-                    {/* 업로드 완료 (뉴스레터 제외) */}
                     {item.channel !== 'newsletter' && item.uploadStatus === 'uploaded' && (
                       <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
                         <CheckCircle size={13} />
                         업로드 완료
-                        {item.uploadedAt && <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>}
+                        {item.uploadedAt ? (
+                          <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>
+                        ) : null}
                       </div>
                     )}
 
-                    {/* 삭제 */}
                     <button
                       onClick={() => setDeleteTarget({ extractionId: item.extractionId, channel: item.channel, title: item.title })}
                       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-text-muted hover:text-danger hover:bg-danger/10 transition-colors border border-border hover:border-danger/30"
@@ -388,30 +461,26 @@ export default function ContentPage() {
               </div>
             )
           })}
-          {/* 페이지 네비게이션 */}
-          {totalContents > pageSize && (
-            <div className="flex items-center justify-center gap-1 pt-4">
+
+          {(currentPage > 1 || hasNextPage) && (
+            <div className="flex items-center justify-center gap-2 pt-4">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
                 className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >이전</button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`min-w-[36px] px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-                    currentPage === page
-                      ? 'bg-primary text-white border-primary'
-                      : 'border-border text-text-muted hover:bg-surface-light'
-                  }`}
-                >{page}</button>
-              ))}
+              >
+                이전
+              </button>
+              <span className="px-3 py-1.5 text-xs rounded-lg border border-border text-text">
+                {currentPage}페이지
+              </span>
               <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => p + 1)}
+                disabled={!hasNextPage}
                 className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-muted hover:bg-surface-light disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >다음</button>
+              >
+                다음
+              </button>
             </div>
           )}
         </div>
@@ -423,7 +492,9 @@ export default function ContentPage() {
               ? '조건에 맞는 콘텐츠가 없습니다.'
               : '아직 생성된 콘텐츠가 없습니다.'}
           </p>
-          <p className="text-xs text-text-muted mb-4">콘텐츠 추출에서 PDF를 분석하면 자동으로 저장됩니다.</p>
+          <p className="text-xs text-text-muted mb-4">
+            콘텐츠 추출에서 PDF를 분석하면 자동으로 저장됩니다.
+          </p>
           <button
             onClick={() => navigate('/extraction')}
             className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors"
@@ -433,7 +504,6 @@ export default function ContentPage() {
         </div>
       )}
 
-      {/* 예약 모달 (신규) */}
       <ScheduleDialog
         open={!!scheduleTarget}
         onClose={() => setScheduleTarget(null)}
@@ -449,7 +519,6 @@ export default function ContentPage() {
         }}
       />
 
-      {/* 예약 상세/수정 모달 */}
       <ScheduleDialog
         open={!!editScheduleTarget}
         mode="edit"
@@ -471,13 +540,14 @@ export default function ContentPage() {
         }}
       />
 
-
-      {/* 삭제 확인 모달 */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDeleteTarget(null)} />
           <div className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-sm p-6">
-            <button onClick={() => setDeleteTarget(null)} className="absolute top-4 right-4 p-1 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors">
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="absolute top-4 right-4 p-1 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors"
+            >
               <X size={16} />
             </button>
             <div className="flex flex-col items-center text-center">
@@ -487,12 +557,20 @@ export default function ContentPage() {
               <h3 className="text-base font-semibold text-text mb-1">콘텐츠 삭제</h3>
               <p className="text-sm text-text-muted mb-1">이 콘텐츠를 삭제하시겠습니까?</p>
               <p className="text-xs text-text-muted mb-2 line-clamp-2 max-w-64">"{deleteTarget.title}"</p>
-              <p className="text-[11px] text-warning mb-6">이미 업로드된 콘텐츠는 해당 플랫폼에서 삭제되지 않습니다.</p>
+              <p className="text-[11px] text-warning mb-6">
+                이미 업로드한 콘텐츠는 해당 플랫폼에서 삭제되지 않습니다.
+              </p>
               <div className="flex items-center gap-3 w-full">
-                <button onClick={() => setDeleteTarget(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-border text-sm font-medium text-text-muted hover:bg-surface-light transition-colors">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="flex-1 px-4 py-2.5 rounded-lg border border-border text-sm font-medium text-text-muted hover:bg-surface-light transition-colors"
+                >
                   취소
                 </button>
-                <button onClick={confirmDelete} className="flex-1 px-4 py-2.5 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 transition-colors">
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-danger text-white text-sm font-medium hover:bg-danger/90 transition-colors"
+                >
                   삭제
                 </button>
               </div>

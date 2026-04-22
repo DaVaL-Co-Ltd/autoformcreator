@@ -1,21 +1,34 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
-  Instagram, Upload, Loader2, CheckCircle, XCircle, X, Plus,
-  Image as ImageIcon, Film, AlertTriangle,
+  Instagram,
+  Upload,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  X,
+  Plus,
+  Image as ImageIcon,
+  Film,
+  AlertTriangle,
 } from 'lucide-react'
 import { validateInstagram } from '../utils/platformValidator'
 import { formatInstagramRequest } from '../utils/platformFormatter'
+import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse'
 import { get } from '../utils/platformConnections'
 
-const API_BASE = 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_SERVER_URL || ''
+const EXAMPLE_CAPTION =
+  '신규 캠페인용 인스타그램 테스트 게시물입니다.\n\n' +
+  '이미지와 캡션, 해시태그 조합이 실제 업로드 요청으로 어떻게 전송되는지 점검할 수 있습니다.'
+const EXAMPLE_HASHTAGS = ['테스트', '인스타그램', '업로드', '콘텐츠', '자동화']
 
 export default function InstagramUploadTestPage() {
-  const [uploadType, setUploadType] = useState('image') // 'image' | 'carousel' | 'reel'
+  const [uploadType, setUploadType] = useState('image')
   const [caption, setCaption] = useState('')
   const [hashtags, setHashtags] = useState([])
   const [hashtagInput, setHashtagInput] = useState('')
-  const [images, setImages] = useState([]) // { file, preview, name }
-  const [videoFile, setVideoFile] = useState(null) // { file, preview, name, duration }
+  const [images, setImages] = useState([])
+  const [videoFile, setVideoFile] = useState(null)
   const [isDraggingImage, setIsDraggingImage] = useState(false)
   const [isDraggingVideo, setIsDraggingVideo] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -26,80 +39,139 @@ export default function InstagramUploadTestPage() {
 
   const imageInputRef = useRef(null)
   const videoInputRef = useRef(null)
-  const videoPreviewRef = useRef(null)
 
   useEffect(() => {
     setConnection(get('instagram'))
   }, [])
 
-  // 캡션에서 해시태그 자동 분리 (# 으로 시작하는 단어 추출)
-  const strippedCaption = caption.replace(/#\S+/g, '').replace(/\s{2,}/g, ' ').trim()
+  useEffect(() => {
+    return () => {
+      images.forEach((image) => URL.revokeObjectURL(image.preview))
+      if (videoFile?.preview) {
+        URL.revokeObjectURL(videoFile.preview)
+      }
+    }
+  }, [images, videoFile])
 
-  // 실시간 유효성 검사
+  const strippedCaption = caption.replace(/#\S+/g, '').replace(/\s{2,}/g, ' ').trim()
   const validationContent = {
     caption: strippedCaption,
     hashtags,
-    imageUrls: uploadType !== 'reel' ? images.map(i => i.preview) : [],
+    imageUrls: uploadType !== 'reel' ? images.map((image) => image.preview) : [],
     videoSeconds: uploadType === 'reel' && videoFile ? videoFile.duration : undefined,
     isReel: uploadType === 'reel',
   }
   const validation = validateInstagram(validationContent)
+  const maxImages = uploadType === 'carousel' ? 10 : 1
 
   const addHashtag = () => {
-    const t = hashtagInput.trim().replace(/^#/, '')
-    if (t && !hashtags.includes(t)) setHashtags(prev => [...prev, t])
+    const next = hashtagInput.trim().replace(/^#/, '')
+    if (next && !hashtags.includes(next)) {
+      setHashtags((prev) => [...prev, next])
+    }
     setHashtagInput('')
   }
 
-  const removeHashtag = (t) => setHashtags(prev => prev.filter(x => x !== t))
-
-  const handleImageFiles = (files) => {
-    const maxCount = uploadType === 'carousel' ? 10 : 1
-    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'))
-    const newImgs = imgs.map(f => ({
-      file: f,
-      preview: URL.createObjectURL(f),
-      name: f.name,
-    }))
-    setImages(prev => [...prev, ...newImgs].slice(0, maxCount))
+  const removeHashtag = (tag) => {
+    setHashtags((prev) => prev.filter((item) => item !== tag))
   }
 
-  const removeImage = (idx) => {
-    setImages(prev => {
-      URL.revokeObjectURL(prev[idx].preview)
-      return prev.filter((_, i) => i !== idx)
+  const clearImages = () => {
+    images.forEach((image) => URL.revokeObjectURL(image.preview))
+    setImages([])
+  }
+
+  const clearVideo = () => {
+    if (videoFile?.preview) {
+      URL.revokeObjectURL(videoFile.preview)
+    }
+    setVideoFile(null)
+  }
+
+  const handleImageFiles = (files) => {
+    const picked = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
+    const nextImages = picked.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      name: file.name,
+    }))
+
+    setImages((prev) => {
+      const merged = [...prev, ...nextImages].slice(0, maxImages)
+      const dropped = [...prev, ...nextImages].slice(maxImages)
+      dropped.forEach((image) => URL.revokeObjectURL(image.preview))
+      return merged
     })
   }
 
-  const handleVideoFile = useCallback((file) => {
-    if (!file || !file.type.startsWith('video/')) return
-    if (videoFile) URL.revokeObjectURL(videoFile.preview)
-    const preview = URL.createObjectURL(file)
-    setVideoFile({ file, preview, name: file.name, duration: null })
-  }, [videoFile])
-
-  const handleVideoMetadata = (e) => {
-    const dur = e.target.duration
-    setVideoFile(prev => prev ? { ...prev, duration: Math.round(dur) } : null)
+  const removeImage = (index) => {
+    setImages((prev) => {
+      const target = prev[index]
+      if (target?.preview) {
+        URL.revokeObjectURL(target.preview)
+      }
+      return prev.filter((_, currentIndex) => currentIndex !== index)
+    })
   }
 
-  const handleImageDrop = (e) => {
-    e.preventDefault()
+  const handleVideoFile = useCallback(
+    (file) => {
+      if (!file || !file.type.startsWith('video/')) {
+        return
+      }
+
+      if (videoFile?.preview) {
+        URL.revokeObjectURL(videoFile.preview)
+      }
+
+      setVideoFile({
+        file,
+        preview: URL.createObjectURL(file),
+        name: file.name,
+        duration: null,
+      })
+    },
+    [videoFile]
+  )
+
+  const handleVideoMetadata = (event) => {
+    const duration = Math.round(event.target.duration || 0)
+    setVideoFile((prev) => (prev ? { ...prev, duration } : null))
+  }
+
+  const handleImageDrop = (event) => {
+    event.preventDefault()
     setIsDraggingImage(false)
-    handleImageFiles(e.dataTransfer.files)
+    handleImageFiles(event.dataTransfer.files)
   }
 
-  const handleVideoDrop = (e) => {
-    e.preventDefault()
+  const handleVideoDrop = (event) => {
+    event.preventDefault()
     setIsDraggingVideo(false)
-    const file = Array.from(e.dataTransfer.files).find(f => f.type.startsWith('video/'))
-    if (file) handleVideoFile(file)
+    const file = Array.from(event.dataTransfer.files || []).find((item) => item.type.startsWith('video/'))
+    if (file) {
+      handleVideoFile(file)
+    }
+  }
+
+  const changeUploadType = (nextType) => {
+    setUploadType(nextType)
+    setError(null)
+    setResult(null)
+    setSentBody(null)
+    clearImages()
+    clearVideo()
   }
 
   const loadExample = () => {
     setUploadType('image')
-    setCaption('오늘의 추천 콘텐츠를 소개합니다! ✨\n\n여러분이 정말 사랑할 만한 특별한 이야기를 담았어요. 프로필 링크에서 더 많은 정보를 확인해보세요 🔗')
-    setHashtags(['일상', '추천', '콘텐츠', '트렌드', '소개'])
+    clearImages()
+    clearVideo()
+    setCaption(EXAMPLE_CAPTION)
+    setHashtags(EXAMPLE_HASHTAGS)
+    setError(null)
+    setResult(null)
+    setSentBody(null)
   }
 
   const upload = async () => {
@@ -108,16 +180,20 @@ export default function InstagramUploadTestPage() {
     setResult(null)
     setSentBody(null)
 
-    const imageUrls = images.map(i => i.preview)
-    const instagramContent = {
-      caption: strippedCaption,
-      hashtags,
-    }
-    const body = formatInstagramRequest(instagramContent, imageUrls)
-    setSentBody(body)
-
     try {
-      const res = await fetch(`${API_BASE}/api/instagram/publish`, {
+      if (uploadType === 'reel') {
+        throw new Error('현재 테스트 페이지는 이미지/캐러셀 업로드만 지원합니다. 릴 업로드는 아직 연결되지 않았습니다.')
+      }
+
+      const imageUrls = images.map((image) => image.preview)
+      const instagramContent = {
+        caption: strippedCaption,
+        hashtags,
+      }
+      const body = formatInstagramRequest(instagramContent, imageUrls)
+      setSentBody(body)
+
+      const response = await fetch(`${API_BASE}/api/instagram/publish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -125,162 +201,167 @@ export default function InstagramUploadTestPage() {
         },
         body: JSON.stringify(body),
       })
-      const data = await res.json()
-      if (data.success) {
-        setResult(data)
-      } else {
-        setError(data.error || '업로드 실패')
+
+      const data = await readApiResponse(response)
+      if (!data.success) {
+        throw new Error(getApiErrorMessage(data, `인스타그램 업로드 실패 (${response.status})`))
       }
-    } catch (err) {
-      setError(`서버 연결 실패: ${err.message}`)
+
+      setResult(data)
+    } catch (uploadError) {
+      console.error('[InstagramUploadTestPage] upload failed:', uploadError)
+      setError(uploadError.message)
+    } finally {
+      setUploading(false)
     }
-    setUploading(false)
   }
 
   const reset = () => {
-    images.forEach(i => URL.revokeObjectURL(i.preview))
-    if (videoFile) URL.revokeObjectURL(videoFile.preview)
+    clearImages()
+    clearVideo()
     setCaption('')
     setHashtags([])
     setHashtagInput('')
-    setImages([])
-    setVideoFile(null)
     setUploadType('image')
     setResult(null)
     setError(null)
     setSentBody(null)
   }
 
-  const maxImages = uploadType === 'carousel' ? 10 : 1
-
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      {/* 헤더 */}
-      <div className="flex items-center gap-3 flex-wrap">
+    <div className="mx-auto max-w-4xl space-y-6 p-6">
+      <div className="flex flex-wrap items-center gap-3">
         <Instagram size={24} className="text-pink-500" />
         <h1 className="text-2xl font-bold text-text">인스타그램 업로드 테스트</h1>
         {connection.connected ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-500">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
             {connection.account || '연결됨'}
           </span>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
-            <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
-            계정 미연결 &mdash; <a href="/settings" className="underline hover:text-red-300">설정에서 연결</a>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400">
+            <span className="inline-block h-2 w-2 rounded-full bg-red-400" />
+            계정 미연결
+            <a href="/settings" className="underline hover:text-red-300">
+              설정에서 연결
+            </a>
           </span>
         )}
       </div>
 
-      {/* Mock 안내 */}
-      <div className="rounded-xl border border-pink-500/20 bg-pink-500/5 p-4 flex items-start gap-3">
-        <AlertTriangle size={16} className="text-pink-400 shrink-0 mt-0.5" />
-        <p className="text-xs text-text-muted">
-          현재 Mock 모드로 동작합니다. 실제 API 연동은 추후 추가됩니다.
-        </p>
+      <div className="flex items-start gap-3 rounded-xl border border-pink-500/20 bg-pink-500/5 p-4">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0 text-pink-400" />
+        <div className="space-y-1 text-xs text-text-muted">
+          <p className="font-semibold text-pink-500">테스트 페이지 안내</p>
+          <p>이미지 또는 캐러셀 업로드 요청 바디와 응답을 바로 확인할 수 있습니다.</p>
+          <p>현재 서버는 릴 업로드를 처리하지 않으므로, 이 페이지에서도 릴 전송은 막아두었습니다.</p>
+        </div>
       </div>
 
-      {/* 예시 콘텐츠 */}
-      <div className="bg-pink-500/5 rounded-xl border border-pink-500/20 p-4 flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-xs text-text-muted">
-          <p className="font-semibold text-pink-500 mb-0.5">예시 콘텐츠로 빠르게 테스트해 보세요</p>
-          <p>단일 이미지 타입, 샘플 캡션과 해시태그가 자동으로 채워집니다.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-pink-500/20 bg-pink-500/5 p-4">
+        <div className="space-y-1 text-xs text-text-muted">
+          <p className="font-semibold text-pink-500">예시 데이터</p>
+          <p>빠르게 테스트하려면 예시 데이터를 불러와서 바로 요청을 보내면 됩니다.</p>
         </div>
         <button
           onClick={loadExample}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-pink-500 text-white hover:bg-pink-600 transition-colors shrink-0"
+          className="shrink-0 rounded-lg bg-pink-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-pink-600"
         >
-          예시 콘텐츠 불러오기
+          예시 불러오기
         </button>
       </div>
 
-      {/* 업로드 타입 */}
-      <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
-        <label className="text-sm font-semibold text-text">업로드 타입</label>
+      <div className="space-y-3 rounded-xl border border-border bg-surface p-5">
+        <label className="text-sm font-semibold text-text">업로드 유형</label>
         <div className="flex flex-wrap gap-3">
           {[
             { value: 'image', label: '단일 이미지', icon: <ImageIcon size={14} /> },
-            { value: 'carousel', label: '캐러셀 (여러 이미지)', icon: <ImageIcon size={14} /> },
-            { value: 'reel', label: '릴스 (비디오)', icon: <Film size={14} /> },
-          ].map(opt => (
+            { value: 'carousel', label: '캐러셀', icon: <ImageIcon size={14} /> },
+            { value: 'reel', label: '릴', icon: <Film size={14} /> },
+          ].map((option) => (
             <label
-              key={opt.value}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border cursor-pointer transition-all text-sm font-medium
-                ${uploadType === opt.value
+              key={option.value}
+              className={`flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
+                uploadType === option.value
                   ? 'border-pink-500/50 bg-pink-500/10 text-pink-500'
-                  : 'border-border bg-surface-light text-text-muted hover:border-pink-500/30'}`}
+                  : 'border-border bg-surface-light text-text-muted hover:border-pink-500/30'
+              }`}
             >
               <input
                 type="radio"
                 name="uploadType"
-                value={opt.value}
-                checked={uploadType === opt.value}
-                onChange={() => { setUploadType(opt.value); setImages([]); setVideoFile(null) }}
+                value={option.value}
+                checked={uploadType === option.value}
+                onChange={() => changeUploadType(option.value)}
                 className="hidden"
               />
-              {opt.icon}
-              {opt.label}
+              {option.icon}
+              {option.label}
             </label>
           ))}
         </div>
       </div>
 
-      {/* 캡션 */}
-      <div className="bg-surface rounded-xl border border-border p-5 space-y-2">
+      <div className="space-y-2 rounded-xl border border-border bg-surface p-5">
         <label className="text-sm font-semibold text-text">캡션</label>
         <textarea
           value={caption}
-          onChange={e => setCaption(e.target.value)}
-          placeholder="캡션을 입력하세요. 해시태그(#태그)는 아래 해시태그 패널에서 별도 관리됩니다."
+          onChange={(event) => setCaption(event.target.value)}
+          placeholder="캡션을 입력하세요. 해시태그는 아래 입력란에 별도로 추가하면 됩니다."
           rows={5}
-          className="w-full px-3 py-2.5 rounded-lg border border-border bg-surface-light text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:border-pink-500/40 transition-colors resize-y"
+          className="w-full resize-y rounded-lg border border-border bg-surface-light px-3 py-2.5 text-sm text-text placeholder:text-text-muted/50 focus:border-pink-500/40 focus:outline-none"
         />
         <div className="flex items-center justify-between">
-          <p className={`text-xs ${strippedCaption.length > 2200 ? 'text-red-400 font-semibold' : 'text-text-muted'}`}>
+          <p className={`text-xs ${strippedCaption.length > 2200 ? 'font-semibold text-red-400' : 'text-text-muted'}`}>
             {strippedCaption.length}/2200자
           </p>
           {caption !== strippedCaption && (
-            <p className="text-[11px] text-text-muted">해시태그는 자동으로 분리됩니다</p>
+            <p className="text-[11px] text-text-muted">캡션 안의 해시태그는 업로드 전에 자동으로 제외됩니다.</p>
           )}
         </div>
       </div>
 
-      {/* 해시태그 */}
-      <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
+      <div className="space-y-3 rounded-xl border border-border bg-surface p-5">
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-text">해시태그</label>
           <span className={`text-xs font-medium ${hashtags.length > 30 ? 'text-red-400' : 'text-text-muted'}`}>
             {hashtags.length}/30
           </span>
         </div>
-        {hashtags.length > 30 && (
-          <p className="text-xs text-red-400 flex items-center gap-1">
-            <AlertTriangle size={12} /> 해시태그가 30개를 초과했습니다.
-          </p>
-        )}
+
         <div className="flex gap-2">
           <input
             type="text"
             value={hashtagInput}
-            onChange={e => setHashtagInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addHashtag() } }}
-            placeholder="#태그 입력 후 Enter"
-            className="flex-1 px-3 py-2 rounded-lg border border-border bg-surface-light text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:border-pink-500/40 transition-colors"
+            onChange={(event) => setHashtagInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                addHashtag()
+              }
+            }}
+            placeholder="# 없이 입력 후 Enter"
+            className="flex-1 rounded-lg border border-border bg-surface-light px-3 py-2 text-sm text-text placeholder:text-text-muted/50 focus:border-pink-500/40 focus:outline-none"
           />
           <button
             onClick={addHashtag}
             disabled={!hashtagInput.trim()}
-            className="px-4 py-2 bg-pink-500/10 text-pink-500 text-sm font-medium rounded-lg hover:bg-pink-500/20 border border-pink-500/30 disabled:opacity-50 transition-all flex items-center gap-1"
+            className="flex items-center gap-1 rounded-lg border border-pink-500/30 bg-pink-500/10 px-4 py-2 text-sm font-medium text-pink-500 transition-all hover:bg-pink-500/20 disabled:opacity-50"
           >
-            <Plus size={14} /> 추가
+            <Plus size={14} />
+            추가
           </button>
         </div>
+
         {hashtags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {hashtags.map(t => (
-              <span key={t} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-pink-500/10 text-pink-500 text-xs font-medium border border-pink-500/30">
-                #{t}
-                <button onClick={() => removeHashtag(t)} className="hover:text-red-400 transition-colors">
+            {hashtags.map((tag) => (
+              <span
+                key={tag}
+                className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-xs font-medium text-pink-500"
+              >
+                #{tag}
+                <button onClick={() => removeHashtag(tag)} className="transition-colors hover:text-red-400">
                   <X size={11} />
                 </button>
               </span>
@@ -289,26 +370,28 @@ export default function InstagramUploadTestPage() {
         )}
       </div>
 
-      {/* 이미지 패널 (image / carousel) */}
       {uploadType !== 'reel' && (
-        <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
+        <div className="space-y-3 rounded-xl border border-border bg-surface p-5">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-text flex items-center gap-2">
-              <ImageIcon size={16} /> 이미지 ({images.length}/{maxImages})
+            <label className="flex items-center gap-2 text-sm font-semibold text-text">
+              <ImageIcon size={16} />
+              이미지 ({images.length}/{maxImages})
             </label>
             {images.length > 0 && (
-              <button
-                onClick={() => { images.forEach(i => URL.revokeObjectURL(i.preview)); setImages([]) }}
-                className="text-xs text-text-muted hover:text-red-400 transition-colors"
-              >
+              <button onClick={clearImages} className="text-xs text-text-muted transition-colors hover:text-red-400">
                 전체 삭제
               </button>
             )}
           </div>
+
           <div
-            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all
-              ${isDraggingImage ? 'border-pink-500 bg-pink-500/5' : 'border-border hover:border-pink-500/40'}`}
-            onDragOver={e => { e.preventDefault(); setIsDraggingImage(true) }}
+            className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+              isDraggingImage ? 'border-pink-500 bg-pink-500/5' : 'border-border hover:border-pink-500/40'
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault()
+              setIsDraggingImage(true)
+            }}
             onDragLeave={() => setIsDraggingImage(false)}
             onDrop={handleImageDrop}
             onClick={() => imageInputRef.current?.click()}
@@ -319,27 +402,30 @@ export default function InstagramUploadTestPage() {
               className="hidden"
               accept="image/*"
               multiple={uploadType === 'carousel'}
-              onChange={e => handleImageFiles(e.target.files)}
+              onChange={(event) => handleImageFiles(event.target.files)}
             />
             <Upload size={24} className="mx-auto mb-2 text-text-muted" />
-            <p className="text-sm text-text">이미지를 드래그하거나 <span className="text-pink-500 font-medium">클릭</span>하여 선택</p>
-            <p className="text-xs text-text-muted mt-1">
-              {uploadType === 'carousel' ? '최대 10장, 여러 파일 동시 선택 가능' : '1장만 선택 가능'}
+            <p className="text-sm text-text">
+              이미지를 끌어다 놓거나 <span className="font-medium text-pink-500">클릭해서 선택</span>하세요.
+            </p>
+            <p className="mt-1 text-xs text-text-muted">
+              {uploadType === 'carousel' ? '최대 10장까지 업로드할 수 있습니다.' : '한 장만 선택할 수 있습니다.'}
             </p>
           </div>
+
           {images.length > 0 && (
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-              {images.map((img, i) => (
-                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-border">
-                  <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
+            <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+              {images.map((image, index) => (
+                <div key={`${image.name}-${index}`} className="group relative aspect-square overflow-hidden rounded-lg border border-border">
+                  <img src={image.preview} alt={image.name} className="h-full w-full object-cover" />
                   <button
-                    onClick={() => removeImage(i)}
-                    className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => removeImage(index)}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
                   >
                     <X size={12} />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1">
-                    <p className="text-[10px] text-white truncate">{img.name}</p>
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1">
+                    <p className="truncate text-[10px] text-white">{image.name}</p>
                   </div>
                 </div>
               ))}
@@ -348,17 +434,22 @@ export default function InstagramUploadTestPage() {
         </div>
       )}
 
-      {/* 비디오 패널 (reel) */}
       {uploadType === 'reel' && (
-        <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
-          <label className="text-sm font-semibold text-text flex items-center gap-2">
-            <Film size={16} /> 비디오 (MP4)
+        <div className="space-y-3 rounded-xl border border-border bg-surface p-5">
+          <label className="flex items-center gap-2 text-sm font-semibold text-text">
+            <Film size={16} />
+            릴 영상 (참고용)
           </label>
+
           {!videoFile ? (
             <div
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all
-                ${isDraggingVideo ? 'border-pink-500 bg-pink-500/5' : 'border-border hover:border-pink-500/40'}`}
-              onDragOver={e => { e.preventDefault(); setIsDraggingVideo(true) }}
+              className={`cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all ${
+                isDraggingVideo ? 'border-pink-500 bg-pink-500/5' : 'border-border hover:border-pink-500/40'
+              }`}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setIsDraggingVideo(true)
+              }}
               onDragLeave={() => setIsDraggingVideo(false)}
               onDrop={handleVideoDrop}
               onClick={() => videoInputRef.current?.click()}
@@ -368,36 +459,41 @@ export default function InstagramUploadTestPage() {
                 type="file"
                 className="hidden"
                 accept="video/mp4,video/*"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoFile(f) }}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) {
+                    handleVideoFile(file)
+                  }
+                }}
               />
               <Film size={24} className="mx-auto mb-2 text-text-muted" />
-              <p className="text-sm text-text">비디오를 드래그하거나 <span className="text-pink-500 font-medium">클릭</span>하여 선택</p>
-              <p className="text-xs text-text-muted mt-1">MP4 권장, 최대 90초</p>
+              <p className="text-sm text-text">릴 업로드 UI 확인용으로 영상을 선택할 수 있습니다.</p>
+              <p className="mt-1 text-xs text-text-muted">현재 서버 전송은 지원하지 않으며, 파일 선택과 길이 점검만 가능합니다.</p>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs text-text-muted space-y-0.5">
+                <div className="space-y-0.5 text-xs text-text-muted">
                   <p className="font-medium text-text">{videoFile.name}</p>
                   {videoFile.duration !== null && (
-                    <p className={videoFile.duration > 90 ? 'text-red-400 font-semibold' : ''}>
+                    <p className={videoFile.duration > 90 ? 'font-semibold text-red-400' : ''}>
                       길이: {videoFile.duration}초
-                      {videoFile.duration > 90 && ' — 90초 초과 (릴스 한도)'}
+                      {videoFile.duration > 90 && ' (릴 권장 길이 초과)'}
                     </p>
                   )}
                 </div>
                 <button
-                  onClick={() => { URL.revokeObjectURL(videoFile.preview); setVideoFile(null) }}
-                  className="text-xs text-text-muted hover:text-red-400 transition-colors flex items-center gap-1"
+                  onClick={clearVideo}
+                  className="flex items-center gap-1 text-xs text-text-muted transition-colors hover:text-red-400"
                 >
-                  <X size={13} /> 제거
+                  <X size={13} />
+                  제거
                 </button>
               </div>
               <video
-                ref={videoPreviewRef}
                 src={videoFile.preview}
                 controls
-                className="w-full max-h-64 rounded-lg bg-black"
+                className="max-h-64 w-full rounded-lg bg-black"
                 onLoadedMetadata={handleVideoMetadata}
               />
             </div>
@@ -405,67 +501,81 @@ export default function InstagramUploadTestPage() {
         </div>
       )}
 
-      {/* 검증 결과 */}
-      <div className="bg-surface rounded-xl border border-border p-5 space-y-3">
+      <div className="space-y-3 rounded-xl border border-border bg-surface p-5">
         <div className="flex items-center justify-between">
           <label className="text-sm font-semibold text-text">검증 결과</label>
           <span className="text-xs text-text-muted">
-            {validation.warnings.length > 0 && (
-              <span className="text-yellow-500 mr-2">⚠️ 경고 {validation.warnings.length}개</span>
-            )}
-            {validation.errors.length > 0 && (
-              <span className="text-red-400">❌ 에러 {validation.errors.length}개</span>
-            )}
-            {validation.valid && validation.warnings.length === 0 && (
-              <span className="text-emerald-500">✅ 이상 없음</span>
-            )}
+            {validation.warnings.length > 0 && <span className="mr-2 text-yellow-500">경고 {validation.warnings.length}개</span>}
+            {validation.errors.length > 0 && <span className="text-red-400">오류 {validation.errors.length}개</span>}
+            {validation.valid && validation.warnings.length === 0 && <span className="text-emerald-500">검증 통과</span>}
           </span>
         </div>
+
         {validation.errors.length === 0 && validation.warnings.length === 0 && (
-          <p className="text-xs text-emerald-500 flex items-center gap-1.5">
-            <CheckCircle size={13} /> 모든 항목이 유효합니다.
+          <p className="flex items-center gap-1.5 text-xs text-emerald-500">
+            <CheckCircle size={13} />
+            현재 입력값은 제한 조건을 통과했습니다.
           </p>
         )}
-        {validation.errors.map((e, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs text-red-400 bg-red-500/5 rounded-lg px-3 py-2 border border-red-500/20">
-            <XCircle size={13} className="shrink-0 mt-0.5" />
-            <span>[{e.field}] {e.message}</span>
+
+        {validation.errors.map((item, index) => (
+          <div
+            key={`error-${index}`}
+            className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400"
+          >
+            <XCircle size={13} className="mt-0.5 shrink-0" />
+            <span>
+              [{item.field}] {item.message}
+            </span>
           </div>
         ))}
-        {validation.warnings.map((w, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs text-yellow-500 bg-yellow-500/5 rounded-lg px-3 py-2 border border-yellow-500/20">
-            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-            <span>[{w.field}] {w.message}</span>
+
+        {validation.warnings.map((item, index) => (
+          <div
+            key={`warning-${index}`}
+            className="flex items-start gap-2 rounded-lg border border-yellow-500/20 bg-yellow-500/5 px-3 py-2 text-xs text-yellow-500"
+          >
+            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+            <span>
+              [{item.field}] {item.message}
+            </span>
           </div>
         ))}
       </div>
 
-      {/* 에러 / 성공 배너 */}
       {error && (
-        <div className="flex items-start gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
-          <XCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-          <p className="text-sm text-red-400 whitespace-pre-wrap">{error}</p>
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
+          <XCircle size={16} className="mt-0.5 shrink-0 text-red-400" />
+          <p className="whitespace-pre-wrap text-sm text-red-400">{error}</p>
         </div>
       )}
 
       {result && (
-        <div className="p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-2">
+        <div className="space-y-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
           <div className="flex items-start gap-3">
-            <CheckCircle size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+            <CheckCircle size={18} className="mt-0.5 shrink-0 text-emerald-500" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-text">업로드 성공!</p>
-              <p className="text-xs text-text-muted mt-0.5">Mock 응답입니다. 실제 업로드가 실행되지 않았습니다.</p>
-              {result.mediaId && <p className="text-xs text-text-muted mt-1">Media ID: <span className="text-text font-mono">{result.mediaId}</span></p>}
+              <p className="text-sm font-medium text-text">업로드 완료</p>
+              <p className="mt-0.5 text-xs text-text-muted">응답 데이터를 그대로 표시합니다.</p>
+              {result.mediaId && (
+                <p className="mt-1 text-xs text-text-muted">
+                  Media ID: <span className="font-mono text-text">{result.mediaId}</span>
+                </p>
+              )}
               {result.permalink && (
-                <a href={result.permalink} target="_blank" rel="noopener noreferrer"
-                  className="text-xs text-emerald-500 hover:underline mt-1 block break-all">
+                <a
+                  href={result.permalink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 block break-all text-xs text-emerald-500 hover:underline"
+                >
                   {result.permalink}
                 </a>
               )}
             </div>
             <button
               onClick={reset}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-light hover:bg-surface text-text-muted border border-border transition-all shrink-0"
+              className="shrink-0 rounded-lg border border-border bg-surface-light px-3 py-1.5 text-xs font-medium text-text-muted transition-all hover:bg-surface"
             >
               초기화
             </button>
@@ -473,22 +583,23 @@ export default function InstagramUploadTestPage() {
         </div>
       )}
 
-      {/* 요청/응답 JSON 프리뷰 */}
-      {(sentBody || result || error) && (
-        <div className="bg-surface rounded-xl border border-border p-5 space-y-4">
+      {(sentBody || result) && (
+        <div className="space-y-4 rounded-xl border border-border bg-surface p-5">
           <label className="text-sm font-semibold text-text">요청 / 응답 데이터</label>
+
           {sentBody && (
             <div className="space-y-1">
               <p className="text-xs font-medium text-text-muted">요청 바디</p>
-              <pre className="bg-surface-light rounded-lg p-3 text-xs text-text font-mono overflow-x-auto whitespace-pre-wrap break-all">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-surface-light p-3 font-mono text-xs text-text">
                 {JSON.stringify(sentBody, null, 2)}
               </pre>
             </div>
           )}
+
           {result && (
             <div className="space-y-1">
-              <p className="text-xs font-medium text-text-muted">응답</p>
-              <pre className="bg-surface-light rounded-lg p-3 text-xs text-text font-mono overflow-x-auto whitespace-pre-wrap break-all">
+              <p className="text-xs font-medium text-text-muted">응답 데이터</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg bg-surface-light p-3 font-mono text-xs text-text">
                 {JSON.stringify(result, null, 2)}
               </pre>
             </div>
@@ -496,22 +607,27 @@ export default function InstagramUploadTestPage() {
         </div>
       )}
 
-      {/* 업로드 버튼 */}
       <div className="sticky bottom-0 bg-background py-2">
         <button
           onClick={upload}
-          disabled={uploading}
-          className="w-full px-4 py-3.5 bg-gradient-to-r from-pink-600 to-pink-500 text-white text-sm font-semibold rounded-xl hover:from-pink-700 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20"
+          disabled={uploading || !validation.valid}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-600 to-pink-500 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-pink-500/20 transition-all hover:from-pink-700 hover:to-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {uploading ? (
-            <><Loader2 size={16} className="animate-spin" /> 업로드 중...</>
+            <>
+              <Loader2 size={16} className="animate-spin" /> 업로드 중...
+            </>
           ) : (
-            <><Upload size={16} /> 인스타그램에 업로드 (Mock)</>
+            <>
+              <Upload size={16} /> 인스타그램 업로드 테스트
+            </>
           )}
         </button>
+
         {!connection.connected && (
-          <p className="text-xs text-center text-text-muted mt-2 flex items-center justify-center gap-1">
-            <AlertTriangle size={11} /> 계정이 연결되지 않았지만 Mock 모드에서는 테스트 가능합니다
+          <p className="mt-2 flex items-center justify-center gap-1 text-center text-xs text-text-muted">
+            <AlertTriangle size={11} />
+            계정 연결 없이도 요청 형식 테스트는 가능하지만, 실제 업로드는 서버 설정 상태에 따라 실패할 수 있습니다.
           </p>
         )}
       </div>
