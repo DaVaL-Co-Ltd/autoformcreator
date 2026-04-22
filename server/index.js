@@ -1195,13 +1195,13 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
 app.post('/api/naver/publish', async (req, res) => {
   try {
     const { title, content, tags } = req.body
-    if (!title || !content) return res.status(400).json({ success: false, error: 'title, content 필수' })
+    if (!title || !content) return res.status(400).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: 'title, content 필수' })
     const { uploadToNaverBlog } = await import('./services/naver-blog.js')
     const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
-    res.json({ success: true, url: result.url })
+    res.json({ success: true, source: 'server-api', endpoint: '/api/naver/publish', url: result.url })
   } catch (err) {
     console.error('[Naver Blog] 업로드 실패:', err.message)
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: err.message })
   }
 })
 

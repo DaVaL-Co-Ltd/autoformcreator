@@ -5,6 +5,8 @@ import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
+const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
+const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${UPLOAD_BLOG_SERVER}/api/upload`
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', 'x-app-secret': API_SECRET, ...extra })
 const blogHeaders = { 'x-autoform-client': 'web-client' }
@@ -63,7 +65,7 @@ export async function uploadToBlog(extractionId) {
 
     const remoteData = await readApiResponse(remoteRes)
     if (!remoteRes.ok || !remoteData.success) {
-      throw new Error(getApiErrorMessage(remoteData, `네이버 블로그 업로드 실패 (${remoteRes.status})`))
+      throw new Error(`${getApiErrorMessage(remoteData, `네이버 블로그 업로드 실패 (${remoteRes.status})`)} [source=${remoteData?.source || BLOG_UPLOAD_SOURCE} endpoint=${remoteData?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
     }
 
     return { url: remoteData.url }
@@ -97,12 +99,12 @@ export async function uploadToBlog(extractionId) {
     headers: blogHeaders,
     body: formData,
   }).catch(() => {
-    throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요.`)
+    throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요. [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
   })
 
   const data = await readApiResponse(res)
   if (!res.ok || !data.success) {
-    throw new Error(getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`))
+    throw new Error(`${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`)} [source=${data?.source || BLOG_UPLOAD_SOURCE} endpoint=${data?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
   }
 
   return { url: data.url }

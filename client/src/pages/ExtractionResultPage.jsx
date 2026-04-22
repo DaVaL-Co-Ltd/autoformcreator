@@ -21,6 +21,15 @@ import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
+const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
+const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
+
+function formatBlogUploadError(data, fallbackMessage) {
+  const message = getApiErrorMessage(data, fallbackMessage)
+  const source = data?.source || BLOG_UPLOAD_SOURCE
+  const endpoint = data?.endpoint || BLOG_UPLOAD_ENDPOINT
+  return `${message} [source=${source} endpoint=${endpoint}]`
+}
 
 const menuItems = [
   { id: 'blog',       label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
@@ -124,14 +133,18 @@ export default function ExtractionResultPage() {
         const data = await readApiResponse(response)
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
-          setBlogUploadResult({ url: data.url })
+          setBlogUploadResult({
+            endpoint: data.endpoint || BLOG_UPLOAD_ENDPOINT,
+            source: data.source || BLOG_UPLOAD_SOURCE,
+            url: data.url,
+          })
         } else {
           setUploadStatus(p => ({ ...p, blog: 'error' }))
-          setUploadError(`네이버 블로그 업로드 실패: ${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${response.status})`)}`)
+          setUploadError(`네이버 블로그 업로드 실패: ${formatBlogUploadError(data, `네이버 블로그 업로드 실패 (${response.status})`)}`)
         }
       } catch (err) {
         setUploadStatus(p => ({ ...p, blog: 'error' }))
-        setUploadError(`네이버 블로그 업로드 서버 연결 실패: ${err.message}`)
+        setUploadError(`네이버 블로그 업로드 서버 연결 실패: ${err.message} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
       }
       return
     }

@@ -16,6 +16,8 @@ const BROWSER_ARGS = [
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+const RUNTIME_SOURCE = 'server-api'
+const RUNTIME_ENDPOINT = '/api/naver/publish'
 
 const TITLE_TEXT = '\uC81C\uBAA9'
 const BODY_TEXT = '\uBCF8\uBB38'
@@ -24,8 +26,15 @@ const TAG_TEXT = '\uD0DC\uADF8'
 
 const TITLE_SELECTORS = [
   '.se-section-documentTitle .se-text-paragraph',
+  '.se-section-documentTitle [contenteditable="true"]',
+  '[class*="documentTitle"] [contenteditable="true"]',
+  '[class*="title"] [contenteditable="true"]',
   `.se-placeholder:has-text("${TITLE_TEXT}")`,
   `[placeholder*="${TITLE_TEXT}"]`,
+  `[aria-label*="${TITLE_TEXT}"]`,
+  `[data-placeholder*="${TITLE_TEXT}"]`,
+  `[contenteditable="true"][aria-label*="${TITLE_TEXT}"]`,
+  `[contenteditable="true"][data-placeholder*="${TITLE_TEXT}"]`,
   '.tit_input',
   `textarea[placeholder*="${TITLE_TEXT}"]`,
   `input[placeholder*="${TITLE_TEXT}"]`,
@@ -258,6 +267,98 @@ async function focusByDom(field) {
   })
 }
 
+async function focusEditableFieldByDom(scope, fieldName) {
+  return scope.evaluate(({ bodyText, field, titleText }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) {
+        return false
+      }
+
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0
+    }
+
+    const getMeta = (element) => {
+      const ancestors = []
+      let current = element.parentElement
+      while (current && ancestors.length < 4) {
+        ancestors.push(current)
+        current = current.parentElement
+      }
+      const ancestorText = ancestors.map((node) => normalize(node.textContent)).join(' ')
+      const placeholder = normalize(
+        element.getAttribute?.('placeholder') ||
+        element.getAttribute?.('aria-label') ||
+        element.getAttribute?.('data-placeholder')
+      )
+      const text = normalize(element.textContent)
+      const className = normalize(element.className)
+      const rect = element.getBoundingClientRect()
+      const parentClass = normalize(element.parentElement?.className)
+      const ancestorClass = normalize(ancestors.map((node) => node.className).join(' '))
+      const nearestSectionClass = normalize(element.closest?.('[class]')?.className)
+      return { ancestorClass, ancestorText, className, nearestSectionClass, parentClass, placeholder, rect, text }
+    }
+
+    const candidates = Array.from(document.querySelectorAll('[contenteditable="true"], textarea, input[type="text"], input:not([type]), [role="textbox"]'))
+      .filter((element) => element instanceof HTMLElement)
+      .filter(isVisible)
+      .map((element) => ({ element, ...getMeta(element) }))
+      .map((candidate) => {
+        const haystack = [
+          candidate.placeholder,
+          candidate.text,
+          candidate.className,
+          candidate.parentClass,
+          candidate.ancestorClass,
+          candidate.ancestorText,
+          candidate.nearestSectionClass,
+        ]
+          .join(' ')
+          .toLowerCase()
+        let score = 0
+
+        if (field === 'title') {
+          if (haystack.includes(titleText.toLowerCase())) score += 12
+          if (haystack.includes('documenttitle') || haystack.includes('section-documenttitle')) score += 10
+          if (haystack.includes('title')) score += 8
+          if (haystack.includes('se-section-documenttitle')) score += 10
+          if (candidate.rect.top < 200) score += 12
+          if (candidate.rect.top < 320) score += 8
+          if (candidate.rect.height >= 40) score += 3
+          if (candidate.rect.width >= 240) score += 2
+        } else {
+          if (haystack.includes(bodyText.toLowerCase())) score += 10
+          if (haystack.includes('content') || haystack.includes('text')) score += 6
+          if (candidate.rect.top >= 180) score += 6
+          if (candidate.rect.height >= 20) score += 2
+        }
+
+        return { ...candidate, score }
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score || left.rect.top - right.rect.top)
+
+    const target = candidates[0]
+    if (!target) {
+      return null
+    }
+
+    target.element.focus()
+    target.element.click?.()
+    target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+      return {
+        ancestorClass: target.ancestorClass,
+        className: target.className,
+        placeholder: target.placeholder,
+        score: target.score,
+        top: Math.round(target.rect.top),
+      }
+  }, { bodyText: BODY_TEXT, field: fieldName, titleText: TITLE_TEXT })
+}
+
 async function clickPublishButtonByDom(scope, which = 'first') {
   return scope.evaluate(({ publishText, whichButton }) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
@@ -440,9 +541,24 @@ async function focusAndType(page, targets, selectors, text, fieldName) {
         attempts.push(`${target.label} -> ${selector}: ${error.message}`)
       }
     }
+
+    try {
+      await dismissEditorPopups(page, targets)
+      const result = await focusEditableFieldByDom(target.scope, fieldName)
+      if (result) {
+        await sleep(300)
+        await typeMultiline(page, text)
+        console.log(
+          `[Naver Blog] Filled ${fieldName} via ${target.label} -> dom score=${result.score} top=${result.top} placeholder="${result.placeholder}" class="${result.className}"`
+        )
+        return
+      }
+    } catch (error) {
+      attempts.push(`${target.label} -> dom-editable: ${error.message}`)
+    }
   }
 
-  throw new Error(`Unable to focus ${fieldName}. ${attempts.slice(0, 6).join(' | ')}`)
+  throw new Error(`[${RUNTIME_SOURCE}] Unable to focus ${fieldName}. ${attempts.slice(0, 6).join(' | ')}`)
 }
 
 async function clickPublishButton(page, targets, which = 'first') {
@@ -505,7 +621,7 @@ async function clickPublishButton(page, targets, which = 'first') {
     }
   }
 
-  throw new Error(`Unable to click publish button. ${attempts.slice(0, 6).join(' | ')}`)
+  throw new Error(`[${RUNTIME_SOURCE}] Unable to click publish button. ${attempts.slice(0, 6).join(' | ')}`)
 }
 
 async function fillTags(page, targets, tags) {
@@ -627,10 +743,10 @@ export async function uploadToNaverBlog({ title, content, tags = [] }) {
         await saveDebug(page, 'after-publish')
       }
 
-      return { url: page.url() }
+      return { endpoint: RUNTIME_ENDPOINT, source: RUNTIME_SOURCE, url: page.url() }
     } catch (error) {
       await saveDebug(page, `failure-${currentStep}`)
-      throw error
+      throw new Error(`[${RUNTIME_SOURCE}] Naver upload failed during ${currentStep}: ${error.message}`)
     } finally {
       await context.close()
     }
