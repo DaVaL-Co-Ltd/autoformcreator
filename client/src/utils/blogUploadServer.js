@@ -6,11 +6,5 @@ export function shouldUseRemoteBlogPublish() {
 }
 
 export function getBlogUploadServerBase() {
-  // Oracle/legacy remote upload server override is disabled during Render/Vercel-only testing.
-  // const configuredServer = import.meta.env.VITE_UPLOAD_BLOG_SERVER?.trim()
-  // if (configuredServer) {
-  //   return configuredServer.replace(/\/$/, '')
-  // }
-
   return 'http://127.0.0.1:3000'
 }

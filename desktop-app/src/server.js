@@ -204,7 +204,7 @@ function createApp() {
         return
       }
 
-      const { content, showBrowser, title } = req.body
+      const { content, scheduledAt, showBrowser, title } = req.body
       const tags = parseTags(req.body.tags)
       const headless = showBrowser !== 'true'
 
@@ -212,6 +212,7 @@ function createApp() {
         content,
         headless,
         photoPaths,
+        scheduledAt,
         tags,
         title,
       })

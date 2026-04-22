@@ -3,10 +3,60 @@ import { Calendar, Clock, X, Upload, Trash2 } from 'lucide-react'
 import { create } from '../utils/scheduledUploads'
 import { CHANNELS } from '../constants/channels'
 
+const MINUTE_STEP = 10
+const BLOG_MIN_LEAD_MINUTES = 10
+
+function roundUpToMinuteStep(input, step = MINUTE_STEP) {
+  const date = input instanceof Date ? new Date(input) : new Date(input)
+  if (Number.isNaN(date.getTime())) return new Date()
+
+  const roundedMinutes = Math.ceil(date.getMinutes() / step) * step
+  date.setSeconds(0, 0)
+
+  if (roundedMinutes >= 60) {
+    date.setHours(date.getHours() + 1, 0, 0, 0)
+    return date
+  }
+
+  date.setMinutes(roundedMinutes, 0, 0)
+  return date
+}
+
 function toLocalDatetimeValue(date) {
-  const d = date instanceof Date ? date : new Date(date)
+  const d = roundUpToMinuteStep(date)
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function toOffsetIsoString(date) {
+  const d = date instanceof Date ? new Date(date) : new Date(date)
+  const pad = n => String(n).padStart(2, '0')
+  const offsetMinutes = -d.getTimezoneOffset()
+  const sign = offsetMinutes >= 0 ? '+' : '-'
+  const absOffset = Math.abs(offsetMinutes)
+  const offsetHour = pad(Math.floor(absOffset / 60))
+  const offsetMinute = pad(absOffset % 60)
+
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00${sign}${offsetHour}:${offsetMinute}`
+}
+
+function getMinimumScheduleDate(platform) {
+  if (platform === 'blog') {
+    return roundUpToMinuteStep(new Date(Date.now() + BLOG_MIN_LEAD_MINUTES * 60 * 1000))
+  }
+  return roundUpToMinuteStep(new Date())
+}
+
+function normalizeScheduledAtForPlatform(platform, datetimeValue) {
+  const requested = new Date(datetimeValue)
+  if (Number.isNaN(requested.getTime())) {
+    return toOffsetIsoString(getMinimumScheduleDate(platform))
+  }
+
+  const rounded = roundUpToMinuteStep(requested)
+  const minimum = getMinimumScheduleDate(platform)
+  const effective = rounded < minimum ? minimum : rounded
+  return toOffsetIsoString(effective)
 }
 
 export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog', content = {}, onSave, lockPlatform = false, initialDatetime, onDelete, mode = 'create' }) {
@@ -20,7 +70,9 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
   useEffect(() => {
     if (open) {
       setPlatform(defaultPlatform)
-      setDatetime(toLocalDatetimeValue(initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000)))
+      const initialDate = initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000)
+      const minimumDate = getMinimumScheduleDate(defaultPlatform)
+      setDatetime(toLocalDatetimeValue(initialDate < minimumDate ? minimumDate : initialDate))
       setImmediate(false)
       setSaved(false)
     }
@@ -31,7 +83,7 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
   const handleSubmit = () => {
     const scheduledAt = immediate
       ? new Date().toISOString()
-      : new Date(datetime).toISOString()
+      : normalizeScheduledAtForPlatform(platform, datetime)
     if (onSave) {
       onSave({ platform, scheduledAt, content, immediate })
     } else {
@@ -44,7 +96,7 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
     }, 800)
   }
 
-  const minDatetime = toLocalDatetimeValue(new Date())
+  const minDatetime = toLocalDatetimeValue(getMinimumScheduleDate(platform))
 
   return (
     <div
@@ -104,12 +156,14 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           // datetime 문자열("YYYY-MM-DDTHH:mm") 파싱 (없으면 현재 시각 기준 5분 반올림)
           const parts = (() => {
             if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
-              const [d, t] = datetime.split('T')
-              const [h, m] = t.split(':')
-              return { date: d, hour: h, minute: m.slice(0, 2) }
+              const rounded = roundUpToMinuteStep(datetime)
+              return {
+                date: toLocalDatetimeValue(rounded).slice(0, 10),
+                hour: String(rounded.getHours()).padStart(2, '0'),
+                minute: String(rounded.getMinutes()).padStart(2, '0'),
+              }
             }
-            const now = new Date()
-            now.setMinutes(Math.ceil(now.getMinutes() / 5) * 5, 0, 0)
+            const now = roundUpToMinuteStep(new Date())
             const y = now.getFullYear()
             const mo = String(now.getMonth() + 1).padStart(2, '0')
             const da = String(now.getDate()).padStart(2, '0')
@@ -151,7 +205,7 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
                   onChange={e => updateParts({ ...parts, minute: e.target.value })}
                   className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
                 >
-                  {Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0')).map(m => (
+                  {Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, '0')).map(m => (
                     <option key={m} value={m}>{m}분</option>
                   ))}
                 </select>

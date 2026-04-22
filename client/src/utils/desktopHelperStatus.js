@@ -58,15 +58,20 @@ export function formatDesktopHelperStatus(status) {
   }
 
   if (status.activeUpload?.stageLabel || status.activeUpload?.stage) {
-    return `helper-stage=${status.activeUpload.stage || status.activeUpload.stageLabel}`
+    const stage = status.activeUpload.stageLabel || status.activeUpload.stage
+    const error = status.activeUpload.error ? ` helper-error=${status.activeUpload.error}` : ''
+    return `helper-stage=${stage}${error}`
   }
 
   if (status.lastFailedUpload?.stageLabel || status.lastFailedUpload?.stage) {
-    return `last-failed-stage=${status.lastFailedUpload.stage || status.lastFailedUpload.stageLabel}`
+    const stage = status.lastFailedUpload.stageLabel || status.lastFailedUpload.stage
+    const error = status.lastFailedUpload.error ? ` helper-error=${status.lastFailedUpload.error}` : ''
+    return `last-failed-stage=${stage}${error}`
   }
 
   if (status.lastCompletedUpload?.stageLabel || status.lastCompletedUpload?.stage) {
-    return `last-completed-stage=${status.lastCompletedUpload.stage || status.lastCompletedUpload.stageLabel}`
+    const stage = status.lastCompletedUpload.stageLabel || status.lastCompletedUpload.stage
+    return `last-completed-stage=${stage}`
   }
 
   return ''

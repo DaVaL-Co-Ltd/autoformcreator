@@ -53,6 +53,153 @@ function testPublishedPostUrlMatcher() {
   assert.equal(__private.isPublishedPostUrl('https://blog.naver.com/GoBlogWrite.naver'), false)
 }
 
+function testFindScheduledPostUrlUsesOnlyPrimaryEditorFrames() {
+  const pendingPage = {
+    url: () => 'https://blog.naver.com/auto_test_log?Redirect=Write&',
+    frames: () => [
+      { name: () => 'input_buffer177', url: () => 'https://blog.naver.com/some-non-write-buffer' },
+      { name: () => 'mainFrame', url: () => 'https://blog.naver.com/auto_test_log?Redirect=Write&' },
+    ],
+  }
+
+  assert.equal(__private.findScheduledPostUrl(pendingPage), null)
+
+  const completedPage = {
+    url: () => 'https://blog.naver.com/auto_test_log?Redirect=Write&',
+    frames: () => [
+      { name: () => 'mainFrame', url: () => 'https://blog.naver.com/PostList.naver?blogId=auto_test_log&currentPage=1' },
+    ],
+  }
+
+  assert.match(__private.findScheduledPostUrl(completedPage), /PostList\.naver/)
+}
+
+function testNormalizeScheduledPublishAt() {
+  const originalNow = Date.now
+  Date.now = () => new Date('2026-04-21T23:00:00.000Z').getTime()
+
+  try {
+    const schedule = __private.normalizeScheduledPublishAt('2026-04-22T01:40:00.000Z')
+    assert.equal(schedule.adjusted, false)
+    assert.equal(schedule.dateValue, '2026-04-22')
+    assert.equal(schedule.hour24, '10')
+    assert.equal(schedule.minute, '40')
+    assert.equal(schedule.meridiemKo, '\uC624\uC804')
+  } finally {
+    Date.now = originalNow
+  }
+}
+
+function testNormalizeScheduledPublishAtPreservesLateNightHour() {
+  const originalNow = Date.now
+  Date.now = () => new Date('2026-04-22T00:00:00.000Z').getTime()
+
+  try {
+    const schedule = __private.normalizeScheduledPublishAt('2026-04-22T23:00:00+09:00')
+    assert.equal(schedule.hour24, '23')
+    assert.equal(schedule.hour12, '11')
+    assert.equal(schedule.meridiemKo, '\uC624\uD6C4')
+  } finally {
+    Date.now = originalNow
+  }
+}
+
+function testNormalizeScheduledPublishAtAdjustsTooSoonSchedule() {
+  const originalNow = Date.now
+  Date.now = () => new Date('2026-04-22T02:05:43.000Z').getTime()
+
+  try {
+    const schedule = __private.normalizeScheduledPublishAt('2026-04-22T02:10:00.000Z')
+    assert.equal(schedule.adjusted, true)
+    assert.equal(schedule.iso, '2026-04-22T02:20:00.000Z')
+    assert.equal(schedule.hour24, '11')
+    assert.equal(schedule.minute, '20')
+  } finally {
+    Date.now = originalNow
+  }
+}
+
+function testScheduledPublishStateConfirmationUsesDomValues() {
+  const schedule = {
+    dateValue: '2026-04-22',
+    hour24: '11',
+    minute: '20',
+  }
+
+  assert.equal(
+    __private.isScheduledPublishStateConfirmed(
+      {
+        panelVisible: true,
+        reserveModeActive: true,
+        reservedTime: null,
+        dateValue: '2026. 04. 22',
+        hourValue: '11',
+        minuteValue: '20',
+        validationError: null,
+      },
+      schedule
+    ),
+    true
+  )
+
+  assert.equal(
+    __private.isScheduledPublishStateConfirmed(
+      {
+        panelVisible: true,
+        reserveModeActive: true,
+        reservedTime: null,
+        dateValue: '2026. 04. 22',
+        hourValue: '11',
+        minuteValue: '10',
+        validationError: null,
+      },
+      schedule
+    ),
+    false
+  )
+
+  assert.equal(
+    __private.isScheduledPublishStateConfirmed(
+      {
+        panelVisible: true,
+        reserveModeActive: true,
+        reservedTime: null,
+        dateValue: '2026. 04. 22',
+        hourValue: '11',
+        minuteValue: '20',
+        validationError: '\uD604\uC7AC \uC2DC\uAC04 \uC774\uD6C4\uB85C \uC124\uC815\uD574\uC8FC\uC138\uC694.',
+      },
+      schedule
+    ),
+    false
+  )
+}
+
+function testScheduledPublishStateConfirmationAcceptsReadyBanner() {
+  const schedule = {
+    dateValue: '2026-04-22',
+    hour24: '23',
+    minute: '40',
+  }
+
+  assert.equal(
+    __private.isScheduledPublishStateConfirmed(
+      {
+        panelVisible: true,
+        reserveModeActive: true,
+        reservedTime: null,
+        dateValue: '2026. 04. 22',
+        hourValue: '23',
+        minuteValue: '40',
+        scheduleReady: true,
+        validationError: null,
+      },
+      schedule
+    ),
+    true
+  )
+}
+
 function testPublishConfirmationErrorIncludesDebugFiles() {
   const message = __private.buildPublishConfirmationError({
     currentUrl: 'https://blog.naver.com/GoBlogWrite.naver',
@@ -60,14 +207,25 @@ function testPublishConfirmationErrorIncludesDebugFiles() {
       screenshotPath: 'C:\\debug\\after-publish.png',
       htmlPath: 'C:\\debug\\after-publish.html',
     },
-    visibleHints: ['도움말', '임시저장'],
+    visibleHints: ['help-overlay', 'popup-layer'],
   })
 
   assert.match(message, /final Naver post URL was not confirmed/i)
   assert.match(message, /Current URL: https:\/\/blog\.naver\.com\/GoBlogWrite\.naver/)
-  assert.match(message, /Visible overlays: 도움말 \| 임시저장/)
+  assert.match(message, /Visible overlays: help-overlay \| popup-layer/)
   assert.match(message, /C:\\debug\\after-publish\.png/)
   assert.match(message, /C:\\debug\\after-publish\.html/)
+}
+
+function testScheduledPublishConfirmationErrorMentionsSchedule() {
+  const message = __private.buildPublishConfirmationError({
+    currentUrl: 'https://blog.naver.com/sample?Redirect=Write&',
+    debugArtifacts: null,
+    scheduledAt: '2026-04-22T01:35:00.000Z',
+    visibleHints: [],
+  })
+
+  assert.match(message, /scheduled publish confirmation was not confirmed/i)
 }
 
 async function testClickPublishButtonByDomPrefersPanelConfirmButton() {
@@ -76,7 +234,9 @@ async function testClickPublishButtonByDomPrefersPanelConfirmButton() {
   class FakeElement {}
   class FakeHTMLElement extends FakeElement {}
   class FakeHTMLButtonElement extends FakeHTMLElement {}
-  class FakeMouseEvent { constructor() {} }
+  class FakeMouseEvent {
+    constructor() {}
+  }
 
   const scope = {
     evaluate: async (fn, args) => fn.call(null, args),
@@ -89,7 +249,7 @@ async function testClickPublishButtonByDomPrefersPanelConfirmButton() {
 
   const topButton = Object.assign(new FakeHTMLButtonElement(), {
     tagName: 'BUTTON',
-    textContent: '발행',
+    textContent: '\uBC1C\uD589',
     className: 'publish_btn__top',
     getAttribute: (name) => (name === 'data-click-area' ? 'tpb.publish' : ''),
     hasAttribute: () => false,
@@ -113,7 +273,7 @@ async function testClickPublishButtonByDomPrefersPanelConfirmButton() {
 
   const panelRoot = Object.assign(new FakeHTMLElement(), {
     tagName: 'DIV',
-    textContent: '카테고리 공개 설정 발행 시간',
+    textContent: '\uCE74\uD14C\uACE0\uB9AC \uACF5\uAC1C \uC124\uC815 \uBC1C\uD589 \uC2DC\uAC04',
     getBoundingClientRect: () => ({ top: 40, left: 780, width: 560, height: 560 }),
     querySelectorAll: () => [topButton, bottomButton],
   })
@@ -145,16 +305,111 @@ async function testClickPublishButtonByDomPrefersPanelConfirmButton() {
   delete global.MouseEvent
 }
 
+async function testActivateReservePublishModeByDomSkipsHeaderScheduleButton() {
+  const clicked = []
+
+  class FakeElement {}
+  class FakeHTMLElement extends FakeElement {}
+  class FakeHTMLButtonElement extends FakeHTMLElement {}
+  class FakeMouseEvent {
+    constructor() {}
+  }
+
+  const scope = {
+    evaluate: async (fn, args) => fn.call(null, args),
+  }
+
+  global.Element = FakeElement
+  global.HTMLElement = FakeHTMLElement
+  global.HTMLButtonElement = FakeHTMLButtonElement
+  global.MouseEvent = FakeMouseEvent
+
+  const headerReserveButton = Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: '\uC608\uC57D \uBC1C\uD589 0\uAC74',
+    className: 'reserve_btn__header',
+    parentElement: null,
+    getAttribute: (name) => {
+      if (name === 'data-click-area') return 'tpb*t.schedule'
+      if (name === 'class') return 'reserve_btn__header'
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 24, left: 960, width: 120, height: 32 }),
+    focus: () => clicked.push('header-focus'),
+    click: () => clicked.push('header-click'),
+    dispatchEvent: () => clicked.push('header-dispatch'),
+  })
+
+  const panelReserveButton = Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: '\uC608\uC57D',
+    className: 'publish_schedule_option',
+    parentElement: null,
+    getAttribute: (name) => {
+      if (name === 'data-click-area') return 'tpb*i.schedule'
+      if (name === 'class') return 'publish_schedule_option'
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 540, left: 990, width: 90, height: 32 }),
+    focus: () => clicked.push('panel-focus'),
+    click: () => clicked.push('panel-click'),
+    dispatchEvent: () => clicked.push('panel-dispatch'),
+  })
+
+  const panelRoot = Object.assign(new FakeHTMLElement(), {
+    tagName: 'DIV',
+    textContent: '\uCE74\uD14C\uACE0\uB9AC \uACF5\uAC1C \uC124\uC815 \uBC1C\uD589 \uC2DC\uAC04 \uC608\uC57D',
+    getBoundingClientRect: () => ({ top: 120, left: 780, width: 560, height: 560 }),
+    querySelectorAll: () => [panelReserveButton],
+  })
+
+  global.document = {
+    querySelectorAll: (selector) => {
+      if (selector === 'body *') {
+        return [panelRoot, headerReserveButton, panelReserveButton]
+      }
+
+      return [headerReserveButton, panelReserveButton]
+    },
+  }
+  global.window = {
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', pointerEvents: 'auto' }),
+  }
+
+  const result = await __private.activateReservePublishModeByDom(scope)
+
+  assert.equal(result.text, '\uC608\uC57D')
+  assert.match(result.attrs, /tpb\*i\.schedule/)
+  assert.deepEqual(clicked, ['panel-focus', 'panel-click', 'panel-dispatch'])
+
+  delete global.document
+  delete global.window
+  delete global.Element
+  delete global.HTMLElement
+  delete global.HTMLButtonElement
+  delete global.MouseEvent
+}
+
 async function main() {
   await testPopupRecoveryRetriesInterceptedClicks()
   await testPopupRecoveryDoesNotRetryOtherErrors()
   testPublishedPostUrlMatcher()
+  testFindScheduledPostUrlUsesOnlyPrimaryEditorFrames()
+  testNormalizeScheduledPublishAt()
+  testNormalizeScheduledPublishAtPreservesLateNightHour()
+  testNormalizeScheduledPublishAtAdjustsTooSoonSchedule()
+  testScheduledPublishStateConfirmationUsesDomValues()
+  testScheduledPublishStateConfirmationAcceptsReadyBanner()
   testPublishConfirmationErrorIncludesDebugFiles()
+  testScheduledPublishConfirmationErrorMentionsSchedule()
   await testClickPublishButtonByDomPrefersPanelConfirmButton()
-  console.log('naver-upload tests passed.')
+  await testActivateReservePublishModeByDomSkipsHeaderScheduleButton()
+  console.log('naver-upload tests passed')
 }
 
 main().catch((error) => {
   console.error(error)
-  process.exit(1)
+  process.exitCode = 1
 })
