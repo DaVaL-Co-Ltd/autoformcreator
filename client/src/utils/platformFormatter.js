@@ -42,9 +42,10 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
  * 내부 shortsScript + videoUrl을 YouTube API 요청 바디 형태로 변환
  * @param {{ title?: string, hook?: string, scenes?: Array<{narration?: string}>, cta?: string, hashtags?: string[] }} shortsScript
  * @param {string} videoUrl
+ * @param {string | null} scheduledAt
  * @returns {{ snippet: { title: string, description: string, tags: string[], categoryId: string }, status: object, videoUrl: string }}
  */
-export function formatYouTubeRequest(shortsScript = {}, videoUrl = '') {
+export function formatYouTubeRequest(shortsScript = {}, videoUrl = '', scheduledAt = null) {
   const limits = PLATFORM_LIMITS.shorts
 
   // 제목: uploadTitle 우선, 없으면 script title
@@ -97,10 +98,16 @@ export function formatYouTubeRequest(shortsScript = {}, videoUrl = '') {
       tags,
       categoryId: '22', // People & Blogs
     },
-    status: {
-      privacyStatus: 'public',
-      selfDeclaredMadeForKids: false,
-    },
+    status: scheduledAt
+      ? {
+          privacyStatus: 'private',
+          publishAt: scheduledAt,
+          selfDeclaredMadeForKids: false,
+        }
+      : {
+          privacyStatus: 'public',
+          selfDeclaredMadeForKids: false,
+        },
     videoUrl,
   }
 }

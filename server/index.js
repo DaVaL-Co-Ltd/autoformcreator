@@ -1357,10 +1357,16 @@ app.post('/api/youtube/upload', async (req, res) => {
   const tags = body.tags || snippet.tags
   const categoryId = body.categoryId || snippet.categoryId
   const privacyStatus = body.privacyStatus || status.privacyStatus
+  const requestedPublishAt = body.scheduledAt || status.publishAt || null
   const videoUrl = body.videoUrl
 
   if (!ytTokens) return res.status(401).json({ error: 'YouTube 인증이 필요합니다. 먼저 Google 계정을 연결하세요.' })
   if (!videoUrl) return res.status(400).json({ error: 'videoUrl이 필요합니다.' })
+
+  const publishAt = requestedPublishAt ? new Date(requestedPublishAt) : null
+  if (publishAt && Number.isNaN(publishAt.getTime())) {
+    return res.status(400).json({ error: '예약 발행 시간은 ISO 8601 형식이 필요합니다.' })
+  }
 
   const client = getYtOAuth2Client()
   const youtube = google.youtube({ version: 'v3', auth: client })
@@ -1393,7 +1399,8 @@ app.post('/api/youtube/upload', async (req, res) => {
           categoryId: categoryId || '22',
         },
         status: {
-          privacyStatus: privacyStatus || 'private',
+          privacyStatus: publishAt ? 'private' : (privacyStatus || 'private'),
+          ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
           selfDeclaredMadeForKids: false,
         },
       },
@@ -1411,6 +1418,8 @@ app.post('/api/youtube/upload', async (req, res) => {
     res.json({
       success: true,
       videoId,
+      scheduled: Boolean(publishAt),
+      scheduledAt: publishAt ? publishAt.toISOString() : null,
       url: `https://youtu.be/${videoId}`,
       snippet: response.data.snippet,
     })

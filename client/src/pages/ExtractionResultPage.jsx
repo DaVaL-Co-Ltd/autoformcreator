@@ -158,12 +158,13 @@ export default function ExtractionResultPage() {
     return () => { cancelled = true }
   }, [location.state])
 
-  const handleUpload = async (channel) => {
+  const handleUpload = async (channel, options = {}) => {
     setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
     setUploadError(null)
 
     if (channel === 'blog') {
       try {
+        setBlogUploadResult(null)
         // blogPngUrls가 없으면 먼저 캡처
         let pngUrls = blogPngUrls
         if (!pngUrls.length) {
@@ -182,6 +183,7 @@ export default function ExtractionResultPage() {
         const title = blogTitle || blogContent?.title || ''
         const content = blogBody || compileBlogBody(ensureArray(blogContent?.sections))
         const tags = ensureTagArray(blogContent?.tags).map(t => t.replace(/^#/, ''))
+        const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
 
         let response
         if (USE_REMOTE_BLOG_PUBLISH) {
@@ -192,7 +194,7 @@ export default function ExtractionResultPage() {
               'Content-Type': 'application/json',
               'x-app-secret': import.meta.env.VITE_API_SECRET || '',
             },
-            body: JSON.stringify({ title, content: remoteContent, tags }),
+            body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags }),
           }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
         } else {
           const formData = new FormData()
@@ -200,6 +202,9 @@ export default function ExtractionResultPage() {
           formData.append('content', content)
           formData.append('tags', JSON.stringify(tags))
           formData.append('showBrowser', 'true')
+          if (scheduledAt) {
+            formData.append('scheduledAt', scheduledAt)
+          }
 
           for (let i = 0; i < pngUrls.length; i++) {
             const url = pngUrls[i]
@@ -234,8 +239,20 @@ export default function ExtractionResultPage() {
         }
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
+          if (extractionId) {
+            updateUploadStatus(extractionId, 'blog', {
+              nativeSchedule: Boolean(data.scheduled || scheduledAt),
+              scheduledAt: data.scheduledAt || scheduledAt || null,
+              status: 'uploaded',
+              uploadedAt: new Date().toISOString(),
+              uploadedUrl: data.url || null,
+            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+          }
           setBlogUploadResult({
             endpoint: data.endpoint || BLOG_UPLOAD_ENDPOINT,
+            mode: data.mode || (scheduledAt ? 'scheduled' : 'published'),
+            scheduled: Boolean(data.scheduled || scheduledAt),
+            scheduledAt: data.scheduledAt || scheduledAt || null,
             source: data.source || BLOG_UPLOAD_SOURCE,
             url: data.url,
           })
@@ -245,7 +262,7 @@ export default function ExtractionResultPage() {
         }
       } catch (err) {
         setUploadStatus(p => ({ ...p, blog: 'error' }))
-        setUploadError(`네이버 블로그 업로드 서버 연결 실패: ${err.message} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
+        setUploadError(`네이버 블로그 업로드 실패: ${err.message} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
       }
       return
     }
@@ -313,7 +330,8 @@ export default function ExtractionResultPage() {
         } else if (absVideoUrl.startsWith('/')) {
           absVideoUrl = `${window.location.origin}${absVideoUrl}`
         }
-        const formatted = formatYouTubeRequest(shortsScript, absVideoUrl)
+        const scheduledAt = options.scheduledAtOverride || scheduleInfo.shorts?.scheduledAt || null
+        const formatted = formatYouTubeRequest(shortsScript, absVideoUrl, scheduledAt)
         console.log('[ExtractionResultPage] 유튜브 숏츠 업로드 요청:', formatted)
         const response = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
           method: 'POST',
@@ -331,12 +349,18 @@ export default function ExtractionResultPage() {
         if (data.success) {
           setUploadStatus(p => ({ ...p, shorts: 'done' }))
           const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
+          const resolvedScheduledAt = data.scheduledAt || scheduledAt || null
           if (extractionId) {
             updateUploadStatus(extractionId, 'shorts', {
+              nativeSchedule: Boolean(data.scheduled || scheduledAt),
+              scheduledAt: resolvedScheduledAt,
               status: 'uploaded',
               uploadedAt: new Date().toISOString(),
               uploadedUrl: ytUrl,
             }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+          }
+          if (resolvedScheduledAt) {
+            setScheduleInfo(p => ({ ...p, shorts: { scheduledAt: resolvedScheduledAt } }))
           }
           if (ytUrl) {
             console.log('[YouTube 업로드 완료]', ytUrl)
@@ -632,7 +656,7 @@ export default function ExtractionResultPage() {
     ;(async () => {
       try {
         const all = await getAllScheduledUploads()
-        const mine = all.filter(item => item.extractionId === extractionId)
+        const mine = all.filter(item => item.extractionId === extractionId && item.platform !== 'blog')
         if (!mine.length) return
         setScheduleInfo(prev => {
           const next = { ...prev }
@@ -1275,7 +1299,20 @@ export default function ExtractionResultPage() {
         <div className="flex items-start gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
           <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-medium text-text">네이버 블로그 업로드 성공!</p>
+            <p className="text-sm font-medium text-text">
+              {blogUploadResult.scheduled ? '네이버 예약 발행 등록 완료!' : '네이버 블로그 업로드 성공!'}
+            </p>
+            {blogUploadResult.scheduledAt && (
+              <p className="mt-1 text-xs text-text-muted">
+                예약 시간: {new Date(blogUploadResult.scheduledAt).toLocaleString('ko-KR', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            )}
             {blogUploadResult.url && (
               <a href={blogUploadResult.url} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1 mt-1 text-xs text-emerald-500 hover:underline font-medium break-all">
@@ -1315,22 +1352,26 @@ export default function ExtractionResultPage() {
                 const d = new Date(iso)
                 return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
               }
-              const isScheduled = status === 'scheduled'
+              const isNativeSchedule = ['blog', 'shorts'].includes(ch) && status === 'done' && Boolean(sched?.scheduledAt)
+              const nativeScheduleLabel = ch === 'blog' ? '네이버' : 'YouTube'
+              const isScheduled = status === 'scheduled' && !isNativeSchedule
               return (
                 <div className="flex items-center gap-3 flex-1">
-                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : isScheduled ? 'bg-info/5 border-info/20' : 'bg-surface-light border-border'}`}>
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : (isScheduled || isNativeSchedule) ? 'bg-info/5 border-info/20' : 'bg-surface-light border-border'}`}>
                     <span className="text-lg">{cfg.icon}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-text">{cfg.name}</p>
                       <p className="text-xs text-text-muted">
-                        {status === 'done' ? '업로드 완료' :
+                        {status === 'done' && isNativeSchedule ? `${nativeScheduleLabel} 예약 등록 완료 · ${fmtDate(sched?.scheduledAt)}` :
+                         status === 'done' ? '업로드 완료' :
                          status === 'error' ? '업로드 실패' :
+                         isNativeSchedule ? `${nativeScheduleLabel} 예약 시간 · ${fmtDate(sched?.scheduledAt)}` :
                          isScheduled ? `예약 완료 · ${fmtDate(sched?.scheduledAt)}` :
                          '업로드 대기'}
                       </p>
                     </div>
                     {status === 'error' && <AlertCircle size={16} className="text-danger shrink-0" />}
-                    {isScheduled && <Calendar size={16} className="text-info shrink-0" />}
+                    {(isScheduled || isNativeSchedule) && <Calendar size={16} className="text-info shrink-0" />}
                   </div>
                   {!isScheduled && (
                     <button
@@ -1357,12 +1398,12 @@ export default function ExtractionResultPage() {
                     <button
                       onClick={() => {
                         const contentMap = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }
-                        setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: isScheduled ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
+                        setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
                       }}
                       className="px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
                     >
                       <Calendar size={14} />
-                      {isScheduled ? '예약 상세' : '예약 업로드'}
+                      {(isScheduled || isNativeSchedule) ? '예약 상세' : '예약 업로드'}
                     </button>
                   )}
                 </div>
@@ -1403,20 +1444,49 @@ export default function ExtractionResultPage() {
             alert('콘텐츠 저장에 실패했습니다. 다시 시도해주세요.')
             return
           }
-          await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
-          await createScheduledUpload({ platform, content, scheduledAt, extractionId: id }).catch(err => {
-            console.error('[예약 생성 실패]', err)
-            alert(`예약 생성 실패: ${err.message}`)
-          })
-          setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
+
+          if (platform === 'blog') {
+            const nextStatus = uploadStatus[platform] === 'done' ? 'uploaded' : (uploadStatus[platform] || 'not_uploaded')
+            await updateUploadStatus(id, platform, {
+              nativeSchedule: true,
+              scheduledAt,
+              status: nextStatus,
+            })
+            setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
+            setUploadStatus(p => ({ ...p, [platform]: 'loading' }))
+            setUploadError(null)
+            handleUpload(platform, { scheduledAtOverride: scheduledAt })
+            return
+          } else if (platform === 'shorts') {
+            setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
+            setUploadStatus(p => ({ ...p, [platform]: 'loading' }))
+            setUploadError(null)
+            handleUpload(platform, { scheduledAtOverride: scheduledAt })
+            return
+          } else {
+            await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
+            await createScheduledUpload({ platform, content, scheduledAt, extractionId: id }).catch(err => {
+              console.error('[예약 생성 실패]', err)
+              alert(`예약 생성 실패: ${err.message}`)
+            })
+            setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
+          }
+
           setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
         }}
         onDelete={scheduleDialog.mode === 'edit' ? () => {
           const platform = scheduleDialog.platform
           if (extractionId) {
-            updateUploadStatus(extractionId, platform, { status: 'not_uploaded' })
+            if (platform === 'blog') {
+              const nextStatus = uploadStatus[platform] === 'done' ? 'uploaded' : 'not_uploaded'
+              updateUploadStatus(extractionId, platform, { nativeSchedule: false, scheduledAt: null, status: nextStatus })
+            } else {
+              updateUploadStatus(extractionId, platform, { status: 'not_uploaded' })
+            }
           }
-          setUploadStatus(p => { const n = { ...p }; delete n[platform]; return n })
+          if (platform !== 'blog') {
+            setUploadStatus(p => { const n = { ...p }; delete n[platform]; return n })
+          }
           setScheduleInfo(p => { const n = { ...p }; delete n[platform]; return n })
         } : undefined}
       />

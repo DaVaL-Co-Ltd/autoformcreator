@@ -25,13 +25,21 @@ function stripMarkdown(md) {
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/^>\s+/gm, '')
-    .replace(/^[-*]\s+/gm, '??')
+    .replace(/^[-*]\s+/gm, '')
     .trim()
 }
 
-// 네이버 블로그는 본인 PC에서 실행 중인 로컬 RPA 서버(localhost:3000)로 직접 요청한다.
-// Oracle/legacy remote upload server path is intentionally disabled during Render/Vercel-only testing.
-export async function uploadToBlog(extractionId) {
+async function buildDesktopHelperRequestError(error) {
+  const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+  if (helperStatus) {
+    return `네이버 블로그 업로드 실패: ${error.message} ${helperStatus} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`
+  }
+
+  return `로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요. [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`
+}
+
+// 네이버 블로그는 본인 PC에서 실행 중인 로컬 RPA 서버로만 업로드한다.
+export async function uploadToBlog(extractionId, options = {}) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
@@ -40,22 +48,27 @@ export async function uploadToBlog(extractionId) {
 
   const title = blog.title || blog.uploadTitle || '제목 없음'
   let rawContent = blog.body || blog.content || ''
+
   if (!rawContent && Array.isArray(blog.sections)) {
-    rawContent = blog.sections.map(section => {
+    rawContent = blog.sections.map((section) => {
       const heading = section.heading ? `## ${section.heading}\n\n` : ''
       const keyPhrase = section.keyPhrase ? `${section.keyPhrase}\n\n` : ''
       const body = section.content || section.body || ''
       return `${heading}${keyPhrase}${body}`
     }).join('\n\n')
   }
-  if (!rawContent && blog.summary) rawContent = blog.summary
+
+  if (!rawContent && blog.summary) {
+    rawContent = blog.summary
+  }
 
   if (!title || !rawContent) {
     throw new Error('블로그 제목 또는 본문이 없습니다')
   }
 
   const normalizedContent = stripMarkdown(rawContent)
-  const normalizedTags = (blog.tags || blog.hashtags || []).map(tag => String(tag).replace(/^#/, ''))
+  const normalizedTags = (blog.tags || blog.hashtags || []).map((tag) => String(tag).replace(/^#/, ''))
+  const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.blog?.scheduledAt || null
 
   if (USE_REMOTE_BLOG_PUBLISH) {
     const remoteRes = await fetchWithTimeout(`${API_BASE}/api/naver/publish`, {
@@ -64,6 +77,7 @@ export async function uploadToBlog(extractionId) {
       body: JSON.stringify({
         title,
         content: normalizedContent,
+        scheduledAt,
         tags: normalizedTags,
       }),
     }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Remote blog upload request')
@@ -80,7 +94,10 @@ export async function uploadToBlog(extractionId) {
   formData.append('title', title)
   formData.append('content', normalizedContent)
   formData.append('tags', JSON.stringify(normalizedTags))
-  formData.append('showBrowser', 'false')
+  formData.append('showBrowser', 'true')
+  if (scheduledAt) {
+    formData.append('scheduledAt', scheduledAt)
+  }
 
   const images = ext.data?.blogImages || ext.blogImages || []
   for (let i = 0; i < images.length; i += 1) {
@@ -95,7 +112,7 @@ export async function uploadToBlog(extractionId) {
       const extName = (blob.type.split('/')[1] || 'png').split('+')[0]
       formData.append('photos', blob, `image_${i + 1}.${extName}`)
     } catch (err) {
-      console.warn(`[uploadToBlog] 이미지 ${i + 1} 다운로드 실패:`, err.message)
+      console.warn(`[uploadToBlog] image ${i + 1} download failed:`, err.message)
     }
   }
 
@@ -103,22 +120,28 @@ export async function uploadToBlog(extractionId) {
     method: 'POST',
     headers: blogHeaders,
     body: formData,
-  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request').catch(async () => {
-    throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요. [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
+  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request').catch(async (error) => {
+    throw new Error(await buildDesktopHelperRequestError(error))
   })
 
   const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'Desktop helper response parsing').catch(async (error) => {
     const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
     throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
   })
+
   if (!res.ok || !data.success) {
     throw new Error(`${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`)} [source=${data?.source || BLOG_UPLOAD_SOURCE} endpoint=${data?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
   }
 
-  return { url: data.url }
+  return {
+    mode: data.mode,
+    scheduled: Boolean(data.scheduled),
+    scheduledAt: data.scheduledAt || scheduledAt,
+    url: data.url,
+  }
 }
 
-export async function uploadToYoutube(extractionId) {
+export async function uploadToYoutube(extractionId, options = {}) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
@@ -139,8 +162,9 @@ export async function uploadToYoutube(extractionId) {
   if (script?.cta) descParts.push(`\n${script.cta}`)
   const description = (script?.uploadDescription || descParts.join('\n') || '').slice(0, 5000)
 
-  const rawTags = (script?.hashtags || script?.tags || []).map(tag => String(tag).replace(/^#/, ''))
+  const rawTags = (script?.hashtags || script?.tags || []).map((tag) => String(tag).replace(/^#/, ''))
   if (!rawTags.includes('Shorts')) rawTags.unshift('Shorts')
+  const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.shorts?.scheduledAt || null
 
   const requestBody = {
     snippet: {
@@ -149,7 +173,10 @@ export async function uploadToYoutube(extractionId) {
       tags: rawTags,
       categoryId: '22',
     },
-    status: { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+    status: scheduledAt
+      ? { privacyStatus: 'private', publishAt: scheduledAt, selfDeclaredMadeForKids: false }
+      : { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+    scheduledAt,
     videoUrl: video.url?.startsWith('/output/') && API_BASE ? `${API_BASE}${video.url}` : video.url,
   }
 
@@ -164,7 +191,12 @@ export async function uploadToYoutube(extractionId) {
     throw new Error(getApiErrorMessage(data, `YouTube 업로드 실패 (${res.status})`))
   }
 
-  return { url: data.url, videoId: data.videoId }
+  return {
+    url: data.url,
+    videoId: data.videoId,
+    scheduled: Boolean(data.scheduled || scheduledAt),
+    scheduledAt: data.scheduledAt || scheduledAt || null,
+  }
 }
 
 export async function uploadToInstagram(extractionId) {
@@ -172,12 +204,12 @@ export async function uploadToInstagram(extractionId) {
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
   const images = ((ext.data?.instagramImages || ext.instagramImages) || [])
-    .map(img => img?.url || img?.imageUrl)
+    .map((img) => img?.url || img?.imageUrl)
     .filter(Boolean)
   if (!images.length) throw new Error('인스타그램 이미지가 없습니다')
 
   const igContent = ext.data?.instagramContent || ext.instagramContent || {}
-  const hashtags = (igContent.hashtags || []).map(tag => String(tag).startsWith('#') ? tag : `#${tag}`).join(' ')
+  const hashtags = (igContent.hashtags || []).map((tag) => String(tag).startsWith('#') ? tag : `#${tag}`).join(' ')
   const caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
 
   const res = await fetchWithTimeout(`${API_BASE}/api/instagram/publish`, {
@@ -194,9 +226,9 @@ export async function uploadToInstagram(extractionId) {
   return { url: data.permalink, mediaId: data.mediaId }
 }
 
-export async function uploadToPlatform(platform, extractionId) {
-  if (platform === 'blog') return uploadToBlog(extractionId)
-  if (platform === 'shorts') return uploadToYoutube(extractionId)
+export async function uploadToPlatform(platform, extractionId, options = {}) {
+  if (platform === 'blog') return uploadToBlog(extractionId, options)
+  if (platform === 'shorts') return uploadToYoutube(extractionId, options)
   if (platform === 'instagram') return uploadToInstagram(extractionId)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')
   throw new Error(`지원하지 않는 플랫폼: ${platform}`)

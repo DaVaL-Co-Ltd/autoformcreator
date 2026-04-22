@@ -41,6 +41,7 @@ function toContentItems(extractions) {
   return extractions.flatMap(ext =>
     ext.channels.map(ch => {
       const uploadInfo = ext.uploadStatus?.[ch.channel] || { status: 'not_uploaded' }
+      const nativeSchedule = Boolean(uploadInfo.nativeSchedule)
 
       return {
         extractionId: ext.id,
@@ -51,6 +52,7 @@ function toContentItems(extractions) {
         time: new Date(ext.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
         cards: ch.channel === 'instagram' ? ext.data?.instagramContent?.cards?.length : null,
         data: ext.data,
+        nativeSchedule,
         uploadStatus: uploadInfo.status,
         uploadStatusMap: ext.uploadStatus || {},
         scheduledAt: uploadInfo.scheduledAt || null,
@@ -62,7 +64,10 @@ function toContentItems(extractions) {
 
 function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
   if (activeChannel !== 'all' && item.channel !== activeChannel) return false
-  if (activeStatus !== 'all' && item.uploadStatus !== activeStatus) return false
+  const isNativeSchedule = Boolean(item.nativeSchedule && item.scheduledAt)
+  if (activeStatus === 'scheduled' && !(item.uploadStatus === 'scheduled' || isNativeSchedule)) return false
+  if (activeStatus === 'uploaded' && !(item.uploadStatus === 'uploaded' && !isNativeSchedule)) return false
+  if (!['all', 'scheduled', 'uploaded'].includes(activeStatus) && item.uploadStatus !== activeStatus) return false
   if (searchQuery) {
     const query = searchQuery.toLowerCase()
     if (!item.title?.toLowerCase().includes(query) && !item.source?.toLowerCase().includes(query)) return false
@@ -161,8 +166,8 @@ export default function ContentPage() {
   const statusCounts = {
     all: contents.length,
     not_uploaded: uploadableContents.filter(c => c.uploadStatus === 'not_uploaded').length,
-    scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled').length,
-    uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded').length,
+    scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled' || c.nativeSchedule).length,
+    uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded' && !c.nativeSchedule).length,
   }
 
   const handleView = (item) => {
@@ -177,19 +182,26 @@ export default function ContentPage() {
     })
   }
 
-  const handleUpload = async (item) => {
+  const handleUpload = async (item, options = {}) => {
     const key = `${item.extractionId}-${item.channel}`
     setUploadingIds(prev => new Set(prev).add(key))
 
     try {
       const { uploadToPlatform } = await import('../services/platformUploaders')
-      const result = await uploadToPlatform(item.channel, item.extractionId)
+      const result = await uploadToPlatform(item.channel, item.extractionId, options)
 
-      await updateUploadStatus(item.extractionId, item.channel, {
+      const nextUploadInfo = {
         status: 'uploaded',
         uploadedAt: new Date().toISOString(),
         uploadedUrl: result?.url || null,
-      })
+      }
+
+      if (item.channel === 'blog' || item.channel === 'shorts') {
+        nextUploadInfo.nativeSchedule = Boolean(result?.scheduled || options.scheduledAtOverride || item.nativeSchedule)
+        nextUploadInfo.scheduledAt = result?.scheduledAt || options.scheduledAtOverride || item.scheduledAt || null
+      }
+
+      await updateUploadStatus(item.extractionId, item.channel, nextUploadInfo)
 
       await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     } catch (err) {
@@ -204,10 +216,40 @@ export default function ContentPage() {
   }
 
   const handleScheduleSave = async (extractionId, channel, info) => {
+    if (channel === 'blog' && info.scheduledAt) {
+      await updateUploadStatus(extractionId, channel, info)
+      const target = scheduleTarget || editScheduleTarget
+      await handleUpload({
+        ...target,
+        channel,
+        extractionId,
+        nativeSchedule: true,
+        scheduledAt: info.scheduledAt,
+      }, {
+        scheduledAtOverride: info.scheduledAt,
+      })
+      return
+    }
+
+    if (channel === 'shorts' && info.scheduledAt) {
+      const target = scheduleTarget || editScheduleTarget
+      await handleUpload({
+        ...target,
+        channel,
+        extractionId,
+        nativeSchedule: true,
+        scheduledAt: info.scheduledAt,
+      }, {
+        scheduledAtOverride: info.scheduledAt,
+      })
+      return
+    }
+
     await updateUploadStatus(extractionId, channel, info)
+
     await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
 
-    if (info.status === 'scheduled' && info.scheduledAt) {
+    if (channel !== 'blog' && info.status === 'scheduled' && info.scheduledAt) {
       const target = scheduleTarget
       createScheduledUpload({
         platform: channel,
@@ -219,7 +261,16 @@ export default function ContentPage() {
   }
 
   const handleCancelSchedule = async (item) => {
-    await updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
+    if (item.channel === 'blog') {
+      const nextStatus = item.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded'
+      await updateUploadStatus(item.extractionId, item.channel, {
+        nativeSchedule: false,
+        scheduledAt: null,
+        status: nextStatus,
+      })
+    } else {
+      await updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
+    }
     await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
   }
 
@@ -361,6 +412,7 @@ export default function ContentPage() {
             const channel = channelConfig[item.channel] || channelConfig.all
             const ChannelIcon = channel.icon
             const isUploading = uploadingIds.has(`${item.extractionId}-${item.channel}`)
+            const isNativeSchedule = item.nativeSchedule && Boolean(item.scheduledAt)
 
             return (
               <div
@@ -400,7 +452,10 @@ export default function ContentPage() {
                           className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-info hover:bg-info/10 transition-colors border border-info/30"
                         >
                           <Calendar size={13} />
-                          예약
+                          {isNativeSchedule ? '예약 상세' : '예약'}
+                          {isNativeSchedule ? (
+                            <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
+                          ) : null}
                         </button>
                         <button
                           onClick={() => handleUpload(item)}
@@ -442,8 +497,10 @@ export default function ContentPage() {
                     {item.channel !== 'newsletter' && item.uploadStatus === 'uploaded' && (
                       <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
                         <CheckCircle size={13} />
-                        업로드 완료
-                        {item.uploadedAt ? (
+                        {isNativeSchedule ? '예약 등록 완료' : '업로드 완료'}
+                        {isNativeSchedule ? (
+                          <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
+                        ) : item.uploadedAt ? (
                           <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>
                         ) : null}
                       </div>
@@ -512,9 +569,11 @@ export default function ContentPage() {
         content={{ title: scheduleTarget?.title }}
         onSave={({ scheduledAt }) => {
           if (!scheduleTarget) return
+          const nextInfo = ['blog', 'shorts'].includes(scheduleTarget.channel)
+            ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
+            : { status: 'scheduled', scheduledAt }
           handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
-            status: 'scheduled',
-            scheduledAt,
+            ...nextInfo,
           })
         }}
       />
@@ -529,9 +588,11 @@ export default function ContentPage() {
         initialDatetime={editScheduleTarget?.scheduledAt}
         onSave={({ scheduledAt }) => {
           if (!editScheduleTarget) return
+          const nextInfo = ['blog', 'shorts'].includes(editScheduleTarget.channel)
+            ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
+            : { status: 'scheduled', scheduledAt }
           handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
-            status: 'scheduled',
-            scheduledAt,
+            ...nextInfo,
           })
         }}
         onDelete={() => {
