@@ -1,15 +1,10 @@
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1'])
 
 export function shouldUseRemoteBlogPublish() {
-  const apiBase = import.meta.env.VITE_SERVER_URL?.trim()
-  if (!apiBase) return false
-
-  try {
-    const { hostname } = new URL(apiBase)
-    return !LOOPBACK_HOSTS.has(hostname)
-  } catch {
-    return true
-  }
+  // Naver blog publishing requires a user-owned browser session and cookies.
+  // Remote server publishing is intentionally disabled so deployed clients
+  // always target the local desktop helper running on the user's machine.
+  return false
 }
 
 export function getBlogUploadServerBase() {
