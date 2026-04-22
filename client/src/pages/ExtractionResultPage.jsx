@@ -45,6 +45,13 @@ const menuItems = [
   { id: 'shorts',     label: '유튜브 숏츠',   icon: Film,     color: 'text-red-500',     bg: 'bg-red-500/10' },
 ]
 
+const footerLinkMeta = {
+  blog: { badge: 'N', badgeBg: '#03C75A', badgeColor: '#ffffff', bg: '#03C75A', fallbackLabel: '블로그 바로가기' },
+  newsletter: { badge: '✉', bg: '#2563eb', fallbackLabel: '뉴스레터 바로가기' },
+  instagram: { badge: '◐', bg: '#E1306C', fallbackLabel: '인스타그램 바로가기' },
+  shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '유튜브 바로가기' },
+}
+
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -594,16 +601,19 @@ export default function ExtractionResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const footerLinks = getPlatformConnections().map((item) => ({
-    key: item.id,
-    label: item.label,
-    url: item.url,
-    badge: item.badge,
-    badgeBg: item.badgeBg,
-    badgeColor: item.badgeColor,
-    bg: item.bg,
-    isSvg: item.isSvg,
-  }))
+  const footerLinks = Object.entries(getPlatformConnections() || {}).map(([key, item]) => {
+    const meta = footerLinkMeta[key] || {}
+    return {
+      key,
+      label: item?.displayName || meta.fallbackLabel || key,
+      url: item?.url,
+      badge: meta.badge,
+      badgeBg: meta.badgeBg,
+      badgeColor: meta.badgeColor,
+      bg: meta.bg || '#64748b',
+      isSvg: false,
+    }
+  })
 
   const copyNewsletterHtml = async () => {
     const html = document.getElementById('newsletter-export')?.innerHTML
@@ -724,9 +734,9 @@ export default function ExtractionResultPage() {
   )
 
   const renderInstagram = () => {
-    const cards = instagramContent?.cards || instagramContent?.cardTopics || []
+    const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
-    const hashtags = instagramContent?.hashtags || []
+    const hashtags = ensureArray(instagramContent?.hashtags)
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -774,9 +784,9 @@ export default function ExtractionResultPage() {
                         <p className="text-base text-gray-600 leading-7">{stripBold(current.subtitle)}</p>
                       )}
                     </div>
-                    {current?.points?.length > 0 && (
+                    {ensureArray(current?.points).length > 0 && (
                       <ul className="space-y-3">
-                        {current.points.map((point, idx) => (
+                        {ensureArray(current?.points).map((point, idx) => (
                           <li key={idx} className="flex items-start gap-3 text-gray-700">
                             <span className="mt-1 w-2 h-2 rounded-full bg-pink-500 shrink-0" />
                             <span className="leading-7">{stripBold(point)}</span>
@@ -902,11 +912,11 @@ export default function ExtractionResultPage() {
               <p className="text-sm text-text">{newsletterContent.greeting}</p>
             )}
 
-            {newsletterContent?.keyPoints?.length > 0 && (
+            {ensureArray(newsletterContent?.keyPoints).length > 0 && (
               <div className="bg-primary/5 rounded-lg p-5 border border-primary/10">
                 <p className="text-xs font-bold text-primary-light mb-3 uppercase tracking-wide">KEY POINTS</p>
                 <ul className="space-y-2.5">
-                  {newsletterContent.keyPoints.map((point, i) => (
+                  {ensureArray(newsletterContent?.keyPoints).map((point, i) => (
                     <li key={i} className="text-sm text-text flex items-start gap-2.5">
                       <CheckCircle size={15} className="text-primary shrink-0 mt-0.5" />
                       {point}
@@ -918,9 +928,9 @@ export default function ExtractionResultPage() {
 
             <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{newsletterContent?.body}</div>
 
-            {newsletterContent?.dataHighlights?.length > 0 && (
+            {ensureArray(newsletterContent?.dataHighlights).length > 0 && (
               <div className="grid grid-cols-2 gap-3 py-2">
-                {newsletterContent.dataHighlights.map((d, i) => (
+                {ensureArray(newsletterContent?.dataHighlights).map((d, i) => (
                   <div key={i} className="bg-surface-light rounded-xl p-4 border border-border text-center">
                     <p className="text-2xl font-bold text-primary-light">{d.value}</p>
                     <p className="text-xs text-text-muted mt-1">{d.label}</p>
@@ -1059,7 +1069,7 @@ export default function ExtractionResultPage() {
             </button>
           </div>
         )}
-        {shortsNarration?.map((n, i) => (
+        {ensureArray(shortsNarration).map((n, i) => (
           n.audioUrl && <audio key={i} ref={el => shortsAudioRefs.current[i] = el} src={n.audioUrl} preload="auto" />
         ))}
       </div>
