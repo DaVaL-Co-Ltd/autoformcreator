@@ -28,3 +28,9 @@ output/
 # 네이버 세션 쿠키 (절대 커밋 금지)
 tools/naver-cookies.json
 
+# desktop helper build artifacts
+desktop-app/node_modules/
+desktop-app/dist/
+desktop-app/build/
+desktop-app/*.log
+

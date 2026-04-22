@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoForm Naver RPA</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: rgba(255, 255, 255, 0.9);
+      --border: #dbe2ea;
+      --text: #111827;
+      --muted: #6b7280;
+      --primary: #157347;
+      --primary-strong: #0f5132;
+      --warn-bg: #fff4ce;
+      --warn-text: #8a6116;
+      --ok-bg: #dcfce7;
+      --ok-text: #166534;
+      --err-bg: #fee2e2;
+      --err-text: #991b1b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 28px;
+      font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top right, rgba(21, 115, 71, 0.12), transparent 32%),
+        linear-gradient(180deg, #f7fafc 0%, var(--bg) 100%);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 8px 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .card {
+      margin-bottom: 16px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 16px 48px rgba(15, 23, 42, 0.06);
+    }
+
+    .card-title {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 0;
+      align-items: center;
+      border-bottom: 1px solid rgba(219, 226, 234, 0.7);
+      font-size: 14px;
+    }
+
+    .status-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .label {
+      color: var(--muted);
+      flex: 1;
+    }
+
+    .value {
+      text-align: right;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 88px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.ok {
+      background: var(--ok-bg);
+      color: var(--ok-text);
+    }
+
+    .badge.warn {
+      background: var(--warn-bg);
+      color: var(--warn-text);
+    }
+
+    .badge.err {
+      background: var(--err-bg);
+      color: var(--err-text);
+    }
+
+    .helper {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+      transform: none;
+    }
+
+    .primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+      color: #fff;
+    }
+
+    .secondary {
+      background: #e5edf5;
+      color: #1f2937;
+    }
+
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-size: 14px;
+    }
+
+    .switch {
+      position: relative;
+      width: 48px;
+      height: 28px;
+      background: #cfd8e3;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
+      transition: left 0.15s ease;
+    }
+
+    .switch.on {
+      background: #1a8f5b;
+    }
+
+    .switch.on::after {
+      left: 23px;
+    }
+
+    .footer {
+      margin-top: 12px;
+      color: #94a3b8;
+      font-size: 11px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>AutoForm Naver RPA</h1>
+  <p class="subtitle">
+    클라이언트 PC에서 네이버 블로그 업로드 자동화를 수행하는 로컬 에이전트입니다.
+    재부팅 후에도 로그인된 사용자 세션에서 자동 실행되도록 설계되어 있습니다.
+  </p>
+
+  <section class="card">
+    <h2 class="card-title">런타임 상태</h2>
+    <div class="status-row">
+      <span class="label">로컬 RPA 서버</span>
+      <span id="server-status" class="badge warn">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span class="label">Chromium 번들</span>
+      <span id="chromium-status" class="badge warn">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span class="label">네이버 세션 파일</span>
+      <span id="login-status" class="badge warn">확인 중</span>
+    </div>
+    <div class="status-row">
+      <span class="label">포트</span>
+      <span id="server-port" class="value">-</span>
+    </div>
+    <div class="status-row">
+      <span class="label">앱 버전</span>
+      <span id="app-version" class="value">-</span>
+    </div>
+    <p id="status-detail" class="helper"></p>
+    <div class="button-row">
+      <button id="btn-restart" class="secondary">로컬 서버 재시작</button>
+      <button id="btn-logs" class="secondary">로그 폴더 열기</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">네이버 로그인</h2>
+    <p class="helper">
+      Chromium 창이 열리면 직접 로그인하세요. 네이버 메인 또는 블로그 화면으로 이동하면 세션이 자동 저장됩니다.
+      세션 쿠키가 만료되면 이 버튼으로 다시 로그인하면 됩니다.
+    </p>
+    <div class="button-row">
+      <button id="btn-login" class="primary">네이버 로그인</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">앱 설정</h2>
+    <div class="toggle-row">
+      <div>
+        <div style="font-weight: 700; margin-bottom: 4px;">Windows 시작 시 자동 실행</div>
+        <div class="helper">사용자 로그인 직후 앱을 자동 실행합니다.</div>
+      </div>
+      <div id="toggle-autolaunch" class="switch" role="button" aria-label="자동 실행 토글"></div>
+    </div>
+  </section>
+
+  <p class="footer">창을 닫아도 앱은 트레이에서 계속 실행됩니다.</p>
+
+  <script>
+    const elements = {
+      appVersion: document.getElementById('app-version'),
+      chromiumStatus: document.getElementById('chromium-status'),
+      loginButton: document.getElementById('btn-login'),
+      loginStatus: document.getElementById('login-status'),
+      restartButton: document.getElementById('btn-restart'),
+      serverPort: document.getElementById('server-port'),
+      serverStatus: document.getElementById('server-status'),
+      statusDetail: document.getElementById('status-detail'),
+      toggle: document.getElementById('toggle-autolaunch'),
+    }
+
+    function setBadge(target, kind, text) {
+      target.className = `badge ${kind}`
+      target.textContent = text
+    }
+
+    function renderStatus(status) {
+      setBadge(
+        elements.serverStatus,
+        status.serverRunning ? 'ok' : 'err',
+        status.serverRunning ? '실행 중' : '중지됨'
+      )
+      setBadge(
+        elements.chromiumStatus,
+        status.chromiumReady ? 'ok' : 'warn',
+        status.chromiumReady ? '준비됨' : '설치 필요'
+      )
+      setBadge(
+        elements.loginStatus,
+        status.loggedIn ? 'ok' : 'warn',
+        status.loggedIn ? '세션 있음' : '로그인 필요'
+      )
+
+      elements.serverPort.textContent = status.serverPort ? `127.0.0.1:${status.serverPort}` : '-'
+      elements.appVersion.textContent = status.appVersion || '-'
+      elements.toggle.classList.toggle('on', Boolean(status.autoLaunchEnabled))
+
+      if (status.serverError) {
+        elements.statusDetail.textContent = `최근 서버 오류: ${status.serverError}`
+      } else if (!status.chromiumReady) {
+        elements.statusDetail.textContent =
+          'Chromium 번들이 없으면 업로드가 실행되지 않습니다. 배포 전 `npm run install:chromium`을 실행하세요.'
+      } else if (!status.loggedIn) {
+        elements.statusDetail.textContent =
+          '네이버 세션 파일이 없거나 만료되었습니다. 네이버 로그인 버튼으로 다시 로그인하세요.'
+      } else {
+        elements.statusDetail.textContent =
+          '현재 환경에서 exe 배포 테스트를 진행할 수 있습니다.'
+      }
+    }
+
+    async function refreshStatus() {
+      const status = await window.api.getStatus()
+      renderStatus(status)
+    }
+
+    elements.loginButton.addEventListener('click', async () => {
+      elements.loginButton.disabled = true
+      elements.loginButton.textContent = '로그인 창 준비 중...'
+
+      const result = await window.api.loginNaver()
+      if (result.success) {
+        alert('네이버 세션이 저장되었습니다.')
+      } else {
+        alert(`네이버 로그인 실패: ${result.error}`)
+      }
+
+      elements.loginButton.disabled = false
+      elements.loginButton.textContent = '네이버 로그인'
+      await refreshStatus()
+    })
+
+    elements.restartButton.addEventListener('click', async () => {
+      elements.restartButton.disabled = true
+      elements.restartButton.textContent = '재시작 중...'
+
+      const result = await window.api.restartServer()
+      if (!result.success) {
+        alert(`서버 재시작 실패: ${result.error}`)
+      }
+
+      elements.restartButton.disabled = false
+      elements.restartButton.textContent = '로컬 서버 재시작'
+      await refreshStatus()
+    })
+
+    document.getElementById('btn-logs').addEventListener('click', () => {
+      window.api.openLogsFolder()
+    })
+
+    elements.toggle.addEventListener('click', async () => {
+      const nextState = !elements.toggle.classList.contains('on')
+      const result = await window.api.toggleAutoLaunch(nextState)
+      if (result.warning) {
+        alert(`자동 실행 설정 경고: ${result.warning}`)
+      }
+      elements.toggle.classList.toggle('on', nextState)
+    })
+
+    window.api.onTriggerLogin(() => {
+      elements.loginButton.click()
+    })
+
+    refreshStatus()
+    setInterval(refreshStatus, 5000)
+  </script>
+</body>
+</html>

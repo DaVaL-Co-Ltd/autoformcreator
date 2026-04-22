@@ -1,0 +1,80 @@
+{
+  "name": "autoform-naver-rpa",
+  "version": "1.0.0",
+  "description": "AutoForm Creator desktop helper for Naver Blog uploads",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "install:chromium": "node ./scripts/install-chromium.js",
+    "verify:chromium": "node ./scripts/verify-chromium.js",
+    "test:naver-upload": "node ./scripts/naver-upload-test.js",
+    "test:smoke": "node ./scripts/smoke-test.js",
+    "build": "npm run verify:chromium && electron-builder",
+    "build:dir": "npm run verify:chromium && electron-builder --win dir",
+    "build:win": "npm run verify:chromium && electron-builder --win nsis",
+    "build:mac": "npm run verify:chromium && electron-builder --mac"
+  },
+  "author": "AutoForm Creator",
+  "license": "ISC",
+  "dependencies": {
+    "auto-launch": "^5.0.6",
+    "cors": "^2.8.5",
+    "electron-store": "^8.2.0",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "playwright": "^1.44.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.autoformcreator.naverrpa",
+    "productName": "AutoForm Naver RPA",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.html",
+      "src/**/*",
+      "scripts/**/*",
+      "package.json",
+      "!node_modules/.cache/**/*",
+      "!node_modules/.bin/**/*"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright-core/.local-browsers/**/*"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "shortcutName": "AutoForm Naver RPA",
+      "uninstallDisplayName": "AutoForm Naver RPA"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    }
+  }
+}
