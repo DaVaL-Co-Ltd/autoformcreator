@@ -1,5 +1,4 @@
 const express = require('express')
-const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
@@ -131,25 +130,11 @@ function getServerStatus() {
 function createApp() {
   const expressApp = express()
 
-  expressApp.use(
-    cors({
-      origin: (origin, callback) => {
-        if (!origin || isAllowedOrigin(origin)) {
-          callback(null, true)
-          return
-        }
-
-        callback(new Error('Not allowed by CORS'))
-      },
-      methods: ['GET', 'POST'],
-      allowedHeaders: ['Content-Type', UPLOAD_CLIENT_HEADER],
-    })
-  )
   expressApp.use(express.json({ limit: '50mb' }))
   expressApp.use((req, res, next) => {
     applyCorsResponseHeaders(req, res)
     if (req.method === 'OPTIONS') {
-      res.sendStatus(204)
+      res.status(204).end()
       return
     }
     next()
