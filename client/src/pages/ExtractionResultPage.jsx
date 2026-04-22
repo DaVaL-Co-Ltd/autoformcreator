@@ -828,8 +828,22 @@ export default function ExtractionResultPage() {
               <div
                 ref={el => blogImagesRef.current[index] = el}
                 className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center"
-                dangerouslySetInnerHTML={{ __html: blogImages?.[index]?.html || '<div class="text-gray-400">이미지 없음</div>' }}
-              />
+              >
+                {blogImages?.[index]?.imageUrl ? (
+                  <img
+                    src={blogImages[index].imageUrl}
+                    alt={section.heading || `블로그 이미지 ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : blogImages?.[index]?.html ? (
+                  <div
+                    className="w-full h-full"
+                    dangerouslySetInnerHTML={{ __html: blogImages[index].html }}
+                  />
+                ) : (
+                  <div className="text-gray-400">이미지 없음</div>
+                )}
+              </div>
             </div>
           </div>
         ))}

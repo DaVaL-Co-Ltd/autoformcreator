@@ -1500,7 +1500,7 @@ app.post('/api/scheduled/create', async (req, res) => {
 
 // 예약 목록
 app.get('/api/scheduled/list', async (req, res) => {
-  if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
+  if (!supabaseAdmin) return res.json([])
   try {
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
@@ -1509,6 +1509,10 @@ app.get('/api/scheduled/list', async (req, res) => {
     if (error) throw error
     res.json(data)
   } catch (err) {
+    if (err?.code === '42P01') {
+      console.warn('[scheduled/list] scheduled_uploads 테이블이 없어 빈 목록으로 처리합니다.')
+      return res.json([])
+    }
     res.status(500).json({ error: err.message })
   }
 })
