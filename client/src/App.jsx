@@ -16,7 +16,7 @@ import DashboardPage from './pages/DashboardPage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
-import { DESKTOP_HELPER } from './constants/desktopHelper'
+import { DESKTOP_HELPER } from './constants/desktopHelper.js'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()

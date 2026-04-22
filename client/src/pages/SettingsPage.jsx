@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { Instagram } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { DESKTOP_HELPER } from '../constants/desktopHelper'
+import { DESKTOP_HELPER } from '../constants/desktopHelper.js'
 import { connect, disconnect, getAll, updateDisplay } from '../utils/platformConnections'
 
 const sections = [
