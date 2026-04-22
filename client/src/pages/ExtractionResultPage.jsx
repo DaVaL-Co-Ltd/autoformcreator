@@ -21,6 +21,13 @@ import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
+
+const ensureArray = (value) => Array.isArray(value) ? value : []
+const ensureTagArray = (value) => {
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') return value.split(/\s+/).filter(Boolean)
+  return []
+}
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
 
@@ -95,8 +102,8 @@ export default function ExtractionResultPage() {
         }
 
         const title = blogTitle || blogContent?.title || ''
-        const content = blogBody || compileBlogBody(blogContent?.sections || [])
-        const tags = (blogContent?.tags || []).map(t => t.replace(/^#/, ''))
+        const content = blogBody || compileBlogBody(ensureArray(blogContent?.sections))
+        const tags = ensureTagArray(blogContent?.tags).map(t => t.replace(/^#/, ''))
 
         let response
         if (USE_REMOTE_BLOG_PUBLISH) {
@@ -404,7 +411,7 @@ export default function ExtractionResultPage() {
 
   // ── compileBlogBody: sections → [IMG:N] 마커 포함 본문 생성 ──
   const compileBlogBody = (sections = []) => {
-    return sections.map((s, i) => {
+    return ensureArray(sections).map((s, i) => {
       const heading = s.heading ? `${s.heading}\n` : ''
       const content = s.content || ''
       return `${heading}[IMG:${i + 1}]\n${content}`
@@ -415,7 +422,7 @@ export default function ExtractionResultPage() {
   useEffect(() => {
     if (blogContent) {
       if (!blogTitle) setBlogTitle(blogContent.title || '')
-      if (!blogBody) setBlogBody(compileBlogBody(blogContent.sections || []))
+      if (!blogBody) setBlogBody(compileBlogBody(ensureArray(blogContent.sections)))
     }
   }, [blogContent])
 
@@ -633,12 +640,12 @@ export default function ExtractionResultPage() {
           <h2 className="text-xl font-bold text-text">{blogContent?.title}</h2>
           <div className="flex items-center gap-2 mt-2 text-xs text-text-muted">
             <Hash size={12} />
-            {(blogContent?.tags || []).join(' ')}
+            {ensureTagArray(blogContent?.tags).join(' ')}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => copy(`${blogContent?.title || ''}\n\n${blogContent?.sections?.map(s => `${s.heading}\n${s.content}`).join('\n\n') || ''}`)}
+            onClick={() => copy(`${blogContent?.title || ''}\n\n${ensureArray(blogContent?.sections).map(s => `${s.heading}\n${s.content}`).join('\n\n')}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
           >
             {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
@@ -693,7 +700,7 @@ export default function ExtractionResultPage() {
       )}
 
       <div className="space-y-6">
-        {blogContent?.sections?.map((section, index) => (
+        {ensureArray(blogContent?.sections).map((section, index) => (
           <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-8 border-b border-gray-100">
               <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
