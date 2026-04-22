@@ -16,7 +16,7 @@ import { create as createScheduledUpload, getAll as getAllScheduledUploads } fro
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer'
-import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse'
+import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()

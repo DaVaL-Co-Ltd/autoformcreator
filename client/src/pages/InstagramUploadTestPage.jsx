@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { validateInstagram } from '../utils/platformValidator'
 import { formatInstagramRequest } from '../utils/platformFormatter'
-import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse'
+import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { get } from '../utils/platformConnections'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
