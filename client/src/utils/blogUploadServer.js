@@ -1,5 +1,3 @@
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1'])
-
 export function shouldUseRemoteBlogPublish() {
   // Naver blog publishing requires a user-owned browser session and cookies.
   // Remote server publishing is intentionally disabled so deployed clients
@@ -13,10 +11,6 @@ export function getBlogUploadServerBase() {
   // if (configuredServer) {
   //   return configuredServer.replace(/\/$/, '')
   // }
-
-  if (typeof window !== 'undefined' && LOOPBACK_HOSTS.has(window.location.hostname)) {
-    return `http://${window.location.hostname}:3000`
-  }
 
   return 'http://127.0.0.1:3000'
 }

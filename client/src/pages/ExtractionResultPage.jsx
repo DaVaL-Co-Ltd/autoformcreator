@@ -17,6 +17,7 @@ import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformF
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -48,7 +49,13 @@ function formatBlogUploadError(data, fallbackMessage) {
   const message = getApiErrorMessage(data, fallbackMessage)
   const source = data?.source || BLOG_UPLOAD_SOURCE
   const endpoint = data?.endpoint || BLOG_UPLOAD_ENDPOINT
-  return `${message} [source=${source} endpoint=${endpoint}]`
+  const helperStatus = formatDesktopHelperStatus(extractDesktopHelperStatus(data?.uploadRuntime))
+  return `${message}${helperStatus ? ` ${helperStatus}` : ''} [source=${source} endpoint=${endpoint}]`
+}
+
+async function buildDesktopHelperFailureMessage(prefix, error) {
+  const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+  return `${prefix}: ${error.message}${helperStatus ? ` ${helperStatus}` : ''} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`
 }
 
 const menuItems = [
@@ -202,18 +209,29 @@ export default function ExtractionResultPage() {
             formData.append('photos', new File([blob], `section_${i + 1}.png`, { type: 'image/png' }))
           }
 
-          response = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
-            headers: BLOG_UPLOAD_HEADERS,
-            method: 'POST',
-            body: formData,
-          }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request')
+          try {
+            response = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
+              headers: BLOG_UPLOAD_HEADERS,
+              method: 'POST',
+              body: formData,
+            }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request')
+          } catch (error) {
+            const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+            throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+          }
         }
 
-        const data = await withTimeout(
-          () => readApiResponse(response),
-          API_RESPONSE_TIMEOUT_MS,
-          'Upload response parsing'
-        )
+        let data
+        try {
+          data = await withTimeout(
+            () => readApiResponse(response),
+            API_RESPONSE_TIMEOUT_MS,
+            'Upload response parsing'
+          )
+        } catch (error) {
+          const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+          throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+        }
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
           setBlogUploadResult({

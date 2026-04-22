@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { applyPlaywrightEnvironment, getPlaywrightDiagnostics } = require('./playwright-runtime')
 const { getSessionPath, loadSessionState } = require('./session-state')
+const { failUpload, finishUpload, startUpload, updateUploadStage } = require('./upload-runtime')
 
 applyPlaywrightEnvironment()
 
@@ -803,30 +804,50 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     throw new Error('Saved Naver session could not be loaded. Please log in again.')
   }
 
-  const browser = await chromium.launch({
+  const runtimeUpload = startUpload({
     headless,
-    args: BROWSER_ARGS,
+    photoCount: photoPaths.length,
+    tagCount: tags.length,
+    titleLength: String(title).length,
   })
 
-  const context = await browser.newContext({
-    storageState,
-    locale: 'ko-KR',
-    timezoneId: 'Asia/Seoul',
-    userAgent: USER_AGENT,
-    viewport: DEFAULT_VIEWPORT,
-  })
+  const markStep = (stage, stageLabel = stage, extras = {}) => {
+    updateUploadStage(stage, {
+      ...extras,
+      stageLabel,
+    })
+  }
 
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
-    Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko'] })
-  })
-
-  const page = await context.newPage()
+  let browser = null
+  let context = null
+  let page = null
   let currentStep = 'initialization'
   let targets = []
 
   try {
+    markStep(currentStep, 'browser-init')
+    browser = await chromium.launch({
+      headless,
+      args: BROWSER_ARGS,
+    })
+
+    context = await browser.newContext({
+      storageState,
+      locale: 'ko-KR',
+      timezoneId: 'Asia/Seoul',
+      userAgent: USER_AGENT,
+      viewport: DEFAULT_VIEWPORT,
+    })
+
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+      Object.defineProperty(navigator, 'languages', { get: () => ['ko-KR', 'ko'] })
+    })
+
+    page = await context.newPage()
+    markStep(currentStep, '브라우저 초기화')
     currentStep = 'resolve-write-url'
+    markStep(currentStep, '에디터 진입 URL 확인')
     const writeUrls = await resolveWriteUrls(page)
     let loadedUrl = null
 
@@ -851,13 +872,16 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     }
 
     currentStep = 'dismiss-popup'
+    markStep(currentStep, '초기 팝업 정리', { editorUrl: loadedUrl })
     await tryDismissRestorePopup(page)
     await sleep(1500)
 
     currentStep = 'capture-editor'
+    markStep(currentStep, '초기 에디터 화면 저장')
     await saveDebug(page, 'editor-loaded')
 
     currentStep = 'discover-targets'
+    markStep(currentStep, '에디터 타겟 탐색')
     targets = getEditorTargets(page)
     console.log(
       '[Naver Upload] Editor targets:',
@@ -865,9 +889,11 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     )
 
     currentStep = 'fill-title'
+    markStep(currentStep, '제목 입력')
     await focusAndType(page, targets, TITLE_SELECTORS, title, 'title')
 
     currentStep = 'fill-body'
+    markStep(currentStep, '본문 입력')
     await sleep(500)
     try {
       await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
@@ -879,18 +905,22 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     }
 
     currentStep = 'open-publish-dialog'
+    markStep(currentStep, '발행 패널 열기')
     await sleep(1500)
     await clickPublishButton(page, targets, 'first')
 
     currentStep = 'fill-tags'
+    markStep(currentStep, '태그 입력')
     await sleep(1500)
     await fillTags(page, targets, tags)
 
     currentStep = 'confirm-publish'
+    markStep(currentStep, '최종 발행 확인')
     await sleep(1000)
     await clickPublishButton(page, targets, 'last')
 
     currentStep = 'await-result'
+    markStep(currentStep, '최종 게시글 URL 확인')
     {
       const publishedUrl = await resolvePublishedPostUrl(page, 60000)
       if (!publishedUrl) {
@@ -905,6 +935,12 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
         )
       }
 
+      finishUpload({
+        id: runtimeUpload.id,
+        stage: currentStep,
+        stageLabel: '게시 완료',
+        url: publishedUrl,
+      })
       return {
         endpoint: RUNTIME_ENDPOINT,
         source: RUNTIME_SOURCE,
@@ -913,6 +949,7 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
       }
     }
   } catch (error) {
+    failUpload(new Error(`stage=${currentStep}; ${error.message}`))
     const debugArtifacts = await saveDebug(page, `failure-${currentStep}`)
     const debugFiles = formatDebugFiles(debugArtifacts)
     throw new Error(

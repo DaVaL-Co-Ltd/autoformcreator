@@ -1,6 +1,7 @@
 import { getExtractionById } from './storage'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -102,11 +103,14 @@ export async function uploadToBlog(extractionId) {
     method: 'POST',
     headers: blogHeaders,
     body: formData,
-  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request').catch(() => {
+  }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request').catch(async () => {
     throw new Error(`로컬 RPA 서버(${UPLOAD_BLOG_SERVER}) 연결 실패. 본인 PC에서 RPA 서버를 실행해주세요. [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
   })
 
-  const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'Desktop helper response parsing')
+  const data = await withTimeout(() => readApiResponse(res), API_RESPONSE_TIMEOUT_MS, 'Desktop helper response parsing').catch(async (error) => {
+    const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+    throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+  })
   if (!res.ok || !data.success) {
     throw new Error(`${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`)} [source=${data?.source || BLOG_UPLOAD_SOURCE} endpoint=${data?.endpoint || BLOG_UPLOAD_ENDPOINT}]`)
   }

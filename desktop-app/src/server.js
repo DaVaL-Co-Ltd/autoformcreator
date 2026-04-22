@@ -5,6 +5,7 @@ const path = require('path')
 const fs = require('fs')
 const { app } = require('electron')
 const { uploadToNaver, hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
+const { getUploadRuntimeState } = require('./upload-runtime')
 
 const PORT = 3000
 const MAX_UPLOAD_FILE_SIZE = 15 * 1024 * 1024
@@ -123,6 +124,7 @@ function getServerStatus() {
     lastError,
     port: PORT,
     running: Boolean(server),
+    uploadRuntime: getUploadRuntimeState(),
   }
 }
 
@@ -160,6 +162,7 @@ function createApp() {
       chromiumReady: playwright.bundledBrowserFound || playwright.systemBrowserCacheDetected,
       sessionReady: hasSavedSession(),
       status: 'ok',
+      uploadRuntime: getUploadRuntimeState(),
     })
   })
 
@@ -170,6 +173,7 @@ function createApp() {
       chromiumReady: playwright.bundledBrowserFound || playwright.systemBrowserCacheDetected,
       sessionReady: hasSavedSession(),
       status: 'ok',
+      uploadRuntime: getUploadRuntimeState(),
     })
   })
 
@@ -210,6 +214,7 @@ function createApp() {
           source: UPLOAD_SOURCE,
           success: false,
           error: 'Naver session is missing. Please log in again from the desktop app.',
+          uploadRuntime: getUploadRuntimeState(),
         })
         return
       }
@@ -231,6 +236,7 @@ function createApp() {
         ...result,
         endpoint: `http://127.0.0.1:${PORT}/api/upload`,
         source: UPLOAD_SOURCE,
+        uploadRuntime: getUploadRuntimeState(),
       })
     } catch (error) {
       cleanupFiles(photoPaths)
@@ -240,6 +246,7 @@ function createApp() {
         source: UPLOAD_SOURCE,
         success: false,
         error: error.message,
+        uploadRuntime: getUploadRuntimeState(),
       })
     }
   })
