@@ -1,5 +1,5 @@
 import { getExtractionById } from './storage'
-import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer'
+import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''

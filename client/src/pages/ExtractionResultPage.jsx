@@ -15,7 +15,7 @@ import { saveExtraction, getExtractions, loadImages, updateUploadStatus } from '
 import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { getAll as getPlatformConnections } from '../utils/platformConnections'
-import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer'
+import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
