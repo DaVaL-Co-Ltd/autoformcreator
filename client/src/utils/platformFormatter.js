@@ -8,6 +8,7 @@ import { PLATFORM_LIMITS, truncate, stripExtraHashtags } from './platformValidat
  */
 export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
   const limits = PLATFORM_LIMITS.instagram
+  const normalizedImageUrls = imageUrls.filter(Boolean).slice(0, 1)
 
   // caption 필드 우선, 없으면 body 사용
   const rawCaption = instagramContent.caption || instagramContent.body || instagramContent.title || ''
@@ -17,10 +18,10 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
   const hashtags = stripExtraHashtags(rawHashtags, limits.hashtagMax)
 
   console.log('[platformFormatter] formatInstagramRequest', {
-    type: imageUrls.length > 1 ? 'carousel' : 'image',
+    type: 'image',
     captionLength: caption.length,
     hashtagCount: hashtags.length,
-    imageCount: imageUrls.length,
+    imageCount: normalizedImageUrls.length,
   })
 
   // caption + hashtags 합쳐서 최종 caption 생성 (인스타는 별도 태그 필드 없음)
@@ -30,10 +31,10 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
   const fullCaption = tagText ? `${caption}\n\n${tagText}` : caption
 
   return {
-    type: imageUrls.length > 1 ? 'carousel' : 'image',
+    type: 'image',
     caption: fullCaption,
     hashtags,
-    imageUrls,
+    imageUrls: normalizedImageUrls,
   }
 }
 

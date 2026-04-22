@@ -1092,7 +1092,7 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
   }
   if (!imageUrls.length) throw new Error('이미지 URL이 없습니다')
 
-  const urls = imageUrls.filter(Boolean)
+  const urls = imageUrls.filter(Boolean).slice(0, 1)
   if (urls.length === 1) {
     // 단일 이미지
     const createRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {

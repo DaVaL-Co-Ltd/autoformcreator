@@ -173,7 +173,7 @@ export async function uploadToInstagram(extractionId) {
   const res = await fetch(`${API_BASE}/api/instagram/publish`, {
     method: 'POST',
     headers: apiHeaders(),
-    body: JSON.stringify({ imageUrls: images, caption }),
+    body: JSON.stringify({ imageUrls: images.slice(0, 1), caption }),
   })
 
   const data = await readApiResponse(res)
