@@ -359,6 +359,15 @@ export default function ExtractionPage() {
   const [shortsGenerationMode, setShortsGenerationMode] = useState('recommended')
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
   const [subtitleFont, setSubtitleFont] = useState('default')
+  const showDirectVoiceStep = shortsGenerationMode === 'direct_voice'
+  const shortsStepNumbers = {
+    mode: 0,
+    avatar: 1,
+    voice: 2,
+    subtitle: showDirectVoiceStep ? 3 : 2,
+    video: showDirectVoiceStep ? 4 : 3,
+  }
+
 
   // step 4까지 실행 완료 여부
   const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
@@ -862,7 +871,7 @@ DO NOT:
   // Step 5-2: 아바타 확정 시 HeyGen 업로드 + 폴링 대기 (백그라운드)
   const uploadAvatarToHeyGen = async (forceNew = false) => {
     if (!avatarImage) {
-      throw new Error('?꾨컮?瑜?癒쇱? ?앹꽦?댁＜?몄슂.')
+      throw new Error('아바타를 먼저 생성해주세요.')
     }
 
     if (!forceNew && heygenAvatarId) {
@@ -871,7 +880,7 @@ DO NOT:
 
     const match = avatarImage.match(/^data:([^;]+);base64,(.+)$/)
     if (!match) {
-      throw new Error('?꾨컮? ?대?吏 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.')
+      throw new Error('아바타 이미지 형식이 올바르지 않습니다.')
     }
 
     const [, mimeType, base64] = match
@@ -885,12 +894,12 @@ DO NOT:
       })
       const uploadData = await readApiResponse(uploadRes)
       if (!uploadRes.ok) {
-        throw new Error(getApiErrorMessage(uploadData, `?꾨컮? ?낅줈???ㅽ뙣 (${uploadRes.status})`))
+        throw new Error(getApiErrorMessage(uploadData, `아바타 업로드 실패 (${uploadRes.status})`))
       }
 
       const imageKey = uploadData.data?.image_key
       if (!imageKey) {
-        throw new Error('image_key瑜?諛쏆? 紐삵뻽?듬땲??')
+        throw new Error('image_key를 받지 못했습니다.')
       }
 
       const groupRes = await apiFetch('/api/heygen/avatar-group/create', {
@@ -900,12 +909,12 @@ DO NOT:
       })
       const groupData = await readApiResponse(groupRes)
       if (!groupRes.ok) {
-        throw new Error(getApiErrorMessage(groupData, `?꾨컮? ?깅줉 ?ㅽ뙣 (${groupRes.status})`))
+        throw new Error(getApiErrorMessage(groupData, `아바타 등록 실패 (${groupRes.status})`))
       }
 
       const groupId = groupData.data?.group_id
       if (!groupId) {
-        throw new Error('group_id瑜?諛쏆? 紐삵뻽?듬땲??')
+        throw new Error('group_id를 받지 못했습니다.')
       }
 
       setHeygenAvatarId(groupId)
@@ -917,16 +926,16 @@ DO NOT:
   }
 
   const waitForHeygenAvatarReady = async (groupId, options = {}) => {
-    const { attempts = 24, intervalMs = 5000, progressLabel = '?꾨컮? 以鍮??뺤씤 以?..' } = options
+    const { attempts = 24, intervalMs = 5000, progressLabel = '아바타 준비 확인 중...' } = options
     if (!groupId) {
-      throw new Error('HeyGen ?꾨컮? ID媛 ?놁뒿?덈떎.')
+      throw new Error('HeyGen 아바타 ID가 없습니다.')
     }
 
     setHeygenUploading(true)
     try {
       for (let i = 0; i < attempts; i++) {
         if (progressLabel) {
-          setMediaItemLoading((prev) => ({ ...prev, '?륂뤌 ?곸긽': progressLabel }))
+          setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': progressLabel }))
         }
 
         const statusRes = await apiFetch(`/api/heygen/avatar-status/${groupId}`)
@@ -1207,7 +1216,7 @@ DO NOT:
 
       if (shortsGenerationMode === 'direct_voice') {
         const narrationText = shortsScript.scenes?.map((scene) => scene.narration).join(' ') || ''
-        setMediaItemLoading((prev) => ({ ...prev, '?륁툩 ?곸긽': '?좏깮???紐⑹냼由щ줈 HeyGen ?곸긽 ?앹꽦 以?..' }))
+        setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': '선택한 목소리로 HeyGen 영상 생성 중...' }))
 
         const generateRes = await apiFetch('/api/heygen/video/generate', {
           method: 'POST',
@@ -1230,7 +1239,7 @@ DO NOT:
         })
         const generateData = await readApiResponse(generateRes)
         if (!generateRes.ok) {
-          throw new Error(getApiErrorMessage(generateData, `HeyGen ?곸긽 ?앹꽦 ?붿껌 ?ㅽ뙣 (${generateRes.status})`))
+          throw new Error(getApiErrorMessage(generateData, `HeyGen 영상 생성 요청 실패 (${generateRes.status})`))
         }
 
         const videoId =
@@ -1240,7 +1249,7 @@ DO NOT:
           generateData.id
 
         if (!videoId) {
-          throw new Error('HeyGen video_id瑜?諛쏆? 紐삵뻽?듬땲??')
+          throw new Error('HeyGen video_id를 받지 못했습니다.')
         }
 
         let finalVideo = null
@@ -1255,7 +1264,7 @@ DO NOT:
           if (status === 'completed') {
             const rawUrl = pollData.data?.video_url
             if (!rawUrl) {
-              throw new Error('HeyGen ?곸긽 URL???놁뒿?덈떎.')
+              throw new Error('HeyGen 영상 URL이 없습니다.')
             }
 
             let finalUrl = rawUrl
@@ -1297,13 +1306,13 @@ DO NOT:
             const errMsg =
               typeof errDetail === 'object'
                 ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail))
-                : (errDetail || pollData.data?.error_message || '?????녿뒗 ?ㅻ쪟')
-            throw new Error(`HeyGen ?뚮뜑 ?ㅽ뙣: ${errMsg}`)
+                : (errDetail || pollData.data?.error_message || '알 수 없는 오류')
+            throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
           }
         }
 
         if (!finalVideo) {
-          throw new Error('HeyGen ?곸긽 ?앹꽦 ?쒓컙 珥덇낵 (20遺?)')
+          throw new Error('HeyGen 영상 생성 시간 초과 (20분)')
         }
 
         setShortsVideo(finalVideo)
@@ -2236,10 +2245,10 @@ ${parsedText}
           {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
           {PF('공통 추가 지시', { optional: true, type: 'textarea', placeholder: '모든 채널에 공통 적용', value: promptSettings.content.commonExtra, onChange: v => updatePrompt('content', 'commonExtra', v) })}
           <div className="border-t border-border/30 my-1" />
-          {PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
-          {PF('📧 뉴스레터', { optional: true, type: 'textarea', placeholder: '구독자 톤, CTA 등', value: promptSettings.content.newsletterExtra, onChange: v => updatePrompt('content', 'newsletterExtra', v) })}
-          {PF('📷 인스타', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
-          {PF('🎬 숏폼', { optional: true, type: 'textarea', placeholder: '후킹 문구 등', value: promptSettings.content.shortsExtra, onChange: v => updatePrompt('content', 'shortsExtra', v) })}
+          {selectedChannels.blog && PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
+          {selectedChannels.newsletter && PF('📧 뉴스레터', { optional: true, type: 'textarea', placeholder: '구독자 톤, CTA 등', value: promptSettings.content.newsletterExtra, onChange: v => updatePrompt('content', 'newsletterExtra', v) })}
+          {selectedChannels.instagram && PF('📷 인스타', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
+          {selectedChannels.shorts && PF('🎬 숏폼', { optional: true, type: 'textarea', placeholder: '후킹 문구 등', value: promptSettings.content.shortsExtra, onChange: v => updatePrompt('content', 'shortsExtra', v) })}
         </div>
         <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === 3 ? 'border-primary/40' : 'border-border'} ${currentStep < 3 ? 'opacity-50' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
@@ -2873,7 +2882,7 @@ ${parsedText}
                 {shortsGenerationMode === 'direct_voice' && (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">2</span>
+                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.voice}</span>
                       <p className="text-base font-semibold text-text">나레이션 목소리 선택</p>
                       {selectedVoice && <CheckCircle size={14} className="text-success" />}
                     </div>
@@ -2966,7 +2975,7 @@ ${parsedText}
                 {/* 5-3: 자막 스타일 선택 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">3</span>
+                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.subtitle}</span>
                     <p className="text-base font-semibold text-text">자막 스타일</p>
                     {subtitleStyle && <CheckCircle size={14} className="text-success" />}
                   </div>
@@ -3037,7 +3046,7 @@ ${parsedText}
                 {/* 5-4: 영상 생성 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">4</span>
+                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.video}</span>
                     <p className="text-base font-semibold text-text">영상 생성</p>
                     {shortsVideo && <CheckCircle size={14} className="text-success" />}
                   </div>

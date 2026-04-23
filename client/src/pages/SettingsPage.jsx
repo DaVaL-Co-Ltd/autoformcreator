@@ -32,7 +32,7 @@ import {
 import { getAll, updateDisplay } from '../utils/platformConnections'
 
 const sections = [
-  { id: 'desktop-helper', label: '블로그 도우미', icon: MonitorDown },
+  { id: 'desktop-helper', label: '블로그 서버 설치', icon: MonitorDown },
   { id: 'platforms', label: '플랫폼 연동 상태', icon: Link },
   { id: 'newsletter_footer', label: '플랫폼 주소 연결', icon: Share2 },
   { id: 'account', label: '계정', icon: User },
@@ -460,12 +460,19 @@ export default function SettingsPage() {
                 <div className="text-xs text-text-muted mt-2">버전 {DESKTOP_HELPER.version}</div>
                 <a
                   href={DESKTOP_HELPER.downloadHref}
-                  download={DESKTOP_HELPER.fileName}
+                  download={DESKTOP_HELPER.isExternal ? undefined : DESKTOP_HELPER.fileName}
+                  target={DESKTOP_HELPER.isExternal ? '_blank' : undefined}
+                  rel={DESKTOP_HELPER.isExternal ? 'noopener noreferrer' : undefined}
                   className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark transition-all"
                 >
                   <Download size={16} />
                   설치 파일 다운로드
                 </a>
+                {DESKTOP_HELPER.isExternal && (
+                  <p className="mt-2 text-[11px] leading-5 text-text-muted">
+                    배포 환경에서는 외부 다운로드 링크로 설치 파일을 제공합니다.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -522,13 +529,13 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4">
               {platformCards.map((card) => {
                 const Icon = card.Icon
                 const isBusy = busyAction === card.key || busyAction === `${card.key}-disconnect`
 
                 return (
-                  <div key={card.key} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-light p-5">
+                  <div key={card.key} className="flex flex-col gap-3 rounded-2xl border border-border bg-surface-light p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <div className={`rounded-xl p-2 ${card.iconBg}`}>
@@ -542,15 +549,15 @@ export default function SettingsPage() {
                       <StatusBadge tone={card.tone} text={card.statusLabel} />
                     </div>
 
-                    <p className="text-sm leading-6 text-text-muted min-h-[96px]">{card.detail}</p>
+                    <p className="text-sm leading-6 text-text-muted">{card.detail}</p>
 
-                    <div className="space-y-1">
-                      {card.meta.map((item) => (
-                        <div key={item} className="text-xs text-text-muted">{item}</div>
-                      ))}
-                    </div>
+                    {card.meta.length > 0 && (
+                      <div className="text-xs text-text-muted">
+                        {card.meta.join(' / ')}
+                      </div>
+                    )}
 
-                    <div className="mt-auto space-y-2">
+                    <div className="mt-1 space-y-2">
                       {card.key === 'blog' && (
                         <>
                           {platformStatuses.blog.helperReachable ? (

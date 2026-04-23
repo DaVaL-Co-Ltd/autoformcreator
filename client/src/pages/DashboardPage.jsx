@@ -170,6 +170,7 @@ export default function DashboardPage() {
           // 설정(플랫폼 주소 연동)에서 가져온 URL
           const conn = platformConnections[p.key] || {}
           const linkUrl = conn.url
+          const displayName = conn.displayName?.trim()
 
           return (
             <div key={p.key} className={`bg-surface rounded-xl border ${p.border} hover:shadow-md transition-all`}>
@@ -181,8 +182,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-semibold text-text">{p.label}</h3>
-                    {linkUrl && p.key !== 'newsletter' && (
-                      <p className="text-xs text-text-muted truncate">{linkUrl}</p>
+                    {displayName && p.key !== 'newsletter' && (
+                      <p className="text-xs text-text-muted truncate">{displayName}</p>
                     )}
                   </div>
                   {/* 뉴스레터는 바로가기 없음 / 나머지는 설정의 URL 사용 */}

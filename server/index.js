@@ -290,7 +290,7 @@ app.get('/api/heygen/public-avatars', async (req, res) => {
   }
 })
 
-// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ’ ?뺤씤?? =====
+// ===== HeyGen 커스텀 아바타 목록 (여부 확인용) =====
 app.get('/api/heygen/avatar-list', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })

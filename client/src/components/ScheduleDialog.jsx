@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Calendar, Clock, X, Upload, Trash2 } from 'lucide-react'
 import { create } from '../utils/scheduledUploads'
 import { CHANNELS } from '../constants/channels'
@@ -63,29 +63,27 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
   const defaultDt = toLocalDatetimeValue(initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000))
   const [platform, setPlatform] = useState(defaultPlatform)
   const [datetime, setDatetime] = useState(defaultDt)
-  const [immediate, setImmediate] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  // defaultPlatform이 변할 때 상태 동기화
+  // defaultPlatform 변경 시 상태 동기화
   useEffect(() => {
     if (open) {
       setPlatform(defaultPlatform)
       const initialDate = initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000)
       const minimumDate = getMinimumScheduleDate(defaultPlatform)
       setDatetime(toLocalDatetimeValue(initialDate < minimumDate ? minimumDate : initialDate))
-      setImmediate(false)
       setSaved(false)
     }
   }, [open, defaultPlatform, initialDatetime])
 
   if (!open) return null
 
+  const showsNativeScheduleNotice = ['blog', 'shorts'].includes(platform)
+
   const handleSubmit = () => {
-    const scheduledAt = immediate
-      ? new Date().toISOString()
-      : normalizeScheduledAtForPlatform(platform, datetime)
+    const scheduledAt = normalizeScheduledAtForPlatform(platform, datetime)
     if (onSave) {
-      onSave({ platform, scheduledAt, content, immediate })
+      onSave({ platform, scheduledAt, content })
     } else {
       create({ platform, content, scheduledAt })
     }
@@ -95,8 +93,6 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
       onClose()
     }, 800)
   }
-
-  const minDatetime = toLocalDatetimeValue(getMinimumScheduleDate(platform))
 
   return (
     <div
@@ -136,24 +132,9 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           </div>
         </div>
 
-        {/* Immediate toggle (편집 모드에서는 숨김) */}
-        {mode !== 'edit' && (
-          <div className="mb-4">
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div
-                onClick={() => setImmediate(v => !v)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${immediate ? 'bg-primary' : 'bg-border'}`}
-              >
-                <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${immediate ? 'translate-x-5' : 'translate-x-0'}`} />
-              </div>
-              <span className="text-sm text-text-muted group-hover:text-text transition-colors">즉시 업로드</span>
-            </label>
-          </div>
-        )}
-
-        {/* Datetime picker (날짜 + 시 + 분 5분 단위) */}
-        {!immediate && (() => {
-          // datetime 문자열("YYYY-MM-DDTHH:mm") 파싱 (없으면 현재 시각 기준 5분 반올림)
+        {/* Datetime picker (날짜 + 시 + 분 10분 단위) */}
+        {(() => {
+          // datetime 문자열 "YYYY-MM-DDTHH:mm" 파싱
           const parts = (() => {
             if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
               const rounded = roundUpToMinuteStep(datetime)
@@ -222,14 +203,25 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           </div>
         )}
 
-        {/* Submit + (edit 모드에서) 예약 삭제 */}
+        {showsNativeScheduleNotice && (
+          <div className="mb-5 rounded-lg border border-info/20 bg-info/5 px-3 py-2.5">
+            <p className="text-xs font-semibold leading-5 text-text">
+              예약 시간 변경은 등록 후 이 서비스에서 <span className="text-danger">불가</span>합니다.
+            </p>
+            <p className="mt-1 text-xs font-semibold leading-5 text-text-muted">
+              예약 시간을 바꾸려면 해당 플랫폼 내부에서 직접 수정해주세요.
+            </p>
+          </div>
+        )}
+
+        {/* Submit + (edit 모드에서) 예약 해제 */}
         <div className="flex items-center gap-2">
           {mode === 'edit' && onDelete && (
             <button
               onClick={() => { onDelete(); onClose() }}
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-danger border border-danger/30 hover:bg-danger/10 transition-colors"
             >
-              <Trash2 size={14} /> 예약 삭제
+              <Trash2 size={14} /> 예약 해제
             </button>
           )}
           <button
@@ -238,7 +230,7 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
           >
             {saved ? (
-              <>{mode === 'edit' ? '저장 완료!' : '등록 완료!'}</>
+              <>{mode === 'edit' ? '변경 완료!' : '등록 완료!'}</>
             ) : (
               <>
                 <Upload size={15} />
@@ -251,3 +243,5 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
     </div>
   )
 }
+
+

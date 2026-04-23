@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-route
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Header from './components/Header'
 import ErrorDialog from './components/ErrorDialog.jsx'
+import ServiceGuideButton from './components/ServiceGuideButton.jsx'
 import LoginPage from './pages/LoginPage'
 import ExtractionPage from './pages/ExtractionPage'
 import ExtractionResultPage from './pages/ExtractionResultPage'
@@ -42,6 +43,7 @@ function AppLayout() {
     <div className="flex flex-col h-screen overflow-hidden bg-background">
       <Header />
       <DesktopHelperInstallPrompt />
+      <ServiceGuideButton />
       <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-background">
         <Routes>
           <Route path="/" element={<DashboardPage />} />

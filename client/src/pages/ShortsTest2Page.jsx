@@ -403,7 +403,7 @@ IMPORTANT REQUIREMENTS:
           let finalUrl = rawUrl
           let srtUrl = ''
 
-          setStatus('?먮쭑 踰덉씤 以?..')
+          setStatus('자막 번인 중...')
 
           try {
             const burnResponse = await fetchJson('/api/subtitle/burn', {
@@ -418,7 +418,7 @@ IMPORTANT REQUIREMENTS:
             const burnData = await readJsonSafely(burnResponse)
             if (!burnResponse.ok) {
               throw new Error(
-                burnData.error?.message || burnData.error || `?먮쭑 踰덉씤 ?ㅽ뙣 (${burnResponse.status})`
+                burnData.error?.message || burnData.error || `자막 번인 실패 (${burnResponse.status})`
               )
             }
             if (burnData.url) {

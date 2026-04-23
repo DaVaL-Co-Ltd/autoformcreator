@@ -81,7 +81,16 @@ export default function ContentPage() {
   const [activeStatus, setActiveStatus] = useState('all')
   const [contents, setContents] = useState([])
   const [hasNextPage, setHasNextPage] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [totalPages, setTotalPages] = useState(1)
+  const [aggregateCounts, setAggregateCounts] = useState({
+    all: 0,
+    not_uploaded: 0,
+    scheduled: 0,
+    uploaded: 0,
+  })
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [listLoading, setListLoading] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
@@ -98,7 +107,13 @@ export default function ContentPage() {
     status = activeStatus,
     query = searchQuery,
   ) => {
-    if (showSpinner) setLoading(true)
+    if (showSpinner) {
+      if (hasLoadedOnce) {
+        setListLoading(true)
+      } else {
+        setInitialLoading(true)
+      }
+    }
 
     try {
       const startIndex = (page - 1) * size
@@ -106,7 +121,12 @@ export default function ContentPage() {
       const pageItems = []
       let matchedCount = 0
       let extractionPage = 1
-      let nextPageFound = false
+      const nextCounts = {
+        all: 0,
+        not_uploaded: 0,
+        scheduled: 0,
+        uploaded: 0,
+      }
 
       while (true) {
         const { items } = await getExtractionsPaged({
@@ -116,9 +136,30 @@ export default function ContentPage() {
 
         if (!items.length) break
 
-        const matchedBatch = toContentItems(items).filter(item =>
+        const batchItems = toContentItems(items)
+        const countedBatch = batchItems.filter(item =>
+          matchesFilters(item, channel, 'all', query)
+        )
+        const matchedBatch = batchItems.filter(item =>
           matchesFilters(item, channel, status, query)
         )
+
+        countedBatch.forEach((item) => {
+          nextCounts.all += 1
+          if (item.channel === 'newsletter') return
+          if (item.uploadStatus === 'scheduled' || item.nativeSchedule) {
+            nextCounts.scheduled += 1
+            return
+          }
+          if (item.uploadStatus === 'uploaded') {
+            nextCounts.uploaded += 1
+            return
+          }
+          if (item.uploadStatus === 'not_uploaded') {
+            nextCounts.not_uploaded += 1
+          }
+        })
+
         const nextMatchedCount = matchedCount + matchedBatch.length
 
         if (nextMatchedCount > startIndex && pageItems.length < size) {
@@ -128,14 +169,11 @@ export default function ContentPage() {
 
         matchedCount = nextMatchedCount
 
-        if (matchedCount > endIndex) {
-          nextPageFound = true
-          break
-        }
-
         if (items.length < EXTRACTION_BATCH_SIZE) break
         extractionPage += 1
       }
+
+      const resolvedTotalPages = Math.max(1, Math.ceil(matchedCount / size))
 
       if (page > 1 && pageItems.length === 0) {
         setCurrentPage(page - 1)
@@ -143,9 +181,18 @@ export default function ContentPage() {
       }
 
       setContents(pageItems)
-      setHasNextPage(nextPageFound)
+      setTotalPages(resolvedTotalPages)
+      setAggregateCounts(nextCounts)
+      setHasNextPage(page < resolvedTotalPages)
     } finally {
-      if (showSpinner) setLoading(false)
+      if (showSpinner) {
+        if (hasLoadedOnce) {
+          setListLoading(false)
+        } else {
+          setInitialLoading(false)
+          setHasLoadedOnce(true)
+        }
+      }
     }
   }
 
@@ -155,20 +202,20 @@ export default function ContentPage() {
 
   useEffect(() => {
     const onFocus = () => {
-      refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+      refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     }
 
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [currentPage, pageSize, activeChannel, activeStatus, searchQuery])
 
-  const uploadableContents = contents.filter(c => c.channel !== 'newsletter')
-  const statusCounts = {
-    all: contents.length,
-    not_uploaded: uploadableContents.filter(c => c.uploadStatus === 'not_uploaded').length,
-    scheduled: uploadableContents.filter(c => c.uploadStatus === 'scheduled' || c.nativeSchedule).length,
-    uploaded: uploadableContents.filter(c => c.uploadStatus === 'uploaded' && !c.nativeSchedule).length,
-  }
+  const paginationGroupStart = Math.floor((currentPage - 1) / 10) * 10 + 1
+  const paginationGroupEnd = Math.min(paginationGroupStart + 9, totalPages)
+  const paginationPages = Array.from(
+    { length: paginationGroupEnd - paginationGroupStart + 1 },
+    (_, idx) => paginationGroupStart + idx,
+  )
+  const statusCounts = aggregateCounts
 
   const handleView = (item) => {
     navigate('/contents/view', {
@@ -203,7 +250,7 @@ export default function ContentPage() {
 
       await updateUploadStatus(item.extractionId, item.channel, nextUploadInfo)
 
-      await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+      await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     } catch (err) {
       alert(`업로드 실패: ${err.message}`)
     }
@@ -247,7 +294,7 @@ export default function ContentPage() {
 
     await updateUploadStatus(extractionId, channel, info)
 
-    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+    await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
 
     if (channel !== 'blog' && info.status === 'scheduled' && info.scheduledAt) {
       const target = scheduleTarget
@@ -271,13 +318,13 @@ export default function ContentPage() {
     } else {
       await updateUploadStatus(item.extractionId, item.channel, { status: 'not_uploaded' })
     }
-    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+    await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
   }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
     await deleteExtractionChannel(deleteTarget.extractionId, deleteTarget.channel)
-    await refreshContents(false, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+    await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     setDeleteTarget(null)
   }
 
@@ -290,7 +337,7 @@ export default function ContentPage() {
     })}`
   }
 
-  if (loading) {
+  if (initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
         <Loader2 size={32} className="text-primary animate-spin" />
@@ -406,8 +453,16 @@ export default function ContentPage() {
         </select>
       </div>
 
+      <div className="relative min-h-[20rem]">
+        {listLoading && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-surface/75 backdrop-blur-[1px]">
+            <Loader2 size={28} className="text-primary animate-spin" />
+            <p className="text-sm text-text-muted">콘텐츠 목록을 불러오는 중...</p>
+          </div>
+        )}
+
       {contents.length > 0 ? (
-        <div className="space-y-2">
+        <div className={`space-y-2 transition-opacity ${listLoading ? 'opacity-50' : 'opacity-100'}`}>
           {contents.map((item, idx) => {
             const channel = channelConfig[item.channel] || channelConfig.all
             const ChannelIcon = channel.icon
@@ -520,7 +575,7 @@ export default function ContentPage() {
           })}
 
           {(currentPage > 1 || hasNextPage) && (
-            <div className="flex items-center justify-center gap-2 pt-4">
+            <div className="flex items-center justify-center gap-2 pt-4 flex-wrap">
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
@@ -528,9 +583,19 @@ export default function ContentPage() {
               >
                 이전
               </button>
-              <span className="px-3 py-1.5 text-xs rounded-lg border border-border text-text">
-                {currentPage}페이지
-              </span>
+              {paginationPages.map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    page === currentPage
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-border text-text-muted hover:bg-surface-light'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
               <button
                 onClick={() => setCurrentPage(p => p + 1)}
                 disabled={!hasNextPage}
@@ -542,7 +607,7 @@ export default function ContentPage() {
           )}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center h-80 text-center bg-surface rounded-xl border border-border">
+        <div className={`flex flex-col items-center justify-center h-80 text-center bg-surface rounded-xl border border-border transition-opacity ${listLoading ? 'opacity-50' : 'opacity-100'}`}>
           <Sparkles size={40} className="text-text-muted/30 mb-4" />
           <p className="text-text-muted mb-2">
             {searchQuery || activeChannel !== 'all' || activeStatus !== 'all'
@@ -560,6 +625,7 @@ export default function ContentPage() {
           </button>
         </div>
       )}
+      </div>
 
       <ScheduleDialog
         open={!!scheduleTarget}

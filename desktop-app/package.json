@@ -32,7 +32,7 @@
   "build": {
     "appId": "com.autoformcreator.naverrpa",
     "productName": "AutoForm Naver RPA",
-    "artifactName": "${productName}-Setup-${version}.${ext}",
+    "artifactName": "Naver-RPA-Setup.${ext}",
     "directories": {
       "output": "dist"
     },

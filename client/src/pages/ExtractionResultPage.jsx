@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
-  CheckCircle, Hash, Clock, ChevronLeft, ChevronRight, ExternalLink,
+  CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink,
   Upload, Loader2, AlertCircle, Calendar, XCircle, RefreshCw, Eye, EyeOff
 } from 'lucide-react'
 import ScheduleDialog from '../components/ScheduleDialog'
@@ -29,6 +29,34 @@ const ensureTagArray = (value) => {
   if (Array.isArray(value)) return value
   if (typeof value === 'string') return value.split(/\s+/).filter(Boolean)
   return []
+}
+const escapeHtml = (value = '') => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const nlToBr = (value = '') => escapeHtml(value).replace(/\n/g, '<br />')
+const FIXED_NEWSLETTER_GREETING = '안녕하세요 구독자 여러분.'
+const stripResultCtaText = (value) => {
+  if (typeof value !== 'string' || !value.trim()) return ''
+
+  const lines = value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+    .filter(line => !(
+      /프로필\s*링크/i.test(line) ||
+      /자세한\s*내용/i.test(line) ||
+      /더\s*자세한\s*(분석|내용|데이터|인사이트)/i.test(line) ||
+      /링크에서\s*확인/i.test(line) ||
+      /전체\s*리포트/i.test(line) ||
+      /확인해보세요/i.test(line) ||
+      /확인하세요/i.test(line)
+    ))
+
+  return lines.join('\n').trim()
 }
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
@@ -84,7 +112,7 @@ export default function ExtractionResultPage() {
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
   const [copied, setCopied] = useState(false)
-  const [copiedKey, setCopiedKey] = useState(null) // 뉴스레터의 제목/본문 복사 버튼을 구분
+  const [copiedKey, setCopiedKey] = useState(null) // 뉴스레터 제목/본문 복사 버튼 구분
   const flashCopied = (key) => {
     setCopiedKey(key)
     setTimeout(() => setCopiedKey(prev => (prev === key ? null : prev)), 2000)
@@ -169,7 +197,7 @@ export default function ExtractionResultPage() {
         let pngUrls = blogPngUrls
         if (!pngUrls.length) {
           await convertBlogImagesToPng()
-          // convertBlogImagesToPng는 state를 set하므로 직접 캡처
+          // convertBlogImagesToPng 대신 state set 없이 직접 캡처
           const refs = blogImagesRef.current.filter(Boolean)
           pngUrls = []
           for (const el of refs) {
@@ -269,18 +297,18 @@ export default function ExtractionResultPage() {
 
     if (channel === 'instagram') {
       try {
-        // PNG가 아직 변환 안 됐으면 먼저 변환
+        // PNG가 아직 변환되지 않았으면 먼저 변환
         let urls = instaPngUrls.filter(Boolean)
         if (!urls.length && instagramContent?.cards?.length) {
           await convertInstaCardsToPng()
-          // state 업데이트는 비동기이므로 한 번 더 기다림
+          // state 업데이트는 비동기이므로 잠시 대기
           await new Promise(r => setTimeout(r, 200))
           urls = (instaCardsRef.current || []).filter(Boolean).length
             ? instaPngUrls.filter(Boolean)
             : []
         }
         if (!urls.length) {
-          // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한번 직접 변환
+          // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한 번 직접 변환
           urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async (el, index) => {
             try { return await captureElementPng(el, `Instagram image capture ${index + 1}`) } catch { return null }
           }))).filter(Boolean)
@@ -323,7 +351,7 @@ export default function ExtractionResultPage() {
 
     if (channel === 'shorts') {
       try {
-        // 상대 경로면 현재 origin을 붙여 절대 URL로 변환 (서버 fetch 가능하도록)
+        // 상대 경로면 현재 origin을 붙여 서버가 fetch 가능한 URL로 변환
         let absVideoUrl = shortsVideo?.url || ''
         if (absVideoUrl.startsWith('/output/') && API_BASE) {
           absVideoUrl = `${API_BASE}${absVideoUrl}`
@@ -364,7 +392,7 @@ export default function ExtractionResultPage() {
           }
           if (ytUrl) {
             console.log('[YouTube 업로드 완료]', ytUrl)
-            alert(`✅ 유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
+            alert(`유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
             try { await navigator.clipboard.writeText(ytUrl) } catch {}
             window.open(ytUrl, '_blank')
           } else {
@@ -416,7 +444,7 @@ export default function ExtractionResultPage() {
           }
         }
       } else {
-        // 인스타: 각 카드를 순서대로 캡처
+        // 인스타그램: 각 카드를 순서대로 캡처
         const cards = instagramContent?.cards || instagramContent?.cardTopics || []
         const prevSlide = instaSlide
         for (let idx = 0; idx < cards.length; idx++) {
@@ -433,6 +461,32 @@ export default function ExtractionResultPage() {
       console.error('다운로드 실패:', err)
     }
     setDownloading(false)
+  }
+
+  const downloadShortsVideo = async (videoUrl, filename = '숏츠_영상.webm') => {
+    if (!videoUrl) return
+    setDownloading(true)
+    try {
+      const response = await fetch(videoUrl)
+      if (!response.ok) {
+        throw new Error(`Video download failed: ${response.status}`)
+      }
+
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = objectUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(objectUrl)
+    } catch (err) {
+      console.error('영상 다운로드 실패:', err)
+      window.alert('영상 저장에 실패했습니다. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setDownloading(false)
+    }
   }
 
   const {
@@ -459,7 +513,7 @@ export default function ExtractionResultPage() {
     setShortsNarration(initialShortsNarration || null)
   }, [initialBlogImages, initialShortsVideo, initialShortsNarration])
 
-  // 블로그 이미지 HTML → PNG 변환
+  // 블로그 이미지 HTML -> PNG 변환
   const convertBlogImagesToPng = async () => {
     const refs = blogImagesRef.current.filter(Boolean)
     if (refs.length === 0) return
@@ -473,7 +527,7 @@ export default function ExtractionResultPage() {
     setBlogPngUrls(urls)
   }
 
-  // 인스타 카드 HTML → PNG 변환
+  // 인스타 카드 HTML -> PNG 변환
   const convertInstaCardsToPng = async () => {
     const cards = instagramContent?.cards || instagramContent?.cardTopics || []
     if (cards.length === 0) return
@@ -504,13 +558,13 @@ export default function ExtractionResultPage() {
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
     if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
-      // HTML 렌더링 완료 후 변환
+      // HTML 렌더만 완료되면 변환
       const timer = setTimeout(() => convertBlogImagesToPng(), 500)
       return () => clearTimeout(timer)
     }
   }, [activeMenu, blogContent])
 
-  // ── 블로그 업로드 서버 상태 확인 (네이버 블로그 업로드 전용) ──
+  // 네이버 블로그 업로드 서버 상태 확인
   const checkBlogServer = () => {
     setBlogServerStatus('checking')
     // 블로그 탭일 때만 상태 체크
@@ -524,7 +578,7 @@ export default function ExtractionResultPage() {
     else setBlogServerStatus('offline')
   }, [activeMenu])
 
-  // ── compileBlogBody: sections → [IMG:N] 마커 포함 본문 생성 ──
+  // compileBlogBody: sections를 [IMG:N] 마커 포함 본문으로 생성
   const compileBlogBody = (sections = []) => {
     return ensureArray(sections).map((s, i) => {
       const heading = s.heading ? `${s.heading}\n` : ''
@@ -607,13 +661,13 @@ export default function ExtractionResultPage() {
   const normalizeMd = (text) => {
     if (!text) return ''
     return text
-      .replace(/\*{3,}([^*]+?)\*{3,}/g, '<strong>$1</strong>')  // ***text*** → <strong>
-      .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** → <strong> (공백 포함)
-      .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* → <strong>
+      .replace(/\*{3,}([^*]+?)\*{3,}/g, '<strong>$1</strong>')  // ***text*** -> <strong>
+      .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** -> <strong> (공백 포함)
+      .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* -> <strong>
       .replace(/\*{2,}/g, '')  // 남은 고아 ** 제거
   }
 
-  // 결과 저장은 ExtractionPage에서 navigateToResults 시 1회만 수행
+  // 결과 저장: ExtractionPage에서 navigateToResults 시 1회만 실행
   // savedFromExtraction 플래그가 있을 때만 저장 (ref로 StrictMode 중복 실행 방지)
   const saveOnceRef = useRef(false)
   useEffect(() => {
@@ -627,7 +681,7 @@ export default function ExtractionResultPage() {
     saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
   }, [])
 
-  // 기존 추출 결과에서 왔으면 id와 uploadStatus를 location.state에서 가져옴
+  // 기존 추출 결과에서 오면 id와 uploadStatus를 location.state에서 가져옴
   const [scheduleInfo, setScheduleInfo] = useState({}) // { [channel]: { scheduledAt } }
   useEffect(() => {
     if (state?.extractionId) setExtractionId(state.extractionId)
@@ -650,7 +704,7 @@ export default function ExtractionResultPage() {
     }
   }, [state])
 
-  // extractionId가 있으면 서버에서 예약 정보 다시 불러오기 (새로고침 후 복원)
+  // extractionId가 있으면 서버에서 예약 정보를 다시 불러오기 (새로고침 후 복원)
   useEffect(() => {
     if (!extractionId) return
     ;(async () => {
@@ -744,14 +798,102 @@ export default function ExtractionResultPage() {
   })
 
   const copyNewsletterHtml = async () => {
-    const html = document.getElementById('newsletter-export')?.innerHTML
-    if (!html) return
+    const keyPoints = ensureArray(newsletterContent?.keyPoints)
+    const dataHighlights = ensureArray(newsletterContent?.dataHighlights)
+    const activeFooterLinks = footerLinks.filter(link => link.url && link.url !== '#')
+
+    const keyPointsHtml = keyPoints.length > 0
+      ? `
+        <tr>
+          <td style="padding:0 32px 24px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4f8ff;border:1px solid #dbe7ff;border-radius:16px;">
+              <tr>
+                <td style="padding:20px 22px;">
+                  <div style="font-size:11px;line-height:16px;font-weight:800;letter-spacing:0.08em;color:#3b82f6;text-transform:uppercase;margin-bottom:12px;">KEY POINTS</div>
+                  ${keyPoints.map((point) => `
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin-top:10px;">
+                      <tr>
+                        <td valign="top" style="width:20px;padding-top:3px;">
+                          <span style="display:inline-block;width:14px;height:14px;border-radius:999px;background:#3b82f6;color:#ffffff;font-size:10px;line-height:14px;text-align:center;font-weight:700;">✓</span>
+                        </td>
+                        <td style="font-size:14px;line-height:24px;color:#111827;">${nlToBr(point)}</td>
+                      </tr>
+                    </table>
+                  `).join('')}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>`
+      : ''
+
+    const dataHighlightsHtml = dataHighlights.length > 0
+      ? `
+        <tr>
+          <td style="padding:0 32px 24px 32px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+              <tr>
+                ${dataHighlights.map((item) => `
+                  <td valign="top" width="${Math.floor(100 / dataHighlights.length)}%" style="padding:${dataHighlights.length > 1 ? '0 6px' : '0'};">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
+                      <tr>
+                        <td style="padding:18px 12px;text-align:center;">
+                          <div style="font-size:24px;line-height:30px;font-weight:800;color:#2563eb;">${escapeHtml(item.value || '')}</div>
+                          <div style="margin-top:6px;font-size:12px;line-height:18px;color:#6b7280;">${escapeHtml(item.label || '')}</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                `).join('')}
+              </tr>
+            </table>
+          </td>
+        </tr>`
+      : ''
+
+    const footerLinksHtml = activeFooterLinks.length > 0
+      ? `
+        <tr>
+          <td style="padding:8px 32px 32px 32px;border-top:1px solid #e5e7eb;text-align:center;">
+            <div style="font-size:12px;line-height:18px;color:#6b7280;margin:18px 0 16px 0;">더 많은 콘텐츠는 여기에서 만나보세요.</div>
+            ${activeFooterLinks.map((link) => `
+              <a
+                href="${escapeHtml(link.url)}"
+                target="_blank"
+                rel="noopener noreferrer"
+                style="display:inline-block;margin:4px 6px;padding:10px 16px;border-radius:10px;background:${link.bg};color:#ffffff;font-size:12px;line-height:18px;font-weight:700;text-decoration:none;"
+              >
+                ${escapeHtml(link.label)}
+              </a>
+            `).join('')}
+          </td>
+        </tr>`
+      : ''
+
     const fullHtml = `
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f7f8fb;padding:24px 0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f7f8fb;padding:24px 0;margin:0;">
         <tr>
           <td align="center">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e6e9f0;">
-              <tr><td style="padding:0;">${html}</td></tr>
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e6e9f0;">
+              <tr>
+                <td style="padding:32px 32px 28px 32px;background:linear-gradient(90deg,#eff6ff 0%,#f8fbff 100%);text-align:center;">
+                  <div style="font-size:28px;line-height:36px;font-weight:800;color:#111827;">${escapeHtml(newsletterContent?.headline || newsletterContent?.subject || '')}</div>
+                  ${newsletterContent?.preheader ? `<div style="margin-top:10px;font-size:14px;line-height:22px;color:#6b7280;">${escapeHtml(newsletterContent.preheader)}</div>` : ''}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:28px 32px 20px 32px;font-size:14px;line-height:24px;color:#111827;">
+                  ${nlToBr(FIXED_NEWSLETTER_GREETING)}
+                </td>
+              </tr>
+              ${keyPointsHtml}
+              <tr>
+                <td style="padding:0 32px 24px 32px;font-size:14px;line-height:26px;color:#4b5563;">
+                  ${nlToBr(newsletterContent?.body || '')}
+                </td>
+              </tr>
+              ${dataHighlightsHtml}
+              ${footerLinksHtml}
             </table>
           </td>
         </tr>
@@ -761,29 +903,55 @@ export default function ExtractionResultPage() {
       await navigator.clipboard.write([
         new ClipboardItem({
           'text/html': new Blob([fullHtml], { type: 'text/html' }),
-          'text/plain': new Blob([newsletterContent?.body || ''], { type: 'text/plain' }),
+          'text/plain': new Blob([fullHtml], { type: 'text/plain' }),
         }),
       ])
       flashCopied('newsletter-body')
     } catch {
-      await navigator.clipboard.writeText(newsletterContent?.body || '')
+      await navigator.clipboard.writeText(fullHtml)
       flashCopied('newsletter-body')
     }
   }
 
   const renderBlog = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-text">{blogContent?.title}</h2>
-          <div className="flex items-center gap-2 mt-2 text-xs text-text-muted">
-            <Hash size={12} />
-            {ensureTagArray(blogContent?.tags).join(' ')}
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div />
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
-            onClick={() => copy(`${blogContent?.title || ''}\n\n${ensureArray(blogContent?.sections).map(s => `${s.heading}\n${s.content}`).join('\n\n')}`)}
+            type="button"
+            onClick={() => (
+              blogServerStatus === 'offline'
+                ? navigate('/settings?section=desktop-helper')
+                : checkBlogServer()
+            )}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+              blogServerStatus === 'online'
+                ? 'border-border text-text-muted hover:text-text hover:border-primary/40'
+                : blogServerStatus === 'checking'
+                  ? 'border-warning/30 text-warning hover:border-warning/50'
+                  : 'border-danger/30 text-danger hover:bg-danger/5'
+            }`}
+            title={blogServerStatus === 'offline' ? '설정으로 이동' : '서버 상태 새로고침'}
+          >
+            <span className={`w-2 h-2 rounded-full ${
+              blogServerStatus === 'online'
+                ? 'bg-success'
+                : blogServerStatus === 'checking'
+                  ? 'bg-warning animate-pulse'
+                  : 'bg-danger'
+            }`} />
+            <span>
+              {blogServerStatus === 'online'
+                ? '블로그 서버 연결됨'
+                : blogServerStatus === 'checking'
+                  ? '블로그 서버 확인 중...'
+                  : '블로그 서버 연결 필요'}
+            </span>
+            {blogServerStatus !== 'offline' && <RefreshCw size={12} />}
+          </button>
+          <button
+            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${blogBody || compileBlogBody(ensureArray(blogContent?.sections))}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
           >
             {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
@@ -800,78 +968,46 @@ export default function ExtractionResultPage() {
         </div>
       </div>
 
-      {activeMenu === 'blog' && (
-        <div className="flex items-center gap-2 text-xs">
-          <div className={`w-2 h-2 rounded-full ${blogServerStatus === 'online' ? 'bg-success' : blogServerStatus === 'checking' ? 'bg-warning animate-pulse' : 'bg-danger'}`} />
-          <span className="text-text-muted">
-            블로그 업로드 서버:
-            {blogServerStatus === 'online' ? ' 연결됨' : blogServerStatus === 'checking' ? ' 확인 중...' : ' 오프라인'}
-          </span>
-          <button onClick={checkBlogServer} className="text-text-muted hover:text-primary">
-            <RefreshCw size={12} />
-          </button>
+      <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+        <div className="p-6 sm:p-8 border-b border-border">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
+            {blogContent?.title}
+          </h1>
         </div>
-      )}
-
-      {activeMenu === 'blog' && (
-        <div className="bg-surface rounded-xl border border-border p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">블로그 제목</label>
-            <input
-              value={blogTitle}
-              onChange={(e) => setBlogTitle(e.target.value)}
-              className="w-full px-4 py-3 rounded-lg border border-border bg-background text-text"
-              placeholder="블로그 제목"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">블로그 본문</label>
-            <textarea
-              value={blogBody}
-              onChange={(e) => setBlogBody(e.target.value)}
-              rows={12}
-              className="w-full px-4 py-3 rounded-lg border border-border bg-background text-text resize-y"
-            />
-            <p className="mt-2 text-xs text-text-muted">이미지 위치에는 `[IMG:N]` 마커가 유지됩니다. 업로드 시 해당 위치에 이미지가 삽입됩니다.</p>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-6">
+        <div className="p-6 sm:p-8 space-y-10">
         {ensureArray(blogContent?.sections).map((section, index) => (
-          <div key={index} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-8 border-b border-gray-100">
+          <section key={index} className="space-y-5">
+            <div>
               <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
               <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                  {normalizeMd(section.content)}
+                  {normalizeMd(stripResultCtaText(section.content || ''))}
                 </ReactMarkdown>
               </div>
             </div>
-            <div className="p-6 bg-gray-50">
-              <div
-                ref={el => blogImagesRef.current[index] = el}
-                className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center"
-              >
-                {blogImages?.[index]?.imageUrl ? (
-                  <img
-                    src={blogImages[index].imageUrl}
-                    alt={section.heading || `블로그 이미지 ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : blogImages?.[index]?.html ? (
-                  <div
-                    className="w-full h-full"
-                    dangerouslySetInnerHTML={{ __html: blogImages[index].html }}
-                  />
-                ) : (
-                  <div className="text-gray-400">이미지 없음</div>
-                )}
-              </div>
+            <div
+              ref={el => blogImagesRef.current[index] = el}
+              className="w-full aspect-[4/3] rounded-2xl overflow-hidden border border-border bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center"
+            >
+              {blogImages?.[index]?.imageUrl ? (
+                <img
+                  src={blogImages[index].imageUrl}
+                  alt={section.heading || `블로그 이미지 ${index + 1}`}
+                  className="w-full h-full object-cover"
+                />
+              ) : blogImages?.[index]?.html ? (
+                <div
+                  className="w-full h-full"
+                  dangerouslySetInnerHTML={{ __html: blogImages[index].html }}
+                />
+              ) : (
+                <div className="text-gray-400">이미지 없음</div>
+              )}
             </div>
-          </div>
+          </section>
         ))}
-      </div>
+        </div>
+      </article>
     </div>
   )
 
@@ -879,36 +1015,36 @@ export default function ExtractionResultPage() {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
     const hashtags = ensureArray(instagramContent?.hashtags)
+    const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
+    const sanitizedSubtitle = stripResultCtaText(current?.subtitle || '')
+    const sanitizedPoints = ensureArray(current?.points).map(stripResultCtaText).filter(Boolean)
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-bold text-text">{instagramContent?.headline || '인스타그램 카드'}</h2>
-            <p className="text-sm text-text-muted mt-1">{cards.length}장 카드</p>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div />
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => copy(`${instagramContent?.caption || ''}\n\n${hashtags.join(' ')}`)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
-            >
-              {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
-              캡션 복사
+              onClick={() => copy(`${sanitizedCaption}\n\n${hashtags.join(' ')}`)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+          >
+            {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
+            캡션 복사
             </button>
             <button
               onClick={() => downloadAllImages('instagram')}
               disabled={downloading}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors disabled:opacity-60"
-            >
-              {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              카드 저장
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors disabled:opacity-60"
+          >
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            카드 저장
             </button>
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-[420px,1fr] gap-6">
-          <div className="space-y-4">
-            <div className="bg-white rounded-[32px] p-4 shadow-xl border border-gray-100">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+          <div className="space-y-4 sm:w-[360px] sm:shrink-0">
+            <div className="bg-white rounded-[28px] p-4 shadow-xl border border-gray-100">
               <div className="rounded-[28px] overflow-hidden bg-gray-100">
                 <div
                   ref={el => instaCardsRef.current[instaSlide] = el}
@@ -922,13 +1058,13 @@ export default function ExtractionResultPage() {
                         </span>
                       )}
                       {renderCardHeading(current?.title || current?.heading, 34)}
-                      {current?.subtitle && (
-                        <p className="text-base text-gray-600 leading-7">{stripBold(current.subtitle)}</p>
+                      {sanitizedSubtitle && (
+                        <p className="text-base text-gray-600 leading-7">{stripBold(sanitizedSubtitle)}</p>
                       )}
                     </div>
-                    {ensureArray(current?.points).length > 0 && (
+                    {sanitizedPoints.length > 0 && (
                       <ul className="space-y-3">
-                        {ensureArray(current?.points).map((point, idx) => (
+                        {sanitizedPoints.map((point, idx) => (
                           <li key={idx} className="flex items-start gap-3 text-gray-700">
                             <span className="mt-1 w-2 h-2 rounded-full bg-pink-500 shrink-0" />
                             <span className="leading-7">{stripBold(point)}</span>
@@ -962,10 +1098,10 @@ export default function ExtractionResultPage() {
             </div>
           </div>
 
-          <div className="space-y-5">
+          <div className="space-y-5 min-w-0 flex-1">
             <div className="bg-surface rounded-2xl border border-border p-5">
               <h3 className="text-sm font-semibold text-text mb-3">캡션</h3>
-              <div className="text-sm text-text leading-7 whitespace-pre-wrap">{instagramContent?.caption}</div>
+              <div className="text-sm text-text leading-7 whitespace-pre-wrap">{sanitizedCaption}</div>
             </div>
 
             <div className="bg-surface rounded-2xl border border-border p-5">
@@ -978,26 +1114,6 @@ export default function ExtractionResultPage() {
                 ))}
               </div>
             </div>
-
-            <div className="bg-surface rounded-2xl border border-border p-5">
-              <h3 className="text-sm font-semibold text-text mb-3">카드 목록</h3>
-              <div className="space-y-2">
-                {cards.map((card, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setInstaSlide(index)}
-                    className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
-                      instaSlide === index
-                        ? 'border-primary/40 bg-primary/5'
-                        : 'border-border hover:border-primary/20 hover:bg-surface-light'
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-text">{card.title || card.heading || `카드 ${index + 1}`}</p>
-                    {card.subtitle && <p className="text-xs text-text-muted mt-1 line-clamp-2">{stripBold(card.subtitle)}</p>}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1005,7 +1121,32 @@ export default function ExtractionResultPage() {
   }
 
   const renderNewsletter = () => (
-    <div className="max-w-3xl mx-auto">
+    <div className="max-w-3xl mx-auto space-y-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div />
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(newsletterContent?.subject || '')
+              flashCopied('newsletter-subject')
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+            title="뉴스레터 제목을 복사합니다"
+          >
+            {copiedKey === 'newsletter-subject' ? <><CheckCircle size={16} /> 복사됨</> : <><Copy size={16} /> 제목 복사</>}
+          </button>
+          <button
+            type="button"
+            onClick={copyNewsletterHtml}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors"
+            title="이메일 편집기에 붙여넣을 HTML 본문을 복사합니다"
+          >
+            {copiedKey === 'newsletter-body' ? <><CheckCircle size={16} /> 복사됨</> : <><Copy size={16} /> 본문 복사</>}
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white border border-border rounded-2xl overflow-hidden shadow-sm">
         <div className="flex items-center gap-2 px-6 py-4 border-b border-border bg-surface-light">
           <div className="flex items-center gap-1.5">
@@ -1013,33 +1154,12 @@ export default function ExtractionResultPage() {
             <div className="w-3 h-3 rounded-full bg-warning/60" />
             <div className="w-3 h-3 rounded-full bg-success/60" />
           </div>
-          <p className="text-xs text-text-muted ml-3 flex-1 truncate">{newsletterContent?.subject}</p>
-          <button onClick={copyNewsletterHtml} className="text-xs text-text-muted hover:text-primary flex items-center gap-1" title="이메일 편집기(Gmail 등)에 붙여넣으면 서식이 유지됩니다">
-            {copiedKey === 'newsletter-body' ? <><CheckCircle size={11} /> 복사됨</> : <><Copy size={11} /> 복사</>}
-          </button>
+          <p className="text-xs ml-3 flex-1 truncate">
+            <span className="font-bold text-text">제목 :</span>
+            {' '}
+            <span className="text-text-muted">{newsletterContent?.subject}</span>
+          </p>
         </div>
-
-        {newsletterContent?.subject && (
-          <div className="border-b border-border px-6 py-3 bg-surface">
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-bold text-text-muted w-12 shrink-0">제목</span>
-              <p className="text-sm text-text flex-1 truncate">{newsletterContent.subject}</p>
-              <button
-                onClick={() => { navigator.clipboard.writeText(newsletterContent.subject); flashCopied('newsletter-subject') }}
-                className="text-xs text-text-muted hover:text-primary flex items-center gap-1 shrink-0"
-                title="이메일 제목을 복사합니다"
-              >
-                {copiedKey === 'newsletter-subject' ? <><CheckCircle size={11} /> 복사됨</> : <><Copy size={11} /> 제목 복사</>}
-              </button>
-            </div>
-            {newsletterContent.preheader && (
-              <div className="flex items-center gap-3 mt-1.5">
-                <span className="text-[10px] font-bold text-text-muted w-12 shrink-0">프리헤더</span>
-                <p className="text-xs text-text-muted flex-1 truncate">{newsletterContent.preheader}</p>
-              </div>
-            )}
-          </div>
-        )}
 
         <div id="newsletter-export">
           <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-8 py-8 text-center">
@@ -1050,9 +1170,7 @@ export default function ExtractionResultPage() {
           </div>
 
           <div className="px-8 py-6 space-y-5">
-            {newsletterContent?.greeting && (
-              <p className="text-sm text-text">{newsletterContent.greeting}</p>
-            )}
+            <p className="text-sm text-text">{FIXED_NEWSLETTER_GREETING}</p>
 
             {ensureArray(newsletterContent?.keyPoints).length > 0 && (
               <div className="bg-primary/5 rounded-lg p-5 border border-primary/10">
@@ -1083,7 +1201,7 @@ export default function ExtractionResultPage() {
 
             {footerLinks.some(l => l.url && l.url !== '#') && (
               <div className="pt-6 border-t border-border text-center">
-                <p className="text-xs text-text-muted mb-4">더 많은 콘텐츠는 여기서 만나보세요</p>
+                <p className="text-xs text-text-muted mb-4">더 많은 콘텐츠는 여기에서 만나보세요.</p>
                 <div className="flex items-center justify-center gap-2 flex-wrap">
                   {footerLinks.filter(l => l.url && l.url !== '#').map(l => (
                     <a
@@ -1188,7 +1306,7 @@ export default function ExtractionResultPage() {
         </div>
         {videoUrl && (
           <div className="mt-2 flex items-center gap-3">
-            <a href={videoUrl} download={`숏폼_${versionLabel}.webm`}
+            <a href={videoUrl} download={`숏츠_${versionLabel}.webm`}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
               <Download size={10} /> 다운로드
             </a>
@@ -1198,11 +1316,11 @@ export default function ExtractionResultPage() {
                 sceneTimings: timings,
                 scenes: shortsScript?.scenes || [],
                 narrations: shortsNarration || [],
-                title: `${shortsScript?.title || '숏폼 영상'} (${versionLabel})`,
+                title: `${shortsScript?.title || '숏츠 영상'} (${versionLabel})`,
               }})}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
             >
-              <ExternalLink size={10} /> 웹에서 보기
+              <ExternalLink size={10} /> 크게 보기
             </button>
           </div>
         )}
@@ -1213,58 +1331,98 @@ export default function ExtractionResultPage() {
     )
   }
 
-  const renderShorts = () => (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex gap-6">
-        {renderVideoPanel(shortsVideo, '숏폼 영상')}
+  const renderShorts = () => {
+    const shortsVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl
+    const sanitizedShortsDescription = stripResultCtaText(shortsScript?.uploadDescription || '')
+    const shortsDetailText = [
+      shortsScript?.uploadTitle ? `제목\n${shortsScript.uploadTitle}` : '',
+      sanitizedShortsDescription ? `설명\n${sanitizedShortsDescription}` : '',
+      ensureArray(shortsScript?.hashtags).length > 0 ? `태그\n${ensureArray(shortsScript?.hashtags).join(' ')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
 
-        <div className="flex-1 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-text">{shortsScript?.title}</h3>
-            <button onClick={() => copy(shortsScript?.scenes?.map(s => s.narration).join('\n\n'))}
-              className="text-xs text-text-muted hover:text-primary flex items-center gap-1">
-              <Copy size={11} /> 대본 복사
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div />
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => copy(shortsDetailText)}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+            >
+              <Copy size={14} /> 상세정보 복사
             </button>
+            {shortsVideoUrl ? (
+              <button
+                type="button"
+                onClick={() => downloadShortsVideo(shortsVideoUrl)}
+                disabled={downloading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors disabled:opacity-60"
+              >
+                {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                영상 저장
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm opacity-60 cursor-not-allowed"
+              >
+                <Download size={14} /> 영상 저장
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-3 text-xs text-text-muted">
-            <span className="flex items-center gap-1"><Clock size={12} /> {shortsScript?.duration}초</span>
-            <span>{shortsScript?.scenes?.length}개 씬</span>
-          </div>
+        </div>
 
-          {shortsScript?.scenes?.map((scene, i) => {
-            const sceneAudio = shortsNarration?.find(n => n.sceneNumber === scene.sceneNumber)
-            const isActive = combinedVideoUrl && i === currentScene
-            return (
-              <div key={i} className={`p-4 rounded-lg border transition-all ${isActive ? 'bg-red-500/5 border-red-500/30' : 'bg-surface border-border'}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${isActive ? 'bg-red-500/30 text-red-500' : 'bg-red-500/20 text-red-500'}`}>{scene.sceneNumber}</span>
-                  <span className="text-xs text-text-muted">{scene.duration}초</span>
-                  {isActive && <span className="text-xs text-red-500 font-medium animate-pulse">재생중</span>}
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+          {renderVideoPanel(shortsVideo, '숏츠 영상')}
+
+          <div className="space-y-3 min-w-0 flex-1">
+            <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
+              <h4 className="text-sm font-semibold text-text mb-1">상세정보</h4>
+
+              {shortsScript?.uploadTitle && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-text-muted">영상 제목</p>
+                  <p className="text-sm text-text leading-6">{shortsScript.uploadTitle}</p>
                 </div>
-                <p className="text-sm text-text mb-1">{scene.narration}</p>
-                {scene.textOverlay && <p className="text-xs text-red-500 font-medium mb-2">[자막] {scene.textOverlay}</p>}
-                {sceneAudio?.audioUrl && !combinedVideoUrl && (
-                  <audio controls className="w-full h-8 mt-2" src={sceneAudio.audioUrl} />
-                )}
-              </div>
-            )
-          })}
+              )}
 
-          {shortsScript?.cta && (
-            <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg">
-              <p className="text-xs text-primary-light font-medium">CTA: {shortsScript.cta}</p>
+              {sanitizedShortsDescription && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-text-muted">설명</p>
+                  <p className="text-sm whitespace-pre-wrap text-text leading-7">{sanitizedShortsDescription}</p>
+                </div>
+              )}
+
+              {ensureArray(shortsScript?.hashtags).length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-text-muted">태그</p>
+                  <div className="flex flex-wrap gap-2">
+                    {ensureArray(shortsScript?.hashtags).map((tag, index) => (
+                      <span
+                        key={`${tag}-${index}`}
+                        className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-500"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   const renderContent = { blog: renderBlog, newsletter: renderNewsletter, instagram: renderInstagram, shorts: renderShorts }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
-      <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
+      <div className="flex flex-wrap items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
           onClick={() => navigate(state?.fromContents ? '/contents' : '/extraction')}
           className="p-2 rounded-lg hover:bg-surface-light text-text-muted hover:text-text transition-colors shrink-0"
@@ -1293,6 +1451,50 @@ export default function ExtractionResultPage() {
             </button>
           )
         })}
+        {dataMap[activeMenu] && activeMenu !== 'newsletter' && (
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            {(() => {
+              const ch = activeMenu
+              const status = uploadStatus[ch]
+              const sched = scheduleInfo[ch]
+              const isNativeSchedule = ['blog', 'shorts'].includes(ch) && status === 'done' && Boolean(sched?.scheduledAt)
+              const isScheduled = status === 'scheduled' && !isNativeSchedule
+              return (
+                <>
+                  {!isScheduled && !isNativeSchedule && (
+                    <button
+                      onClick={() => handleUpload(ch)}
+                      disabled={status === 'loading'}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
+                        ${status === 'done'
+                          ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
+                          : status === 'loading'
+                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                            : 'bg-primary text-white hover:bg-primary-dark disabled:opacity-60'
+                        }`}
+                    >
+                      {status === 'loading' ? (
+                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                      ) : (
+                        <><Upload size={14} /> 업로드</>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      const contentMap = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }
+                      setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
+                    }}
+                    className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
+                  >
+                    <Calendar size={14} />
+                    예약 업로드
+                  </button>
+                </>
+              )
+            })()}
+          </div>
+        )}
       </div>
 
       {blogUploadResult && (
@@ -1324,92 +1526,10 @@ export default function ExtractionResultPage() {
         </div>
       )}
 
-      {dataMap[activeMenu] && activeMenu !== 'newsletter' && (
-        <div className="bg-surface rounded-2xl border border-border p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text">플랫폼 업로드</h3>
-              <p className="text-xs text-text-muted mt-0.5">생성된 콘텐츠를 연동된 플랫폼에 바로 업로드</p>
-            </div>
-          </div>
-
-          {uploadError && (
-            <div className="mb-3 flex items-center gap-2 p-3 bg-danger/5 border border-danger/20 rounded-lg">
-              <AlertCircle size={14} className="text-danger shrink-0" />
-              <p className="text-xs text-danger">{uploadError}</p>
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            {(() => {
-              const ch = activeMenu
-              const cfg = platformConfig[ch]
-              const status = uploadStatus[ch]
-              const sched = scheduleInfo[ch]
-              if (!cfg) return null
-              const fmtDate = (iso) => {
-                if (!iso) return ''
-                const d = new Date(iso)
-                return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-              }
-              const isNativeSchedule = ['blog', 'shorts'].includes(ch) && status === 'done' && Boolean(sched?.scheduledAt)
-              const nativeScheduleLabel = ch === 'blog' ? '네이버' : 'YouTube'
-              const isScheduled = status === 'scheduled' && !isNativeSchedule
-              return (
-                <div className="flex items-center gap-3 flex-1">
-                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border flex-1 ${status === 'done' ? 'bg-success/5 border-success/20' : (isScheduled || isNativeSchedule) ? 'bg-info/5 border-info/20' : 'bg-surface-light border-border'}`}>
-                    <span className="text-lg">{cfg.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-text">{cfg.name}</p>
-                      <p className="text-xs text-text-muted">
-                        {status === 'done' && isNativeSchedule ? `${nativeScheduleLabel} 예약 등록 완료 · ${fmtDate(sched?.scheduledAt)}` :
-                         status === 'done' ? '업로드 완료' :
-                         status === 'error' ? '업로드 실패' :
-                         isNativeSchedule ? `${nativeScheduleLabel} 예약 시간 · ${fmtDate(sched?.scheduledAt)}` :
-                         isScheduled ? `예약 완료 · ${fmtDate(sched?.scheduledAt)}` :
-                         '업로드 대기'}
-                      </p>
-                    </div>
-                    {status === 'error' && <AlertCircle size={16} className="text-danger shrink-0" />}
-                    {(isScheduled || isNativeSchedule) && <Calendar size={16} className="text-info shrink-0" />}
-                  </div>
-                  {!isScheduled && (
-                    <button
-                      onClick={() => handleUpload(ch)}
-                      disabled={status === 'loading'}
-                      className={`px-5 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0
-                        ${status === 'done'
-                          ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
-                          : status === 'loading'
-                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                            : 'bg-gradient-to-r from-primary to-primary-dark text-white hover:shadow-lg hover:shadow-primary/25'
-                        }`}
-                    >
-                      {status === 'loading' ? (
-                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                      ) : status === 'done' ? (
-                        <><CheckCircle size={14} /> 완료</>
-                      ) : (
-                        <><Upload size={14} /> {cfg.name}에 업로드</>
-                      )}
-                    </button>
-                  )}
-                  {status !== 'done' && (
-                    <button
-                      onClick={() => {
-                        const contentMap = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }
-                        setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
-                      }}
-                      className="px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
-                    >
-                      <Calendar size={14} />
-                      {(isScheduled || isNativeSchedule) ? '예약 상세' : '예약 업로드'}
-                    </button>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
+      {uploadError && dataMap[activeMenu] && activeMenu !== 'newsletter' && (
+        <div className="flex items-center gap-2 p-3 bg-danger/5 border border-danger/20 rounded-lg">
+          <AlertCircle size={14} className="text-danger shrink-0" />
+          <p className="text-xs text-danger">{uploadError}</p>
         </div>
       )}
 
@@ -1493,3 +1613,4 @@ export default function ExtractionResultPage() {
     </div>
   )
 }
+
