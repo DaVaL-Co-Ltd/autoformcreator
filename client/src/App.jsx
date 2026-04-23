@@ -8,6 +8,8 @@ import ExtractionPage from './pages/ExtractionPage'
 import ExtractionResultPage from './pages/ExtractionResultPage'
 import SettingsPage from './pages/SettingsPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
+import ShortsTestPage from './pages/ShortsTestPage'
+import ShortsTest2Page from './pages/ShortsTest2Page'
 import SubtitlePreviewPage from './pages/SubtitlePreviewPage'
 import TitlePreviewPage from './pages/TitlePreviewPage'
 import InstagramUploadTestPage from './pages/InstagramUploadTestPage'
@@ -51,6 +53,8 @@ function AppLayout() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
+          <Route path="/shorts/test" element={<ShortsTestPage />} />
+          <Route path="/shorts/test2" element={<ShortsTest2Page />} />
           <Route path="/subtitle-preview" element={<SubtitlePreviewPage />} />
           <Route path="/title-preview" element={<TitlePreviewPage />} />
           <Route path="/instagram/upload-test" element={<InstagramUploadTestPage />} />

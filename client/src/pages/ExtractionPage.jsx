@@ -14,6 +14,22 @@ import {
   generateInstagramContent, generateShortsScript
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/flux'
+import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+
+const API_BASE = import.meta.env.VITE_SERVER_URL || ''
+const API_SECRET = import.meta.env.VITE_API_SECRET || ''
+const API_HEADERS = API_SECRET ? { 'x-app-secret': API_SECRET } : {}
+
+function apiFetch(path, options = {}) {
+  return fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      ...API_HEADERS,
+      ...(options.headers || {}),
+    },
+  })
+}
 
 const steps = [
   { id: 0, label: '채널 선택', icon: CheckCircle, desc: '작업할 채널을 선택하세요' },
@@ -340,6 +356,7 @@ export default function ExtractionPage() {
   const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id
   const [heygenReady, setHeygenReady] = useState(false)
   const [heygenUploading, setHeygenUploading] = useState(false)
+  const [shortsGenerationMode, setShortsGenerationMode] = useState('recommended')
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
   const [subtitleFont, setSubtitleFont] = useState('default')
 
@@ -785,29 +802,32 @@ export default function ExtractionPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `Generate a realistic high-quality photograph. Subject: ${avatarPrompt.trim()}.
+            contents: [{ parts: [{ text: `Generate a photorealistic vertical portrait photograph. Subject: ${avatarPrompt.trim()}.
 
 IMPORTANT REQUIREMENTS:
-- Realistic photo style (like taken with a DSLR camera)
-- Character facing directly toward the camera, front-facing
-- Mouth CLEARLY VISIBLE and slightly open (showing a friendly expression)
-- Bright, warm, natural lighting (golden hour or soft window light)
-- Shallow depth of field with blurred background
-- Character sitting or standing naturally in an environment (desk, room, park, etc.)
-- Full upper body visible (not extreme close-up)
-- The scene should look like a real photograph, NOT a painting or illustration
+- Look like a real camera photo, not AI art
+- Realistic DSLR or mirrorless photo quality
+- Ultra realistic skin, fur, hair, feathers, eyes, and natural texture depending on the subject
+- Character or animal facing toward the camera in a natural way
+- Mouth CLEARLY VISIBLE and slightly open or naturally relaxed so lip movement can read well later
+- Bright, warm, natural lighting with realistic shadows
+- Subject sitting or standing naturally in a believable real-world environment
+- Full upper body or upper torso visible, never an extreme close-up
+- The scene should look like a real photograph, NOT a painting, render, or illustration
 
 COMPOSITION:
 - 9:16 VERTICAL portrait orientation
-- Character occupies about 40-50% of the frame
+- Subject occupies about 40-50% of the frame
 - Face is well-lit and clearly visible
-- Background has context but is not distracting
+- Background has real context but is not distracting
+- Include a tasteful, realistic background that fits the subject and feels naturally photographed
+- Use subtle depth of field only if it still looks real and not overly artificial
 
 DO NOT:
 - Use cartoon, anime, 3D render, or illustration style
 - Generate extreme close-ups (face only)
 - Place objects near or covering the mouth
-- Use dark or dramatic lighting
+- Use surreal lighting, glossy CGI textures, fake studio backdrops, or obviously AI-looking scenery
 - Include any text or watermarks` }] }],
             generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
           }),
@@ -840,41 +860,121 @@ DO NOT:
   }
 
   // Step 5-2: 아바타 확정 시 HeyGen 업로드 + 폴링 대기 (백그라운드)
-  const confirmAndUploadAvatar = async () => {
+  const uploadAvatarToHeyGen = async (forceNew = false) => {
+    if (!avatarImage) {
+      throw new Error('?꾨컮?瑜?癒쇱? ?앹꽦?댁＜?몄슂.')
+    }
+
+    if (!forceNew && heygenAvatarId) {
+      return heygenAvatarId
+    }
+
+    const match = avatarImage.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) {
+      throw new Error('?꾨컮? ?대?吏 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.')
+    }
+
+    const [, mimeType, base64] = match
+    setHeygenUploading(true)
+
+    try {
+      const uploadRes = await apiFetch('/api/heygen/upload-asset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mimeType }),
+      })
+      const uploadData = await readApiResponse(uploadRes)
+      if (!uploadRes.ok) {
+        throw new Error(getApiErrorMessage(uploadData, `?꾨컮? ?낅줈???ㅽ뙣 (${uploadRes.status})`))
+      }
+
+      const imageKey = uploadData.data?.image_key
+      if (!imageKey) {
+        throw new Error('image_key瑜?諛쏆? 紐삵뻽?듬땲??')
+      }
+
+      const groupRes = await apiFetch('/api/heygen/avatar-group/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
+      })
+      const groupData = await readApiResponse(groupRes)
+      if (!groupRes.ok) {
+        throw new Error(getApiErrorMessage(groupData, `?꾨컮? ?깅줉 ?ㅽ뙣 (${groupRes.status})`))
+      }
+
+      const groupId = groupData.data?.group_id
+      if (!groupId) {
+        throw new Error('group_id瑜?諛쏆? 紐삵뻽?듬땲??')
+      }
+
+      setHeygenAvatarId(groupId)
+      setHeygenReady(false)
+      return groupId
+    } finally {
+      setHeygenUploading(false)
+    }
+  }
+
+  const waitForHeygenAvatarReady = async (groupId, options = {}) => {
+    const { attempts = 24, intervalMs = 5000, progressLabel = '?꾨컮? 以鍮??뺤씤 以?..' } = options
+    if (!groupId) {
+      throw new Error('HeyGen ?꾨컮? ID媛 ?놁뒿?덈떎.')
+    }
+
+    setHeygenUploading(true)
+    try {
+      for (let i = 0; i < attempts; i++) {
+        if (progressLabel) {
+          setMediaItemLoading((prev) => ({ ...prev, '?륂뤌 ?곸긽': progressLabel }))
+        }
+
+        const statusRes = await apiFetch(`/api/heygen/avatar-status/${groupId}`)
+        const statusData = await readApiResponse(statusRes)
+        if (statusRes.ok && statusData.ready) {
+          setHeygenReady(true)
+          return true
+        }
+
+        await delay(intervalMs)
+      }
+
+      return false
+    } finally {
+      setHeygenUploading(false)
+    }
+  }
+
+  const confirmAndUploadAvatarLegacy = async () => {
     setAvatarConfirmed(true)
     setHeygenAvatarId(null)
     setHeygenReady(false)
-    setHeygenUploading(true)
-    if (!avatarImage) { setHeygenUploading(false); return }
+    if (!avatarImage) return
     try {
       // 테스트용: 서버에서 성공한 이미지를 업로드하고 기존 아바타가 있으면 재사용
-      const listRes = await fetch('/api/heygen/avatar-list')
-      if (listRes.ok) {
-        const listData = await listRes.json()
-        const existingCustom = listData.custom || []
-        if (existingCustom.length > 0) {
-          setHeygenAvatarId(existingCustom[0].talking_photo_id)
-          setHeygenReady(true)
-          setHeygenUploading(false)
-          return
-        }
-      }
+      const match = avatarImage.match(/^data:([^;]+);base64,(.+)$/)
+      if (!match) throw new Error('아바타 이미지 형식이 올바르지 않습니다.')
+
+      const [, mimeType, base64] = match
       // 기존 아바타 없으면 성공한 이미지로 새로 생성
-      const uploadRes = await fetch('/api/heygen/upload-test-avatar', {
+      const uploadRes = await apiFetch('/api/heygen/upload-asset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, mimeType }),
       })
       if (!uploadRes.ok) throw new Error('업로드 실패')
-      const uploadData = await uploadRes.json()
+      const uploadData = await readApiResponse(uploadRes)
+      if (!uploadRes.ok) throw new Error(getApiErrorMessage(uploadData, `아바타 업로드 실패 (${uploadRes.status})`))
       const imageKey = uploadData.data?.image_key
       if (!imageKey) throw new Error('image_key 없음')
-      const groupRes = await fetch('/api/heygen/avatar-group/create', {
+      const groupRes = await apiFetch('/api/heygen/avatar-group/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
       })
       if (!groupRes.ok) throw new Error('Group 생성 실패')
-      const groupData = await groupRes.json()
+      const groupData = await readApiResponse(groupRes)
+      if (!groupRes.ok) throw new Error(getApiErrorMessage(groupData, `아바타 등록 실패 (${groupRes.status})`))
       const groupId = groupData.data?.group_id
       if (!groupId) throw new Error('group_id 없음')
       setHeygenAvatarId(groupId)
@@ -882,9 +982,9 @@ DO NOT:
       for (let i = 0; i < 18; i++) {
         await new Promise(r => setTimeout(r, 10000))
         try {
-          const statusRes = await fetch(`/api/heygen/avatar-status/${groupId}`)
+          const statusRes = await apiFetch(`/api/heygen/avatar-status/${groupId}`)
           if (statusRes.ok) {
-            const statusData = await statusRes.json()
+            const statusData = await readApiResponse(statusRes)
             if (statusData.ready) { setHeygenReady(true); setHeygenUploading(false); return }
           }
         } catch { /* 계속 폴링 */ }
@@ -898,7 +998,7 @@ DO NOT:
   }
 
   // Step 5-3: 숏폼 영상 생성 (HeyGen)
-  const runShortsGeneration = async () => {
+  const runShortsGenerationLegacy = async () => {
     if (!shortsScript) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: '숏폼 대본이 없습니다.' }])
       return
@@ -1052,6 +1152,287 @@ DO NOT:
     setStepLoading('shorts', false)
   }
 
+  const confirmAndUploadAvatar = async () => {
+    setAvatarConfirmed(true)
+    setHeygenAvatarId(null)
+    setHeygenReady(false)
+    if (!avatarImage) return
+
+    try {
+      const groupId = await uploadAvatarToHeyGen(true)
+      void waitForHeygenAvatarReady(groupId, {
+        attempts: 24,
+        intervalMs: 5000,
+        progressLabel: '',
+      }).catch((err) => {
+        console.error('[HeyGen readiness check failed]', err)
+      })
+    } catch (err) {
+      console.error('[HeyGen avatar upload failed]', err)
+      addStepErrors('shorts', [{ service: 'heygen', channel: '아바타 업로드', message: err.message || 'HeyGen 업로드 실패' }])
+    }
+  }
+
+  const runShortsGeneration = async () => {
+    if (!shortsScript) {
+      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '숏츠 대본이 없습니다.' }])
+      return
+    }
+
+    if (!avatarImage) {
+      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '아바타를 먼저 생성해주세요.' }])
+      return
+    }
+
+    if (shortsGenerationMode === 'direct_voice' && !selectedVoice) {
+      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '목소리를 먼저 선택해주세요.' }])
+      return
+    }
+
+    setStepLoading('shorts', true)
+    clearStepErrors('shorts')
+    setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': true }))
+
+    try {
+      const talkingPhotoId = heygenAvatarId || await uploadAvatarToHeyGen()
+      const avatarReady = heygenReady || await waitForHeygenAvatarReady(talkingPhotoId, {
+        attempts: 24,
+        intervalMs: 5000,
+        progressLabel: '아바타 준비 확인 중...',
+      })
+
+      if (!avatarReady) {
+        throw new Error('HeyGen 아바타가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
+      }
+
+      if (shortsGenerationMode === 'direct_voice') {
+        const narrationText = shortsScript.scenes?.map((scene) => scene.narration).join(' ') || ''
+        setMediaItemLoading((prev) => ({ ...prev, '?륁툩 ?곸긽': '?좏깮???紐⑹냼由щ줈 HeyGen ?곸긽 ?앹꽦 以?..' }))
+
+        const generateRes = await apiFetch('/api/heygen/video/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            video_inputs: [{
+              character: {
+                type: 'talking_photo',
+                talking_photo_id: talkingPhotoId,
+              },
+              voice: {
+                type: 'text',
+                input_text: narrationText,
+                voice_id: selectedVoice,
+              },
+            }],
+            dimension: { width: 1080, height: 1920 },
+            caption: true,
+          }),
+        })
+        const generateData = await readApiResponse(generateRes)
+        if (!generateRes.ok) {
+          throw new Error(getApiErrorMessage(generateData, `HeyGen ?곸긽 ?앹꽦 ?붿껌 ?ㅽ뙣 (${generateRes.status})`))
+        }
+
+        const videoId =
+          generateData.data?.video_id ||
+          generateData.data?.id ||
+          generateData.video_id ||
+          generateData.id
+
+        if (!videoId) {
+          throw new Error('HeyGen video_id瑜?諛쏆? 紐삵뻽?듬땲??')
+        }
+
+        let finalVideo = null
+        for (let i = 0; i < 240; i++) {
+          await delay(5000)
+
+          const pollRes = await apiFetch(`/api/heygen/video/status/${videoId}`)
+          const pollData = await readApiResponse(pollRes)
+          if (!pollRes.ok) continue
+
+          const status = pollData.data?.status
+          if (status === 'completed') {
+            const rawUrl = pollData.data?.video_url
+            if (!rawUrl) {
+              throw new Error('HeyGen ?곸긽 URL???놁뒿?덈떎.')
+            }
+
+            let finalUrl = rawUrl
+            let srtUrl = null
+
+            try {
+              const burnRes = await apiFetch('/api/subtitle/burn', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  videoUrl: rawUrl,
+                  scenes: shortsScript.scenes,
+                  subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
+                  subtitleFont,
+                }),
+              })
+              const burnData = await readApiResponse(burnRes)
+              if (burnRes.ok && burnData.url) {
+                finalUrl = burnData.url
+                srtUrl = burnData.srtUrl || null
+              }
+            } catch (burnErr) {
+              console.warn('[subtitle burn fallback]', burnErr)
+            }
+
+            finalVideo = {
+              url: finalUrl,
+              rawUrl,
+              srtUrl,
+              duration: shortsScript.duration,
+              videoId,
+              mode: 'direct_voice',
+            }
+            break
+          }
+
+          if (status === 'failed') {
+            const errDetail = pollData.data?.error
+            const errMsg =
+              typeof errDetail === 'object'
+                ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail))
+                : (errDetail || pollData.data?.error_message || '?????녿뒗 ?ㅻ쪟')
+            throw new Error(`HeyGen ?뚮뜑 ?ㅽ뙣: ${errMsg}`)
+          }
+        }
+
+        if (!finalVideo) {
+          throw new Error('HeyGen ?곸긽 ?앹꽦 ?쒓컙 珥덇낵 (20遺?)')
+        }
+
+        setShortsVideo(finalVideo)
+        return
+      }
+
+      const selectedVoiceMeta =
+        allKoVoices.find((voice) => voice.voice_id === selectedVoice) ||
+        recommendedVoices.find((voice) => voice.voice_id === selectedVoice) ||
+        null
+
+      const prompt = buildShortsVideoAgentPrompt({
+        script: shortsScript,
+        avatar: {
+          id: talkingPhotoId,
+          kind: 'talking_photo',
+          name: avatarPrompt?.trim() || 'custom avatar',
+        },
+        voice: selectedVoiceMeta,
+        subtitleStyle,
+        subtitleFont,
+        extraPrompt: promptSettings.shorts.extra,
+        videoStyle: promptSettings.shorts.videoStyle,
+        narrationTone: promptSettings.shorts.narrationTone,
+      })
+
+      setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': 'HeyGen Video Agent 생성 요청 중...' }))
+
+      const generateRes = await apiFetch('/api/heygen/video-agent/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          config: {
+            avatar_id: talkingPhotoId,
+          },
+        }),
+      })
+      const generateData = await readApiResponse(generateRes)
+      if (!generateRes.ok) {
+        throw new Error(getApiErrorMessage(generateData, `HeyGen Video Agent 요청 실패 (${generateRes.status})`))
+      }
+
+      const videoId =
+        generateData.data?.video_id ||
+        generateData.data?.id ||
+        generateData.video_id ||
+        generateData.id
+
+      if (!videoId) {
+        throw new Error('HeyGen video_id를 받지 못했습니다.')
+      }
+
+      setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': 'HeyGen 렌더가 완료되는 중...' }))
+
+      let finalVideo = null
+      for (let i = 0; i < 240; i++) {
+        await delay(5000)
+
+        const pollRes = await apiFetch(`/api/heygen/video/status/${videoId}`)
+        const pollData = await readApiResponse(pollRes)
+        if (!pollRes.ok) continue
+
+        const status = pollData.data?.status
+        if (status === 'completed') {
+          const rawUrl = pollData.data?.video_url
+          if (!rawUrl) {
+            throw new Error('HeyGen 영상 URL이 없습니다.')
+          }
+
+          let finalUrl = rawUrl
+          let srtUrl = null
+
+          try {
+            const burnRes = await apiFetch('/api/subtitle/burn', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoUrl: rawUrl,
+                scenes: shortsScript.scenes,
+                subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
+                subtitleFont,
+              }),
+            })
+            const burnData = await readApiResponse(burnRes)
+            if (burnRes.ok && burnData.url) {
+              finalUrl = burnData.url
+              srtUrl = burnData.srtUrl || null
+            }
+          } catch (burnErr) {
+            console.warn('[subtitle burn fallback]', burnErr)
+          }
+
+          finalVideo = {
+            url: finalUrl,
+            rawUrl,
+            srtUrl,
+            duration: shortsScript.duration,
+            videoId,
+            prompt,
+            mode: 'recommended',
+          }
+          break
+        }
+
+        if (status === 'failed') {
+          const errDetail = pollData.data?.error
+          const errMsg =
+            typeof errDetail === 'object'
+              ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail))
+              : (errDetail || pollData.data?.error_message || '알 수 없는 오류')
+          throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
+        }
+      }
+
+      if (!finalVideo) {
+        throw new Error('HeyGen 영상 생성 시간 초과 (20분)')
+      }
+
+      setShortsVideo(finalVideo)
+    } catch (err) {
+      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠 영상', message: err.message || '숏츠 생성 실패' }])
+      showErrorAlert('숏츠 생성', err.message)
+    }
+
+    setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': false }))
+    setStepLoading('shorts', false)
+  }
+
   const [allKoVoices, setAllKoVoices] = useState([]) // 전체 한국어 지원 voice
   const [recommendedVoices, setRecommendedVoices] = useState([]) // AI 추천 voice
   const [voicesLoading, setVoicesLoading] = useState(false)
@@ -1066,8 +1447,14 @@ DO NOT:
     if (voicesFetched.current) return
     voicesFetched.current = true
     setVoicesLoading(true)
-    fetch('/api/heygen/voices')
-      .then(r => r.json())
+    apiFetch('/api/heygen/voices')
+      .then(async (response) => {
+        const data = await readApiResponse(response)
+        if (!response.ok) {
+          throw new Error(getApiErrorMessage(data, `HeyGen voice 목록 조회 실패 (${response.status})`))
+        }
+        return data
+      })
       .then(data => {
         const voices = data?.data?.voices || data?.data?.list || []
         const koVoices = voices
@@ -2097,7 +2484,7 @@ ${parsedText}
                         <p className="text-xs text-text-muted">총 {shortsScript.duration}초 · {shortsScript.scenes?.length || 0}씬</p>
                       </div>
 
-                      {/* 서브탭: 대본 / 업로드 정보 */}
+                      {/* 서브탭: 대본 / 생성 정보 */}
                       <div className="flex gap-1 p-1 bg-surface-light rounded-lg border border-border">
                         <button
                           onClick={() => setShortsTab('script')}
@@ -2109,7 +2496,7 @@ ${parsedText}
                           onClick={() => setShortsTab('upload')}
                           className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${shortsTab === 'upload' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text'}`}
                         >
-                          📺 업로드 정보
+                          🎬 생성 정보
                         </button>
                       </div>
 
@@ -2142,13 +2529,13 @@ ${parsedText}
                         </div>
                       )}
 
-                      {/* 업로드 정보 탭 */}
+                      {/* 생성 정보 탭 */}
                       {shortsTab === 'upload' && (
                         <div className="space-y-2.5">
                           {!shortsScript.uploadTitle && !shortsScript.uploadDescription && !shortsScript.hashtags?.length && (
                             <div className="text-center py-8 text-text-muted">
-                              <p className="text-sm">업로드 정보가 생성되지 않았습니다.</p>
-                              <p className="text-xs mt-1">대본을 다시 생성해주세요.</p>
+                              <p className="text-sm">생성 정보가 준비되지 않았습니다.</p>
+                              <p className="text-xs mt-1">대본을 다시 생성하거나 수정해주세요.</p>
                             </div>
                           )}
                           {shortsScript.uploadTitle && (
@@ -2392,6 +2779,47 @@ ${parsedText}
                 {/* 5-1: 아바타 생성 */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">0</span>
+                    <p className="text-base font-semibold text-text">생성 모드</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                      onClick={() => setShortsGenerationMode('recommended')}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        shortsGenerationMode === 'recommended'
+                          ? 'bg-primary/10 border-primary/30 shadow-sm'
+                          : 'bg-surface-light border-border hover:border-primary/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className={`text-sm font-semibold ${shortsGenerationMode === 'recommended' ? 'text-primary' : 'text-text'}`}>추천 모드</p>
+                          <p className="text-xs text-text-muted mt-1">Video Agent로 장면 구성과 텍스트 오버레이를 자동 연출합니다.</p>
+                        </div>
+                        {shortsGenerationMode === 'recommended' && <CheckCircle size={14} className="text-primary shrink-0" />}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setShortsGenerationMode('direct_voice')}
+                      className={`rounded-xl border p-3 text-left transition-all ${
+                        shortsGenerationMode === 'direct_voice'
+                          ? 'bg-primary/10 border-primary/30 shadow-sm'
+                          : 'bg-surface-light border-border hover:border-primary/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className={`text-sm font-semibold ${shortsGenerationMode === 'direct_voice' ? 'text-primary' : 'text-text'}`}>직접 목소리 모드</p>
+                          <p className="text-xs text-text-muted mt-1">선택한 목소리를 정확히 적용합니다. 대신 Video Agent 자동 오버레이는 사용하지 않습니다.</p>
+                        </div>
+                        {shortsGenerationMode === 'direct_voice' && <CheckCircle size={14} className="text-primary shrink-0" />}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">1</span>
                     <p className="text-base font-semibold text-text">아바타 생성</p>
                     {avatarImage && <CheckCircle size={14} className="text-success" />}
@@ -2442,95 +2870,98 @@ ${parsedText}
                   )}
                 </div>
 
-                {/* 5-2: 나레이션 목소리 선택 (HeyGen) */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">2</span>
-                    <p className="text-base font-semibold text-text">나레이션 목소리</p>
-                    {selectedVoice && <CheckCircle size={14} className="text-success" />}
-                  </div>
-
-                  {!avatarConfirmed ? (
-                    <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
-                      아바타를 먼저 생성하고 확정하면 어울리는 목소리를 추천해드립니다.
-                    </p>
-                  ) : voicesLoading ? (
-                    <div className="flex items-center gap-2 p-3">
-                      <Loader2 size={14} className="text-primary animate-spin" />
-                      <span className="text-xs text-text-muted">캐릭터에 어울리는 목소리 추천 중...</span>
+                {shortsGenerationMode === 'direct_voice' && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">2</span>
+                      <p className="text-base font-semibold text-text">나레이션 목소리 선택</p>
+                      {selectedVoice && <CheckCircle size={14} className="text-success" />}
                     </div>
-                  ) : voicesError ? (
-                    <p className="text-sm text-danger p-3 bg-danger/5 rounded-lg border border-danger/20">{voicesError}</p>
-                  ) : (
-                    <>
-                      {/* 선택된 음성 표시 */}
-                      {selectedVoice && (() => {
-                        const sv = filteredVoices.find(v => v.voice_id === selectedVoice) || displayVoices.find(v => v.voice_id === selectedVoice)
-                        if (!sv) return null
-                        const svName = sv.display_name || sv.name || selectedVoice
-                        const svGender = sv.gender || ''
-                        return (
-                          <div className="flex items-center gap-3 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
-                            <div className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shrink-0">
-                              {svGender.toLowerCase().startsWith('f') ? 'F' : svGender.toLowerCase().startsWith('m') ? 'M' : '?'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-primary truncate">{svName}</p>
-                              <p className="text-xs text-text-muted">{[sv.language, svGender].filter(Boolean).join(' · ')}</p>
-                            </div>
-                            <CheckCircle size={14} className="text-primary shrink-0" />
-                          </div>
-                        )
-                      })()}
-                      <div className="max-h-56 overflow-y-auto space-y-1 border border-border rounded-lg p-1.5">
-                        {filteredVoices.length === 0 ? (
-                          <p className="text-xs text-text-muted text-center py-3">추천 음성을 불러오는 중...</p>
-                        ) : filteredVoices.map((v, idx) => {
-                          const vid = v.voice_id
-                          const isSelected = selectedVoice === vid
-                          const name = v.display_name || v.name || vid
-                          const lang = v.language || ''
-                          const gender = v.gender || ''
+
+                    <p className="text-xs text-text-muted">직접 목소리 모드에서는 여기서 고른 목소리를 최종 영상에 그대로 적용합니다.</p>
+
+                    {!avatarConfirmed ? (
+                      <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
+                        아바타를 먼저 생성하고 확정하면 목소리를 선택할 수 있습니다.
+                      </p>
+                    ) : voicesLoading ? (
+                      <div className="flex items-center gap-2 p-3">
+                        <Loader2 size={14} className="text-primary animate-spin" />
+                        <span className="text-xs text-text-muted">사용 가능한 한국어 목소리를 불러오는 중...</span>
+                      </div>
+                    ) : voicesError ? (
+                      <p className="text-sm text-danger p-3 bg-danger/5 rounded-lg border border-danger/20">{voicesError}</p>
+                    ) : (
+                      <>
+                        {selectedVoice && (() => {
+                          const sv = filteredVoices.find(v => v.voice_id === selectedVoice) || displayVoices.find(v => v.voice_id === selectedVoice)
+                          if (!sv) return null
+                          const svName = sv.display_name || sv.name || selectedVoice
+                          const svGender = sv.gender || ''
                           return (
-                            <button
-                              key={vid}
-                              onClick={() => setSelectedVoice(vid)}
-                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-all ${
-                                isSelected
-                                  ? 'bg-primary/10 border border-primary/30'
-                                  : 'hover:bg-surface-light border border-transparent'
-                              }`}
-                            >
-                              <span className={`w-5 text-[11px] font-bold text-center shrink-0 ${idx < 3 ? 'text-warning' : 'text-text-muted/40'}`}>{idx + 1}</span>
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                                isSelected ? 'bg-primary text-white' : 'bg-surface-light text-text-muted border border-border'
-                              }`}>
-                                {gender.toLowerCase().startsWith('f') ? 'F' : gender.toLowerCase().startsWith('m') ? 'M' : '?'}
+                            <div className="flex items-center gap-3 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
+                              <div className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shrink-0">
+                                {svGender.toLowerCase().startsWith('f') ? 'F' : svGender.toLowerCase().startsWith('m') ? 'M' : '?'}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary' : 'text-text'}`}>
-                                  {name}
-                                  {lang === 'Korean' && <span className="ml-1 text-[9px] text-success bg-success/10 px-1 rounded">KO</span>}
-                                </p>
-                                <p className="text-xs text-text-muted truncate">{[lang, gender].filter(Boolean).join(' · ')}</p>
+                                <p className="text-sm font-medium text-primary truncate">{svName}</p>
+                                <p className="text-xs text-text-muted">{[sv.language, svGender].filter(Boolean).join(' · ')}</p>
                               </div>
-                              {v.preview_audio && (
-                                <div role="button" onClick={e => { e.stopPropagation(); playPreview(vid, v.preview_audio) }}
-                                  className={`p-1 rounded-md transition-all shrink-0 cursor-pointer ${playingVoice === vid ? 'bg-primary/20 text-primary' : 'bg-surface-light text-text-muted hover:text-primary'}`}>
-                                  {playingVoice === vid ? <Pause size={12} /> : <Play size={12} />}
-                                </div>
-                              )}
-                              {isSelected && <CheckCircle size={12} className="text-primary shrink-0" />}
-                            </button>
+                              <CheckCircle size={14} className="text-primary shrink-0" />
+                            </div>
                           )
-                        })}
-                      </div>
-                      <p className="text-xs text-text-muted">
-                        🎯 AI 추천 {filteredVoices.length}개 · 캐릭터에 어울리는 순서로 정렬
-                      </p>
-                    </>
-                  )}
-                </div>
+                        })()}
+                        <div className="max-h-56 overflow-y-auto space-y-1 border border-border rounded-lg p-1.5">
+                          {filteredVoices.length === 0 ? (
+                            <p className="text-xs text-text-muted text-center py-3">선택 가능한 목소리 목록이 없습니다.</p>
+                          ) : filteredVoices.map((v, idx) => {
+                            const vid = v.voice_id
+                            const isSelected = selectedVoice === vid
+                            const name = v.display_name || v.name || vid
+                            const lang = v.language || ''
+                            const gender = v.gender || ''
+                            return (
+                              <button
+                                key={vid}
+                                onClick={() => setSelectedVoice(vid)}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-all ${
+                                  isSelected
+                                    ? 'bg-primary/10 border border-primary/30'
+                                    : 'hover:bg-surface-light border border-transparent'
+                                }`}
+                              >
+                                <span className={`w-5 text-[11px] font-bold text-center shrink-0 ${idx < 3 ? 'text-warning' : 'text-text-muted/40'}`}>{idx + 1}</span>
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                                  isSelected ? 'bg-primary text-white' : 'bg-surface-light text-text-muted border border-border'
+                                }`}>
+                                  {gender.toLowerCase().startsWith('f') ? 'F' : gender.toLowerCase().startsWith('m') ? 'M' : '?'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary' : 'text-text'}`}>
+                                    {name}
+                                    {lang === 'Korean' && <span className="ml-1 text-[9px] text-success bg-success/10 px-1 rounded">KO</span>}
+                                  </p>
+                                  <p className="text-xs text-text-muted truncate">{[lang, gender].filter(Boolean).join(' · ')}</p>
+                                </div>
+                                {v.preview_audio && (
+                                  <div
+                                    role="button"
+                                    onClick={e => { e.stopPropagation(); playPreview(vid, v.preview_audio) }}
+                                    className={`p-1 rounded-md transition-all shrink-0 cursor-pointer ${playingVoice === vid ? 'bg-primary/20 text-primary' : 'bg-surface-light text-text-muted hover:text-primary'}`}
+                                  >
+                                    {playingVoice === vid ? <Pause size={12} /> : <Play size={12} />}
+                                  </div>
+                                )}
+                                {isSelected && <CheckCircle size={12} className="text-primary shrink-0" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <p className="text-xs text-text-muted">목소리를 고른 뒤 바로 아래 단계에서 숏폼 영상을 생성하면 됩니다.</p>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* 5-3: 자막 스타일 선택 */}
                 <div className="space-y-3">
@@ -2640,15 +3071,13 @@ ${parsedText}
                     </div>
                   ) : (
                     <button
-                      onClick={() => demoMode ? runShortsGeneration() : setCreditConfirm(true)}
-                      disabled={demoMode
-                        ? (!shortsScript || loading.shorts || loading.media)
-                        : (!avatarConfirmed || !selectedVoice || !shortsScript || loading.shorts || loading.media || !heygenReady)}
+                      onClick={() => setCreditConfirm(true)}
+                      disabled={!avatarConfirmed || !shortsScript || loading.shorts || loading.media || (shortsGenerationMode === 'direct_voice' && !selectedVoice)}
                       className="w-full px-4 py-3 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none transition-all flex items-center justify-center gap-2"
                     >
                       {loading.shorts
-                        ? <><Loader2 size={16} className="animate-spin" /> {demoMode ? '데모 영상 준비 중...' : 'HeyGen 영상 생성 중...'}</>
-                        : <><Film size={16} /> {demoMode ? '데모 숏폼 영상 로드' : '숏폼 영상 생성'}</>}
+                        ? <><Loader2 size={16} className="animate-spin" /> {demoMode ? '데모 영상 생성 준비 중...' : 'HeyGen 영상 생성 중...'}</>
+                        : <><Film size={16} /> {demoMode ? '데모 숏폼 영상 생성' : '숏폼 영상 생성'}</>}
                     </button>
                   )}
                   {!avatarConfirmed && !shortsVideo && (

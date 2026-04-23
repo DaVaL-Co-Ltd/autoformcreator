@@ -5,6 +5,7 @@ const fs = require('fs')
 const { app } = require('electron')
 const { uploadToNaver, hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
 const { getUploadRuntimeState } = require('./upload-runtime')
+const { naverLogin } = require('./naver-login')
 
 const PORT = 3000
 const MAX_UPLOAD_FILE_SIZE = 15 * 1024 * 1024
@@ -101,7 +102,7 @@ const upload = multer({
   },
 })
 
-function uploadAccessGuard(req, res, next) {
+function helperClientGuard(req, res, next) {
   const origin = req.get('origin')
   const clientHeader = req.get(UPLOAD_CLIENT_HEADER)
 
@@ -188,7 +189,29 @@ function createApp() {
     }, 100)
   })
 
-  expressApp.post('/api/upload', uploadAccessGuard, upload.array('photos', 20), async (req, res) => {
+  expressApp.post('/api/session/naver/login', helperClientGuard, async (_req, res) => {
+    try {
+      const result = await naverLogin()
+      res.json({
+        success: true,
+        endpoint: `http://127.0.0.1:${PORT}/api/session/naver/login`,
+        source: UPLOAD_SOURCE,
+        sessionPath: result.sessionPath,
+        uploadRuntime: getUploadRuntimeState(),
+      })
+    } catch (error) {
+      console.error('[Desktop API] Naver login failed', error)
+      res.status(500).json({
+        success: false,
+        endpoint: `http://127.0.0.1:${PORT}/api/session/naver/login`,
+        source: UPLOAD_SOURCE,
+        error: error.message,
+        uploadRuntime: getUploadRuntimeState(),
+      })
+    }
+  })
+
+  expressApp.post('/api/upload', helperClientGuard, upload.array('photos', 20), async (req, res) => {
     const photoPaths = (req.files || []).map((file) => file.path)
 
     try {

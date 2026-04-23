@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node --require ./scripts/patch-vite-child-process.cjs ./node_modules/vite/bin/vite.js --configLoader runner",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"

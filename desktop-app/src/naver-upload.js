@@ -19,11 +19,15 @@ const USER_AGENT =
 const RUNTIME_SOURCE = 'desktop-helper'
 const RUNTIME_ENDPOINT = 'http://127.0.0.1:3000/api/upload'
 const PUBLISHED_POST_URL_PATTERN = /^https:\/\/blog\.naver\.com\/[^/]+\/\d+(?:\?.*)?$/i
+const IMAGE_MARKER_PATTERN = /\[IMG:(\d+)\]/gi
 
 const TITLE_TEXT = '\uC81C\uBAA9'
 const BODY_TEXT = '\uBCF8\uBB38'
 const PUBLISH_TEXT = '\uBC1C\uD589'
 const TAG_TEXT = '\uD0DC\uADF8'
+const PHOTO_TEXT = '\uC0AC\uC9C4'
+const PHOTO_ADD_TEXT = '\uC0AC\uC9C4 \uCD94\uAC00'
+const MYBOX_TEXT = 'MYBOX'
 const CATEGORY_TEXT = '\uCE74\uD14C\uACE0\uB9AC'
 const VISIBILITY_TEXT = '\uACF5\uAC1C'
 const SCHEDULE_TEXT = '\uBC1C\uD589 \uC2DC\uAC04'
@@ -275,6 +279,43 @@ function getPublishDialogTargets(targets) {
 
   const frameTargets = targets.filter((target) => target.label.startsWith('frame:'))
   return frameTargets.length > 0 ? frameTargets : targets
+}
+
+function getExistingPhotoPaths(photoPaths = []) {
+  return photoPaths.filter((photoPath) => {
+    try {
+      return Boolean(photoPath) && fs.existsSync(photoPath) && fs.statSync(photoPath).isFile()
+    } catch {
+      return false
+    }
+  })
+}
+
+function parseContentWithImageMarkers(content) {
+  const normalizedContent = String(content || '')
+  const segments = []
+  let lastIndex = 0
+  let match = null
+
+  IMAGE_MARKER_PATTERN.lastIndex = 0
+  while ((match = IMAGE_MARKER_PATTERN.exec(normalizedContent)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', text: normalizedContent.slice(lastIndex, match.index) })
+    }
+
+    segments.push({
+      type: 'image',
+      index: Number(match[1]),
+      marker: match[0],
+    })
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < normalizedContent.length) {
+    segments.push({ type: 'text', text: normalizedContent.slice(lastIndex) })
+  }
+
+  return segments.length > 0 ? segments : [{ type: 'text', text: normalizedContent }]
 }
 
 function isPopupInterceptionError(error) {
@@ -1409,6 +1450,270 @@ async function focusEditableFieldByDom(scope, fieldName) {
   }, { bodyText: BODY_TEXT, field: fieldName, titleText: TITLE_TEXT })
 }
 
+async function clickPhotoButtonByDom(scope) {
+  return scope.evaluate(({ myboxText, photoAddText, photoText }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const INTERACTIVE_SELECTOR = 'button, [role="button"], a, input[type="button"], input[type="submit"], [data-click-area], [class*="image"], [class*="photo"]'
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) {
+        return false
+      }
+
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0
+    }
+
+    const isEnabled = (element) => {
+      if (element instanceof HTMLButtonElement) {
+        return !element.disabled
+      }
+
+      return !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true'
+    }
+
+    const getText = (element) => normalize(element.textContent || element.getAttribute?.('aria-label') || element.getAttribute?.('value'))
+    const getAttrs = (element) => normalize([
+      element.getAttribute?.('class'),
+      element.getAttribute?.('data-click-area'),
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('name'),
+      element.getAttribute?.('role'),
+      element.getAttribute?.('type'),
+    ].join(' '))
+
+    const candidates = Array.from(document.querySelectorAll(INTERACTIVE_SELECTOR))
+      .filter((element) => element instanceof HTMLElement)
+      .filter(isVisible)
+      .filter(isEnabled)
+      .map((element) => {
+        const text = getText(element)
+        const attrs = getAttrs(element)
+        const lowerText = text.toLowerCase()
+        const lowerAttrs = attrs.toLowerCase()
+        const rect = element.getBoundingClientRect()
+        let score = 0
+
+        if (text === photoText) score += 40
+        if (text === photoAddText) score += 42
+        if (text.startsWith(photoText)) score += 24
+        if (text.includes(photoAddText)) score += 20
+        if (lowerAttrs.includes('photo')) score += 10
+        if (lowerAttrs.includes('image')) score += 8
+        if (rect.top >= 140 && rect.top <= 460) score += 10
+        if (String(element.tagName || '').toLowerCase() === 'button') score += 8
+
+        if (text.includes(myboxText) || lowerAttrs.includes(myboxText.toLowerCase())) {
+          score -= 120
+        }
+        if (lowerText.includes('\uBC30\uACBD') || lowerText.includes('\uC81C\uBAA9')) {
+          score -= 40
+        }
+
+        return { attrs, element, rect, score, text }
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score || left.rect.top - right.rect.top || left.rect.left - right.rect.left)
+
+    const target = candidates[0]
+    if (!target) {
+      return null
+    }
+
+    target.element.focus()
+    target.element.click()
+    target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+    return {
+      attrs: target.attrs,
+      score: target.score,
+      text: target.text,
+      top: Math.round(target.rect.top),
+    }
+  }, {
+    myboxText: MYBOX_TEXT,
+    photoAddText: PHOTO_ADD_TEXT,
+    photoText: PHOTO_TEXT,
+  })
+}
+
+async function countInsertedEditorImages(targets) {
+  const counts = await Promise.all(
+    targets.map(async (target) => {
+      try {
+        return await target.scope.evaluate(() => {
+          const isVisible = (element) => {
+            if (!(element instanceof Element)) {
+              return false
+            }
+
+            const style = window.getComputedStyle(element)
+            const rect = element.getBoundingClientRect()
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+          }
+
+          const containers = Array.from(document.querySelectorAll('.se-section-image, [class*="se-section-image"], [data-module-type*="image"], [class*="imageStrip"], [class*="imageBundle"]'))
+            .filter((element) => element instanceof HTMLElement)
+            .filter(isVisible)
+
+          if (containers.length > 0) {
+            return containers.length
+          }
+
+          return Array.from(document.querySelectorAll('.se-main-container img, .se-component-content img, .se-section-content img'))
+            .filter((element) => element instanceof HTMLImageElement)
+            .filter(isVisible)
+            .filter((element) => !String(element.src || '').startsWith('data:'))
+            .length
+        })
+      } catch {
+        return 0
+      }
+    })
+  )
+
+  return Math.max(0, ...counts)
+}
+
+async function setPhotoFilesOnExistingInput(targets, photoPaths) {
+  const attempts = []
+
+  for (const target of targets) {
+    try {
+      const fileInputs = target.scope.locator('input[type="file"]')
+      const inputCount = await fileInputs.count()
+      if (inputCount === 0) {
+        attempts.push(`${target.label}: no file input`)
+        continue
+      }
+
+      await fileInputs.nth(inputCount - 1).setInputFiles(photoPaths, { timeout: 5000 })
+      return { label: target.label, method: 'input' }
+    } catch (error) {
+      attempts.push(`${target.label}: ${error.message}`)
+    }
+  }
+
+  return { attempts, label: null, method: null }
+}
+
+async function waitForInsertedEditorImages(targets, beforeCount, timeout = 45000) {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeout) {
+    const currentCount = await countInsertedEditorImages(targets)
+    if (currentCount > beforeCount) {
+      return currentCount
+    }
+
+    await sleep(400)
+  }
+
+  return beforeCount
+}
+
+async function uploadPhotos(page, targets, photoPaths) {
+  const validPhotoPaths = getExistingPhotoPaths(photoPaths)
+  if (validPhotoPaths.length === 0) {
+    return
+  }
+
+  const uploadTargets = getPublishDialogTargets(targets)
+  const beforeCount = await countInsertedEditorImages(uploadTargets)
+  let uploadSource = null
+
+  const directInputResult = await setPhotoFilesOnExistingInput(uploadTargets, validPhotoPaths)
+  if (directInputResult.method) {
+    uploadSource = `${directInputResult.label}:${directInputResult.method}`
+  } else {
+    const chooserPromise = page.waitForEvent('filechooser', { timeout: 3000 }).catch(() => null)
+    let photoClickResult = null
+    const clickAttempts = []
+
+    for (const target of uploadTargets) {
+      try {
+        photoClickResult = await clickPhotoButtonByDom(target.scope)
+        if (photoClickResult) {
+          uploadSource = `${target.label}:button`
+          console.log(
+            `[Naver Upload] Opened photo picker via ${target.label} text="${photoClickResult.text}" top=${photoClickResult.top} score=${photoClickResult.score} attrs="${photoClickResult.attrs}"`
+          )
+          break
+        }
+
+        clickAttempts.push(`${target.label}: photo button not found`)
+      } catch (error) {
+        clickAttempts.push(`${target.label}: ${error.message}`)
+      }
+    }
+
+    const chooser = await chooserPromise
+    if (chooser) {
+      await chooser.setFiles(validPhotoPaths)
+      uploadSource = uploadSource || 'filechooser'
+    } else {
+      const delayedInputResult = await setPhotoFilesOnExistingInput(uploadTargets, validPhotoPaths)
+      if (delayedInputResult.method) {
+        uploadSource = `${delayedInputResult.label}:${delayedInputResult.method}`
+      } else {
+        throw new Error(
+          `[${RUNTIME_SOURCE}] Unable to attach blog photos. ${[...clickAttempts, ...directInputResult.attempts, ...delayedInputResult.attempts].slice(0, 6).join(' | ')}`
+        )
+      }
+    }
+  }
+
+  const afterCount = await waitForInsertedEditorImages(uploadTargets, beforeCount)
+  if (afterCount <= beforeCount) {
+    throw new Error(
+      `[${RUNTIME_SOURCE}] Photo upload was triggered but no editor images appeared. before=${beforeCount} after=${afterCount}`
+    )
+  }
+
+  console.log(
+    `[Naver Upload] Uploaded ${validPhotoPaths.length} photo(s) via ${uploadSource}. editorImages ${beforeCount} -> ${afterCount}`
+  )
+}
+
+async function insertBodyContentWithMarkers(page, targets, content, photoPaths) {
+  const segments = parseContentWithImageMarkers(content)
+  const validPhotoPaths = getExistingPhotoPaths(photoPaths)
+  const usedPhotoIndexes = new Set()
+
+  await focusField(page, targets, BODY_SELECTORS, 'body')
+  await sleep(300)
+
+  for (const segment of segments) {
+    if (segment.type === 'text') {
+      if (segment.text) {
+        await typeMultiline(page, segment.text)
+      }
+      continue
+    }
+
+    const photoIndex = Number(segment.index) - 1
+    const photoPath = validPhotoPaths[photoIndex]
+    if (!photoPath) {
+      console.warn(`[Naver Upload] Skipping missing image marker ${segment.marker}`)
+      continue
+    }
+
+    await sleep(250)
+    await uploadPhotos(page, targets, [photoPath])
+    usedPhotoIndexes.add(photoIndex)
+    await sleep(500)
+  }
+
+  const unusedPhotoIndexes = validPhotoPaths
+    .map((_, index) => index)
+    .filter((index) => !usedPhotoIndexes.has(index))
+
+  if (unusedPhotoIndexes.length > 0) {
+    console.warn(
+      `[Naver Upload] ${unusedPhotoIndexes.length} photo(s) were not referenced by [IMG:N] markers and were not inserted.`
+    )
+  }
+}
+
 async function clickPublishButtonByDom(scope, which = 'first') {
   return scope.evaluate(({ categoryText, publishText, scheduleText, visibilityText, whichButton }) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
@@ -1658,7 +1963,7 @@ async function resolveWriteUrls(page) {
   ].filter(Boolean)
 }
 
-async function focusAndType(page, targets, selectors, text, fieldName) {
+async function focusField(page, targets, selectors, fieldName) {
   const attempts = []
 
   for (const target of targets) {
@@ -1683,10 +1988,8 @@ async function focusAndType(page, targets, selectors, text, fieldName) {
           await dismissEditorPopups(page, targets)
           await focusByDom(field)
         }
-        await sleep(300)
-        await typeMultiline(page, text)
-        console.log(`[Naver Upload] Filled ${fieldName} via ${target.label} -> ${selector}`)
-        return
+        console.log(`[Naver Upload] Focused ${fieldName} via ${target.label} -> ${selector}`)
+        return { label: target.label, selector, via: 'selector' }
       } catch (error) {
         attempts.push(`${target.label} -> ${selector}: ${error.message}`)
       }
@@ -1696,12 +1999,10 @@ async function focusAndType(page, targets, selectors, text, fieldName) {
       await dismissEditorPopups(page, targets)
       const result = await focusEditableFieldByDom(target.scope, fieldName)
       if (result) {
-        await sleep(300)
-        await typeMultiline(page, text)
         console.log(
-          `[Naver Upload] Filled ${fieldName} via ${target.label} -> dom score=${result.score} top=${result.top} placeholder="${result.placeholder}" class="${result.className}"`
+          `[Naver Upload] Focused ${fieldName} via ${target.label} -> dom score=${result.score} top=${result.top} placeholder="${result.placeholder}" class="${result.className}"`
         )
-        return
+        return { ...result, label: target.label, via: 'dom' }
       }
     } catch (error) {
       attempts.push(`${target.label} -> dom-editable: ${error.message}`)
@@ -1709,6 +2010,12 @@ async function focusAndType(page, targets, selectors, text, fieldName) {
   }
 
   throw new Error(`[${RUNTIME_SOURCE}] Unable to focus ${fieldName}. ${attempts.slice(0, 6).join(' | ')}`)
+}
+
+async function focusAndType(page, targets, selectors, text, fieldName) {
+  await focusField(page, targets, selectors, fieldName)
+  await sleep(300)
+  await typeMultiline(page, text)
 }
 
 async function clickPublishButton(page, targets, which = 'first') {
@@ -1865,10 +2172,6 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     throw new Error('Chromium is missing. Run the bundled Chromium install step before building the desktop app.')
   }
 
-  if (photoPaths.length > 0) {
-    console.warn('[Naver Upload] Photo upload automation is not implemented yet. Ignoring attached files.')
-  }
-
   const storageState = loadSessionState()
   if (!storageState) {
     throw new Error('Saved Naver session could not be loaded. Please log in again.')
@@ -1966,9 +2269,16 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
     markStep(currentStep, 'fill-body')
     await sleep(500)
     try {
-      markStep(currentStep, 'fill-body-focus')
-      await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
-      markStep(currentStep, 'fill-body-complete')
+      const hasImageMarkers = parseContentWithImageMarkers(content).some((segment) => segment.type === 'image')
+      if (hasImageMarkers) {
+        markStep(currentStep, 'fill-body-with-images', { photoCount: photoPaths.length })
+        await insertBodyContentWithMarkers(page, targets, content, photoPaths)
+        markStep(currentStep, 'fill-body-with-images-complete')
+      } else {
+        markStep(currentStep, 'fill-body-focus')
+        await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
+        markStep(currentStep, 'fill-body-complete')
+      }
     } catch (error) {
       markStep(currentStep, 'fill-body-fallback-tab', { lastBodyError: error.message })
       await page.keyboard.press('Tab')
@@ -1977,6 +2287,13 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
       await typeMultiline(page, content)
       markStep(currentStep, 'fill-body-fallback-complete')
       console.warn('[Naver Upload] Body field fallback used after selector failure:', error.message)
+    }
+
+    if (photoPaths.length > 0 && !parseContentWithImageMarkers(content).some((segment) => segment.type === 'image')) {
+      currentStep = 'upload-photos'
+      markStep(currentStep, 'upload-photos', { photoCount: photoPaths.length })
+      await sleep(500)
+      await uploadPhotos(page, targets, photoPaths)
     }
 
     currentStep = 'open-publish-dialog'
@@ -2055,12 +2372,14 @@ module.exports = {
   __private: {
     activateReservePublishModeByDom,
     buildPublishConfirmationError,
+    clickPhotoButtonByDom,
     clickPublishButtonByDom,
     findScheduledPostUrl,
     isScheduledPublishStateConfirmed,
     isPopupInterceptionError,
     isPublishedPostUrl,
     normalizeScheduledPublishAt,
+    parseContentWithImageMarkers,
     withPopupRecovery,
   },
   getPlaywrightDiagnostics,

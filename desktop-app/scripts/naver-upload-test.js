@@ -74,6 +74,20 @@ function testFindScheduledPostUrlUsesOnlyPrimaryEditorFrames() {
   assert.match(__private.findScheduledPostUrl(completedPage), /PostList\.naver/)
 }
 
+function testParseContentWithImageMarkersKeepsOrder() {
+  const segments = __private.parseContentWithImageMarkers('A\n[IMG:1]\nB\n[IMG:2]\nC')
+  assert.deepEqual(
+    segments,
+    [
+      { type: 'text', text: 'A\n' },
+      { type: 'image', index: 1, marker: '[IMG:1]' },
+      { type: 'text', text: '\nB\n' },
+      { type: 'image', index: 2, marker: '[IMG:2]' },
+      { type: 'text', text: '\nC' },
+    ]
+  )
+}
+
 function testNormalizeScheduledPublishAt() {
   const originalNow = Date.now
   Date.now = () => new Date('2026-04-21T23:00:00.000Z').getTime()
@@ -392,11 +406,98 @@ async function testActivateReservePublishModeByDomSkipsHeaderScheduleButton() {
   delete global.MouseEvent
 }
 
+async function testClickPhotoButtonByDomPrefersToolbarPhotoButton() {
+  const clicked = []
+
+  class FakeElement {}
+  class FakeHTMLElement extends FakeElement {}
+  class FakeHTMLButtonElement extends FakeHTMLElement {}
+  class FakeMouseEvent {
+    constructor() {}
+  }
+
+  const scope = {
+    evaluate: async (fn, args) => fn.call(null, args),
+  }
+
+  global.Element = FakeElement
+  global.HTMLElement = FakeHTMLElement
+  global.HTMLButtonElement = FakeHTMLButtonElement
+  global.MouseEvent = FakeMouseEvent
+
+  const backgroundPhotoButton = Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: '\uBC30\uACBD \uC0AC\uC9C4 \uC0AD\uC81C',
+    className: 'title_background_photo',
+    getAttribute: (name) => {
+      if (name === 'class') return 'title_background_photo'
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 70, left: 1000, width: 120, height: 28 }),
+    focus: () => clicked.push('background-focus'),
+    click: () => clicked.push('background-click'),
+    dispatchEvent: () => clicked.push('background-dispatch'),
+  })
+
+  const myboxButton = Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: 'MYBOX',
+    className: 'toolbar_mybox',
+    getAttribute: (name) => {
+      if (name === 'class') return 'toolbar_mybox'
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 220, left: 240, width: 80, height: 32 }),
+    focus: () => clicked.push('mybox-focus'),
+    click: () => clicked.push('mybox-click'),
+    dispatchEvent: () => clicked.push('mybox-dispatch'),
+  })
+
+  const photoButton = Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: '\uC0AC\uC9C4',
+    className: 'toolbar_photo',
+    getAttribute: (name) => {
+      if (name === 'class') return 'toolbar_photo'
+      if (name === 'data-click-area') return 'toolbar.photo'
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 220, left: 140, width: 80, height: 32 }),
+    focus: () => clicked.push('photo-focus'),
+    click: () => clicked.push('photo-click'),
+    dispatchEvent: () => clicked.push('photo-dispatch'),
+  })
+
+  global.document = {
+    querySelectorAll: () => [backgroundPhotoButton, myboxButton, photoButton],
+  }
+  global.window = {
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible', pointerEvents: 'auto' }),
+  }
+
+  const result = await __private.clickPhotoButtonByDom(scope)
+
+  assert.equal(result.text, '\uC0AC\uC9C4')
+  assert.match(result.attrs, /toolbar\.photo/)
+  assert.deepEqual(clicked, ['photo-focus', 'photo-click', 'photo-dispatch'])
+
+  delete global.document
+  delete global.window
+  delete global.Element
+  delete global.HTMLElement
+  delete global.HTMLButtonElement
+  delete global.MouseEvent
+}
+
 async function main() {
   await testPopupRecoveryRetriesInterceptedClicks()
   await testPopupRecoveryDoesNotRetryOtherErrors()
   testPublishedPostUrlMatcher()
   testFindScheduledPostUrlUsesOnlyPrimaryEditorFrames()
+  testParseContentWithImageMarkersKeepsOrder()
   testNormalizeScheduledPublishAt()
   testNormalizeScheduledPublishAtPreservesLateNightHour()
   testNormalizeScheduledPublishAtAdjustsTooSoonSchedule()
@@ -406,6 +507,7 @@ async function main() {
   testScheduledPublishConfirmationErrorMentionsSchedule()
   await testClickPublishButtonByDomPrefersPanelConfirmButton()
   await testActivateReservePublishModeByDomSkipsHeaderScheduleButton()
+  await testClickPhotoButtonByDomPrefersToolbarPhotoButton()
   console.log('naver-upload tests passed')
 }
 
