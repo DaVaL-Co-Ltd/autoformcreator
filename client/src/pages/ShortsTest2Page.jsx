@@ -9,7 +9,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react'
-import { DEMO_SHORTS_SCRIPT } from '../constants/demoShortsScript'
+import { DEMO_SHORTS_SCRIPT } from '../constants/demoShortsScript.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
