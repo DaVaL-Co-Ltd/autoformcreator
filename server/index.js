@@ -6,6 +6,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { execFile } from 'child_process'
+import crypto from 'crypto'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -13,7 +14,23 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path
 const sharp = require('sharp')
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas')
 const fontsDir = path.join(__dirname, 'fonts')
-GlobalFonts.registerFromPath(path.join(fontsDir, 'PretendardVariable.ttf'), 'Pretendard')
+
+function registerOptionalFont(filename, family) {
+  const fontPath = path.join(fontsDir, filename)
+  if (!fs.existsSync(fontPath)) return
+
+  try {
+    GlobalFonts.registerFromPath(fontPath, family)
+  } catch (error) {
+    console.warn(`[fonts] Failed to register ${filename} as ${family}: ${error.message}`)
+  }
+}
+
+registerOptionalFont('PretendardVariable.ttf', 'Pretendard')
+registerOptionalFont('Maplestory-Bold.ttf', 'Maplestory')
+registerOptionalFont('TmoneyRoundWind-Regular.woff', 'TmoneyRoundWind')
+registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
+registerOptionalFont('A2z-Bold.woff2', 'A2z')
 
 // Supabase 클라이언트 (서버 전용)
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
@@ -47,6 +64,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/youtube/oauth/callback') return next()
   if (req.path === '/api/youtube/auth-url') return next()
   if (req.path === '/api/youtube/auth-status') return next()
+  if (req.path === '/api/instagram/oauth/callback') return next()
   const expected = process.env.API_SECRET
   if (!expected) return next() // dev 편의: 미설정 시 통과
   const provided = req.headers['x-app-secret']
@@ -180,6 +198,24 @@ app.post('/api/heygen/video/generate', async (req, res) => {
   }
 })
 
+// ===== HeyGen Video Agent Generate Proxy =====
+app.post('/api/heygen/video-agent/generate', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  try {
+    const response = await fetch('https://api.heygen.com/v1/video_agent/generate', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== HeyGen Video Status Proxy =====
 app.get('/api/heygen/video/status/:videoId', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
@@ -219,6 +255,42 @@ app.get('/api/heygen/preset-avatars', async (req, res) => {
 })
 
 // ===== HeyGen 커스텀 아바타 목록 (슬롯 확인용) =====
+app.get('/api/heygen/public-avatars', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  try {
+    const response = await fetch('https://api.heygen.com/v2/avatars', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    if (!response.ok) {
+      const errText = await response.text()
+      return res.status(response.status).json({ error: errText })
+    }
+    const data = await response.json()
+    const avatars = (data.data?.avatars || []).map(avatar => ({
+      id: avatar.avatar_id || avatar.id,
+      name: avatar.avatar_name || avatar.name || 'Unnamed avatar',
+      preview: avatar.preview_image_url || avatar.preview_image || avatar.avatar_preview_image_url || avatar.thumbnail_url || '',
+      gender: avatar.gender || '',
+      kind: 'avatar',
+      source: 'public',
+    }))
+    const talkingPhotos = (data.data?.talking_photos || []).map(photo => ({
+      id: photo.talking_photo_id || photo.id,
+      name: photo.talking_photo_name || photo.name || 'Custom avatar',
+      preview: photo.preview_image_url || photo.preview_image || photo.thumbnail_url || '',
+      gender: photo.gender || '',
+      kind: 'talking_photo',
+      source: (photo.talking_photo_name || '').startsWith('avatar_') ? 'generated' : 'custom',
+    }))
+    const merged = [...talkingPhotos, ...avatars].filter(avatar => avatar.id)
+    res.json({ avatars: merged })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ’ ?뺤씤?? =====
 app.get('/api/heygen/avatar-list', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -638,12 +710,33 @@ function splitNarration(text, maxCharsPerLine = 18) {
 }
 
 // 스타일별 FFmpeg force_style 매핑 (9:16 유튜브 쇼츠 기준)
-function getForceStyle(style) {
-  const sz = 10
-  const base = `FontName=Pretendard Variable,FontSize=${sz},Alignment=2,MarginV=20`
+const subtitleFontConfigs = {
+  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 20, bold: 0, italic: 0, spacing: 0 },
+  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 20, bold: -1, italic: 0, spacing: 0.2 },
+  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 18, bold: 0, italic: 0, spacing: 0 },
+  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 20, bold: 0, italic: 0, spacing: 0.05 },
+  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 20, bold: 0, italic: 0, spacing: 0.35 },
+}
+
+function getSubtitleFontConfig(fontKey) {
+  return subtitleFontConfigs[fontKey] || subtitleFontConfigs.default
+}
+
+function getForceStyle(style, fontKey = 'default') {
+  const font = getSubtitleFontConfig(fontKey)
+  const base = [
+    `FontName=${font.fontName}`,
+    `FontSize=${font.fontSize}`,
+    'Alignment=2',
+    `MarginV=${font.marginV}`,
+    `Bold=${font.bold}`,
+    `Italic=${font.italic}`,
+    `Spacing=${font.spacing}`,
+  ].join(',')
+
   const styles = {
-    classic:  `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,BorderStyle=3,BackColour=&HB0000000`,
-    classic2: `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=0.5,Shadow=0`,
+    classic: `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=1,BorderStyle=3,BackColour=&HB0000000,Shadow=0`,
+    classic2: `${base},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=0.8,BorderStyle=1,Shadow=0`,
   }
   return styles[style] || styles.classic
 }
@@ -725,7 +818,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 }
 
 app.post('/api/subtitle/burn', async (req, res) => {
-  const { videoUrl, scenes, subtitleStyle, animatedTitles } = req.body
+  const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles } = req.body
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
   // animatedTitles: [{ sceneNumber, localPath }] — WebM 알파 영상 오버레이
   const animatedTitleMap = {}
@@ -830,7 +923,8 @@ app.post('/api/subtitle/burn', async (req, res) => {
     // 5) FFmpeg로 자막 + 타이틀 오버레이 번인
     const srtPathEscaped = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:')
     const fontsDirEscaped = path.join(__dirname, 'fonts').replace(/\\/g, '/').replace(/:/g, '\\:')
-    const forceStyle = getForceStyle(subtitleStyle || 'classic')
+    const resolvedFont = getSubtitleFontConfig(subtitleFont || 'default')
+    const forceStyle = getForceStyle(subtitleStyle || 'classic', subtitleFont || 'default')
 
     // FFmpeg 필터 구성: 자막 + 타이틀 오버레이 (애니메이션 WebM은 itsoffset으로 타이밍 맞춤)
     let filterComplex = ''
@@ -885,7 +979,13 @@ app.post('/api/subtitle/burn', async (req, res) => {
     // 5) 응답
     const size = fs.statSync(outputPath).size
     const url = `/output/final_${ts}.mp4`
-    res.json({ url, size, srtUrl: `/output/subtitle_${ts}.srt` })
+    res.json({
+      url,
+      size,
+      srtUrl: `/output/subtitle_${ts}.srt`,
+      requestedFont: subtitleFont || 'default',
+      resolvedFont: resolvedFont.fontName,
+    })
 
     // 원본 파일 정리 (지연 삭제)
     setTimeout(() => { try { fs.unlinkSync(inputPath) } catch {} }, 60000)
@@ -1083,10 +1183,177 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }))
 // ===== Instagram Graph API =====
 const IG_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN
 const IG_BUSINESS_ID = process.env.INSTAGRAM_BUSINESS_ID
+const META_APP_ID = process.env.META_APP_ID || process.env.INSTAGRAM_APP_ID
+const META_APP_SECRET = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET
+const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'http://localhost:3001/api/instagram/oauth/callback'
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+const instagramTokenPath = path.join(__dirname, '.instagram_tokens.json')
+let instagramTokens = null
+let instagramOAuthState = null
+
+function isInstagramOAuthConfigured() {
+  return Boolean(META_APP_ID && META_APP_SECRET && INSTAGRAM_REDIRECT_URI)
+}
+
+function createGraphAppSecretProof(accessToken) {
+  if (!META_APP_SECRET || !accessToken) {
+    return null
+  }
+
+  return crypto.createHmac('sha256', META_APP_SECRET).update(accessToken).digest('hex')
+}
+
+function getInstagramFallbackAuth() {
+  if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
+    return null
+  }
+
+  return {
+    accessToken: IG_ACCESS_TOKEN,
+    businessId: IG_BUSINESS_ID,
+    username: null,
+    mode: 'server-token',
+  }
+}
+
+function getInstagramAuthMaterial() {
+  if (instagramTokens?.accessToken && instagramTokens?.businessId) {
+    return {
+      accessToken: instagramTokens.accessToken,
+      businessId: instagramTokens.businessId,
+      username: instagramTokens.username || null,
+      pageId: instagramTokens.pageId || null,
+      mode: 'oauth',
+    }
+  }
+
+  return getInstagramFallbackAuth()
+}
+
+async function loadInstagramTokens() {
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('instagram_tokens')
+        .select('tokens')
+        .eq('id', 'default')
+        .maybeSingle()
+      if (!error && data?.tokens) {
+        return data.tokens
+      }
+    } catch (err) {
+      console.warn('[Instagram] Supabase token load failed:', err.message)
+    }
+  }
+
+  try {
+    if (fs.existsSync(instagramTokenPath)) {
+      return JSON.parse(fs.readFileSync(instagramTokenPath, 'utf-8'))
+    }
+  } catch {}
+
+  return null
+}
+
+async function saveInstagramTokens(tokens) {
+  if (supabaseAdmin) {
+    try {
+      const { error } = await supabaseAdmin.from('instagram_tokens').upsert({
+        id: 'default',
+        tokens,
+        updated_at: new Date().toISOString(),
+      })
+      if (!error) {
+        return
+      }
+      console.warn('[Instagram] Supabase token save failed:', error.message)
+    } catch (err) {
+      console.warn('[Instagram] Supabase token save error:', err.message)
+    }
+  }
+
+  try {
+    fs.writeFileSync(instagramTokenPath, JSON.stringify(tokens, null, 2))
+  } catch {}
+}
+
+async function persistInstagramTokens(tokens) {
+  instagramTokens = {
+    ...(instagramTokens || {}),
+    ...(tokens || {}),
+  }
+  await saveInstagramTokens(instagramTokens)
+}
+
+async function clearInstagramTokens() {
+  instagramTokens = null
+
+  if (supabaseAdmin) {
+    try {
+      await supabaseAdmin.from('instagram_tokens').delete().eq('id', 'default')
+    } catch {}
+  }
+
+  try {
+    fs.unlinkSync(instagramTokenPath)
+  } catch {}
+}
+
+function buildInstagramGraphUrl(resource, accessToken, params = {}) {
+  const url = new URL(`${IG_GRAPH_BASE}/${resource.replace(/^\/+/, '')}`)
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      url.searchParams.set(key, String(value))
+    }
+  }
+
+  url.searchParams.set('access_token', accessToken)
+  const appSecretProof = createGraphAppSecretProof(accessToken)
+  if (appSecretProof) {
+    url.searchParams.set('appsecret_proof', appSecretProof)
+  }
+  return url.toString()
+}
+
+async function instagramGraphGet(resource, accessToken, params = {}) {
+  const response = await fetch(buildInstagramGraphUrl(resource, accessToken, params))
+  const data = await response.json()
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error?.message || `Instagram Graph GET failed (${response.status})`)
+  }
+  return data
+}
+
+async function instagramGraphPost(resource, accessToken, body = {}) {
+  const payload = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== null && value !== undefined && value !== '') {
+      payload.set(key, String(value))
+    }
+  }
+
+  payload.set('access_token', accessToken)
+  const appSecretProof = createGraphAppSecretProof(accessToken)
+  if (appSecretProof) {
+    payload.set('appsecret_proof', appSecretProof)
+  }
+
+  const response = await fetch(`${IG_GRAPH_BASE}/${resource.replace(/^\/+/, '')}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: payload.toString(),
+  })
+  const data = await response.json()
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error?.message || `Instagram Graph POST failed (${response.status})`)
+  }
+  return data
+}
 
 // 이미지 업로드 (단일 또는 캐러셀)
-async function publishInstagramPost({ imageUrls = [], caption = '' }) {
+async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
     throw new Error('Instagram 환경변수(INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID) 미설정')
   }
@@ -1127,7 +1394,7 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
   }
 
   // 자식 미디어들이 FINISHED 될 때까지 대기
-  await waitForMediaReady(childIds)
+  await waitForMediaReadyLegacy(childIds)
 
   const carouselRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
     method: 'POST',
@@ -1143,7 +1410,7 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
   if (!carouselRes.ok || !carousel.id) throw new Error(`캐러셀 컨테이너 생성 실패: ${JSON.stringify(carousel)}`)
 
   // 캐러셀 컨테이너도 FINISHED 될 때까지 대기
-  await waitForMediaReady([carousel.id])
+  await waitForMediaReadyLegacy([carousel.id])
 
   const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
     method: 'POST',
@@ -1156,7 +1423,7 @@ async function publishInstagramPost({ imageUrls = [], caption = '' }) {
 }
 
 // 미디어 컨테이너가 게시 준비될 때까지 대기 (최대 60초)
-async function waitForMediaReady(mediaIds, maxWait = 60000) {
+async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
   const interval = 2000
   const start = Date.now()
   for (const id of mediaIds) {
@@ -1191,6 +1458,74 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
   return pub?.publicUrl
 }
 
+async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
+  const auth = getInstagramAuthMaterial()
+  if (!auth?.accessToken || !auth?.businessId) {
+    throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
+  }
+  if (!imageUrls.length) {
+    throw new Error('Instagram image URL is missing')
+  }
+
+  const urls = imageUrls.filter(Boolean).slice(0, 1)
+  if (urls.length === 1) {
+    const created = await instagramGraphPost(`${auth.businessId}/media`, auth.accessToken, {
+      image_url: urls[0],
+      caption,
+    })
+    const pub = await instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
+      creation_id: created.id,
+    })
+    return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+  }
+
+  const childIds = []
+  for (const url of urls) {
+    const child = await instagramGraphPost(`${auth.businessId}/media`, auth.accessToken, {
+      image_url: url,
+      is_carousel_item: true,
+    })
+    childIds.push(child.id)
+  }
+
+  await waitForInstagramMediaReady(childIds, auth.accessToken)
+
+  const carousel = await instagramGraphPost(`${auth.businessId}/media`, auth.accessToken, {
+    media_type: 'CAROUSEL',
+    children: childIds.join(','),
+    caption,
+  })
+
+  await waitForInstagramMediaReady([carousel.id], auth.accessToken)
+
+  const pub = await instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
+    creation_id: carousel.id,
+  })
+  return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+}
+
+async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000) {
+  const interval = 2000
+
+  for (const id of mediaIds) {
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < maxWait) {
+      const media = await instagramGraphGet(id, accessToken, { fields: 'status_code' })
+      if (media.status_code === 'FINISHED') {
+        break
+      }
+      if (media.status_code === 'ERROR' || media.status_code === 'EXPIRED') {
+        throw new Error(`Instagram media processing failed (${id}): ${media.status_code}`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval))
+    }
+
+    if (Date.now() - startedAt >= maxWait) {
+      throw new Error(`Instagram media processing timed out (${id})`)
+    }
+  }
+}
+
 // ===== Naver Blog Publish (Playwright) =====
 app.post('/api/naver/publish', async (req, res) => {
   try {
@@ -1217,7 +1552,7 @@ app.post('/api/instagram/publish', async (req, res) => {
         publicUrls.push(url)
       }
     }
-    const result = await publishInstagramPost({ imageUrls: publicUrls, caption })
+    const result = await publishInstagramPostV2({ imageUrls: publicUrls, caption })
     res.json({ success: true, ...result, uploadedUrls: publicUrls })
   } catch (err) {
     console.error('[Instagram] 업로드 실패:', err.message)
@@ -1226,6 +1561,23 @@ app.post('/api/instagram/publish', async (req, res) => {
 })
 
 // ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
+app.get('/api/instagram/auth-status', (_req, res) => {
+  validateInstagramSession()
+    .then((status) => res.json(status))
+    .catch((error) => {
+      res.status(500).json({
+        connected: false,
+        hasAccessToken: Boolean(IG_ACCESS_TOKEN || instagramTokens?.accessToken),
+        hasBusinessId: Boolean(IG_BUSINESS_ID || instagramTokens?.businessId),
+        mode: instagramTokens?.accessToken ? 'oauth' : 'server-token',
+        state: isInstagramOAuthConfigured() ? 'expired' : 'unconfigured',
+        validationError: error.message,
+        canReconnect: isInstagramOAuthConfigured(),
+        canDisconnect: Boolean(instagramTokens?.accessToken),
+      })
+    })
+})
+
 const { google } = require('googleapis')
 
 // 환경변수 우선, 없으면 client_secret.json 파일 폴백 (개발 편의)
@@ -1277,6 +1629,20 @@ async function saveYtTokens(tokens) {
   try { fs.writeFileSync(ytTokenPath, JSON.stringify(tokens, null, 2)) } catch {}
 }
 
+async function persistYtTokens(tokens) {
+  const previousTokens = ytTokens || {}
+  ytTokens = {
+    ...previousTokens,
+    ...(tokens || {}),
+  }
+
+  if (!ytTokens.refresh_token && previousTokens.refresh_token) {
+    ytTokens.refresh_token = previousTokens.refresh_token
+  }
+
+  await saveYtTokens(ytTokens)
+}
+
 async function clearYtTokens() {
   if (supabaseAdmin) {
     try { await supabaseAdmin.from('youtube_tokens').delete().eq('id', 'default') } catch {}
@@ -1295,12 +1661,275 @@ function getYtOAuth2Client() {
       ytCredentials.client_secret,
       YOUTUBE_REDIRECT_URI
     )
+    ytOAuth2Client.on('tokens', (tokens) => {
+      if (!tokens || Object.keys(tokens).length === 0) {
+        return
+      }
+
+      persistYtTokens(tokens).catch((error) => {
+        console.warn('[YouTube] refreshed token save failed:', error.message)
+      })
+    })
   }
   if (ytTokens) ytOAuth2Client.setCredentials(ytTokens)
   return ytOAuth2Client
 }
 
+async function validateYouTubeSession() {
+  if (!ytCredentials) {
+    return { authenticated: false, hasCredentials: false, state: 'unconfigured' }
+  }
+
+  if (!ytTokens) {
+    return { authenticated: false, hasCredentials: true, state: 'expired' }
+  }
+
+  try {
+    const client = getYtOAuth2Client()
+    await client.getAccessToken()
+
+    const youtube = google.youtube({ version: 'v3', auth: client })
+    await youtube.channels.list({
+      part: ['id'],
+      mine: true,
+      maxResults: 1,
+    })
+
+    return {
+      authenticated: true,
+      hasCredentials: true,
+      state: 'connected',
+    }
+  } catch (error) {
+    const detail = error?.response?.data?.error || error?.message || ''
+    const shouldClearTokens =
+      error?.code === 401 ||
+      error?.status === 401 ||
+      /invalid_grant|invalid_token|invalid credentials|unauthorized/i.test(String(detail))
+
+    if (shouldClearTokens) {
+      ytTokens = null
+      try {
+        if (ytOAuth2Client) {
+          ytOAuth2Client.setCredentials({})
+        }
+      } catch {}
+      await clearYtTokens()
+    }
+
+    return {
+      authenticated: false,
+      hasCredentials: true,
+      state: 'expired',
+      validationError: typeof detail === 'string' ? detail : JSON.stringify(detail),
+    }
+  }
+}
+
+async function validateInstagramSessionV2() {
+  if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
+    return {
+      connected: false,
+      hasAccessToken: Boolean(IG_ACCESS_TOKEN),
+      hasBusinessId: Boolean(IG_BUSINESS_ID),
+      mode: 'server-token',
+      state: 'expired',
+    }
+  }
+
+  try {
+    const response = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}?fields=id,username&access_token=${IG_ACCESS_TOKEN}`)
+    const data = await response.json()
+
+    if (!response.ok || data?.error || !data?.id) {
+      const detail = data?.error?.message || `Instagram auth validation failed (${response.status})`
+      return {
+        connected: false,
+        hasAccessToken: true,
+        hasBusinessId: true,
+        mode: 'server-token',
+        state: 'expired',
+        validationError: detail,
+      }
+    }
+
+    return {
+      connected: true,
+      hasAccessToken: true,
+      hasBusinessId: true,
+      mode: 'server-token',
+      state: 'connected',
+      username: data.username || null,
+    }
+  } catch (error) {
+    return {
+      connected: false,
+      hasAccessToken: true,
+      hasBusinessId: true,
+      mode: 'server-token',
+      state: 'expired',
+      validationError: error.message,
+    }
+  }
+}
+
 // OAuth 인증 URL 생성
+loadInstagramTokens().then((tokens) => {
+  if (tokens) {
+    instagramTokens = tokens
+  }
+})
+
+async function validateInstagramSession() {
+  const fallback = getInstagramFallbackAuth()
+  const auth = getInstagramAuthMaterial()
+
+  if (!auth?.accessToken || !auth?.businessId) {
+    return {
+      connected: false,
+      hasAccessToken: false,
+      hasBusinessId: false,
+      mode: isInstagramOAuthConfigured() ? 'oauth' : 'server-token',
+      state: isInstagramOAuthConfigured() ? 'expired' : 'unconfigured',
+      canReconnect: isInstagramOAuthConfigured(),
+      canDisconnect: false,
+    }
+  }
+
+  try {
+    const data = await instagramGraphGet(auth.businessId, auth.accessToken, {
+      fields: 'id,username',
+    })
+
+    return {
+      connected: true,
+      hasAccessToken: true,
+      hasBusinessId: true,
+      mode: auth.mode,
+      state: 'connected',
+      username: data.username || auth.username || null,
+      canReconnect: isInstagramOAuthConfigured(),
+      canDisconnect: auth.mode === 'oauth',
+    }
+  } catch (error) {
+    const detail = error.message
+    const tokenLooksInvalid = /invalid|expired|unauthorized|session/i.test(detail)
+
+    if (auth.mode === 'oauth' && tokenLooksInvalid) {
+      await clearInstagramTokens()
+    }
+
+    return {
+      connected: false,
+      hasAccessToken: Boolean(fallback?.accessToken || instagramTokens?.accessToken),
+      hasBusinessId: Boolean(fallback?.businessId || instagramTokens?.businessId),
+      mode: auth.mode,
+      state: isInstagramOAuthConfigured() ? 'expired' : 'unconfigured',
+      validationError: detail,
+      canReconnect: isInstagramOAuthConfigured(),
+      canDisconnect: auth.mode === 'oauth' && Boolean(instagramTokens?.accessToken),
+    }
+  }
+}
+
+app.get('/api/instagram/auth-url', (_req, res) => {
+  if (!isInstagramOAuthConfigured()) {
+    return res.status(500).json({
+      error: 'Instagram OAuth is not configured. META_APP_ID or INSTAGRAM_APP_ID, META_APP_SECRET or INSTAGRAM_APP_SECRET, and INSTAGRAM_REDIRECT_URI are required.',
+    })
+  }
+
+  instagramOAuthState = crypto.randomBytes(24).toString('hex')
+
+  const url = new URL('https://www.facebook.com/v21.0/dialog/oauth')
+  url.searchParams.set('client_id', META_APP_ID)
+  url.searchParams.set('redirect_uri', INSTAGRAM_REDIRECT_URI)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set(
+    'scope',
+    [
+      'instagram_basic',
+      'instagram_content_publish',
+      'pages_show_list',
+      'pages_read_engagement',
+      'business_management',
+    ].join(',')
+  )
+  url.searchParams.set('state', instagramOAuthState)
+
+  res.json({ url: url.toString() })
+})
+
+app.get('/api/instagram/oauth/callback', async (req, res) => {
+  const { code, error, state } = req.query
+
+  if (error) {
+    return res.status(400).send(`<html><body><h2>Instagram 인증 거부</h2><p>${error}</p></body></html>`)
+  }
+  if (!code) {
+    return res.status(400).send('Missing code')
+  }
+  if (instagramOAuthState && state !== instagramOAuthState) {
+    return res.status(400).send('<html><body><h2>Instagram 인증 실패</h2><p>state mismatch</p></body></html>')
+  }
+
+  instagramOAuthState = null
+
+  try {
+    const shortUrl = new URL(`${IG_GRAPH_BASE}/oauth/access_token`)
+    shortUrl.searchParams.set('client_id', META_APP_ID)
+    shortUrl.searchParams.set('client_secret', META_APP_SECRET)
+    shortUrl.searchParams.set('redirect_uri', INSTAGRAM_REDIRECT_URI)
+    shortUrl.searchParams.set('code', String(code))
+
+    const shortResponse = await fetch(shortUrl)
+    const shortData = await shortResponse.json()
+    if (!shortResponse.ok || !shortData.access_token) {
+      throw new Error(shortData?.error?.message || 'Failed to exchange Instagram auth code')
+    }
+
+    const longUrl = new URL(`${IG_GRAPH_BASE}/oauth/access_token`)
+    longUrl.searchParams.set('grant_type', 'fb_exchange_token')
+    longUrl.searchParams.set('client_id', META_APP_ID)
+    longUrl.searchParams.set('client_secret', META_APP_SECRET)
+    longUrl.searchParams.set('fb_exchange_token', shortData.access_token)
+
+    const longResponse = await fetch(longUrl)
+    const longData = await longResponse.json()
+    if (!longResponse.ok || !longData.access_token) {
+      throw new Error(longData?.error?.message || 'Failed to upgrade Instagram access token')
+    }
+
+    const accessToken = longData.access_token
+    const pages = await instagramGraphGet('me/accounts', accessToken, {
+      fields: 'id,name,instagram_business_account{id,username}',
+    })
+    const page = (pages.data || []).find((item) => item.instagram_business_account?.id)
+    if (!page?.instagram_business_account?.id) {
+      throw new Error('No Instagram Business account is linked to this Meta account.')
+    }
+
+    const business = page.instagram_business_account
+    await persistInstagramTokens({
+      accessToken,
+      businessId: business.id,
+      username: business.username || null,
+      pageId: page.id,
+      updatedAt: new Date().toISOString(),
+    })
+
+    res.send('<html><body><h2>Instagram 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+  } catch (err) {
+    console.error('[Instagram OAuth] callback failed:', err.message)
+    res.status(500).send(`<html><body><h2>Instagram 인증 실패</h2><p>${err.message}</p></body></html>`)
+  }
+})
+
+app.post('/api/instagram/logout', async (_req, res) => {
+  await clearInstagramTokens()
+  res.json({ success: true })
+})
+
 app.get('/api/youtube/auth-url', (req, res) => {
   const client = getYtOAuth2Client()
   if (!client) return res.status(500).json({ error: 'client_secret.json not found' })
@@ -1323,8 +1952,7 @@ app.get('/api/youtube/oauth/callback', async (req, res) => {
     const { tokens } = await client.getToken(code)
     console.log('[YouTube OAuth] 토큰 획득 성공, scopes:', tokens.scope)
     client.setCredentials(tokens)
-    ytTokens = tokens
-    await saveYtTokens(tokens)
+    await persistYtTokens(tokens)
     console.log('[YouTube OAuth] 토큰 저장 완료')
     res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
@@ -1334,8 +1962,18 @@ app.get('/api/youtube/oauth/callback', async (req, res) => {
 })
 
 // 인증 상태 확인
-app.get('/api/youtube/auth-status', (req, res) => {
-  res.json({ authenticated: !!ytTokens, hasCredentials: !!ytCredentials })
+app.get('/api/youtube/auth-status', async (_req, res) => {
+  try {
+    const status = await validateYouTubeSession()
+    res.json(status)
+  } catch (error) {
+    res.status(500).json({
+      authenticated: false,
+      hasCredentials: Boolean(ytCredentials),
+      state: ytCredentials ? 'expired' : 'unconfigured',
+      validationError: error.message,
+    })
+  }
 })
 
 // 인증 해제
@@ -1717,7 +2355,7 @@ app.post('/api/scheduled/run', async (req, res) => {
             }
           }
 
-          const result = await publishInstagramPost({ imageUrls, caption })
+          const result = await publishInstagramPostV2({ imageUrls, caption })
           uploadResult = { url: result.permalink, mediaId: result.mediaId }
 
         } else {

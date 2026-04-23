@@ -5,25 +5,40 @@ import {
   CheckCircle,
   Download,
   FileText,
+  Instagram,
   Link,
   MonitorDown,
+  RefreshCw,
   Save,
   Share2,
   User,
   X,
   Youtube,
 } from 'lucide-react'
-import { Instagram } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { DESKTOP_HELPER } from '../constants/desktopHelper.js'
-import { connect, disconnect, getAll, updateDisplay } from '../utils/platformConnections'
+import {
+  beginInstagramReconnect,
+  beginYoutubeReconnect,
+  disconnectInstagramSession,
+  disconnectYoutubeSession,
+  fetchInstagramSessionStatus,
+  fetchNaverSessionStatus,
+  fetchYoutubeSessionStatus,
+  reconnectNaverSession,
+  waitForInstagramReconnect,
+  waitForYoutubeReconnect,
+} from '../services/platformSessions'
+import { getAll, updateDisplay } from '../utils/platformConnections'
 
 const sections = [
-  { id: 'desktop-helper', label: '블로그 업로드 앱', icon: MonitorDown },
-  { id: 'platforms', label: '플랫폼 계정 연결', icon: Link },
+  { id: 'desktop-helper', label: '블로그 도우미', icon: MonitorDown },
+  { id: 'platforms', label: '플랫폼 연동 상태', icon: Link },
   { id: 'newsletter_footer', label: '플랫폼 주소 연결', icon: Share2 },
   { id: 'account', label: '계정', icon: User },
 ]
+
+const VALID_SECTION_IDS = new Set(sections.map((section) => section.id))
 
 const FOOTER_PLATFORMS = [
   {
@@ -52,45 +67,131 @@ const FOOTER_PLATFORMS = [
   },
 ]
 
-const PLATFORMS = [
-  {
-    key: 'blog',
+const PLATFORM_CARD_META = {
+  blog: {
     name: '네이버 블로그',
     Icon: FileText,
     iconColor: 'text-emerald-500',
     iconBg: 'bg-emerald-50',
-    scopes: '포스트 작성, 이미지 업로드',
-    placeholder: '블로그 ID 또는 계정명',
   },
-  {
-    key: 'instagram',
+  instagram: {
     name: '인스타그램',
     Icon: Instagram,
     iconColor: 'text-pink-500',
     iconBg: 'bg-pink-50',
-    scopes: '게시물 업로드, 계정 연결 준비',
-    placeholder: '계정 핸들 또는 이름',
   },
-  {
-    key: 'shorts',
-    name: '유튜브 쇼츠',
+  shorts: {
+    name: '유튜브',
     Icon: Youtube,
     iconColor: 'text-red-500',
     iconBg: 'bg-red-50',
-    scopes: '동영상 업로드, 메타데이터 연동',
-    placeholder: '채널명 또는 계정명',
   },
-]
+}
 
-const VALID_SECTION_IDS = new Set(sections.map((section) => section.id))
+function StatusBadge({ tone, text }) {
+  const className = {
+    danger: 'bg-red-50 text-red-600',
+    muted: 'bg-slate-100 text-slate-600',
+    success: 'bg-emerald-50 text-emerald-600',
+    warning: 'bg-amber-50 text-amber-700',
+  }[tone] || 'bg-slate-100 text-slate-600'
 
-function formatDate(isoString) {
-  if (!isoString) {
-    return null
-  }
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${className}`}>
+      {text}
+    </span>
+  )
+}
 
-  const date = new Date(isoString)
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`
+function buildPlatformCards(statuses) {
+  const blog = statuses.blog
+  const youtube = statuses.shorts
+  const instagram = statuses.instagram
+
+  return [
+    {
+      key: 'blog',
+      ...PLATFORM_CARD_META.blog,
+      tone: blog.state === 'connected' ? 'success' : blog.state === 'offline' ? 'danger' : 'warning',
+      statusLabel:
+        blog.state === 'connected'
+          ? '세션 연결됨'
+          : blog.state === 'offline'
+            ? '헬퍼 꺼짐'
+            : '다시 로그인 필요',
+      account: blog.state === 'connected' ? '로컬 desktop-helper 세션' : null,
+      detail:
+        blog.state === 'connected'
+          ? '로컬 helper에 저장된 네이버 세션이 살아 있어 바로 업로드할 수 있습니다.'
+          : blog.state === 'offline'
+            ? '이 PC에서 desktop-helper가 실행 중이 아닙니다. 먼저 helper를 켜고 다시 로그인해야 합니다.'
+            : 'desktop-helper는 켜져 있지만 네이버 세션이 만료되었습니다. 다시 로그인해 주세요.',
+      meta: [
+        blog.appVersion ? `helper 버전 ${blog.appVersion}` : null,
+        blog.chromiumReady ? 'Chromium 준비됨' : 'Chromium 확인 필요',
+      ].filter(Boolean),
+    },
+    {
+      key: 'instagram',
+      ...PLATFORM_CARD_META.instagram,
+      tone:
+        instagram.state === 'connected'
+          ? 'success'
+          : instagram.state === 'unconfigured'
+            ? 'danger'
+            : 'warning',
+      statusLabel:
+        instagram.state === 'connected'
+          ? 'Instagram 연결됨'
+          : instagram.state === 'unconfigured'
+            ? 'OAuth 설정 필요'
+            : '다시 연결 필요',
+      account:
+        instagram.connected
+          ? (instagram.username
+              ? `@${instagram.username}`
+              : instagram.mode === 'oauth'
+                ? 'Instagram OAuth'
+                : '서버 Graph API 토큰')
+          : null,
+      detail:
+        instagram.connected
+          ? (instagram.mode === 'oauth'
+              ? 'Meta 로그인으로 받은 Instagram 토큰이 저장되어 있어 바로 업로드할 수 있습니다.'
+              : '서버에 저장된 Instagram Graph API 토큰과 Business ID로 바로 업로드할 수 있습니다.')
+          : instagram.state === 'unconfigured'
+            ? 'META_APP_ID 또는 INSTAGRAM_APP_ID, META_APP_SECRET 또는 INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI 설정이 없어 웹에서 다시 로그인할 수 없습니다.'
+            : (instagram.validationError
+                ? `Instagram 연결 검증이 실패했습니다: ${instagram.validationError}`
+                : 'Instagram 토큰이 만료되었거나 연결이 끊겼습니다. 다시 로그인하면 즉시 다시 사용할 수 있습니다.'),
+      meta: [
+        instagram.hasAccessToken ? 'Access Token 있음' : 'Access Token 없음',
+        instagram.hasBusinessId ? 'Business ID 있음' : 'Business ID 없음',
+        instagram.mode === 'oauth' ? 'OAuth 모드' : '서버 토큰 모드',
+      ],
+    },
+    {
+      key: 'shorts',
+      ...PLATFORM_CARD_META.shorts,
+      tone: youtube.state === 'connected' ? 'success' : youtube.state === 'unconfigured' ? 'danger' : 'warning',
+      statusLabel:
+        youtube.state === 'connected'
+          ? 'Google 연결됨'
+          : youtube.state === 'unconfigured'
+            ? 'OAuth 설정 필요'
+            : '다시 인증 필요',
+      account: youtube.state === 'connected' ? 'Google OAuth' : null,
+      detail:
+        youtube.state === 'connected'
+          ? 'YouTube 업로드용 Google OAuth 연결이 유지되고 있습니다.'
+          : youtube.state === 'unconfigured'
+            ? 'client_secret.json 또는 Google OAuth 환경변수가 없어 인증을 시작할 수 없습니다.'
+            : (youtube.validationError
+                ? `Google 인증 검증이 실패했습니다: ${youtube.validationError}`
+                : '저장된 Google 인증이 끊겼거나 만료되었습니다. 다시 연결해 주세요.'),
+      meta: [youtube.hasCredentials ? 'OAuth 클라이언트 설정 있음' : 'OAuth 클라이언트 설정 없음'],
+    },
+  ]
 }
 
 export default function SettingsPage() {
@@ -100,12 +201,6 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState(
     VALID_SECTION_IDS.has(initialSection) ? initialSection : 'desktop-helper'
   )
-
-  const [connections, setConnections] = useState(() => getAll())
-  const [modal, setModal] = useState(null)
-  const [modalInput, setModalInput] = useState('')
-  const [modalError, setModalError] = useState('')
-  const [confirmDisconnect, setConfirmDisconnect] = useState(null)
 
   const [footerDrafts, setFooterDrafts] = useState(() => {
     const all = getAll()
@@ -118,6 +213,24 @@ export default function SettingsPage() {
     }, {})
   })
   const [footerSavedKey, setFooterSavedKey] = useState(null)
+
+  const [platformStatuses, setPlatformStatuses] = useState({
+    blog: { state: 'loading', connected: false, helperReachable: false, chromiumReady: false },
+    instagram: {
+      state: 'loading',
+      connected: false,
+      hasAccessToken: false,
+      hasBusinessId: false,
+      canReconnect: false,
+      canDisconnect: false,
+      mode: 'server-token',
+    },
+    shorts: { state: 'loading', connected: false, hasCredentials: false },
+  })
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusError, setStatusError] = useState('')
+  const [busyAction, setBusyAction] = useState('')
+  const [infoModal, setInfoModal] = useState(null)
 
   const [currentPw, setCurrentPw] = useState('')
   const [newPw, setNewPw] = useState('')
@@ -132,43 +245,43 @@ export default function SettingsPage() {
     }
   }, [activeSection, searchParams])
 
-  const refreshConnections = () => setConnections(getAll())
+  useEffect(() => {
+    void refreshPlatformStatuses()
+  }, [])
 
   const helperSteps = useMemo(
     () => [
-      '설치 파일을 다운로드한 뒤 클라이언트 PC에서 실행합니다.',
-      '설치가 끝나면 앱이 자동으로 로컬 서버와 트레이를 시작합니다.',
-      '앱 내부에서 네이버 로그인 후 업로드 연동을 진행합니다.',
+      '설치 파일을 실행하면 사용자 PC에서 helper 프로그램이 실행됩니다.',
+      'helper는 localhost:3000 서버를 띄우고, 네이버 브라우저 자동화를 담당합니다.',
+      '세션이 만료되면 helper에서 로그인 창을 다시 열어 세션을 갱신합니다.',
     ],
     []
   )
 
+  const platformCards = useMemo(() => buildPlatformCards(platformStatuses), [platformStatuses])
+
+  async function refreshPlatformStatuses() {
+    setStatusLoading(true)
+    setStatusError('')
+
+    try {
+      const [blog, instagram, shorts] = await Promise.all([
+        fetchNaverSessionStatus(),
+        fetchInstagramSessionStatus(),
+        fetchYoutubeSessionStatus(),
+      ])
+
+      setPlatformStatuses({ blog, instagram, shorts })
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setStatusLoading(false)
+    }
+  }
+
   const selectSection = (sectionId) => {
     setActiveSection(sectionId)
     setSearchParams({ section: sectionId }, { replace: true })
-  }
-
-  const openConnectModal = (platform) => {
-    setModal(platform)
-    setModalInput('')
-    setModalError('')
-  }
-
-  const handleConnect = () => {
-    if (!modalInput.trim()) {
-      setModalError('계정 이름을 입력해 주세요.')
-      return
-    }
-
-    connect(modal.key, modalInput.trim())
-    refreshConnections()
-    setModal(null)
-  }
-
-  const handleDisconnect = (key) => {
-    disconnect(key)
-    refreshConnections()
-    setConfirmDisconnect(null)
   }
 
   const handleFooterSave = (key) => {
@@ -177,7 +290,6 @@ export default function SettingsPage() {
       displayName: draft.displayName.trim(),
       url: draft.url.trim(),
     })
-    refreshConnections()
     setFooterSavedKey(key)
     setTimeout(() => {
       setFooterSavedKey((currentKey) => (currentKey === key ? null : currentKey))
@@ -219,6 +331,92 @@ export default function SettingsPage() {
     logout()
   }
 
+  const handleReconnectNaver = async () => {
+    setBusyAction('blog')
+    setStatusError('')
+    try {
+      await reconnectNaverSession()
+      await refreshPlatformStatuses()
+      window.alert('네이버 로그인 창이 열렸습니다. 로그인을 마치면 바로 다시 사용할 수 있습니다.')
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const handleReconnectYoutube = async () => {
+    setBusyAction('shorts')
+    setStatusError('')
+    try {
+      const { popup } = await beginYoutubeReconnect()
+      await waitForYoutubeReconnect({ popup })
+      await refreshPlatformStatuses()
+      window.alert('Google 인증이 완료되어 바로 유튜브 업로드를 다시 사용할 수 있습니다.')
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const handleDisconnectYoutube = async () => {
+    setBusyAction('shorts-disconnect')
+    setStatusError('')
+    try {
+      await disconnectYoutubeSession()
+      await refreshPlatformStatuses()
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const handleReconnectInstagram = async () => {
+    setBusyAction('instagram')
+    setStatusError('')
+    try {
+      const { popup } = await beginInstagramReconnect()
+      await waitForInstagramReconnect({ popup })
+      await refreshPlatformStatuses()
+      window.alert('Instagram 인증이 완료되어 바로 서비스를 다시 사용할 수 있습니다.')
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const handleDisconnectInstagram = async () => {
+    setBusyAction('instagram-disconnect')
+    setStatusError('')
+    try {
+      await disconnectInstagramSession()
+      await refreshPlatformStatuses()
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setBusyAction('')
+    }
+  }
+
+  const openInstagramHelp = async () => {
+    if (platformStatuses.instagram.canReconnect) {
+      await handleReconnectInstagram()
+      return
+    }
+
+    setInfoModal({
+      title: '인스타그램 연동 안내',
+      body: [
+        '현재 인스타그램은 Meta OAuth 환경변수 설정이 없어서 웹에서 직접 다시 로그인할 수 없습니다.',
+        '서버 환경변수에 META_APP_ID 또는 INSTAGRAM_APP_ID, META_APP_SECRET 또는 INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI를 먼저 설정해야 합니다.',
+        '그 뒤에는 이 설정 페이지에서 다시 로그인만 눌러도 즉시 재사용할 수 있습니다.',
+      ],
+    })
+  }
+
   return (
     <div className="flex gap-6 max-w-7xl mx-auto w-full">
       <div className="w-56 shrink-0">
@@ -247,12 +445,12 @@ export default function SettingsPage() {
               <div className="max-w-2xl">
                 <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary mb-4">
                   <MonitorDown size={14} />
-                  블로그 업로드 전용 앱
+                  네이버 블로그 업로드 전용
                 </div>
                 <h3 className="text-xl font-semibold text-text mb-2">{DESKTOP_HELPER.title}</h3>
                 <p className="text-sm text-text-muted leading-6">
-                  네이버 블로그 자동 업로드는 웹 브라우저가 설치된 로컬 PC에서 동작합니다.
-                  클라이언트 PC에서 아래 설치 파일을 내려받아 실행한 뒤, 앱 내부에서 네이버 로그인까지 완료해 주세요.
+                  네이버 블로그 업로드는 사용자 PC에서 실행되는 local desktop-helper가 담당합니다.
+                  설치 후 helper를 켜고, 한 번 네이버 로그인만 해두면 이후 블로그 업로드에 같은 세션을 재사용합니다.
                 </p>
               </div>
 
@@ -287,11 +485,11 @@ export default function SettingsPage() {
               </div>
 
               <div className="rounded-2xl border border-border bg-surface-light p-5">
-                <h4 className="text-sm font-semibold text-text mb-3">설치 후 확인 항목</h4>
+                <h4 className="text-sm font-semibold text-text mb-3">운영 메모</h4>
                 <div className="space-y-3 text-sm text-text-muted leading-6">
-                  <p>앱이 실행되면 트레이에 상주하며 `localhost:3000` 서버를 자동으로 시작합니다.</p>
-                  <p>블로그 업로드 테스트 전에는 데스크톱 앱에서 네이버 로그인 버튼을 한 번 눌러 세션을 저장해야 합니다.</p>
-                  <p>자동 실행을 켜 두면 다음부터는 PC 로그인 직후 앱이 자동으로 올라옵니다.</p>
+                  <p>helper가 켜져 있지 않으면 블로그 업로드는 실패합니다.</p>
+                  <p>세션이 만료되면 설정 페이지 또는 helper 쪽에서 다시 로그인하면 됩니다.</p>
+                  <p>네이버 예약 발행은 업로드 시점에 네이버 자체 예약으로 등록되므로 예약 뒤에는 서버를 계속 켜둘 필요가 없습니다.</p>
                 </div>
               </div>
             </div>
@@ -300,68 +498,137 @@ export default function SettingsPage() {
 
         {activeSection === 'platforms' && (
           <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
-            <h3 className="text-base font-semibold text-text mb-1">플랫폼 계정 연결</h3>
-            <p className="text-sm text-text-muted mb-6">
-              콘텐츠를 자동 배포할 플랫폼 계정을 연결해 주세요.
-            </p>
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-6">
+              <div>
+                <h3 className="text-base font-semibold text-text mb-1">플랫폼 연동 상태</h3>
+                <p className="text-sm text-text-muted">
+                  업로드 전에 실제 세션과 토큰 상태를 여기서 확인하고, 만료되면 바로 재연결할 수 있습니다.
+                </p>
+              </div>
+              <button
+                onClick={() => void refreshPlatformStatuses()}
+                disabled={statusLoading}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-text hover:bg-surface-light disabled:opacity-60"
+              >
+                <RefreshCw size={15} className={statusLoading ? 'animate-spin' : ''} />
+                상태 새로고침
+              </button>
+            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {PLATFORMS.map(({ key, name, Icon, iconColor, iconBg, scopes, placeholder }) => {
-                const state = connections[key]
+            {statusError && (
+              <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>{statusError}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {platformCards.map((card) => {
+                const Icon = card.Icon
+                const isBusy = busyAction === card.key || busyAction === `${card.key}-disconnect`
+
                 return (
-                  <div key={key} className="flex flex-col gap-4 p-5 bg-surface-light rounded-xl border border-border">
-                    <div className="flex items-center justify-between">
+                  <div key={card.key} className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-light p-5">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-xl ${iconBg}`}>
-                          <Icon size={18} className={iconColor} />
+                        <div className={`rounded-xl p-2 ${card.iconBg}`}>
+                          <Icon size={18} className={card.iconColor} />
                         </div>
-                        <span className="text-sm font-semibold text-text">{name}</span>
+                        <div>
+                          <div className="text-sm font-semibold text-text">{card.name}</div>
+                          {card.account && <div className="text-xs text-text-muted mt-0.5">{card.account}</div>}
+                        </div>
                       </div>
-                      {state.connected ? (
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                          연결됨
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-text-muted">
-                          <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
-                          미연결
-                        </span>
-                      )}
+                      <StatusBadge tone={card.tone} text={card.statusLabel} />
                     </div>
 
-                    <div className="flex-1">
-                      <p className="text-xs text-text-muted mb-2">{scopes}</p>
-                      {state.connected ? (
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium text-text">{state.account}</p>
-                          {state.connectedAt && (
-                            <p className="text-xs text-text-muted">연결일 {formatDate(state.connectedAt)}</p>
+                    <p className="text-sm leading-6 text-text-muted min-h-[96px]">{card.detail}</p>
+
+                    <div className="space-y-1">
+                      {card.meta.map((item) => (
+                        <div key={item} className="text-xs text-text-muted">{item}</div>
+                      ))}
+                    </div>
+
+                    <div className="mt-auto space-y-2">
+                      {card.key === 'blog' && (
+                        <>
+                          {platformStatuses.blog.helperReachable ? (
+                            <button
+                              onClick={() => void handleReconnectNaver()}
+                              disabled={isBusy}
+                              className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
+                            >
+                              {isBusy ? '네이버 로그인 진행 중..' : '네이버 다시 로그인'}
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => selectSection('desktop-helper')}
+                              className="w-full rounded-xl border border-primary px-4 py-2.5 text-sm font-medium text-primary hover:bg-primary hover:text-white"
+                            >
+                              helper 설정 보기
+                            </button>
                           )}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-text-muted">아직 연결된 계정이 없습니다.</p>
+                        </>
+                      )}
+
+                      {card.key === 'shorts' && (
+                        <>
+                          <button
+                            onClick={() => void handleReconnectYoutube()}
+                            disabled={isBusy || platformStatuses.shorts.state === 'unconfigured'}
+                            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
+                          >
+                            {isBusy ? 'Google 인증 확인 중..' : 'Google 다시 연결'}
+                          </button>
+                          {platformStatuses.shorts.connected && (
+                            <button
+                              onClick={() => void handleDisconnectYoutube()}
+                              disabled={busyAction === 'shorts-disconnect'}
+                              className="w-full rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text hover:bg-white disabled:opacity-60"
+                            >
+                              연결 해제
+                            </button>
+                          )}
+                        </>
+                      )}
+
+                      {card.key === 'instagram' && (
+                        <>
+                          <button
+                            onClick={() => void openInstagramHelp()}
+                            disabled={isBusy || platformStatuses.instagram.state === 'unconfigured'}
+                            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
+                          >
+                            {isBusy ? 'Instagram 인증 확인 중..' : platformStatuses.instagram.connected ? 'Instagram 다시 연결' : 'Instagram 로그인'}
+                          </button>
+                          {platformStatuses.instagram.canDisconnect && (
+                            <button
+                              onClick={() => void handleDisconnectInstagram()}
+                              disabled={busyAction === 'instagram-disconnect'}
+                              className="w-full rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text hover:bg-white disabled:opacity-60"
+                            >
+                              연결 해제
+                            </button>
+                          )}
+                          {platformStatuses.instagram.state === 'unconfigured' && (
+                            <button
+                              onClick={() => void openInstagramHelp()}
+                              className="w-full rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text hover:bg-white"
+                            >
+                              설정 안내 보기
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
-
-                    {state.connected ? (
-                      <button
-                        onClick={() => setConfirmDisconnect(key)}
-                        className="w-full px-4 py-2 rounded-xl text-sm font-medium border border-border text-text-muted hover:border-red-400 hover:text-red-500 transition-all"
-                      >
-                        연결 해제
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => openConnectModal({ key, name, placeholder })}
-                        className="w-full px-4 py-2 rounded-xl text-sm font-medium border border-primary text-primary hover:bg-primary hover:text-white transition-all"
-                      >
-                        계정 연결
-                      </button>
-                    )}
                   </div>
                 )
               })}
+            </div>
+
+            <div className="mt-5 rounded-xl border border-border bg-surface-light px-4 py-3 text-xs text-text-muted">
+              마지막 확인은 수동 새로고침 기준입니다. YouTube나 Instagram 인증을 끝낸 뒤에는 이 페이지에서 상태를 다시 불러와야 반영됩니다.
             </div>
           </div>
         )}
@@ -370,7 +637,7 @@ export default function SettingsPage() {
           <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="text-base font-semibold text-text mb-1">플랫폼 주소 연결</h3>
             <p className="text-sm text-text-muted mb-6">
-              뉴스레터와 프리뷰 하단에 노출할 플랫폼 링크와 버튼 이름을 설정합니다.
+              뉴스레터 미리보기 하단에 노출되는 플랫폼 링크와 버튼 이름을 설정합니다.
             </p>
 
             <div className="space-y-4">
@@ -379,9 +646,9 @@ export default function SettingsPage() {
                 const saved = footerSavedKey === key
 
                 return (
-                  <div key={key} className="p-5 bg-surface-light rounded-xl border border-border">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className={`p-2 rounded-xl ${bg}`}>
+                  <div key={key} className="rounded-xl border border-border bg-surface-light p-5">
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className={`rounded-xl p-2 ${bg}`}>
                         <Icon size={18} className={color} />
                       </div>
                       <span className="text-sm font-semibold text-text">{name}</span>
@@ -393,9 +660,9 @@ export default function SettingsPage() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <label className="text-xs font-medium text-text-muted mb-1.5 block">표시 이름</label>
+                        <label className="mb-1.5 block text-xs font-medium text-text-muted">표시 이름</label>
                         <input
                           type="text"
                           value={draft.displayName}
@@ -406,11 +673,11 @@ export default function SettingsPage() {
                             }))
                           }
                           placeholder="예: 블로그 바로가기"
-                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-medium text-text-muted mb-1.5 block">URL</label>
+                        <label className="mb-1.5 block text-xs font-medium text-text-muted">URL</label>
                         <input
                           type="url"
                           value={draft.url}
@@ -421,7 +688,7 @@ export default function SettingsPage() {
                             }))
                           }
                           placeholder={urlPlaceholder}
-                          className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                       </div>
                     </div>
@@ -429,7 +696,7 @@ export default function SettingsPage() {
                     <div className="mt-3 flex justify-end">
                       <button
                         onClick={() => handleFooterSave(key)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark transition-all"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white hover:bg-primary-dark"
                       >
                         <Save size={13} />
                         저장
@@ -440,8 +707,8 @@ export default function SettingsPage() {
               })}
             </div>
 
-            <p className="text-xs text-text-muted mt-5 p-3 bg-surface-light rounded-lg border border-border">
-              여기에 설정한 표시 이름과 URL은 뉴스레터 미리보기와 복사된 본문 하단에 그대로 반영됩니다.
+            <p className="mt-5 rounded-lg border border-border bg-surface-light p-3 text-xs text-text-muted">
+              여기서 설정한 표시 이름과 URL은 뉴스레터 미리보기와 복사 본문 하단 링크에 반영됩니다.
             </p>
           </div>
         )}
@@ -449,11 +716,11 @@ export default function SettingsPage() {
         {activeSection === 'account' && (
           <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="text-base font-semibold text-text mb-1">비밀번호 변경</h3>
-            <p className="text-sm text-text-muted mb-5">접속 비밀번호를 변경합니다.</p>
+            <p className="text-sm text-text-muted mb-5">로그인 비밀번호를 변경합니다.</p>
 
             <div className="space-y-4 max-w-md">
               <div>
-                <label className="text-sm font-medium text-text mb-1.5 block">현재 비밀번호</label>
+                <label className="mb-1.5 block text-sm font-medium text-text">현재 비밀번호</label>
                 <input
                   type="password"
                   value={currentPw}
@@ -461,12 +728,12 @@ export default function SettingsPage() {
                     setCurrentPw(event.target.value)
                     setPwError('')
                   }}
-                  placeholder="현재 비밀번호를 입력해 주세요"
-                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                  placeholder="현재 비밀번호를 입력해 주세요."
+                  className="w-full rounded-xl border border-border bg-surface-light px-4 py-2.5 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-text mb-1.5 block">새 비밀번호</label>
+                <label className="mb-1.5 block text-sm font-medium text-text">새 비밀번호</label>
                 <input
                   type="password"
                   value={newPw}
@@ -474,12 +741,12 @@ export default function SettingsPage() {
                     setNewPw(event.target.value)
                     setPwError('')
                   }}
-                  placeholder="새 비밀번호를 입력해 주세요"
-                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                  placeholder="새 비밀번호를 입력해 주세요."
+                  className="w-full rounded-xl border border-border bg-surface-light px-4 py-2.5 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-text mb-1.5 block">새 비밀번호 확인</label>
+                <label className="mb-1.5 block text-sm font-medium text-text">새 비밀번호 확인</label>
                 <input
                   type="password"
                   value={confirmPw}
@@ -487,13 +754,13 @@ export default function SettingsPage() {
                     setConfirmPw(event.target.value)
                     setPwError('')
                   }}
-                  placeholder="새 비밀번호를 다시 입력해 주세요"
-                  className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                  placeholder="새 비밀번호를 다시 입력해 주세요."
+                  className="w-full rounded-xl border border-border bg-surface-light px-4 py-2.5 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
               </div>
 
               {pwError && (
-                <div className="flex items-center gap-2 text-danger text-sm">
+                <div className="flex items-center gap-2 text-sm text-danger">
                   <AlertTriangle size={14} />
                   {pwError}
                 </div>
@@ -502,7 +769,7 @@ export default function SettingsPage() {
               <div className="pt-2">
                 <button
                   onClick={handleChangePassword}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-primary/25 transition-all"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-primary-dark px-6 py-2.5 text-sm font-medium text-white hover:shadow-lg hover:shadow-primary/25"
                 >
                   <Save size={16} />
                   저장
@@ -513,81 +780,29 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-text">{modal.name} 계정 연결</h3>
-              <button onClick={() => setModal(null)} className="text-text-muted hover:text-text transition-colors">
+      {infoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <h4 className="text-lg font-semibold text-text">{infoModal.title}</h4>
+              <button
+                onClick={() => setInfoModal(null)}
+                className="rounded-lg p-2 text-text-muted hover:bg-surface-light"
+              >
                 <X size={18} />
               </button>
             </div>
-            <p className="text-sm text-text-muted mb-5">
-              실제 OAuth 연동은 추후 구현 예정입니다. 지금은 테스트용 계정 이름만 입력해 주세요.
-            </p>
-            <div className="mb-4">
-              <label className="text-sm font-medium text-text mb-1.5 block">계정 이름 / 핸들</label>
-              <input
-                type="text"
-                value={modalInput}
-                onChange={(event) => {
-                  setModalInput(event.target.value)
-                  setModalError('')
-                }}
-                placeholder={modal.placeholder}
-                className="w-full bg-surface-light border border-border rounded-xl px-4 py-2.5 text-sm text-text focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                onKeyDown={(event) => event.key === 'Enter' && handleConnect()}
-                autoFocus
-              />
-              {modalError && (
-                <p className="mt-1.5 text-xs text-danger flex items-center gap-1">
-                  <AlertTriangle size={12} />
-                  {modalError}
-                </p>
-              )}
+            <div className="space-y-3 text-sm leading-6 text-text-muted">
+              {infoModal.body.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
             </div>
-            <div className="flex gap-2 justify-end">
+            <div className="mt-6 flex justify-end">
               <button
-                onClick={() => setModal(null)}
-                className="px-4 py-2 rounded-xl text-sm font-medium border border-border text-text-muted hover:bg-surface-light transition-all"
+                onClick={() => setInfoModal(null)}
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
               >
-                취소
-              </button>
-              <button
-                onClick={handleConnect}
-                className="px-5 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-primary to-primary-dark text-white hover:shadow-lg hover:shadow-primary/25 transition-all"
-              >
-                연결하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmDisconnect && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-xl bg-red-50">
-                <AlertTriangle size={20} className="text-red-500" />
-              </div>
-              <h3 className="text-base font-semibold text-text">연결 해제</h3>
-            </div>
-            <p className="text-sm text-text-muted mb-6">
-              {PLATFORMS.find((platform) => platform.key === confirmDisconnect)?.name} 계정을 해제하시겠습니까?
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setConfirmDisconnect(null)}
-                className="px-4 py-2 rounded-xl text-sm font-medium border border-border text-text-muted hover:bg-surface-light transition-all"
-              >
-                취소
-              </button>
-              <button
-                onClick={() => handleDisconnect(confirmDisconnect)}
-                className="px-5 py-2 rounded-xl text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-all"
-              >
-                연결 해제
+                확인
               </button>
             </div>
           </div>
@@ -595,23 +810,24 @@ export default function SettingsPage() {
       )}
 
       {showConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-surface rounded-2xl border border-border p-6 max-w-sm w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2 rounded-xl bg-success/10">
-                <CheckCircle size={20} className="text-success" />
-              </div>
-              <h3 className="text-base font-semibold text-text">비밀번호 변경 완료</h3>
-            </div>
-            <p className="text-sm text-text-muted mb-6">
-              비밀번호가 변경되었습니다. 보안을 위해 새 비밀번호로 다시 로그인해 주세요.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h4 className="text-lg font-semibold text-text mb-2">비밀번호가 변경되었습니다</h4>
+            <p className="text-sm text-text-muted leading-6">
+              보안을 위해 다시 로그인합니다. 확인을 누르면 현재 세션이 종료됩니다.
             </p>
-            <div className="flex justify-end">
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-text hover:bg-surface-light"
+              >
+                나중에
+              </button>
               <button
                 onClick={handleConfirmLogout}
-                className="px-6 py-2.5 bg-gradient-to-r from-primary to-primary-dark text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-primary/25 transition-all"
+                className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
               >
-                확인
+                다시 로그인
               </button>
             </div>
           </div>
