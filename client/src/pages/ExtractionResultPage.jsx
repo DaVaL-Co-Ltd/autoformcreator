@@ -224,7 +224,7 @@ export default function ExtractionResultPage() {
         }
 
         const title = blogTitle || blogContent?.title || ''
-        const content = blogBody || compileBlogBody(ensureArray(blogContent?.sections))
+        const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
         const tags = ensureTagArray(blogContent?.tags).map(t => t.replace(/^#/, ''))
         const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
 
@@ -600,8 +600,15 @@ export default function ExtractionResultPage() {
       const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
       return `${heading}[IMG:${i + 1}]\n${keyPhrase}${content}`
-    }).join('\n\n---\n\n')
+    }).join('\n\n')
   }, [])
+
+  const sanitizeBlogUploadContent = useCallback((content = '') => (
+    String(content || '')
+      .replace(/^\s*---+\s*$/gm, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  ), [])
 
   // blogTitle / blogBody 초기화 (blogContent 로드 시)
   useEffect(() => {
