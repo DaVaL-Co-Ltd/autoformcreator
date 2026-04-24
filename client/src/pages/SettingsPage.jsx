@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -247,7 +247,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void refreshPlatformStatuses()
-  }, [])
+  }, [refreshPlatformStatuses])
 
   useEffect(() => {
     let active = true
@@ -283,7 +283,7 @@ export default function SettingsPage() {
 
   const platformCards = useMemo(() => buildPlatformCards(platformStatuses), [platformStatuses])
 
-  async function refreshPlatformStatuses() {
+  const refreshPlatformStatuses = useCallback(async () => {
     setStatusLoading(true)
     setStatusError('')
 
@@ -300,7 +300,40 @@ export default function SettingsPage() {
     } finally {
       setStatusLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (activeSection !== 'desktop-helper' && activeSection !== 'platforms') {
+      return undefined
+    }
+
+    void refreshPlatformStatuses()
+
+    const handleFocusRefresh = () => {
+      void refreshPlatformStatuses()
+    }
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshPlatformStatuses()
+      }
+    }
+
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshPlatformStatuses()
+      }
+    }, 15000)
+
+    window.addEventListener('focus', handleFocusRefresh)
+    document.addEventListener('visibilitychange', handleVisibilityRefresh)
+
+    return () => {
+      window.clearInterval(refreshInterval)
+      window.removeEventListener('focus', handleFocusRefresh)
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh)
+    }
+  }, [activeSection, refreshPlatformStatuses])
 
   const selectSection = (sectionId) => {
     setActiveSection(sectionId)
