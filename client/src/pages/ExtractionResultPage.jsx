@@ -14,7 +14,11 @@ import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
-import { getAll as getPlatformConnections } from '../utils/platformConnections'
+import {
+  getAll as getPlatformConnections,
+  loadAll as loadPlatformConnections,
+  subscribe as subscribePlatformConnections,
+} from '../utils/platformConnections'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
@@ -129,6 +133,7 @@ export default function ExtractionResultPage() {
   const [blogUploadResult, setBlogUploadResult] = useState(null) // { url } | null
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
+  const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
 
   useEffect(() => {
     const stateData = location.state || null
@@ -176,6 +181,24 @@ export default function ExtractionResultPage() {
 
     return () => { cancelled = true }
   }, [location.state])
+
+  useEffect(() => {
+    let active = true
+
+    ;(async () => {
+      const nextConnections = await loadPlatformConnections()
+      if (active) {
+        setPlatformConnections(nextConnections)
+      }
+    })()
+
+    const unsubscribe = subscribePlatformConnections(setPlatformConnections)
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
 
   const handleUpload = async (channel, options = {}) => {
     setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
@@ -487,11 +510,13 @@ export default function ExtractionResultPage() {
   const {
     blogContent, newsletterContent, instagramContent,
     shortsScript, blogImages: initialBlogImages,
+    instagramImages: initialInstagramImages,
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
   } = state
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
+  const [instagramImages, setInstagramImages] = useState(initialInstagramImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
   const shortsVideoRef = useRef(null)
@@ -502,9 +527,10 @@ export default function ExtractionResultPage() {
   // blogImages / shorts 미디어가 없으면 Supabase에서 불러오기
   useEffect(() => {
     setBlogImages(initialBlogImages || null)
+    setInstagramImages(initialInstagramImages || null)
     setShortsVideo(initialShortsVideo || null)
     setShortsNarration(initialShortsNarration || null)
-  }, [initialBlogImages, initialShortsVideo, initialShortsNarration])
+  }, [initialBlogImages, initialInstagramImages, initialShortsVideo, initialShortsNarration])
 
   // 블로그 이미지 HTML -> PNG 변환
   const convertBlogImagesToPng = useCallback(async () => {
@@ -583,6 +609,43 @@ export default function ExtractionResultPage() {
   // 카드 이미지용 텍스트에서 ** 제거
   const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
 
+  const cleanCardText = (text = '') => (
+    String(text)
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#>*_~`-]/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+
+  const truncateCardText = (text, maxLength = 34) => {
+    const clean = cleanCardText(text)
+    if (clean.length <= maxLength) return clean
+    return `${clean.slice(0, maxLength).trim()}…`
+  }
+
+  const getBlogCardCopy = (section = {}, image = null) => {
+    const heading = cleanCardText(section?.heading || '')
+    const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
+    const headline = truncateCardText(
+      keyPhrase || heading.split(/[:,-]/)[0] || heading,
+      18
+    )
+
+    const descriptionSource = heading && heading !== headline
+      ? heading
+      : cleanCardText(section?.content || '')
+          .split(/[.!?\n]/)
+          .map(line => line.trim())
+          .find(Boolean) || heading
+
+    return {
+      headline,
+      description: truncateCardText(descriptionSource, 34),
+    }
+  }
+
   // 카드 제목을 2줄로 분리 (15자 이상이면 반드시 2줄)
   const splitHeading = (text) => {
     if (!text) return [text]
@@ -627,11 +690,12 @@ export default function ExtractionResultPage() {
     return [text]
   }
 
-  const renderCardHeading = (text, fontSize) => {
+  const renderCardHeading = (text, fontSize, options = {}) => {
     const clean = stripBold(text)
     const lines = splitHeading(clean)
+    const textClassName = options.light ? 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]' : 'text-gray-800 drop-shadow-sm'
     return (
-      <p className="font-black text-gray-800 leading-snug drop-shadow-sm" style={{ fontSize, letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
+      <p className={`font-black leading-snug ${textClassName}`} style={{ fontSize, letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
         {lines.map((line, li) => (
           <span key={li}>
             {li > 0 && <br />}
@@ -768,7 +832,7 @@ export default function ExtractionResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const footerLinks = Object.entries(getPlatformConnections() || {}).map(([key, item]) => {
+  const footerLinks = Object.entries(platformConnections || {}).map(([key, item]) => {
     const meta = footerLinkMeta[key] || {}
     return {
       key,
@@ -967,7 +1031,7 @@ export default function ExtractionResultPage() {
             return ensureArray(blogContent?.sections).map((section, index) => {
               const image = blogImageList[index] || blogImageList.find(img => img?.heading === section.heading)
               const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
-              const keyword = image?.keyPhrase || section.keyPhrase || section.heading
+              const { headline, description } = getBlogCardCopy(section, image)
               const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
               const accentPalette = {
                 'bg-[#FFF3E0]': '#e57a00',
@@ -1023,17 +1087,17 @@ export default function ExtractionResultPage() {
                         <div className="absolute inset-0 bg-black/10" />
                         <div className="absolute inset-0 flex items-center justify-center p-6">
                           <div
-                            className="w-[76%] min-h-[44%] rounded-[28px] bg-white/[0.92] shadow-lg backdrop-blur-sm flex flex-col items-center justify-center text-center px-7 py-8"
+                            className="w-[72%] aspect-square rounded-full bg-white/[0.94] shadow-lg backdrop-blur-sm flex flex-col items-center justify-center text-center px-7 py-7"
                             style={{ wordBreak: 'keep-all' }}
                           >
                             <p
                               className="font-black text-gray-800 leading-snug"
                               style={{ fontSize: 'clamp(22px, 6vw, 30px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}
                             >
-                              {renderHeadingLines(section.heading, '', {})}
+                              {renderHeadingLines(headline, '', {})}
                             </p>
                             <div className="w-10 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
-                            <p className="text-base text-gray-500 font-semibold">{keyword}</p>
+                            <p className="text-sm text-gray-500 font-semibold leading-snug">{description}</p>
                           </div>
                         </div>
                       </div>
@@ -1063,6 +1127,12 @@ export default function ExtractionResultPage() {
   const renderInstagram = () => {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
+    const currentCardNumber = current?.cardNumber || current?.card_number || instaSlide + 1
+    const currentImage = ensureArray(instagramImages).find((image, index) => {
+      const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
+      return imageCardNumber === currentCardNumber
+    }) || ensureArray(instagramImages)[instaSlide]
+    const currentImageUrl = currentImage?.imageUrl || currentImage?.url || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
     const sanitizedSubtitle = stripResultCtaText(current?.subtitle || '')
@@ -1099,23 +1169,34 @@ export default function ExtractionResultPage() {
                   ref={el => instaCardsRef.current[instaSlide] = el}
                   className="aspect-square relative bg-gradient-to-br from-pink-50 via-white to-orange-50"
                 >
+                  {currentImageUrl && (
+                    <>
+                      <img
+                        src={currentImageUrl}
+                        alt={current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-black/28" />
+                    </>
+                  )}
                   <div className="absolute inset-0 p-10 flex flex-col justify-between">
                     <div className="space-y-4">
                       {current?.kicker && (
-                        <span className="inline-flex px-3 py-1 rounded-full bg-pink-500/10 text-pink-500 text-xs font-bold">
+                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}>
                           {current.kicker}
                         </span>
                       )}
-                      {renderCardHeading(current?.title || current?.heading, 34)}
+                      {renderCardHeading(current?.title || current?.heading, 34, { light: Boolean(currentImageUrl) })}
                       {sanitizedSubtitle && (
-                        <p className="text-base text-gray-600 leading-7">{stripBold(sanitizedSubtitle)}</p>
+                        <p className={`text-base leading-7 ${currentImageUrl ? 'text-white/92' : 'text-gray-600'}`}>{stripBold(sanitizedSubtitle)}</p>
                       )}
                     </div>
                     {sanitizedPoints.length > 0 && (
                       <ul className="space-y-3">
                         {sanitizedPoints.map((point, idx) => (
-                          <li key={idx} className="flex items-start gap-3 text-gray-700">
-                            <span className="mt-1 w-2 h-2 rounded-full bg-pink-500 shrink-0" />
+                          <li key={idx} className={`flex items-start gap-3 ${currentImageUrl ? 'text-white/92' : 'text-gray-700'}`}>
+                            <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${currentImageUrl ? 'bg-white/90' : 'bg-pink-500'}`} />
                             <span className="leading-7">{stripBold(point)}</span>
                           </li>
                         ))}

@@ -5,7 +5,11 @@ import {
   ExternalLink, ArrowRight, Upload, CheckCircle, Calendar, TrendingUp, Loader2,
 } from 'lucide-react'
 import { getExtractions } from '../services/storage'
-import { getAll as getPlatformConnections } from '../utils/platformConnections'
+import {
+  getAll as getPlatformConnections,
+  loadAll as loadPlatformConnections,
+  subscribe as subscribePlatformConnections,
+} from '../utils/platformConnections'
 
 const platforms = [
   {
@@ -57,8 +61,14 @@ export default function DashboardPage() {
     const load = async (showSpinner = true) => {
       if (showSpinner) setLoading(true)
       try {
-        const items = await getExtractions()
-        if (!cancelled) setExtractions(items)
+        const [items, nextConnections] = await Promise.all([
+          getExtractions(),
+          loadPlatformConnections(),
+        ])
+        if (!cancelled) {
+          setExtractions(items)
+          setPlatformConnections(nextConnections)
+        }
       } catch {
         if (!cancelled) setExtractions([])
       } finally {
@@ -68,11 +78,12 @@ export default function DashboardPage() {
     load(true)
     const onFocus = () => {
       load(false)
-      setPlatformConnections(getPlatformConnections())
     }
+    const unsubscribePlatformConnections = subscribePlatformConnections(setPlatformConnections)
     window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
+      unsubscribePlatformConnections()
       window.removeEventListener('focus', onFocus)
     }
   }, [])

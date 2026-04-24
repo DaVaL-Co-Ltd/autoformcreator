@@ -29,7 +29,7 @@ import {
   waitForInstagramReconnect,
   waitForYoutubeReconnect,
 } from '../services/platformSessions'
-import { getAll, updateDisplay } from '../utils/platformConnections'
+import { getAll, loadAll as loadPlatformConnections, updateDisplay } from '../utils/platformConnections'
 
 const sections = [
   { id: 'desktop-helper', label: '블로그 서버 설치', icon: MonitorDown },
@@ -249,6 +249,29 @@ export default function SettingsPage() {
     void refreshPlatformStatuses()
   }, [])
 
+  useEffect(() => {
+    let active = true
+
+    ;(async () => {
+      const all = await loadPlatformConnections()
+      if (!active) return
+
+      setFooterDrafts(
+        FOOTER_PLATFORMS.reduce((accumulator, { key }) => {
+          accumulator[key] = {
+            displayName: all[key]?.displayName || '',
+            url: all[key]?.url || '',
+          }
+          return accumulator
+        }, {})
+      )
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   const helperSteps = useMemo(
     () => [
       '설치 파일을 실행하면 사용자 PC에서 helper 프로그램이 실행됩니다.',
@@ -284,9 +307,9 @@ export default function SettingsPage() {
     setSearchParams({ section: sectionId }, { replace: true })
   }
 
-  const handleFooterSave = (key) => {
+  const handleFooterSave = async (key) => {
     const draft = footerDrafts[key]
-    updateDisplay(key, {
+    await updateDisplay(key, {
       displayName: draft.displayName.trim(),
       url: draft.url.trim(),
     })

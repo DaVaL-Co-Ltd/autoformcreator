@@ -424,7 +424,6 @@ export default function ExtractionPage() {
     const firstImage = blogImageList.find(img => img?.imageUrl)
     const image = blogImageList[index] || blogImageList.find(img => img?.heading === section?.heading)
     const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
-    const keyword = image?.keyPhrase || section?.keyPhrase || section?.heading || ''
     const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
     const accentPalette = {
       'bg-[#FFF3E0]': '#e57a00',
@@ -435,16 +434,29 @@ export default function ExtractionPage() {
     const fallbackBg = bgColors[index % bgColors.length]
     const accentColor = accentPalette[fallbackBg] || '#6366f1'
 
-    const headingChunks = String(section?.heading || '')
-      .split(/([,:])\s*/)
-      .reduce((acc, tok) => {
-        if (tok === ',' || tok === ':') {
-          acc[acc.length - 1] += tok
-        } else if (tok) {
-          acc.push(tok)
-        }
-        return acc
-      }, [])
+    const cleanCardText = (text = '') => (
+      String(text)
+        .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/[#>*_~`-]/g, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+    const truncateCardText = (text, maxLength = 34) => {
+      const clean = cleanCardText(text)
+      if (clean.length <= maxLength) return clean
+      return `${clean.slice(0, maxLength).trim()}…`
+    }
+    const heading = cleanCardText(section?.heading || '')
+    const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
+    const headline = truncateCardText(keyPhrase || heading.split(/[:,-]/)[0] || heading, 18)
+    const description = truncateCardText(
+      heading && heading !== headline
+        ? heading
+        : cleanCardText(section?.content || '').split(/[.!?\n]/).map(line => line.trim()).find(Boolean) || heading,
+      34
+    )
 
     if (!bgImageUrl && !section?.heading) return null
 
@@ -462,17 +474,12 @@ export default function ExtractionPage() {
 
         <div className="absolute inset-0 bg-black/10" />
         <div className="absolute inset-0 flex items-center justify-center p-2">
-          <div className="w-[80%] min-h-[46%] rounded-[16px] bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2.5 py-2">
+          <div className="w-[78%] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2.5 py-2">
             <p className="font-black text-gray-800 leading-tight text-[9px]" style={{ letterSpacing: '-0.3px' }}>
-              {headingChunks.map((part, partIndex, arr) => (
-                <span key={partIndex}>
-                  <span style={{ whiteSpace: 'nowrap' }}>{part}</span>
-                  {partIndex < arr.length - 1 ? ' ' : ''}
-                </span>
-              ))}
+              {headline}
             </p>
             <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
-            <p className="text-[8px] text-gray-600 font-semibold leading-tight">{keyword}</p>
+            <p className="text-[7px] text-gray-600 font-semibold leading-tight">{description}</p>
           </div>
         </div>
       </div>
