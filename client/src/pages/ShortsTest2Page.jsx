@@ -199,7 +199,7 @@ export default function ShortsTest2Page() {
 IMPORTANT REQUIREMENTS:
 - Look like a real camera photo, not AI art
 - Ultra realistic skin, fur, hair, feathers, eyes, and natural texture depending on the subject
-- Use authentic photographic detail with natural lighting and realistic shadows
+- Use authentic photographic detail with warm natural window light and realistic indoor shadows
 - 9:16 vertical portrait orientation
 - Medium shot framing, not an extreme close-up
 - Show the head, shoulders, and upper torso or upper body naturally
@@ -207,9 +207,11 @@ IMPORTANT REQUIREMENTS:
 - The subject should stay near the center with comfortable margins around the head and body
 - Mouth clearly visible and slightly open or naturally relaxed so lip movement can read well later
 - Include a realistic environment that naturally matches the subject
+- Prefer a cozy study, desk, bookshelf, notebook, or soft home-office environment with believable real-world props
 - Background should look like a real place captured by a camera, with subtle depth of field
 - Use premium editorial or documentary photography style, not fantasy concept art
-- Avoid fake-looking bokeh, surreal colors, glossy CGI surfaces, plastic skin, or overdesigned AI backgrounds
+- Avoid fake-looking bokeh, surreal colors, glossy CGI surfaces, plastic skin, empty fake backdrops, or overdesigned AI backgrounds
+- The image should feel like a real portrait photo taken in a lived-in room, not a generated showroom
 - Do not crop too tightly on the face
 - No illustration, no 3D render, no painting, no text, no watermark`,
               }],

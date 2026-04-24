@@ -42,7 +42,7 @@ function renderContent(text) {
     }
   }
 
-  lines.forEach((line, i) => {
+  lines.forEach((line) => {
     const trimmed = line.trim()
     if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
       listItems.push(trimmed.slice(2))
@@ -181,9 +181,9 @@ export default function NaverBlogPreview({ content } = {}) {
         {/* 태그 */}
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {tags.map((tag, i) => (
+            {tags.map((tag) => (
               <span
-                key={i}
+                key={tag}
                 className="px-3 py-1 bg-[#E8F9EE] text-[#03C75A] text-xs font-medium rounded-full cursor-pointer hover:bg-[#03C75A] hover:text-white transition-colors"
               >
                 #{tag}

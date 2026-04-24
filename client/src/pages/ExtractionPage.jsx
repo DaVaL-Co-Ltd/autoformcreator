@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Play, Pause, ToggleLeft, ToggleRight, Download,
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, ToggleLeft, ToggleRight, Download,
   Mail
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -57,29 +57,28 @@ const aiServiceInfo = {
 // 데모 모드용 목업 데이터
 const MOCK_DELAY = 800
 
-const mockParsedText = `[데모 모드] 2024년 글로벌 AI 시장 분석 보고서
+const mockParsedText = `[데모 모드] 2026년 디지털 교육 전환 트렌드 보고서
 
-1. 시장 규모
-- 2024년 글로벌 AI 시장 규모: $184.0B (전년 대비 +32.4%)
-- 2030년 예상 시장 규모: $826.7B (CAGR 28.5%)
+1. 교육 현장 도입 현황
+- 초중고 디지털 학습 플랫폼 도입률: 78.4%
+- 대학 및 평생교육기관 LMS 활용률: 83.1%
+- AI 기반 학습 지원 도구 도입 학교 비율: 46.7%
 
-2. 주요 분야별 성장률
-- 생성형 AI: +67.2%
-- 자연어처리(NLP): +41.8%
-- 컴퓨터 비전: +29.3%
-- 로보틱스: +22.1%
+2. 학습 성과 변화
+- 개인화 학습 적용 시 과제 완수율: +26.8%
+- 실시간 피드백 제공 시 학습 지속률: +18.5%
+- AI 튜터 활용 수업 만족도: 91.2점
 
-3. 지역별 시장 점유율
-- 북미: 38.2%
-- 아시아태평양: 31.5%
-- 유럽: 22.8%
-- 기타: 7.5%
+3. 주요 운영 방식
+- 실시간 수업과 비동기 학습 병행: 64.3%
+- 마이크로러닝 콘텐츠 운영: 58.9%
+- 교사 지원형 자동 채점 및 피드백: 42.6%
 
-4. 주요 트렌드
-- 멀티모달 AI 모델의 급부상
-- 엔터프라이즈 AI 도입 가속화
-- AI 규제 프레임워크 구체화
-- 오픈소스 AI 생태계 확대`
+4. 핵심 트렌드
+- AI 기반 맞춤형 학습 경로 추천 확대
+- 짧고 반복 가능한 마이크로러닝 콘텐츠 증가
+- 교사 행정 업무를 줄이는 자동 피드백 도구 확산
+- 온오프라인 혼합형 수업 운영 모델 정착`
 
 const mockVerification = {
   isValid: true,
@@ -89,105 +88,112 @@ const mockVerification = {
 }
 
 const mockSummary = {
-  title: '2024년 글로벌 AI 시장 분석 보고서 요약',
-  summary: '글로벌 AI 시장은 2024년 $184.0B 규모로 전년 대비 32.4% 성장했으며, 2030년까지 $826.7B에 도달할 전망입니다.',
+  title: '2026년 디지털 교육 전환 트렌드 요약',
+  summary: '디지털 교육 전환은 이미 선택이 아니라 기본 운영 방식이 되었고, 개인화 학습과 AI 기반 수업 지원이 교육 성과를 끌어올리는 핵심 축으로 자리 잡고 있습니다.',
   keyData: [
-    { label: '2024 시장 규모', value: '$184.0B', context: '전년 대비 +32.4%' },
-    { label: '2030 예상 규모', value: '$826.7B', context: 'CAGR 28.5%' },
-    { label: '최고 성장 분야', value: '생성형 AI', context: '+67.2% 성장' },
-    { label: '최대 시장', value: '북미 38.2%', context: '아태 31.5% 추격' },
+    { label: '디지털 학습 도입률', value: '78.4%', context: '초중고 기준' },
+    { label: 'LMS 활용률', value: '83.1%', context: '대학 및 평생교육기관' },
+    { label: '과제 완수율 상승', value: '+26.8%', context: '개인화 학습 적용 시' },
+    { label: '수업 만족도', value: '91.2점', context: 'AI 튜터 활용 수업' },
   ],
   insights: [
-    '생성형 AI가 전체 AI 시장 성장을 견인하고 있으며, 67.2%의 최고 성장률을 기록',
-    '아시아태평양 지역이 빠르게 북미를 추격하며 시장 점유율 31.5% 달성',
-    '엔터프라이즈 AI 도입이 가속화되면서 B2B AI 솔루션 수요 급증',
+    '개인화 학습 도입이 학습 완수율을 끌어올리며 교육 성과 개선에 직접 연결되고 있습니다.',
+    'LMS와 마이크로러닝 조합이 온오프라인 혼합형 수업의 기본 모델로 자리 잡고 있습니다.',
+    '교사 지원형 자동 피드백 도구가 행정 부담을 줄이고 수업 집중도를 높이고 있습니다.',
   ],
-  keywords: ['AI 시장', '생성형 AI', 'NLP', '컴퓨터 비전', '엔터프라이즈 AI'],
+  keywords: ['디지털 교육', '에듀테크', 'AI 튜터', '개인화 학습', '마이크로러닝'],
 }
 
 const mockBlogContent = {
-  title: '[데모] 2024 AI 시장 트렌드: $184B 시장의 핵심 인사이트',
-  metaDescription: '2024년 글로벌 AI 시장 분석 - 생성형 AI 67.2% 성장, $826.7B 전망',
+  title: '[데모] 2026 디지털 교육 트렌드: 개인화 학습이 바꾸는 수업 현장',
+  metaDescription: '디지털 교육 전환, LMS 활용, AI 튜터, 마이크로러닝이 만드는 2026 교육 현장 변화',
   sections: [
-    { heading: '시장 개요', content: '2024년 글로벌 AI 시장이 $184.0B를 달성했습니다.', imagePrompt: 'futuristic AI market growth chart' },
-    { heading: '분야별 성장', content: '생성형 AI가 67.2%로 가장 높은 성장률을 기록했습니다.', imagePrompt: 'generative AI technology illustration' },
+    {
+      heading: '디지털 학습은 이제 기본 운영 방식입니다',
+      content: '초중고 디지털 학습 플랫폼 도입률은 78.4%, 대학 및 평생교육기관 LMS 활용률은 83.1%까지 올라가며 디지털 학습이 교육 현장의 기본 운영 방식으로 자리 잡고 있습니다.',
+      imagePrompt: 'modern digital education classroom with tablets and large display',
+    },
+    {
+      heading: '개인화 학습과 AI 튜터가 성과를 끌어올립니다',
+      content: '개인화 학습을 적용한 수업에서는 과제 완수율이 26.8% 상승했고, 실시간 피드백을 제공한 경우 학습 지속률도 18.5% 높아졌습니다. AI 튜터를 활용한 수업 만족도는 91.2점으로 나타났습니다.',
+      imagePrompt: 'AI tutor supporting personalized learning for students',
+    },
   ],
-  tags: ['AI', '생성형AI', '시장분석'],
-  summary: '글로벌 AI 시장 $184.0B 달성, 2030년 $826.7B 전망',
+  tags: ['디지털교육', '에듀테크', 'AI튜터'],
+  summary: '디지털 교육 전환과 개인화 학습이 2026년 교육 현장의 핵심 변화로 자리 잡고 있습니다.',
 }
 
 const mockInstagramContent = {
-  title: '[데모] 2024 AI 시장 핵심 분석',
-  body: '2024년 글로벌 AI 시장이 **$184.0B**를 달성하며 역대 최대 규모를 기록했습니다.\n\n생성형 AI가 **67.2%**의 성장률로 시장을 견인하고 있으며, 2030년까지 **$826.7B**에 도달할 전망입니다.\n\n북미가 38.2%로 최대 시장이지만, 아시아태평양이 31.5%로 빠르게 추격 중입니다.',
-  caption: '📊 2024 글로벌 AI 시장 핵심 분석\n📌 시장 규모 $184B 달성\n🚀 생성형 AI 67.2% 폭발 성장\n🔮 2030년 $826.7B 전망\n\n자세한 내용은 프로필 링크에서 확인하세요!',
-  hashtags: ['#AI', '#인공지능', '#생성형AI', '#시장분석', '#테크트렌드'],
+  title: '[데모] 디지털 교육 핵심 인사이트',
+  body: '2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 전환되고 있습니다.\n\n초중고 디지털 학습 플랫폼 도입률은 **78.4%**, 대학 및 평생교육기관 LMS 활용률은 **83.1%**까지 확대됐습니다.\n\n개인화 학습 적용 시 과제 완수율은 **26.8%**, 실시간 피드백을 제공하면 학습 지속률은 **18.5%** 상승합니다.',
+  caption: '📚 2026 디지털 교육 핵심 인사이트\n✅ 디지털 학습 도입률 78.4%\n✅ LMS 활용률 83.1%\n✅ 개인화 학습 적용 시 과제 완수율 +26.8%\n✅ AI 튜터 수업 만족도 91.2점',
+  hashtags: ['#디지털교육', '#에듀테크', '#AI튜터', '#개인화학습', '#교육트렌드'],
   cardTopics: [
-    { cardNumber: 1, headline: 'AI 시장 $184B', content: '2024년 역대 최대 규모 달성', dataPoint: '$184.0B' },
-    { cardNumber: 2, headline: '생성형 AI 폭발', content: '전년 대비 최고 성장률', dataPoint: '+67.2%' },
-    { cardNumber: 3, headline: '2030년 전망', content: 'AI 시장 초대형 성장 예상', dataPoint: '$826.7B' },
-    { cardNumber: 4, headline: '북미 시장 선도', content: '글로벌 최대 AI 시장', dataPoint: '38.2%' },
-    { cardNumber: 5, headline: '아태 추격', content: '빠른 성장세로 2위 달성', dataPoint: '31.5%' },
-    { cardNumber: 6, headline: '엔터프라이즈 AI', content: 'B2B AI 솔루션 수요 급증', dataPoint: '도입 가속화' },
+    { cardNumber: 1, headline: '디지털 학습 도입', content: '초중고 교육 현장 도입률', dataPoint: '78.4%' },
+    { cardNumber: 2, headline: 'LMS 활용 확대', content: '대학 및 평생교육기관 기준', dataPoint: '83.1%' },
+    { cardNumber: 3, headline: '과제 완수율 상승', content: '개인화 학습 적용 효과', dataPoint: '+26.8%' },
+    { cardNumber: 4, headline: '학습 지속률 상승', content: '실시간 피드백 제공 효과', dataPoint: '+18.5%' },
+    { cardNumber: 5, headline: 'AI 튜터 만족도', content: '학생 체감 만족도', dataPoint: '91.2점' },
+    { cardNumber: 6, headline: '핵심 운영 방식', content: '짧고 반복 가능한 학습 구조', dataPoint: '마이크로러닝' },
   ],
 }
 
 const mockNewsletterContent = {
-  subject: '[데모] 주간 AI 브리핑 - 2024 AI 시장 $184B 돌파',
-  preheader: '생성형 AI 67.2% 성장, 글로벌 시장 분석',
-  greeting: '안녕하세요, AI 트렌드 구독자 여러분!',
-  headline: '2024 AI 시장, 사상 최대 규모 달성',
-  keyPoints: ['시장 규모 $184.0B 달성', '생성형 AI 67.2% 성장', '2030년 $826.7B 전망'],
-  body: '올해 글로벌 AI 시장이 전례 없는 성장을 기록했습니다.\n\n특히 생성형 AI가 67.2%의 폭발적 성장률을 보이며 시장 전체를 견인하고 있으며, 북미와 아시아태평양이 글로벌 시장의 70% 이상을 차지하고 있습니다.\n\n엔터프라이즈 AI 도입이 가속화되면서 향후 6년간 연평균 28.5%의 고성장이 예상됩니다.',
+  subject: '[데모] 주간 교육 브리핑 - 디지털 학습 도입률 78.4%',
+  preheader: '개인화 학습과 AI 튜터가 바꾸는 2026 교육 현장',
+  greeting: '안녕하세요, 교육 트렌드 구독자 여러분!',
+  headline: '2026 디지털 교육 전환, 무엇이 달라졌을까요?',
+  keyPoints: ['디지털 학습 도입률 78.4%', 'LMS 활용률 83.1%', '개인화 학습 시 과제 완수율 +26.8%'],
+  body: '2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 재편되고 있습니다.\n\n초중고의 디지털 학습 플랫폼 도입률은 78.4%, 대학 및 평생교육기관의 LMS 활용률은 83.1%까지 확대됐습니다.\n\n특히 개인화 학습과 AI 튜터를 활용한 수업은 학습 성과와 만족도를 동시에 높이며, 교육 운영의 표준 모델로 자리 잡고 있습니다.',
   dataHighlights: [
-    { label: '2024 시장 규모', value: '$184.0B' },
-    { label: '2030 예상 규모', value: '$826.7B' },
-    { label: '생성형 AI 성장률', value: '+67.2%' },
-    { label: '북미 점유율', value: '38.2%' },
+    { label: '디지털 학습 도입률', value: '78.4%' },
+    { label: 'LMS 활용률', value: '83.1%' },
+    { label: '과제 완수율 상승', value: '+26.8%' },
+    { label: 'AI 튜터 만족도', value: '91.2점' },
   ],
-  cta: { text: '전체 리포트 보기', description: '상세 데이터는 링크에서 확인하세요' },
-  closingNote: '다음 주에도 유용한 AI 인사이트로 찾아뵙겠습니다. 감사합니다!',
+  cta: { text: '교육 인사이트 확인', description: '이번 주 핵심 데이터를 한눈에 정리했습니다.' },
+  closingNote: '다음 브리핑에서도 교육 현장의 실질적인 변화와 인사이트를 전해드리겠습니다.',
 }
 
 const mockShortsScript = {
-  title: '[데모] 2024 AI 시장 핵심 분석',
+  title: '[데모] 디지털 교육 핵심 트렌드',
   duration: '30',
-  hook: '여러분, AI 시장이 올해 얼마나 커졌는지 아세요?',
+  hook: '요즘 교육 현장에서 가장 빠르게 바뀌는 건 무엇일까요?',
   scenes: [
-    { sceneNumber: 1, duration: '8', narration: '안녕하세요. 오늘은 2024년 글로벌 AI 시장의 핵심 트렌드를 분석해보겠습니다.', visualDescription: 'intro scene', textOverlay: '2024 AI 시장 분석' },
-    { sceneNumber: 2, duration: '8', narration: '올해 글로벌 AI 시장은 184조 원을 돌파하며 역대 최대 규모를 기록했습니다.', visualDescription: 'market size reveal', textOverlay: '$184.0B 달성' },
-    { sceneNumber: 3, duration: '8', narration: '특히 생성형 AI가 전년 대비 67퍼센트 성장하면서 전체 시장을 이끌고 있습니다.', visualDescription: 'growth chart', textOverlay: '생성형 AI +67%' },
-    { sceneNumber: 4, duration: '6', narration: '전문가들은 2030년까지 AI 시장이 826조 원에 달할 것으로 전망하고 있습니다. 더 자세한 분석은 프로필 링크에서 확인하세요.', visualDescription: 'future prediction', textOverlay: '2030년 $826.7B' },
+    { sceneNumber: 1, duration: '8', narration: '안녕하세요. 오늘은 2026년 디지털 교육 전환의 핵심 흐름을 빠르게 정리해보겠습니다.', visualDescription: 'digital education intro scene', textOverlay: '2026 디지털 교육' },
+    { sceneNumber: 2, duration: '8', narration: '초중고 디지털 학습 플랫폼 도입률은 78.4퍼센트, 대학과 평생교육기관의 LMS 활용률은 83.1퍼센트까지 확대됐습니다.', visualDescription: 'students using digital learning platform', textOverlay: '도입률 78.4%' },
+    { sceneNumber: 3, duration: '8', narration: '개인화 학습을 적용하면 과제 완수율이 26.8퍼센트 상승하고, 실시간 피드백은 학습 지속률을 18.5퍼센트 높입니다.', visualDescription: 'personalized learning analytics', textOverlay: '완수율 +26.8%' },
+    { sceneNumber: 4, duration: '6', narration: 'AI 튜터와 마이크로러닝이 교육 현장의 기본 포맷이 되고 있습니다. 지금은 디지털 교육 운영 전략이 경쟁력입니다.', visualDescription: 'AI tutor in modern classroom', textOverlay: 'AI 튜터 & 마이크로러닝' },
   ],
-  cta: '프로필 링크에서 전체 리포트를 확인하세요!',
-  thumbnailPrompt: 'AI market growth analysis thumbnail',
-  uploadTitle: '[2024 AI 리포트] 시장 184조 돌파, 생성형 AI가 전부 가져갔다',
-  uploadDescription: `올해 글로벌 AI 시장이 184조 원을 돌파하며 역대 최대 규모를 달성했습니다.
+  cta: '디지털 교육 전략을 점검하고 수업 운영 방식을 다시 설계해보세요.',
+  thumbnailPrompt: 'digital education trend analysis thumbnail',
+  uploadTitle: '[디지털 교육 리포트] 2026 교육 현장은 어떻게 바뀌고 있을까?',
+  uploadDescription: `2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 전환되고 있습니다.
 
-특히 주목할 점은 생성형 AI의 폭발적 성장. 전년 대비 67% 성장하며 전체 시장을 견인하고 있습니다.
+핵심은 디지털 학습 플랫폼, LMS, AI 튜터, 마이크로러닝의 조합입니다.
 
 📊 핵심 수치
-• 2024년 시장 규모: $184.0B (+32.4%)
-• 생성형 AI 성장률: +67.2%
-• 2030년 전망: $826.7B (CAGR 28.5%)
+• 디지털 학습 도입률: 78.4%
+• LMS 활용률: 83.1%
+• 개인화 학습 적용 시 과제 완수율: +26.8%
+• AI 튜터 수업 만족도: 91.2점
 
-전문가들은 2030년까지 826조 원 규모로 확대될 것으로 예측합니다.
-
-더 자세한 분석과 인사이트는 프로필 링크에서 전체 리포트를 확인하세요!`,
-  hashtags: ['#Shorts', '#AI시장', '#생성형AI', '#AI', '#테크', '#테크트렌드', '#2024AI', '#시장분석', '#스타트업', '#AI투자'],
+교육 운영 효율과 학습 성과를 동시에 높이는 구조가 이미 현장에 자리 잡고 있습니다.`,
+  hashtags: ['#Shorts', '#디지털교육', '#에듀테크', '#AI튜터', '#개인화학습', '#교육트렌드', '#마이크로러닝', '#교육콘텐츠'],
 }
 
 const mockBlogImages = [
-  { imageUrl: 'https://placehold.co/800x400/6366f1/white?text=Blog+Image+1', prompt: 'AI market' },
-  { imageUrl: 'https://placehold.co/800x400/8b5cf6/white?text=Blog+Image+2', prompt: 'generative AI' },
+  { imageUrl: 'https://placehold.co/800x400/6366f1/white?text=Blog+Image+1', prompt: 'digital education classroom' },
+  { imageUrl: 'https://placehold.co/800x400/8b5cf6/white?text=Blog+Image+2', prompt: 'AI tutor and personalized learning' },
 ]
 
 const mockInstagramImages = [
-  { cardNumber: 1, imageUrl: 'https://placehold.co/1080x1080/6366f1/white?text=Card+1', prompt: 'AI market' },
-  { cardNumber: 2, imageUrl: 'https://placehold.co/1080x1080/8b5cf6/white?text=Card+2', prompt: 'growth' },
-  { cardNumber: 3, imageUrl: 'https://placehold.co/1080x1080/a855f7/white?text=Card+3', prompt: 'future' },
-  { cardNumber: 4, imageUrl: 'https://placehold.co/1080x1080/ec4899/white?text=Card+4', prompt: 'north america' },
-  { cardNumber: 5, imageUrl: 'https://placehold.co/1080x1080/f59e0b/white?text=Card+5', prompt: 'asia pacific' },
-  { cardNumber: 6, imageUrl: 'https://placehold.co/1080x1080/10b981/white?text=Card+6', prompt: 'enterprise' },
+  { cardNumber: 1, imageUrl: 'https://placehold.co/1080x1080/6366f1/white?text=Card+1', prompt: 'digital learning adoption' },
+  { cardNumber: 2, imageUrl: 'https://placehold.co/1080x1080/8b5cf6/white?text=Card+2', prompt: 'LMS usage in education' },
+  { cardNumber: 3, imageUrl: 'https://placehold.co/1080x1080/a855f7/white?text=Card+3', prompt: 'personalized learning improvement' },
+  { cardNumber: 4, imageUrl: 'https://placehold.co/1080x1080/ec4899/white?text=Card+4', prompt: 'real-time feedback in classroom' },
+  { cardNumber: 5, imageUrl: 'https://placehold.co/1080x1080/f59e0b/white?text=Card+5', prompt: 'AI tutor classroom' },
+  { cardNumber: 6, imageUrl: 'https://placehold.co/1080x1080/10b981/white?text=Card+6', prompt: 'microlearning education content' },
 ]
 
 const mockShortsVideo = {
@@ -307,14 +313,12 @@ export default function ExtractionPage() {
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
   const [demoMode, setDemoMode] = useState(true)
-  const [emphasisText, setEmphasisText] = useState('')
-  const [emphasisConfirmed, setEmphasisConfirmed] = useState(false)
+  const [emphasisText] = useState('')
   const [editingText, setEditingText] = useState(false)
   const [showParsedText, setShowParsedText] = useState(false)
   const [showSummaryDetail, setShowSummaryDetail] = useState(false)
   const [editedText, setEditedText] = useState('')
   const [fixingIssues, setFixingIssues] = useState(false)
-  const abortRef = useRef(null)
 
   // Popup states
   const [errorAlert, setErrorAlert] = useState(null)
@@ -325,16 +329,15 @@ export default function ExtractionPage() {
   const [shortsTab, setShortsTab] = useState('script') // 'script' | 'upload'
 
   // 프롬프트 설정 (각 Step별)
-  const [promptOpen, setPromptOpen] = useState({})
   const [promptSettings, setPromptSettings] = useState({
     analysis: { focus: '', extra: '' },
     summary: { keywords: '', style: 'auto', extra: '' },
     content: { tone: 'auto', commonExtra: '', blogExtra: '', newsletterExtra: '', instaExtra: '', shortsExtra: '' },
     media: { imageStyle: 'pastel', mainColor: 'auto', extra: '' },
-    shorts: { videoStyle: 'avatar', narrationTone: 'auto', extra: '' },
+    shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '' },
   })
-  const togglePrompt = (step) => setPromptOpen(p => ({ ...p, [step]: !p[step] }))
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
+  const contentPromptOptions = promptSettings.content
 
   // Data states
   const [parsedText, setParsedText] = useState('')
@@ -352,21 +355,21 @@ export default function ExtractionPage() {
   const [avatarPrompt, setAvatarPrompt] = useState('')
   const [avatarImage, setAvatarImage] = useState(null) // data:image URL
   const [avatarConfirmed, setAvatarConfirmed] = useState(false)
-  const [selectedVoice, setSelectedVoice] = useState(null)
   const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id
   const [heygenReady, setHeygenReady] = useState(false)
   const [heygenUploading, setHeygenUploading] = useState(false)
-  const [shortsGenerationMode, setShortsGenerationMode] = useState('recommended')
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
   const [subtitleFont, setSubtitleFont] = useState('default')
-  const showDirectVoiceStep = shortsGenerationMode === 'direct_voice'
   const shortsStepNumbers = {
-    mode: 0,
     avatar: 1,
-    voice: 2,
-    subtitle: showDirectVoiceStep ? 3 : 2,
-    video: showDirectVoiceStep ? 4 : 3,
+    subtitle: 2,
+    video: 3,
   }
+  const isShortsVideoReady =
+    !!avatarConfirmed &&
+    !!shortsScript &&
+    !loading.shorts &&
+    !loading.media
 
 
   // step 4까지 실행 완료 여부
@@ -414,6 +417,66 @@ export default function ExtractionPage() {
     if (step <= 3) clearStepErrors('content')
     if (step <= 4) clearStepErrors('media')
     if (step <= 5) clearStepErrors('shorts')
+  }
+
+  const renderBlogPreviewCard = (section, index) => {
+    const blogImageList = Array.isArray(blogImages) ? blogImages : []
+    const firstImage = blogImageList.find(img => img?.imageUrl)
+    const image = blogImageList[index] || blogImageList.find(img => img?.heading === section?.heading)
+    const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
+    const keyword = image?.keyPhrase || section?.keyPhrase || section?.heading || ''
+    const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
+    const accentPalette = {
+      'bg-[#FFF3E0]': '#e57a00',
+      'bg-[#E8F5E9]': '#2e7d32',
+      'bg-[#E3F2FD]': '#1565c0',
+      'bg-[#F3E5F5]': '#7b1fa2',
+    }
+    const fallbackBg = bgColors[index % bgColors.length]
+    const accentColor = accentPalette[fallbackBg] || '#6366f1'
+
+    const headingChunks = String(section?.heading || '')
+      .split(/([,:])\s*/)
+      .reduce((acc, tok) => {
+        if (tok === ',' || tok === ':') {
+          acc[acc.length - 1] += tok
+        } else if (tok) {
+          acc.push(tok)
+        }
+        return acc
+      }, [])
+
+    if (!bgImageUrl && !section?.heading) return null
+
+    return (
+      <div
+        key={`${section?.heading || 'blog'}-${index}`}
+        className="shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light relative shadow-sm"
+        style={{ fontFamily: "'Pretendard', sans-serif" }}
+      >
+        {bgImageUrl ? (
+          <img src={bgImageUrl} alt={section?.heading || `블로그 이미지 ${index + 1}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
+        ) : (
+          <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
+        )}
+
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="absolute inset-0 flex items-center justify-center p-2">
+          <div className="w-[80%] min-h-[46%] rounded-[16px] bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2.5 py-2">
+            <p className="font-black text-gray-800 leading-tight text-[9px]" style={{ letterSpacing: '-0.3px' }}>
+              {headingChunks.map((part, partIndex, arr) => (
+                <span key={partIndex}>
+                  <span style={{ whiteSpace: 'nowrap' }}>{part}</span>
+                  {partIndex < arr.length - 1 ? ' ' : ''}
+                </span>
+              ))}
+            </p>
+            <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
+            <p className="text-[8px] text-gray-600 font-semibold leading-tight">{keyword}</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const handleFile = (f) => {
@@ -532,12 +595,6 @@ export default function ExtractionPage() {
     }
   }
 
-  // Step 2 내 핵심 요약 재시도 (버튼에서 호출)
-  const runSummary = async () => {
-    resetFromStep(2)
-    await runSummaryWith(parsedText)
-  }
-
   // Step 3: 콘텐츠 생성
   const runContentGeneration = async () => {
     setStepLoading('content', true)
@@ -630,7 +687,7 @@ export default function ExtractionPage() {
 
     setRetrying('content-all')
     try {
-      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText)
+      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText, contentPromptOptions)
 
       const newErrors = []
       for (const key of failedKeys) {
@@ -691,7 +748,7 @@ export default function ExtractionPage() {
 
     setRetrying(`${err.service}-${err.channel}`)
     try {
-      const results = await retryFailedChannels([key], summary, parsedText, emphasisText)
+      const results = await retryFailedChannels([key], summary, parsedText, emphasisText, contentPromptOptions)
       if (results[key]) {
         keyToSetter[key](results[key])
         removeStepError('content', err.service, err.channel)
@@ -715,10 +772,10 @@ export default function ExtractionPage() {
   const regenerateChannel = async (channelKey) => {
     const mockMap = { blog: mockBlogContent, newsletter: mockNewsletterContent, instagram: mockInstagramContent, shorts: mockShortsScript }
     const fnMap = {
-      blog: () => generateBlogContent(summary, parsedText, emphasisText),
-      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText),
-      instagram: () => generateInstagramContent(summary, parsedText, emphasisText),
-      shorts: () => generateShortsScript(summary, parsedText, emphasisText),
+      blog: () => generateBlogContent(summary, parsedText, emphasisText, contentPromptOptions),
+      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText, contentPromptOptions),
+      instagram: () => generateInstagramContent(summary, parsedText, emphasisText, contentPromptOptions),
+      shorts: () => generateShortsScript(summary, parsedText, emphasisText, contentPromptOptions),
     }
     const setter = keyToSetter[channelKey]
     if (!setter) return
@@ -800,8 +857,6 @@ export default function ExtractionPage() {
     setHeygenAvatarId(null)
     setHeygenReady(false)
     setHeygenUploading(false)
-    setSelectedVoice(null)
-    setRecommendedVoices([])
     setShortsVideo(null)
     try {
       const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
@@ -819,24 +874,33 @@ IMPORTANT REQUIREMENTS:
 - Ultra realistic skin, fur, hair, feathers, eyes, and natural texture depending on the subject
 - Character or animal facing toward the camera in a natural way
 - Mouth CLEARLY VISIBLE and slightly open or naturally relaxed so lip movement can read well later
-- Bright, warm, natural lighting with realistic shadows
+- Bright, warm natural window light with realistic indoor shadows
 - Subject sitting or standing naturally in a believable real-world environment
 - Full upper body or upper torso visible, never an extreme close-up
 - The scene should look like a real photograph, NOT a painting, render, or illustration
+- The image should feel like a candid editorial portrait taken in a cozy, lived-in study or home office
+- Use authentic environmental details such as a desk, notebooks, bookshelves, stationery, or soft home interior elements
+- Background should look like a real place a human photographer captured, not a generated fantasy set
 
 COMPOSITION:
 - 9:16 VERTICAL portrait orientation
+- The final image must be composed specifically for a 9:16 mobile vertical frame (like 1080x1920)
+- Do not center-compose for square or landscape crops; compose for full-height vertical viewing only
 - Subject occupies about 40-50% of the frame
 - Face is well-lit and clearly visible
+- Keep enough headroom and torso room so the subject reads cleanly in a tall vertical crop
 - Background has real context but is not distracting
 - Include a tasteful, realistic background that fits the subject and feels naturally photographed
-- Use subtle depth of field only if it still looks real and not overly artificial
+- Use subtle depth of field like a real portrait lens, but keep nearby objects believable and grounded
+- Prefer a composition similar to a realistic subject seated at a desk in front of bookshelves or a softly lit room, with natural object placement and no empty fake backdrop
 
 DO NOT:
+- Do not generate square, wide, or ambiguous aspect-ratio compositions
 - Use cartoon, anime, 3D render, or illustration style
 - Generate extreme close-ups (face only)
 - Place objects near or covering the mouth
-- Use surreal lighting, glossy CGI textures, fake studio backdrops, or obviously AI-looking scenery
+- Use surreal lighting, glossy CGI textures, fake studio backdrops, empty seamless backgrounds, or obviously AI-looking scenery
+- Avoid exaggerated bokeh, fake cinematic haze, plastic fur or skin, or unnatural prop placement
 - Include any text or watermarks` }] }],
             generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
           }),
@@ -954,213 +1018,6 @@ DO NOT:
     }
   }
 
-  const confirmAndUploadAvatarLegacy = async () => {
-    setAvatarConfirmed(true)
-    setHeygenAvatarId(null)
-    setHeygenReady(false)
-    if (!avatarImage) return
-    try {
-      // 테스트용: 서버에서 성공한 이미지를 업로드하고 기존 아바타가 있으면 재사용
-      const match = avatarImage.match(/^data:([^;]+);base64,(.+)$/)
-      if (!match) throw new Error('아바타 이미지 형식이 올바르지 않습니다.')
-
-      const [, mimeType, base64] = match
-      // 기존 아바타 없으면 성공한 이미지로 새로 생성
-      const uploadRes = await apiFetch('/api/heygen/upload-asset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, mimeType }),
-      })
-      if (!uploadRes.ok) throw new Error('업로드 실패')
-      const uploadData = await readApiResponse(uploadRes)
-      if (!uploadRes.ok) throw new Error(getApiErrorMessage(uploadData, `아바타 업로드 실패 (${uploadRes.status})`))
-      const imageKey = uploadData.data?.image_key
-      if (!imageKey) throw new Error('image_key 없음')
-      const groupRes = await apiFetch('/api/heygen/avatar-group/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
-      })
-      if (!groupRes.ok) throw new Error('Group 생성 실패')
-      const groupData = await readApiResponse(groupRes)
-      if (!groupRes.ok) throw new Error(getApiErrorMessage(groupData, `아바타 등록 실패 (${groupRes.status})`))
-      const groupId = groupData.data?.group_id
-      if (!groupId) throw new Error('group_id 없음')
-      setHeygenAvatarId(groupId)
-      // 폴링으로 준비 확인 (10초 간격, 최대 3분)
-      for (let i = 0; i < 18; i++) {
-        await new Promise(r => setTimeout(r, 10000))
-        try {
-          const statusRes = await apiFetch(`/api/heygen/avatar-status/${groupId}`)
-          if (statusRes.ok) {
-            const statusData = await readApiResponse(statusRes)
-            if (statusData.ready) { setHeygenReady(true); setHeygenUploading(false); return }
-          }
-        } catch { /* 계속 폴링 */ }
-      }
-      setHeygenReady(true)
-    } catch (err) {
-      console.error('[HeyGen 업로드 실패]', err.message)
-      addStepErrors('shorts', [{ service: 'heygen', channel: '아바타 업로드', message: err.message || 'HeyGen 업로드 실패' }])
-    }
-    setHeygenUploading(false)
-  }
-
-  // Step 5-3: 숏폼 영상 생성 (HeyGen)
-  const runShortsGenerationLegacy = async () => {
-    if (!shortsScript) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: '숏폼 대본이 없습니다.' }])
-      return
-    }
-
-    // 데모 모드: HeyGen 호출 없이 샘플 영상 사용 (크레딧 절약)
-    if (demoMode) {
-      setStepLoading('shorts', true)
-      clearStepErrors('shorts')
-      setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
-      await delay(MOCK_DELAY)
-      setShortsVideo(mockShortsVideo)
-      setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
-      setStepLoading('shorts', false)
-      return
-    }
-
-    if (!avatarImage) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼', message: '아바타를 먼저 생성해주세요.' }])
-      return
-    }
-    setStepLoading('shorts', true)
-    clearStepErrors('shorts')
-    setMediaItemLoading(p => ({ ...p, '숏폼 영상': true }))
-    try {
-      let talkingPhotoId = heygenAvatarId
-
-      // 백그라운드 업로드가 안 되었으면 여기서 실행
-      if (!talkingPhotoId) {
-        const avatarBase64 = avatarImage.split(',')[1]
-        const binaryStr = atob(avatarBase64)
-        const bytes = new Uint8Array(binaryStr.length)
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
-        const blob = new Blob([bytes], { type: 'image/png' })
-
-        const uploadRes = await fetch('/api/heygen/upload-asset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'image/png' },
-          body: blob,
-        })
-        if (!uploadRes.ok) throw new Error('HeyGen 이미지 업로드 실패')
-        const uploadData = await uploadRes.json()
-        const imageKey = uploadData.data?.image_key
-        if (!imageKey) throw new Error('image_key를 받지 못했습니다.')
-
-        const groupRes = await fetch('/api/heygen/avatar-group/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: `avatar_${Date.now()}`, image_key: imageKey }),
-        })
-        if (!groupRes.ok) {
-          const groupErr = await groupRes.json().catch(() => ({}))
-          throw new Error(groupErr.error?.message || groupErr.message || `Avatar Group 생성 실패: ${groupRes.status}`)
-        }
-        const groupData = await groupRes.json()
-        talkingPhotoId = groupData.data?.group_id
-        if (!talkingPhotoId) throw new Error('talking_photo_id를 받지 못했습니다.')
-        setHeygenAvatarId(talkingPhotoId)
-      }
-
-      // fallback 업로드 시 폴링 대기
-      if (!heygenReady) {
-        setMediaItemLoading(p => ({ ...p, '숏폼 영상': '아바타 준비 확인 중...' }))
-        for (let i = 0; i < 36; i++) {
-          await new Promise(r => setTimeout(r, 5000))
-          try {
-            const statusRes = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`)
-            if (statusRes.ok) {
-              const statusData = await statusRes.json()
-              if (statusData.ready) break
-            }
-          } catch { /* 계속 폴링 */ }
-        }
-      }
-
-      // 3) 나레이션 텍스트 (대본의 나레이션 합치기)
-      const narrationText = shortsScript.scenes?.map(s => s.narration).join(' ') || ''
-
-      // 4) HeyGen v2 Video Generate 요청 (Avatar III) - 실패 시 30초 대기 후 재시도 (최대 3회)
-      let videoId = null
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const generateRes = await fetch('/api/heygen/video/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_inputs: [{
-              character: {
-                type: 'talking_photo',
-                talking_photo_id: talkingPhotoId,
-              },
-              voice: {
-                type: 'text',
-                input_text: narrationText,
-                voice_id: selectedVoice || undefined,
-              },
-            }],
-            dimension: { width: 1080, height: 1920 },
-            caption: true,
-          }),
-        })
-        const genData = await generateRes.json().catch(() => ({}))
-        if (generateRes.ok && genData.data?.video_id) {
-          videoId = genData.data.video_id
-          break
-        }
-        const errMsg = genData.error?.message || genData.message || ''
-        if (errMsg.includes('unlimited mode') && attempt < 2) {
-          setMediaItemLoading(p => ({ ...p, '숏폼 영상': `아바타 준비 대기 중... (${attempt + 1}/3)` }))
-          for (let j = 0; j < 6; j++) {
-            await new Promise(r => setTimeout(r, 5000))
-            try {
-              const sr = await fetch(`/api/heygen/avatar-status/${talkingPhotoId}`)
-              if (sr.ok && (await sr.json()).ready) break
-            } catch { /* 계속 */ }
-          }
-          continue
-        }
-        throw new Error(errMsg || `HeyGen 오류: ${generateRes.status}`)
-      }
-      if (!videoId) throw new Error('HeyGen video_id를 받지 못했습니다.')
-
-      // 4) 폴링 (최대 10분)
-      setMediaItemLoading(p => ({ ...p, '숏폼 영상': 'polling' }))
-      let videoCompleted = false
-      for (let i = 0; i < 120; i++) {
-        await new Promise(r => setTimeout(r, 5000))
-        const pollRes = await fetch(`/api/heygen/video/status/${videoId}`)
-        if (!pollRes.ok) continue
-        const pollData = await pollRes.json()
-        const status = pollData.data?.status
-        if (status === 'completed') {
-          const videoUrl = pollData.data?.video_url
-          setShortsVideo({ url: videoUrl, duration: shortsScript.duration, videoId })
-          videoCompleted = true
-          break
-        }
-        if (status === 'failed') {
-          const errDetail = pollData.data?.error
-          const errMsg = typeof errDetail === 'object' ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail)) : (errDetail || '알 수 없는 오류')
-          throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
-        }
-      }
-      if (!videoCompleted) {
-        throw new Error('HeyGen 영상 생성 시간 초과 (10분)')
-      }
-    } catch (err) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏폼 영상', message: err.message || '숏폼 생성 실패' }])
-      showErrorAlert('숏폼 생성', err.message)
-    }
-    setMediaItemLoading(p => ({ ...p, '숏폼 영상': false }))
-    setStepLoading('shorts', false)
-  }
-
   const confirmAndUploadAvatar = async () => {
     setAvatarConfirmed(true)
     setHeygenAvatarId(null)
@@ -1193,11 +1050,6 @@ DO NOT:
       return
     }
 
-    if (shortsGenerationMode === 'direct_voice' && !selectedVoice) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '목소리를 먼저 선택해주세요.' }])
-      return
-    }
-
     setStepLoading('shorts', true)
     clearStepErrors('shorts')
     setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': true }))
@@ -1214,129 +1066,22 @@ DO NOT:
         throw new Error('HeyGen 아바타가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
       }
 
-      if (shortsGenerationMode === 'direct_voice') {
-        const narrationText = shortsScript.scenes?.map((scene) => scene.narration).join(' ') || ''
-        setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': '선택한 목소리로 HeyGen 영상 생성 중...' }))
-
-        const generateRes = await apiFetch('/api/heygen/video/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_inputs: [{
-              character: {
-                type: 'talking_photo',
-                talking_photo_id: talkingPhotoId,
-              },
-              voice: {
-                type: 'text',
-                input_text: narrationText,
-                voice_id: selectedVoice,
-              },
-            }],
-            dimension: { width: 1080, height: 1920 },
-            caption: true,
-          }),
-        })
-        const generateData = await readApiResponse(generateRes)
-        if (!generateRes.ok) {
-          throw new Error(getApiErrorMessage(generateData, `HeyGen 영상 생성 요청 실패 (${generateRes.status})`))
-        }
-
-        const videoId =
-          generateData.data?.video_id ||
-          generateData.data?.id ||
-          generateData.video_id ||
-          generateData.id
-
-        if (!videoId) {
-          throw new Error('HeyGen video_id를 받지 못했습니다.')
-        }
-
-        let finalVideo = null
-        for (let i = 0; i < 240; i++) {
-          await delay(5000)
-
-          const pollRes = await apiFetch(`/api/heygen/video/status/${videoId}`)
-          const pollData = await readApiResponse(pollRes)
-          if (!pollRes.ok) continue
-
-          const status = pollData.data?.status
-          if (status === 'completed') {
-            const rawUrl = pollData.data?.video_url
-            if (!rawUrl) {
-              throw new Error('HeyGen 영상 URL이 없습니다.')
-            }
-
-            let finalUrl = rawUrl
-            let srtUrl = null
-
-            try {
-              const burnRes = await apiFetch('/api/subtitle/burn', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  videoUrl: rawUrl,
-                  scenes: shortsScript.scenes,
-                  subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
-                  subtitleFont,
-                }),
-              })
-              const burnData = await readApiResponse(burnRes)
-              if (burnRes.ok && burnData.url) {
-                finalUrl = burnData.url
-                srtUrl = burnData.srtUrl || null
-              }
-            } catch (burnErr) {
-              console.warn('[subtitle burn fallback]', burnErr)
-            }
-
-            finalVideo = {
-              url: finalUrl,
-              rawUrl,
-              srtUrl,
-              duration: shortsScript.duration,
-              videoId,
-              mode: 'direct_voice',
-            }
-            break
-          }
-
-          if (status === 'failed') {
-            const errDetail = pollData.data?.error
-            const errMsg =
-              typeof errDetail === 'object'
-                ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail))
-                : (errDetail || pollData.data?.error_message || '알 수 없는 오류')
-            throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
-          }
-        }
-
-        if (!finalVideo) {
-          throw new Error('HeyGen 영상 생성 시간 초과 (20분)')
-        }
-
-        setShortsVideo(finalVideo)
-        return
-      }
-
-      const selectedVoiceMeta =
-        allKoVoices.find((voice) => voice.voice_id === selectedVoice) ||
-        recommendedVoices.find((voice) => voice.voice_id === selectedVoice) ||
-        null
-
       const prompt = buildShortsVideoAgentPrompt({
+
         script: shortsScript,
         avatar: {
           id: talkingPhotoId,
           kind: 'talking_photo',
           name: avatarPrompt?.trim() || 'custom avatar',
+          subjectPrompt: avatarPrompt?.trim() || '',
         },
-        voice: selectedVoiceMeta,
+
         subtitleStyle,
         subtitleFont,
         extraPrompt: promptSettings.shorts.extra,
         videoStyle: promptSettings.shorts.videoStyle,
         narrationTone: promptSettings.shorts.narrationTone,
+        voiceStyle: promptSettings.shorts.voiceStyle,
       })
 
       setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': 'HeyGen Video Agent 생성 요청 중...' }))
@@ -1442,124 +1187,6 @@ DO NOT:
     setStepLoading('shorts', false)
   }
 
-  const [allKoVoices, setAllKoVoices] = useState([]) // 전체 한국어 지원 voice
-  const [recommendedVoices, setRecommendedVoices] = useState([]) // AI 추천 voice
-  const [voicesLoading, setVoicesLoading] = useState(false)
-  const [voicesError, setVoicesError] = useState(null)
-  const [voiceFilter, setVoiceFilter] = useState('')
-  const [playingVoice, setPlayingVoice] = useState(null)
-  const previewAudioRef = useRef(null)
-  const voicesFetched = useRef(false)
-
-  // voice 목록 로드 (1회)
-  useEffect(() => {
-    if (voicesFetched.current) return
-    voicesFetched.current = true
-    setVoicesLoading(true)
-    apiFetch('/api/heygen/voices')
-      .then(async (response) => {
-        const data = await readApiResponse(response)
-        if (!response.ok) {
-          throw new Error(getApiErrorMessage(data, `HeyGen voice 목록 조회 실패 (${response.status})`))
-        }
-        return data
-      })
-      .then(data => {
-        const voices = data?.data?.voices || data?.data?.list || []
-        const koVoices = voices
-          .filter(v => (v.language || '').includes('Korean') || v.support_locale)
-          .map(v => ({ ...v, display_name: v.display_name || v.name || `Voice ${(v.voice_id || '').slice(0, 8)}` }))
-        setAllKoVoices(koVoices)
-      })
-      .catch(err => setVoicesError(err.message))
-      .finally(() => setVoicesLoading(false))
-  }, [])
-
-  // 아바타 확정 시 → Gemini로 어울리는 voice 추천
-  useEffect(() => {
-    if (!avatarConfirmed || !avatarPrompt || allKoVoices.length === 0) return
-    const recommend = async () => {
-      setVoicesLoading(true)
-      try {
-        // 한국어 네이티브를 먼저 넣고, 나머지를 셔플해서 다양한 결과 유도
-        const koNative = allKoVoices.filter(v => (v.language || '').includes('Korean'))
-        const others = allKoVoices.filter(v => !(v.language || '').includes('Korean'))
-        const shuffled = [...others].sort(() => Math.random() - 0.5)
-        const voicePool = [...koNative, ...shuffled].slice(0, 300)
-        const voiceSummary = voicePool.map(v =>
-          `${v.voice_id}|${v.display_name || v.name}|${v.language || ''}|${v.gender || ''}`
-        ).join('\n')
-        const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: `아래는 HeyGen TTS voice 목록입니다. 캐릭터 "${avatarPrompt}"에 가장 어울리는 목소리 30개의 voice_id를 추천해주세요.
-
-voice 이름에서 톤/성격 힌트를 읽어주세요:
-- "Chill", "Calm", "Soft" → 차분한 톤
-- "Bright", "Cheerful", "Sweet" → 밝고 친근한 톤
-- "Natural" → 자연스러운 톤
-- "Professional", "Confident" → 전문적 톤
-
-추천 기준 (우선순위 순서대로):
-1. voice 이름의 톤/성격이 캐릭터 "${avatarPrompt}"의 분위기와 일치
-2. 한국어 네이티브(Korean) voice 최우선 (상위 5개 내 배치)
-3. 캐릭터 성별/나이대에 맞는 gender 선택
-4. 귀여운/동물 캐릭터 → female, Bright/Sweet/Cheerful 톤 우선
-5. 전문적/뉴스 캐릭터 → male/female, Natural/Confident 톤 우선
-6. 다양한 톤을 섞어서 사용자가 선택할 수 있게 구성
-
-가장 어울리는 순서대로 정렬하여 JSON 배열로 voice_id만 반환하세요. 예: ["id1","id2",...]
-
-목록:
-${voiceSummary}` }] }],
-              generationConfig: { temperature: 0.7, maxOutputTokens: 2048, responseMimeType: 'application/json' },
-            }),
-          }
-        )
-        if (res.ok) {
-          const data = await res.json()
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]'
-          const ids = JSON.parse(text)
-          const recommended = ids
-            .map(id => allKoVoices.find(v => v.voice_id === id))
-            .filter(Boolean)
-          setRecommendedVoices(recommended)
-          if (recommended.length > 0 && !selectedVoice) setSelectedVoice(recommended[0].voice_id)
-        }
-      } catch { /* 추천 실패 시 전체 목록 사용 */ }
-      setVoicesLoading(false)
-    }
-    recommend()
-  }, [avatarConfirmed, avatarPrompt, allKoVoices.length])
-
-  // 미리듣기
-  const playPreview = (voiceId, previewUrl) => {
-    if (playingVoice === voiceId) {
-      previewAudioRef.current?.pause()
-      setPlayingVoice(null)
-      return
-    }
-    if (previewAudioRef.current) previewAudioRef.current.pause()
-    if (!previewUrl) return
-    const audio = new Audio(previewUrl)
-    audio.onended = () => setPlayingVoice(null)
-    audio.play()
-    previewAudioRef.current = audio
-    setPlayingVoice(voiceId)
-  }
-
-  const displayVoices = recommendedVoices.length > 0 ? recommendedVoices : allKoVoices.slice(0, 30)
-  const filteredVoices = displayVoices.filter(v => {
-    if (!voiceFilter) return true
-    const q = voiceFilter.toLowerCase()
-    return (v.display_name || '').toLowerCase().includes(q)
-      || (v.language || '').toLowerCase().includes(q)
-      || (v.gender || '').toLowerCase().includes(q)
-  })
 
   // Step 4: 개별 미디어 생성
   const runSingleMedia = async (key) => {
@@ -1719,12 +1346,6 @@ ${parsedText}
     setVerification(prev => prev ? { ...prev, issues: [], isValid: true } : prev)
   }
 
-  // 요약 재시도 (Step 2 내)
-  const retrySummary = async () => {
-    clearStepErrors('summary')
-    await runSummary()
-  }
-
   const fileToBase64 = (f) => new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result)
@@ -1734,6 +1355,14 @@ ${parsedText}
   // 결과 확인에 사용할 미완료/실패 목록 수집
   const getIncompleteItems = () => {
     const incomplete = []
+    const isSelectedErrorChannel = (channel = '') => {
+      if (channel.includes('뉴스레터')) return selectedChannels.newsletter
+      if (channel.includes('인스타')) return selectedChannels.instagram
+      if (channel.includes('블로그')) return selectedChannels.blog
+      if (channel.includes('숏폼') || channel.includes('숏츠') || channel.includes('아바타')) return selectedChannels.shorts
+      return true
+    }
+
     if (!parsedText && !verification) incomplete.push('문서 분석')
     if (!summary) incomplete.push('핵심 요약')
     if (!blogContent && !newsletterContent && !instagramContent && !shortsScript) incomplete.push('콘텐츠 생성')
@@ -1743,15 +1372,15 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    if (!blogImages?.some(i => i.imageUrl)) incomplete.push('블로그 이미지')
-    if (!instagramImages?.length) incomplete.push('인스타 카드 이미지')
+    if (selectedChannels.blog && !blogImages?.some(i => i.imageUrl)) incomplete.push('블로그 이미지')
+    if (selectedChannels.instagram && !instagramImages?.length) incomplete.push('인스타 카드 이미지')
     // Step 5
-    if (!avatarImage) incomplete.push('숏폼 아바타')
-    if (!shortsVideo) incomplete.push('숏폼 영상')
+    if (selectedChannels.shorts && !avatarImage) incomplete.push('숏폼 아바타')
+    if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
     // 실패 항목
-    const contentErrors = stepErrors.content || []
-    const mediaErrors = (stepErrors.media || []).filter(e => !e.noRetry)
-    const shortsErrors = (stepErrors.shorts || []).filter(e => !e.noRetry)
+    const contentErrors = (stepErrors.content || []).filter(e => isSelectedErrorChannel(e.channel))
+    const mediaErrors = (stepErrors.media || []).filter(e => !e.noRetry && isSelectedErrorChannel(e.channel))
+    const shortsErrors = (stepErrors.shorts || []).filter(e => !e.noRetry && isSelectedErrorChannel(e.channel))
     contentErrors.forEach(e => { if (!incomplete.includes(e.channel)) incomplete.push(`${e.channel} (실패)`) })
     mediaErrors.forEach(e => { if (!incomplete.includes(e.channel)) incomplete.push(`${e.channel} (실패)`) })
     shortsErrors.forEach(e => { if (!incomplete.includes(e.channel)) incomplete.push(`${e.channel} (실패)`) })
@@ -1771,25 +1400,14 @@ ${parsedText}
     await navigateToResults()
   }
 
-  // Blob URL → base64 data URL 변환 (페이지 이동 시 유실 방지)
-  const blobToDataUrl = async (blobUrl) => {
-    if (!blobUrl || !blobUrl.startsWith('blob:')) return blobUrl
-    try {
-      const res = await fetch(blobUrl)
-      const blob = await res.blob()
-      return new Promise((resolve) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = () => resolve(null)
-        reader.readAsDataURL(blob)
-      })
-    } catch { return null }
-  }
-
   const navigateToResults = async () => {
     let fileBase64 = null
     if (file) {
-      try { fileBase64 = await fileToBase64(file) } catch {}
+      try {
+        fileBase64 = await fileToBase64(file)
+      } catch {
+        fileBase64 = null
+      }
     }
 
     navigate('/extraction/result', {
@@ -2690,15 +2308,9 @@ ${parsedText}
                   </div>
                   {ok && (
                     <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                      {blogImages.filter(i => i.imageUrl).map((img, i) => (
-                        <div
-                          key={i}
-                          onClick={() => setPreviewImage({ src: img.imageUrl, title: `블로그 이미지 ${i + 1}` })}
-                          className="shrink-0 w-20 h-14 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
-                        >
-                          <img src={img.imageUrl} alt={`블로그 ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
-                        </div>
-                      ))}
+                      {(blogContent?.sections || [])
+                        .map((section, i) => renderBlogPreviewCard(section, i))
+                        .filter(Boolean)}
                     </div>
                   )}
                 </div>
@@ -2764,8 +2376,56 @@ ${parsedText}
 
       {/* Step 5: 숏폼 생성 (아바타 + 목소리 + 영상) */}
       {selectedChannels.shorts && (
-      <div id="step-5">
-        <div className={`bg-surface rounded-2xl border transition-all shadow-sm ${currentStep === 5 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-40 pointer-events-none' : ''}`}>
+      <div id="step-5" className="flex gap-4 items-stretch">
+        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
+          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 숏폼 설정</p>
+          {PF('비주얼 스타일', {
+            type: 'select',
+            value: promptSettings.shorts.videoStyle,
+            onChange: v => updatePrompt('shorts', 'videoStyle', v),
+            options: [
+              { value: 'avatar', label: '아바타 중심' },
+              { value: 'clean modern studio explainer', label: '모던 스튜디오' },
+              { value: 'infographic-driven explainer visuals', label: '인포그래픽 중심' },
+              { value: 'documentary-style editorial visuals', label: '다큐멘터리 스타일' },
+              { value: 'fast-paced social media visuals', label: '소셜 숏폼 스타일' },
+            ],
+          })}
+          {PF('나레이션 톤', {
+            type: 'select',
+            value: promptSettings.shorts.narrationTone,
+            onChange: v => updatePrompt('shorts', 'narrationTone', v),
+            options: [
+              { value: 'auto', label: '자동' },
+              { value: 'friendly and conversational', label: '친근한 설명형' },
+              { value: 'energetic and punchy', label: '빠르고 에너지 있게' },
+              { value: 'professional and authoritative', label: '전문가형' },
+              { value: 'calm and trustworthy', label: '차분하고 신뢰감 있게' },
+            ],
+          })}
+          {PF('목소리 스타일', {
+            type: 'select',
+            value: promptSettings.shorts.voiceStyle,
+            onChange: v => updatePrompt('shorts', 'voiceStyle', v),
+            options: [
+              { value: 'auto', label: '자동 추천' },
+              { value: 'warm and friendly Korean narrator voice', label: '따뜻하고 친근하게' },
+              { value: 'bright and youthful Korean voice with lively energy', label: '밝고 경쾌하게' },
+              { value: 'calm and intelligent Korean explainer voice', label: '차분하고 똑똑하게' },
+              { value: 'cute and lovable Korean character voice', label: '귀엽고 캐릭터처럼' },
+              { value: 'confident and polished Korean presenter voice', label: '또렷한 진행자 톤' },
+            ],
+          })}
+          {PF('추가 지시사항', {
+            optional: true,
+            type: 'textarea',
+            placeholder: '예: 핵심 수치는 화면 상단 텍스트로만 강조, 텍스트는 짧고 강하게',
+            value: promptSettings.shorts.extra,
+            onChange: v => updatePrompt('shorts', 'extra', v),
+            hint: '추천 모드(Video Agent)에서 가장 강하게 반영됩니다.',
+          })}
+        </div>
+        <div className={`flex-1 min-w-0 bg-surface rounded-2xl border transition-all shadow-sm ${currentStep === 5 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-40 pointer-events-none' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <div className="flex items-center gap-4">
             <div className={`p-2.5 rounded-xl ${shortsVideo ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
@@ -2786,46 +2446,7 @@ ${parsedText}
             ) : (
               <>
                 {/* 5-1: 아바타 생성 */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">0</span>
-                    <p className="text-base font-semibold text-text">생성 모드</p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setShortsGenerationMode('recommended')}
-                      className={`rounded-xl border p-3 text-left transition-all ${
-                        shortsGenerationMode === 'recommended'
-                          ? 'bg-primary/10 border-primary/30 shadow-sm'
-                          : 'bg-surface-light border-border hover:border-primary/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className={`text-sm font-semibold ${shortsGenerationMode === 'recommended' ? 'text-primary' : 'text-text'}`}>추천 모드</p>
-                          <p className="text-xs text-text-muted mt-1">Video Agent로 장면 구성과 텍스트 오버레이를 자동 연출합니다.</p>
-                        </div>
-                        {shortsGenerationMode === 'recommended' && <CheckCircle size={14} className="text-primary shrink-0" />}
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setShortsGenerationMode('direct_voice')}
-                      className={`rounded-xl border p-3 text-left transition-all ${
-                        shortsGenerationMode === 'direct_voice'
-                          ? 'bg-primary/10 border-primary/30 shadow-sm'
-                          : 'bg-surface-light border-border hover:border-primary/20'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className={`text-sm font-semibold ${shortsGenerationMode === 'direct_voice' ? 'text-primary' : 'text-text'}`}>직접 목소리 모드</p>
-                          <p className="text-xs text-text-muted mt-1">선택한 목소리를 정확히 적용합니다. 대신 Video Agent 자동 오버레이는 사용하지 않습니다.</p>
-                        </div>
-                        {shortsGenerationMode === 'direct_voice' && <CheckCircle size={14} className="text-primary shrink-0" />}
-                      </div>
-                    </button>
-                  </div>
-                </div>
+
 
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
@@ -2860,7 +2481,7 @@ ${parsedText}
                       {avatarConfirmed ? (
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-success flex items-center gap-1"><CheckCircle size={12} /> 확정됨</span>
-                          <button onClick={() => { setAvatarConfirmed(false); setHeygenAvatarId(null); setHeygenReady(false); setHeygenUploading(false); setSelectedVoice(null); setRecommendedVoices([]) }}
+                          <button onClick={() => { setAvatarConfirmed(false); setHeygenAvatarId(null); setHeygenReady(false); setHeygenUploading(false) }}
                             className="text-sm text-text-muted hover:text-text transition-colors">변경</button>
                         </div>
                       ) : (
@@ -2878,99 +2499,6 @@ ${parsedText}
                     </div>
                   )}
                 </div>
-
-                {shortsGenerationMode === 'direct_voice' && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.voice}</span>
-                      <p className="text-base font-semibold text-text">나레이션 목소리 선택</p>
-                      {selectedVoice && <CheckCircle size={14} className="text-success" />}
-                    </div>
-
-                    <p className="text-xs text-text-muted">직접 목소리 모드에서는 여기서 고른 목소리를 최종 영상에 그대로 적용합니다.</p>
-
-                    {!avatarConfirmed ? (
-                      <p className="text-xs text-text-muted p-3 bg-surface-light rounded-lg border border-border">
-                        아바타를 먼저 생성하고 확정하면 목소리를 선택할 수 있습니다.
-                      </p>
-                    ) : voicesLoading ? (
-                      <div className="flex items-center gap-2 p-3">
-                        <Loader2 size={14} className="text-primary animate-spin" />
-                        <span className="text-xs text-text-muted">사용 가능한 한국어 목소리를 불러오는 중...</span>
-                      </div>
-                    ) : voicesError ? (
-                      <p className="text-sm text-danger p-3 bg-danger/5 rounded-lg border border-danger/20">{voicesError}</p>
-                    ) : (
-                      <>
-                        {selectedVoice && (() => {
-                          const sv = filteredVoices.find(v => v.voice_id === selectedVoice) || displayVoices.find(v => v.voice_id === selectedVoice)
-                          if (!sv) return null
-                          const svName = sv.display_name || sv.name || selectedVoice
-                          const svGender = sv.gender || ''
-                          return (
-                            <div className="flex items-center gap-3 px-3 py-2.5 bg-primary/5 border border-primary/20 rounded-lg">
-                              <div className="w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center text-sm font-bold shrink-0">
-                                {svGender.toLowerCase().startsWith('f') ? 'F' : svGender.toLowerCase().startsWith('m') ? 'M' : '?'}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-primary truncate">{svName}</p>
-                                <p className="text-xs text-text-muted">{[sv.language, svGender].filter(Boolean).join(' · ')}</p>
-                              </div>
-                              <CheckCircle size={14} className="text-primary shrink-0" />
-                            </div>
-                          )
-                        })()}
-                        <div className="max-h-56 overflow-y-auto space-y-1 border border-border rounded-lg p-1.5">
-                          {filteredVoices.length === 0 ? (
-                            <p className="text-xs text-text-muted text-center py-3">선택 가능한 목소리 목록이 없습니다.</p>
-                          ) : filteredVoices.map((v, idx) => {
-                            const vid = v.voice_id
-                            const isSelected = selectedVoice === vid
-                            const name = v.display_name || v.name || vid
-                            const lang = v.language || ''
-                            const gender = v.gender || ''
-                            return (
-                              <button
-                                key={vid}
-                                onClick={() => setSelectedVoice(vid)}
-                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-left transition-all ${
-                                  isSelected
-                                    ? 'bg-primary/10 border border-primary/30'
-                                    : 'hover:bg-surface-light border border-transparent'
-                                }`}
-                              >
-                                <span className={`w-5 text-[11px] font-bold text-center shrink-0 ${idx < 3 ? 'text-warning' : 'text-text-muted/40'}`}>{idx + 1}</span>
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                                  isSelected ? 'bg-primary text-white' : 'bg-surface-light text-text-muted border border-border'
-                                }`}>
-                                  {gender.toLowerCase().startsWith('f') ? 'F' : gender.toLowerCase().startsWith('m') ? 'M' : '?'}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className={`text-sm font-medium truncate ${isSelected ? 'text-primary' : 'text-text'}`}>
-                                    {name}
-                                    {lang === 'Korean' && <span className="ml-1 text-[9px] text-success bg-success/10 px-1 rounded">KO</span>}
-                                  </p>
-                                  <p className="text-xs text-text-muted truncate">{[lang, gender].filter(Boolean).join(' · ')}</p>
-                                </div>
-                                {v.preview_audio && (
-                                  <div
-                                    role="button"
-                                    onClick={e => { e.stopPropagation(); playPreview(vid, v.preview_audio) }}
-                                    className={`p-1 rounded-md transition-all shrink-0 cursor-pointer ${playingVoice === vid ? 'bg-primary/20 text-primary' : 'bg-surface-light text-text-muted hover:text-primary'}`}
-                                  >
-                                    {playingVoice === vid ? <Pause size={12} /> : <Play size={12} />}
-                                  </div>
-                                )}
-                                {isSelected && <CheckCircle size={12} className="text-primary shrink-0" />}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <p className="text-xs text-text-muted">목소리를 고른 뒤 바로 아래 단계에서 숏폼 영상을 생성하면 됩니다.</p>
-                      </>
-                    )}
-                  </div>
-                )}
 
                 {/* 5-3: 자막 스타일 선택 */}
                 <div className="space-y-3">
@@ -3081,24 +2609,28 @@ ${parsedText}
                   ) : (
                     <button
                       onClick={() => setCreditConfirm(true)}
-                      disabled={!avatarConfirmed || !shortsScript || loading.shorts || loading.media || (shortsGenerationMode === 'direct_voice' && !selectedVoice)}
-                      className="w-full px-4 py-3 bg-primary text-white text-sm font-semibold rounded-lg hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:hover:shadow-none transition-all flex items-center justify-center gap-2"
+                      disabled={!isShortsVideoReady}
+                      className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                        isShortsVideoReady
+                          ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                          : 'bg-primary text-white opacity-50 cursor-not-allowed'
+                      }`}
                     >
                       {loading.shorts
                         ? <><Loader2 size={16} className="animate-spin" /> {demoMode ? '데모 영상 생성 준비 중...' : 'HeyGen 영상 생성 중...'}</>
                         : <><Film size={16} /> {demoMode ? '데모 숏폼 영상 생성' : '숏폼 영상 생성'}</>}
                     </button>
                   )}
-                  {!avatarConfirmed && !shortsVideo && (
+                  {!avatarImage && !shortsVideo && (
                     <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>
                   )}
-                  {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
+                  {!demoMode && avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
                     <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
                       <Loader2 size={14} className="text-primary animate-spin" />
                       <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
                     </div>
                   )}
-                  {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
+                  {!demoMode && avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
                     <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
                       <CheckCircle size={14} className="text-success" />
                       <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>
@@ -3140,3 +2672,4 @@ ${parsedText}
     </div>
   )
 }
+

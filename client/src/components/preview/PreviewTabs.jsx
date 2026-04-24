@@ -49,7 +49,6 @@ const TABS = [
 // 탭 전환 버전 (단일 플랫폼 집중)
 export function PreviewTabsView({ blogContent, instagramContent, shortsContent, shortsVideo }) {
   const [activeTab, setActiveTab] = useState('blog')
-  const active = TABS.find(t => t.key === activeTab)
 
   return (
     <div className="w-full">

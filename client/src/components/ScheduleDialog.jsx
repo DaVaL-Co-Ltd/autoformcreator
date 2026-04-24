@@ -1,10 +1,25 @@
-﻿import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Calendar, Clock, X, Upload, Trash2 } from 'lucide-react'
 import { create } from '../utils/scheduledUploads'
 import { CHANNELS } from '../constants/channels'
 
 const MINUTE_STEP = 10
 const BLOG_MIN_LEAD_MINUTES = 10
+
+const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
+  blog: {
+    title: '네이버 블로그 추천 시간',
+    items: ['평일 기준', '오전 7시~9시', '오후 12시~1시', '오후 7시~9시'],
+  },
+  instagram: {
+    title: '인스타그램 추천 시간',
+    items: ['화~목요일', '오전 7시~10시', '오후 12시~1시', '오후 7시~10시'],
+  },
+  shorts: {
+    title: '유튜브 추천 시간',
+    items: ['평일 기준', '오후 12시~3시', '오후 7시~10시'],
+  },
+}
 
 function roundUpToMinuteStep(input, step = MINUTE_STEP) {
   const date = input instanceof Date ? new Date(input) : new Date(input)
@@ -24,13 +39,13 @@ function roundUpToMinuteStep(input, step = MINUTE_STEP) {
 
 function toLocalDatetimeValue(date) {
   const d = roundUpToMinuteStep(date)
-  const pad = n => String(n).padStart(2, '0')
+  const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 function toOffsetIsoString(date) {
   const d = date instanceof Date ? new Date(date) : new Date(date)
-  const pad = n => String(n).padStart(2, '0')
+  const pad = (n) => String(n).padStart(2, '0')
   const offsetMinutes = -d.getTimezoneOffset()
   const sign = offsetMinutes >= 0 ? '+' : '-'
   const absOffset = Math.abs(offsetMinutes)
@@ -44,7 +59,18 @@ function getMinimumScheduleDate(platform) {
   if (platform === 'blog') {
     return roundUpToMinuteStep(new Date(Date.now() + BLOG_MIN_LEAD_MINUTES * 60 * 1000))
   }
+
   return roundUpToMinuteStep(new Date())
+}
+
+function getDefaultScheduleDate(initialDatetime, platform = 'blog') {
+  if (initialDatetime) {
+    const initialDate = new Date(initialDatetime)
+    const minimumDate = getMinimumScheduleDate(platform)
+    return initialDate < minimumDate ? minimumDate : initialDate
+  }
+
+  return new Date(Date.now() + 60 * 60 * 1000)
 }
 
 function normalizeScheduledAtForPlatform(platform, datetimeValue) {
@@ -59,26 +85,22 @@ function normalizeScheduledAtForPlatform(platform, datetimeValue) {
   return toOffsetIsoString(effective)
 }
 
-export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog', content = {}, onSave, lockPlatform = false, initialDatetime, onDelete, mode = 'create' }) {
-  const defaultDt = toLocalDatetimeValue(initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000))
+function ScheduleDialogBody({
+  onClose,
+  defaultPlatform,
+  content,
+  onSave,
+  lockPlatform,
+  initialDatetime,
+  onDelete,
+  mode,
+}) {
   const [platform, setPlatform] = useState(defaultPlatform)
-  const [datetime, setDatetime] = useState(defaultDt)
+  const [datetime, setDatetime] = useState(() => toLocalDatetimeValue(getDefaultScheduleDate(initialDatetime, defaultPlatform)))
   const [saved, setSaved] = useState(false)
 
-  // defaultPlatform 변경 시 상태 동기화
-  useEffect(() => {
-    if (open) {
-      setPlatform(defaultPlatform)
-      const initialDate = initialDatetime ? new Date(initialDatetime) : new Date(Date.now() + 60 * 60 * 1000)
-      const minimumDate = getMinimumScheduleDate(defaultPlatform)
-      setDatetime(toLocalDatetimeValue(initialDate < minimumDate ? minimumDate : initialDate))
-      setSaved(false)
-    }
-  }, [open, defaultPlatform, initialDatetime])
-
-  if (!open) return null
-
   const showsNativeScheduleNotice = ['blog', 'shorts'].includes(platform)
+  const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
 
   const handleSubmit = () => {
     const scheduledAt = normalizeScheduledAtForPlatform(platform, datetime)
@@ -87,6 +109,7 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
     } else {
       create({ platform, content, scheduledAt })
     }
+
     setSaved(true)
     setTimeout(() => {
       setSaved(false)
@@ -94,13 +117,41 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
     }, 800)
   }
 
+  const parts = (() => {
+    if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
+      const rounded = roundUpToMinuteStep(datetime)
+      return {
+        date: toLocalDatetimeValue(rounded).slice(0, 10),
+        hour: String(rounded.getHours()).padStart(2, '0'),
+        minute: String(rounded.getMinutes()).padStart(2, '0'),
+      }
+    }
+
+    const now = roundUpToMinuteStep(new Date())
+    const y = now.getFullYear()
+    const mo = String(now.getMonth() + 1).padStart(2, '0')
+    const da = String(now.getDate()).padStart(2, '0')
+    return {
+      date: `${y}-${mo}-${da}`,
+      hour: String(now.getHours()).padStart(2, '0'),
+      minute: String(now.getMinutes()).padStart(2, '0'),
+    }
+  })()
+
+  const updateParts = (next) => {
+    setDatetime(`${next.date}T${next.hour}:${next.minute}`)
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
     >
       <div className="bg-surface rounded-xl border border-border shadow-xl w-full max-w-md mx-4 p-6">
-        {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Calendar size={18} className="text-primary" />
@@ -111,11 +162,10 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           </button>
         </div>
 
-        {/* Platform selector */}
         <div className="mb-4">
           <label className="block text-sm font-medium text-text-muted mb-2">플랫폼</label>
           <div className="flex gap-2 flex-wrap">
-            {(lockPlatform ? CHANNELS.filter(c => c.key === platform) : CHANNELS).map(p => (
+            {(lockPlatform ? CHANNELS.filter((c) => c.key === platform) : CHANNELS).map((p) => (
               <button
                 key={p.key}
                 onClick={() => !lockPlatform && setPlatform(p.key)}
@@ -132,70 +182,56 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
           </div>
         </div>
 
-        {/* Datetime picker (날짜 + 시 + 분 10분 단위) */}
-        {(() => {
-          // datetime 문자열 "YYYY-MM-DDTHH:mm" 파싱
-          const parts = (() => {
-            if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
-              const rounded = roundUpToMinuteStep(datetime)
-              return {
-                date: toLocalDatetimeValue(rounded).slice(0, 10),
-                hour: String(rounded.getHours()).padStart(2, '0'),
-                minute: String(rounded.getMinutes()).padStart(2, '0'),
-              }
-            }
-            const now = roundUpToMinuteStep(new Date())
-            const y = now.getFullYear()
-            const mo = String(now.getMonth() + 1).padStart(2, '0')
-            const da = String(now.getDate()).padStart(2, '0')
-            return {
-              date: `${y}-${mo}-${da}`,
-              hour: String(now.getHours()).padStart(2, '0'),
-              minute: String(now.getMinutes()).padStart(2, '0'),
-            }
-          })()
-          const updateParts = (next) => {
-            setDatetime(`${next.date}T${next.hour}:${next.minute}`)
-          }
-          const today = new Date().toISOString().slice(0, 10)
-          return (
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-text-muted mb-2">
-                <Clock size={14} className="inline mr-1 -mt-0.5" />
-                예약 시간
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={parts.date}
-                  min={today}
-                  onChange={e => updateParts({ ...parts, date: e.target.value })}
-                  className="flex-1 px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
-                />
-                <select
-                  value={parts.hour}
-                  onChange={e => updateParts({ ...parts, hour: e.target.value })}
-                  className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
-                >
-                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(h => (
-                    <option key={h} value={h}>{h}시</option>
-                  ))}
-                </select>
-                <select
-                  value={parts.minute}
-                  onChange={e => updateParts({ ...parts, minute: e.target.value })}
-                  className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
-                >
-                  {Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, '0')).map(m => (
-                    <option key={m} value={m}>{m}분</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )
-        })()}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-text-muted mb-2">
+            <Clock size={14} className="inline mr-1 -mt-0.5" />
+            예약 시간
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={parts.date}
+              min={today}
+              onChange={(e) => updateParts({ ...parts, date: e.target.value })}
+              className="flex-1 px-3 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+            />
+            <select
+              value={parts.hour}
+              onChange={(e) => updateParts({ ...parts, hour: e.target.value })}
+              className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+            >
+              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map((hour) => (
+                <option key={hour} value={hour}>{hour}시</option>
+              ))}
+            </select>
+            <select
+              value={parts.minute}
+              onChange={(e) => updateParts({ ...parts, minute: e.target.value })}
+              className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
+            >
+              {Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, '0')).map((minute) => (
+                <option key={minute} value={minute}>{minute}분</option>
+              ))}
+            </select>
+          </div>
+        </div>
 
-        {/* Content preview */}
+        {scheduleRecommendation && (
+          <div className="mb-5 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
+            <p className="text-xs font-semibold text-text">{scheduleRecommendation.title}</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {scheduleRecommendation.items.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-surface px-2 py-1 text-xs font-medium text-text-muted border border-border"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {content?.title && (
           <div className="mb-5 px-3 py-2 bg-surface-light rounded-lg border border-border">
             <p className="text-xs text-text-muted mb-0.5">콘텐츠</p>
@@ -209,16 +245,18 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
               예약 시간 변경은 등록 후 이 서비스에서 <span className="text-danger">불가</span>합니다.
             </p>
             <p className="mt-1 text-xs font-semibold leading-5 text-text-muted">
-              예약 시간을 바꾸려면 해당 플랫폼 내부에서 직접 수정해주세요.
+              예약 시간을 바꾸려면 해당 플랫폼 내에서 직접 수정해주세요.
             </p>
           </div>
         )}
 
-        {/* Submit + (edit 모드에서) 예약 해제 */}
         <div className="flex items-center gap-2">
           {mode === 'edit' && onDelete && (
             <button
-              onClick={() => { onDelete(); onClose() }}
+              onClick={() => {
+                onDelete()
+                onClose()
+              }}
               className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-danger border border-danger/30 hover:bg-danger/10 transition-colors"
             >
               <Trash2 size={14} /> 예약 해제
@@ -244,4 +282,32 @@ export default function ScheduleDialog({ open, onClose, defaultPlatform = 'blog'
   )
 }
 
+export default function ScheduleDialog({
+  open,
+  onClose,
+  defaultPlatform = 'blog',
+  content = {},
+  onSave,
+  lockPlatform = false,
+  initialDatetime,
+  onDelete,
+  mode = 'create',
+}) {
+  if (!open) return null
 
+  const dialogKey = `${mode}:${defaultPlatform}:${initialDatetime || 'new'}:${content?.title || ''}`
+
+  return (
+    <ScheduleDialogBody
+      key={dialogKey}
+      onClose={onClose}
+      defaultPlatform={defaultPlatform}
+      content={content}
+      onSave={onSave}
+      lockPlatform={lockPlatform}
+      initialDatetime={initialDatetime}
+      onDelete={onDelete}
+      mode={mode}
+    />
+  )
+}

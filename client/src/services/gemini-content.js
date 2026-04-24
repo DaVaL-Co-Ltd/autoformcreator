@@ -124,9 +124,10 @@ const CHANNEL_LABELS = {
   shorts: '숏폼 대본(20~30초, 3~4씬)',
 }
 
-async function retryNonLongform(channels, summary, rawText, emphasis) {
+async function retryNonLongform(channels, summary, rawText, emphasis, options = {}) {
   const schemaLines = channels.map(ch => CHANNEL_SCHEMAS[ch]).join(',\n  ')
   const channelNames = channels.map(ch => CHANNEL_LABELS[ch]).join(', ')
+  const optionsInstruction = buildOptionsInstruction(options)
 
   const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 다음 채널의 콘텐츠를 작성해주세요: ${channelNames}
 
@@ -134,7 +135,7 @@ async function retryNonLongform(channels, summary, rawText, emphasis) {
 - 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
 - 사실에 기반한 내용만 작성하세요.
 - 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}
@@ -158,11 +159,11 @@ ${rawText.slice(0, 8000)}
   return output
 }
 
-export async function retryFailedChannels(channels, summary, rawText, emphasis) {
+export async function retryFailedChannels(channels, summary, rawText, emphasis, options = {}) {
   if (channels.length === 0) throw new Error('재시도할 채널이 없습니다.')
 
   const results = await Promise.allSettled([
-    retryNonLongform(channels, summary, rawText, emphasis),
+    retryNonLongform(channels, summary, rawText, emphasis, options),
   ])
 
   const output = {}
@@ -177,7 +178,8 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis) 
 }
 
 // 개별 채널 재시도용 함수들 (1개만 실패 시 사용)
-export async function generateBlogContent(summary, rawText, emphasis) {
+export async function generateBlogContent(summary, rawText, emphasis, options = {}) {
+  const optionsInstruction = buildOptionsInstruction(options)
   const prompt = `당신은 네이버 블로그 인기글 전문 작가입니다. 아래 데이터를 바탕으로 블로그 글을 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
@@ -191,7 +193,7 @@ export async function generateBlogContent(summary, rawText, emphasis) {
 - 좋은 예: "수능최저 국어 고득점, 내신과 선행까지 한번에 잡는 실속형 로드맵"
 - 좋은 예: "2026 대입 핵심 변화, 학생부종합전형 준비 전략 총정리"
 - 나쁜 예: "수능최저 준비 | 국어 고득점" ("|" 사용, 소제목이 너무 짧음)
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}
@@ -206,10 +208,11 @@ ${rawText.slice(0, 3000)}
   return parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })
 }
 
-export async function generateNewsletterContent(summary, rawText, emphasis) {
+export async function generateNewsletterContent(summary, rawText, emphasis, options = {}) {
+  const optionsInstruction = buildOptionsInstruction(options)
   const prompt = `당신은 뉴스레터 전문 에디터입니다. 아래 데이터를 바탕으로 뉴스레터를 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}
@@ -224,10 +227,11 @@ ${rawText.slice(0, 3000)}
   return parseJSON(result, { subject: '뉴스레터 생성 실패', keyPoints: [], body: '', dataHighlights: [] })
 }
 
-export async function generateInstagramContent(summary, rawText, emphasis) {
+export async function generateInstagramContent(summary, rawText, emphasis, options = {}) {
+  const optionsInstruction = buildOptionsInstruction(options)
   const prompt = `당신은 인스타그램 콘텐츠 전문가입니다. 게시글 본문과 카드 이미지 소재를 작성해주세요.
 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}
@@ -244,7 +248,8 @@ ${rawText.slice(0, 3000)}
   return parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] })
 }
 
-export async function generateShortsScript(summary, rawText, emphasis) {
+export async function generateShortsScript(summary, rawText, emphasis, options = {}) {
+  const optionsInstruction = buildOptionsInstruction(options)
   const prompt = `당신은 유튜브 숏폼 전문 크리에이터입니다. 약 20초 분량의 숏폼 대본을 반드시 3씬 이상으로 작성해주세요.
 각 씬은 6~7초이며 나레이션은 씬당 1~2문장으로 짧게. scenes 배열에 3개 이상 씬 객체를 넣으세요.
 첫 씬: 인사/소개, 마지막 씬: 마무리/CTA, 중간 씬: 핵심 내용 전달.
@@ -256,7 +261,7 @@ export async function generateShortsScript(summary, rawText, emphasis) {
 - uploadDescription: 영상 설명 (200~400자, 핵심 내용 요약 + 줄바꿈 + CTA 포함). 본문 끝에 해시태그(#)를 넣지 말 것 — hashtags 필드로 별도 관리
 - hashtags: 해시태그 배열 (8~12개, #Shorts 포함, #포함 형식)
 
-${buildEmphasisInstruction(emphasis)}
+${buildEmphasisInstruction(emphasis)}${optionsInstruction}
 
 ## 요약 데이터
 ${JSON.stringify(summary, null, 2)}

@@ -85,6 +85,61 @@ function typeMultiline(page, text) {
   }, Promise.resolve())
 }
 
+function parseBoldInlineSegments(text) {
+  const normalizedText = String(text || '')
+  const segments = []
+  const boldPattern = /\*\*([\s\S]+?)\*\*/g
+  let lastIndex = 0
+  let match = null
+
+  while ((match = boldPattern.exec(normalizedText)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ text: normalizedText.slice(lastIndex, match.index), bold: false })
+    }
+
+    segments.push({ text: match[1], bold: true })
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < normalizedText.length) {
+    segments.push({ text: normalizedText.slice(lastIndex), bold: false })
+  }
+
+  return segments.length > 0 ? segments : [{ text: normalizedText, bold: false }]
+}
+
+async function toggleBoldFormatting(page) {
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyB')
+  await page.keyboard.up('Control')
+  await sleep(120)
+}
+
+async function typeMultilineWithFormatting(page, text) {
+  const lines = String(text).split(/\r?\n/)
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
+    const inlineSegments = parseBoldInlineSegments(line)
+
+    for (const segment of inlineSegments) {
+      if (!segment.text) continue
+
+      if (segment.bold) {
+        await toggleBoldFormatting(page)
+        await page.keyboard.type(segment.text, { delay: 20 })
+        await toggleBoldFormatting(page)
+      } else {
+        await page.keyboard.type(segment.text, { delay: 20 })
+      }
+    }
+
+    if (lineIndex < lines.length - 1) {
+      await page.keyboard.press('Enter')
+    }
+  }
+}
+
 function ensureDebugDir() {
   if (!fs.existsSync(DEBUG_DIR)) {
     fs.mkdirSync(DEBUG_DIR, { recursive: true })
@@ -716,11 +771,13 @@ export async function uploadToNaverBlog({ title, content, tags = [] }) {
       currentStep = 'fill-body'
       await sleep(randomDelay(500, 1200))
       try {
-        await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
+        await focusField(page, targets, BODY_SELECTORS, 'body')
+        await sleep(300)
+        await typeMultilineWithFormatting(page, content)
       } catch (error) {
         await page.keyboard.press('Tab')
         await sleep(500)
-        await page.keyboard.type(content, { delay: randomDelay(20, 60) })
+        await typeMultilineWithFormatting(page, content)
         console.warn('[Naver Blog] Body field fallback used after selector failure:', error.message)
       }
 

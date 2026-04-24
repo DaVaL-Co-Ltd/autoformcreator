@@ -18,37 +18,50 @@ let server = null
 let lastError = null
 let shutdownHandler = null
 
-const allowedOriginPatterns = [
-  /^http:\/\/localhost(?::\d+)?$/i,
-  /^http:\/\/127\.0\.0\.1(?::\d+)?$/i,
-  /^https:\/\/(?:[\w-]+\.)*vercel\.app$/i,
-  /^https:\/\/(?:[\w-]+\.)*onrender\.com$/i,
-]
-
 const configuredOrigins = String(process.env.AUTOFORM_ALLOWED_ORIGINS || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean)
 
-function isAllowedOrigin(origin) {
+function parseOrigin(origin) {
   if (!origin) {
+    return null
+  }
+
+  try {
+    return new URL(origin)
+  } catch {
+    return null
+  }
+}
+
+function isAllowedOrigin(origin) {
+  const parsedOrigin = parseOrigin(origin)
+  if (!parsedOrigin) {
     return false
   }
 
-  return configuredOrigins.includes(origin) || allowedOriginPatterns.some((pattern) => pattern.test(origin))
+  if (configuredOrigins.includes(origin)) {
+    return true
+  }
+
+  return parsedOrigin.protocol === 'http:' || parsedOrigin.protocol === 'https:'
 }
 
 function applyCorsResponseHeaders(req, res) {
   const origin = req.get('origin')
   if (origin && isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin)
-    res.setHeader('Vary', 'Origin')
   }
 
+  res.setHeader('Vary', 'Origin')
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', `Content-Type, ${UPLOAD_CLIENT_HEADER}`)
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    req.get('Access-Control-Request-Headers') || `Content-Type, ${UPLOAD_CLIENT_HEADER}`
+  )
 
-  if (req.get('Access-Control-Request-Private-Network') === 'true') {
+  if (origin && isAllowedOrigin(origin) && req.get('Access-Control-Request-Private-Network') === 'true') {
     res.setHeader('Access-Control-Allow-Private-Network', 'true')
   }
 }
@@ -111,7 +124,7 @@ function helperClientGuard(req, res, next) {
     return
   }
 
-  if (!isAllowedOrigin(origin)) {
+  if (origin && !isAllowedOrigin(origin)) {
     res.status(403).json({ success: false, error: 'Origin is not allowed.' })
     return
   }

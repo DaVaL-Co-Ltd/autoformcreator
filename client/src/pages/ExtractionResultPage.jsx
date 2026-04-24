@@ -10,7 +10,6 @@ import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { marked } from 'marked'
 import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
@@ -81,11 +80,6 @@ function formatBlogUploadError(data, fallbackMessage) {
   return `${message}${helperStatus ? ` ${helperStatus}` : ''} [source=${source} endpoint=${endpoint}]`
 }
 
-async function buildDesktopHelperFailureMessage(prefix, error) {
-  const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
-  return `${prefix}: ${error.message}${helperStatus ? ` ${helperStatus}` : ''} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`
-}
-
 const menuItems = [
   { id: 'blog',       label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   { id: 'newsletter', label: '뉴스레터',      icon: Mail,     color: 'text-blue-500',    bg: 'bg-blue-500/10' },
@@ -131,13 +125,6 @@ export default function ExtractionResultPage() {
   const [blogUploadResult, setBlogUploadResult] = useState(null) // { url } | null
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
-
-  const platformConfig = {
-    blog: { name: '네이버 블로그', icon: '📝', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    newsletter: { name: '뉴스레터', icon: '📧', color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    instagram: { name: '인스타그램', icon: '📷', color: 'text-pink-400', bg: 'bg-pink-400/10' },
-    shorts: { name: '유튜브 숏츠', icon: '▶️', color: 'text-red-500', bg: 'bg-red-500/10' },
-  }
 
   useEffect(() => {
     const stateData = location.state || null
@@ -393,7 +380,11 @@ export default function ExtractionResultPage() {
           if (ytUrl) {
             console.log('[YouTube 업로드 완료]', ytUrl)
             alert(`유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
-            try { await navigator.clipboard.writeText(ytUrl) } catch {}
+            try {
+              await navigator.clipboard.writeText(ytUrl)
+            } catch {
+              // 클립보드 권한이 없으면 업로드 완료만 유지한다.
+            }
             window.open(ytUrl, '_blank')
           } else {
             alert('업로드 완료 (URL 없음)')
@@ -490,12 +481,10 @@ export default function ExtractionResultPage() {
   }
 
   const {
-    parsedText, verification, summary,
     blogContent, newsletterContent, instagramContent,
-    shortsScript, blogImages: initialBlogImages, instagramImages,
+    shortsScript, blogImages: initialBlogImages,
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
-    fileName, fileBase64,
   } = state
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
@@ -547,14 +536,6 @@ export default function ExtractionResultPage() {
     setInstaSlide(prevSlide)
   }
 
-  const handleDownload = () => {
-    if (!fileBase64) return
-    const link = document.createElement('a')
-    link.href = fileBase64
-    link.download = fileName || 'document.pdf'
-    link.click()
-  }
-
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
     if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
@@ -582,8 +563,9 @@ export default function ExtractionResultPage() {
   const compileBlogBody = (sections = []) => {
     return ensureArray(sections).map((s, i) => {
       const heading = s.heading ? `${s.heading}\n` : ''
+      const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
-      return `${heading}[IMG:${i + 1}]\n${content}`
+      return `${heading}[IMG:${i + 1}]\n${keyPhrase}${content}`
     }).join('\n\n---\n\n')
   }
 
@@ -975,37 +957,101 @@ export default function ExtractionResultPage() {
           </h1>
         </div>
         <div className="p-6 sm:p-8 space-y-10">
-        {ensureArray(blogContent?.sections).map((section, index) => (
-          <section key={index} className="space-y-5">
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
-              <div className="prose prose-gray max-w-none text-gray-700 leading-8">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                  {normalizeMd(stripResultCtaText(section.content || ''))}
-                </ReactMarkdown>
-              </div>
-            </div>
-            <div
-              ref={el => blogImagesRef.current[index] = el}
-              className="w-full aspect-[4/3] rounded-2xl overflow-hidden border border-border bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center"
-            >
-              {blogImages?.[index]?.imageUrl ? (
-                <img
-                  src={blogImages[index].imageUrl}
-                  alt={section.heading || `블로그 이미지 ${index + 1}`}
-                  className="w-full h-full object-cover"
-                />
-              ) : blogImages?.[index]?.html ? (
-                <div
-                  className="w-full h-full"
-                  dangerouslySetInnerHTML={{ __html: blogImages[index].html }}
-                />
-              ) : (
-                <div className="text-gray-400">이미지 없음</div>
-              )}
-            </div>
-          </section>
-        ))}
+          {(() => {
+            const blogImageList = ensureArray(blogImages)
+            const firstImage = blogImageList.find(img => img?.imageUrl)
+
+            return ensureArray(blogContent?.sections).map((section, index) => {
+              const image = blogImageList[index] || blogImageList.find(img => img?.heading === section.heading)
+              const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
+              const keyword = image?.keyPhrase || section.keyPhrase || section.heading
+              const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
+              const accentPalette = {
+                'bg-[#FFF3E0]': '#e57a00',
+                'bg-[#E8F5E9]': '#2e7d32',
+                'bg-[#E3F2FD]': '#1565c0',
+                'bg-[#F3E5F5]': '#7b1fa2',
+              }
+              const fallbackBg = bgColors[index % bgColors.length]
+              const accentColor = accentPalette[fallbackBg] || '#6366f1'
+
+              const renderHeadingLines = (text, className, style) => (
+                text
+                  .split(/([,:])\s*/)
+                  .reduce((acc, tok) => {
+                    if (tok === ',' || tok === ':') {
+                      acc[acc.length - 1] += tok
+                    } else if (tok) {
+                      acc.push(tok)
+                    }
+                    return acc
+                  }, [])
+                  .map((part, partIndex, arr) => (
+                    <span key={partIndex} className={className} style={style}>
+                      <span style={{ whiteSpace: 'nowrap' }}>{part}</span>
+                      {partIndex < arr.length - 1 ? ' ' : ''}
+                    </span>
+                  ))
+              )
+
+              return (
+                <section key={index} className="space-y-5">
+                  <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
+
+                  <div className="mb-4">
+                    {blogPngUrls[index] ? (
+                      <img
+                        src={blogPngUrls[index]}
+                        alt={section.heading || `블로그 이미지 ${index + 1}`}
+                        className="w-full max-w-xl rounded-xl shadow-sm"
+                      />
+                    ) : (
+                      <div
+                        ref={el => blogImagesRef.current[index] = el}
+                        className="w-full max-w-xl aspect-square rounded-xl relative overflow-hidden shadow-sm border border-border"
+                        style={{ fontFamily: "'Pretendard', sans-serif" }}
+                      >
+                        {bgImageUrl ? (
+                          <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
+                        ) : (
+                          <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
+                        )}
+
+                        <div className="absolute inset-0 bg-black/10" />
+                        <div className="absolute inset-0 flex items-center justify-center p-6">
+                          <div
+                            className="w-[76%] min-h-[44%] rounded-[28px] bg-white/[0.92] shadow-lg backdrop-blur-sm flex flex-col items-center justify-center text-center px-7 py-8"
+                            style={{ wordBreak: 'keep-all' }}
+                          >
+                            <p
+                              className="font-black text-gray-800 leading-snug"
+                              style={{ fontSize: 'clamp(22px, 6vw, 30px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}
+                            >
+                              {renderHeadingLines(section.heading, '', {})}
+                            </p>
+                            <div className="w-10 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
+                            <p className="text-base text-gray-500 font-semibold">{keyword}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {section.keyPhrase && (
+                    <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
+                      <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
+                    </div>
+                  )}
+
+                  <div className="prose prose-gray max-w-none text-gray-700 leading-8">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                      {normalizeMd(stripResultCtaText(section.content || ''))}
+                    </ReactMarkdown>
+                  </div>
+                </section>
+              )
+            })
+          })()}
         </div>
       </article>
     </div>
@@ -1231,7 +1277,6 @@ export default function ExtractionResultPage() {
     </div>
   )
 
-  const combinedVideoUrl = shortsVideo?.combinedVideoUrl
   const sceneTimings = shortsVideo?.sceneTimings || []
 
   const getSceneAtTime = (t) => {
@@ -1431,7 +1476,9 @@ export default function ExtractionResultPage() {
           <ArrowLeft size={18} />
         </button>
         <div className="w-px h-6 bg-border shrink-0" />
-        {menuItems.map(({ id, label, icon: Icon, color, bg }) => {
+        {menuItems.map((menuItem) => {
+          const { id, label } = menuItem
+          const MenuIcon = menuItem.icon
           const hasData = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }[id]
           return (
             <button
@@ -1445,7 +1492,7 @@ export default function ExtractionResultPage() {
                     : 'text-text-muted/40 cursor-not-allowed'
                 }`}
             >
-              <Icon size={16} />
+              <MenuIcon size={16} />
               {label}
               {hasData && <CheckCircle size={12} className="text-success" />}
             </button>

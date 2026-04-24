@@ -207,6 +207,61 @@ function typeMultiline(page, text) {
   }, Promise.resolve())
 }
 
+function parseBoldInlineSegments(text) {
+  const normalizedText = String(text || '')
+  const segments = []
+  const boldPattern = /\*\*([\s\S]+?)\*\*/g
+  let lastIndex = 0
+  let match = null
+
+  while ((match = boldPattern.exec(normalizedText)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ text: normalizedText.slice(lastIndex, match.index), bold: false })
+    }
+
+    segments.push({ text: match[1], bold: true })
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < normalizedText.length) {
+    segments.push({ text: normalizedText.slice(lastIndex), bold: false })
+  }
+
+  return segments.length > 0 ? segments : [{ text: normalizedText, bold: false }]
+}
+
+async function toggleBoldFormatting(page) {
+  await page.keyboard.down('Control')
+  await page.keyboard.press('KeyB')
+  await page.keyboard.up('Control')
+  await sleep(120)
+}
+
+async function typeMultilineWithFormatting(page, text) {
+  const lines = String(text).split(/\r?\n/)
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]
+    const inlineSegments = parseBoldInlineSegments(line)
+
+    for (const segment of inlineSegments) {
+      if (!segment.text) continue
+
+      if (segment.bold) {
+        await toggleBoldFormatting(page)
+        await page.keyboard.type(segment.text, { delay: 20 })
+        await toggleBoldFormatting(page)
+      } else {
+        await page.keyboard.type(segment.text, { delay: 20 })
+      }
+    }
+
+    if (lineIndex < lines.length - 1) {
+      await page.keyboard.press('Enter')
+    }
+  }
+}
+
 function getDebugDir() {
   return path.join(path.dirname(getSessionPath()), 'naver-upload-debug')
 }
@@ -1685,7 +1740,7 @@ async function insertBodyContentWithMarkers(page, targets, content, photoPaths) 
   for (const segment of segments) {
     if (segment.type === 'text') {
       if (segment.text) {
-        await typeMultiline(page, segment.text)
+        await typeMultilineWithFormatting(page, segment.text)
       }
       continue
     }
@@ -2276,7 +2331,9 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
         markStep(currentStep, 'fill-body-with-images-complete')
       } else {
         markStep(currentStep, 'fill-body-focus')
-        await focusAndType(page, targets, BODY_SELECTORS, content, 'body')
+        await focusField(page, targets, BODY_SELECTORS, 'body')
+        await sleep(300)
+        await typeMultilineWithFormatting(page, content)
         markStep(currentStep, 'fill-body-complete')
       }
     } catch (error) {
@@ -2284,7 +2341,7 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
       await page.keyboard.press('Tab')
       await sleep(400)
       markStep(currentStep, 'fill-body-fallback-type')
-      await typeMultiline(page, content)
+      await typeMultilineWithFormatting(page, content)
       markStep(currentStep, 'fill-body-fallback-complete')
       console.warn('[Naver Upload] Body field fallback used after selector failure:', error.message)
     }

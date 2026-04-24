@@ -68,7 +68,7 @@ export async function generateBlogImages(sections, options = {}) {
     const section = sections[i]
     try {
       const colorVariations = [
-        { tone: 'soft peach, warm cream', icons: 'books, pencils, speech bubbles, paper scrolls, reading glasses' },
+        { tone: 'soft peach, warm cream', icons: 'books, pencils, paper scrolls, reading glasses, study notes' },
         { tone: 'soft sky blue, light cyan', icons: 'calculator, ruler, compass, geometric shapes, graph paper' },
         { tone: 'soft mint green, light teal', icons: 'microscope, test tubes, magnifying glass, lightbulb, seedling' },
         { tone: 'soft lavender, light purple', icons: 'notebook, graduation cap, star, clock, abacus' },
@@ -84,7 +84,7 @@ export async function generateBlogImages(sections, options = {}) {
         keyPhrase: section.keyPhrase || section.heading,
         style: 'overlay',
       })
-    } catch (err) {
+    } catch {
       results.push({
         heading: section.heading,
         imageUrl: null,

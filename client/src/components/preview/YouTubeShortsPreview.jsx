@@ -35,23 +35,8 @@ function ChannelAvatar({ src, size = 36 }) {
 }
 
 // 우측 액션 버튼
-function ActionButton({ icon: Icon, label, count, onClick, active, activeClass }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-center gap-1 text-white hover:scale-110 transition-transform active:scale-95"
-    >
-      <div className={`w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center hover:bg-white/30 transition-colors ${active ? activeClass : ''}`}>
-        <Icon size={20} className={active ? 'fill-current' : ''} />
-      </div>
-      {count !== undefined && (
-        <span className="text-[11px] font-medium text-white/90">{count}</span>
-      )}
-      {label && (
-        <span className="text-[10px] text-white/80">{label}</span>
-      )}
-    </button>
-  )
+function _ActionButton() {
+  return null
 }
 
 export default function YouTubeShortsPreview({ videoUrl, thumbnail, title, channelName, channelImg, description, hashtags } = {}) {

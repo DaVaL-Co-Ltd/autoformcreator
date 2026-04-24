@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -28,7 +28,7 @@ const channelConfig = {
   shorts: { label: '유튜브 쇼츠', icon: Film, color: 'text-red-500', bg: 'bg-red-500/10' },
 }
 
-const uploadStatusConfig = {
+const _uploadStatusConfig = {
   all: { label: '전체' },
   not_uploaded: { label: '미업로드', icon: Upload },
   scheduled: { label: '예약 완료', icon: Calendar },
@@ -99,7 +99,7 @@ export default function ContentPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const refreshContents = async (
+  const refreshContents = useCallback(async (
     showSpinner = false,
     page = currentPage,
     size = pageSize,
@@ -117,8 +117,7 @@ export default function ContentPage() {
 
     try {
       const startIndex = (page - 1) * size
-      const endIndex = startIndex + size
-      const pageItems = []
+        const pageItems = []
       let matchedCount = 0
       let extractionPage = 1
       const nextCounts = {
@@ -194,11 +193,11 @@ export default function ContentPage() {
         }
       }
     }
-  }
+  }, [activeChannel, activeStatus, currentPage, hasLoadedOnce, pageSize, searchQuery])
 
   useEffect(() => {
     refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
-  }, [currentPage, pageSize, activeChannel, activeStatus, searchQuery])
+  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
 
   useEffect(() => {
     const onFocus = () => {
@@ -207,7 +206,7 @@ export default function ContentPage() {
 
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [currentPage, pageSize, activeChannel, activeStatus, searchQuery])
+  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
 
   const paginationGroupStart = Math.floor((currentPage - 1) / 10) * 10 + 1
   const paginationGroupEnd = Math.min(paginationGroupStart + 9, totalPages)
@@ -380,33 +379,40 @@ export default function ContentPage() {
           { key: 'not_uploaded', icon: Upload, bg: 'bg-surface-light', color: 'text-text-muted', label: '미업로드' },
           { key: 'scheduled', icon: Calendar, bg: 'bg-info/10', color: 'text-info', label: '예약 완료' },
           { key: 'uploaded', icon: CheckCircle, bg: 'bg-success/10', color: 'text-success', label: '업로드 완료' },
-        ].map(({ key, icon: Icon, bg, color, label, onClick }) => (
+        ].map((statusItem) => {
+          const StatusIcon = statusItem.icon
+
+          return (
           <button
-            key={key}
-            onClick={onClick || (() => {
-              setActiveStatus(activeStatus === key ? 'all' : key)
+            key={statusItem.key}
+            onClick={statusItem.onClick || (() => {
+              setActiveStatus(activeStatus === statusItem.key ? 'all' : statusItem.key)
               setCurrentPage(1)
             })}
             className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-              activeStatus === key || (key === 'all' && activeStatus === 'all' && activeChannel === 'all')
+              activeStatus === statusItem.key || (statusItem.key === 'all' && activeStatus === 'all' && activeChannel === 'all')
                 ? 'border-primary/40 bg-primary/5'
                 : 'border-border bg-surface hover:border-primary/20'
             }`}
           >
-            <div className={`p-2 rounded-lg ${bg}`}>
-              <Icon size={16} className={color} />
+            <div className={`p-2 rounded-lg ${statusItem.bg}`}>
+              <StatusIcon size={16} className={statusItem.color} />
             </div>
             <div className="text-left">
-              <p className="text-lg font-bold text-text">{statusCounts[key]}</p>
-              <p className="text-[11px] text-text-muted">{label}</p>
+              <p className="text-lg font-bold text-text">{statusCounts[statusItem.key]}</p>
+              <p className="text-[11px] text-text-muted">{statusItem.label}</p>
             </div>
           </button>
-        ))}
+          )
+        })}
       </div>
 
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         <div className="flex items-center gap-1 bg-surface rounded-xl border border-border p-1.5 overflow-x-auto shrink-0">
-          {Object.entries(channelConfig).map(([key, { label, icon: Icon }]) => (
+          {Object.entries(channelConfig).map(([key, channelItem]) => {
+            const ChannelFilterIcon = channelItem.icon
+
+            return (
             <button
               key={key}
               onClick={() => {
@@ -419,10 +425,11 @@ export default function ContentPage() {
                   : 'text-text-muted hover:text-text hover:bg-surface-light'
               }`}
             >
-              <Icon size={14} />
-              {label}
+              <ChannelFilterIcon size={14} />
+              {channelItem.label}
             </button>
-          ))}
+            )
+          })}
         </div>
 
         <div className="relative flex-1 min-w-0">

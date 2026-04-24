@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, ArrowRight, Loader2, Lock } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -53,7 +53,7 @@ export default function LoginPage() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-white">로그인</h2>
-              <p className="text-xs text-slate-400">비밀번호를 입력해 주세요.</p>
+              <p className="text-xs text-slate-400">비밀번호를 입력해주세요.</p>
             </div>
           </div>
 
@@ -70,7 +70,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="비밀번호를 입력해 주세요"
+                placeholder="비밀번호를 입력해주세요"
                 required
                 className="w-full px-4 py-3 bg-white/[0.06] border border-white/[0.1] rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all"
               />

@@ -19,7 +19,7 @@ function splitTextByWidth(text, fontSize, maxWidth) {
       if (ctx.measureText(remaining.slice(0, i)).width <= maxWidth) {
         let bestCut = i
         for (let j = i; j >= Math.floor(i * 0.5); j--) {
-          if (/[\s,.:!?·\-]/.test(remaining[j])) { bestCut = j + 1; break }
+          if (/[\s,.:!?·-]/.test(remaining[j])) { bestCut = j + 1; break }
         }
         cut = bestCut
         break

@@ -167,9 +167,21 @@ export default function ScheduledUploadsPage() {
   }, [])
 
   useEffect(() => {
-    refresh()
-    const interval = setInterval(refresh, 5000)
-    return () => clearInterval(interval)
+    let active = true
+
+    const refreshWithinEffect = async () => {
+      const data = await getAll()
+      if (active) {
+        setItems(data)
+      }
+    }
+
+    refreshWithinEffect()
+    const interval = setInterval(refreshWithinEffect, 5000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
   }, [refresh])
 
   const grouped = STATUS_ORDER.reduce((acc, status) => {

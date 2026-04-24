@@ -15,7 +15,7 @@ import {
   X,
   Youtube,
 } from 'lucide-react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../context/useAuth'
 import { DESKTOP_HELPER } from '../constants/desktopHelper.js'
 import {
   beginInstagramReconnect,
@@ -421,7 +421,10 @@ export default function SettingsPage() {
     <div className="flex gap-6 max-w-7xl mx-auto w-full">
       <div className="w-56 shrink-0">
         <div className="bg-surface rounded-2xl border border-border p-2 space-y-1 sticky top-0 shadow-sm">
-          {sections.map(({ id, label, icon: Icon }) => (
+          {sections.map(({ id, label, icon }) => {
+            const SectionIcon = icon
+
+            return (
             <button
               key={id}
               onClick={() => selectSection(id)}
@@ -431,10 +434,11 @@ export default function SettingsPage() {
                   : 'text-text-muted hover:text-text hover:bg-surface-light'
               }`}
             >
-              <Icon size={16} />
+              <SectionIcon size={16} />
               {label}
             </button>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -649,6 +653,7 @@ export default function SettingsPage() {
 
             <div className="space-y-4">
               {FOOTER_PLATFORMS.map(({ key, name, Icon, color, bg, urlPlaceholder }) => {
+                const FooterPlatformIcon = Icon
                 const draft = footerDrafts[key] || { displayName: '', url: '' }
                 const saved = footerSavedKey === key
 
@@ -656,7 +661,7 @@ export default function SettingsPage() {
                   <div key={key} className="rounded-xl border border-border bg-surface-light p-5">
                     <div className="mb-4 flex items-center gap-3">
                       <div className={`rounded-xl p-2 ${bg}`}>
-                        <Icon size={18} className={color} />
+                        <FooterPlatformIcon size={18} className={color} />
                       </div>
                       <span className="text-sm font-semibold text-text">{name}</span>
                       {saved && (

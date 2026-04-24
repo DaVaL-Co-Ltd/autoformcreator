@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useState } from 'react'
 
 const AuthContext = createContext(null)
 
@@ -10,16 +10,19 @@ function getPassword() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
+  const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('mybest_user')
-    if (saved) {
-      try { setUser(JSON.parse(saved)) } catch {}
+    if (!saved) {
+      return null
     }
-    setLoading(false)
-  }, [])
+
+    try {
+      return JSON.parse(saved)
+    } catch {
+      return null
+    }
+  })
+  const [loading] = useState(false)
 
   const login = (password) => {
     if (password !== getPassword()) return { success: false, message: '비밀번호가 올바르지 않습니다.' }
@@ -48,8 +51,4 @@ export function AuthProvider({ children }) {
   )
 }
 
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
-}
+export { AuthContext }

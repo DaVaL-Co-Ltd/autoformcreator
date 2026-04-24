@@ -125,7 +125,7 @@ async function uploadVideoToStorage(video) {
 }
 
 export async function saveExtraction(data) {
-  const { fileBase64, parsedText, ...rest } = data
+  const { parsedText, ...rest } = data
 
   // 이미지 Storage 업로드 (base64 → public URL)
   const blogImages = await uploadImageArray(rest.blogImages, 'blog')

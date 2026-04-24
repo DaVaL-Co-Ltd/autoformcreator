@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { AuthProvider, useAuth } from './context/AuthContext'
+import { AuthProvider } from './context/AuthContext'
+import { useAuth } from './context/useAuth'
 import Header from './components/Header'
 import ErrorDialog from './components/ErrorDialog.jsx'
 import ServiceGuideButton from './components/ServiceGuideButton.jsx'
@@ -16,6 +17,7 @@ import TitlePreviewPage from './pages/TitlePreviewPage'
 import InstagramUploadTestPage from './pages/InstagramUploadTestPage'
 import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
+import PromptLabPage from './pages/PromptLabPage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
@@ -52,6 +54,7 @@ function AppLayout() {
           <Route path="/extraction/result" element={<ExtractionResultPage />} />
           <Route path="/contents" element={<ContentPage />} />
           <Route path="/contents/view" element={<ExtractionResultPage />} />
+          <Route path="/prompt-lab" element={<PromptLabPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
@@ -70,20 +73,23 @@ function AppLayout() {
 function DesktopHelperInstallPrompt() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false
+    }
+
+    return sessionStorage.getItem('show_desktop_helper_prompt') === '1'
+  })
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !open) {
       return
     }
 
-    if (sessionStorage.getItem('show_desktop_helper_prompt') === '1') {
-      sessionStorage.removeItem('show_desktop_helper_prompt')
-      setOpen(true)
-    }
-  }, [user])
+    sessionStorage.removeItem('show_desktop_helper_prompt')
+  }, [open, user])
 
-  if (!open) {
+  if (!user || !open) {
     return null
   }
 
