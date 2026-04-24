@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { execFile } from 'child_process'
 import crypto from 'crypto'
+import { publishInstagramMediaWithRetry } from './services/instagram-publish.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -1352,6 +1353,25 @@ async function instagramGraphPost(resource, accessToken, body = {}) {
   return data
 }
 
+async function resolveInstagramPublishResult(mediaId, accessToken) {
+  if (!mediaId) {
+    throw new Error('Instagram media publish ID is not available')
+  }
+
+  try {
+    const media = await instagramGraphGet(mediaId, accessToken, { fields: 'id,permalink' })
+    return {
+      mediaId: media.id || mediaId,
+      permalink: media.permalink || null,
+    }
+  } catch {
+    return {
+      mediaId,
+      permalink: null,
+    }
+  }
+}
+
 // 이미지 업로드 (단일 또는 캐러셀)
 async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
@@ -1359,7 +1379,7 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   }
   if (!imageUrls.length) throw new Error('이미지 URL이 없습니다')
 
-  const urls = imageUrls.filter(Boolean).slice(0, 1)
+  const urls = imageUrls.filter(Boolean).slice(0, 10)
   if (urls.length === 1) {
     // 단일 이미지
     const createRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
@@ -1369,15 +1389,23 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
     })
     const created = await createRes.json()
     if (!createRes.ok || !created.id) throw new Error(`컨테이너 생성 실패: ${JSON.stringify(created)}`)
+    await waitForMediaReadyLegacy([created.id])
 
-    const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creation_id: created.id, access_token: IG_ACCESS_TOKEN }),
+    const pub = await publishInstagramMediaWithRetry({
+      creationId: created.id,
+      publish: async () => {
+        const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creation_id: created.id, access_token: IG_ACCESS_TOKEN }),
+        })
+        const data = await pubRes.json()
+        if (!pubRes.ok || !data.id) throw new Error(`Instagram legacy publish failed: ${JSON.stringify(data)}`)
+        return data
+      },
+      waitUntilReady: () => waitForMediaReadyLegacy([created.id], 15000),
     })
-    const pub = await pubRes.json()
-    if (!pubRes.ok || !pub.id) throw new Error(`게시 실패: ${JSON.stringify(pub)}`)
-    return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+    return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
   }
 
   // 캐러셀 (여러 이미지)
@@ -1412,14 +1440,21 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   // 캐러셀 컨테이너도 FINISHED 될 때까지 대기
   await waitForMediaReadyLegacy([carousel.id])
 
-  const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creation_id: carousel.id, access_token: IG_ACCESS_TOKEN }),
+  const pub = await publishInstagramMediaWithRetry({
+    creationId: carousel.id,
+    publish: async () => {
+      const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creation_id: carousel.id, access_token: IG_ACCESS_TOKEN }),
+      })
+      const data = await pubRes.json()
+      if (!pubRes.ok || !data.id) throw new Error(`Instagram legacy carousel publish failed: ${JSON.stringify(data)}`)
+      return data
+    },
+    waitUntilReady: () => waitForMediaReadyLegacy([carousel.id], 15000),
   })
-  const pub = await pubRes.json()
-  if (!pubRes.ok || !pub.id) throw new Error(`캐러셀 게시 실패: ${JSON.stringify(pub)}`)
-  return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+  return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
 }
 
 // 미디어 컨테이너가 게시 준비될 때까지 대기 (최대 60초)
@@ -1467,16 +1502,22 @@ async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
     throw new Error('Instagram image URL is missing')
   }
 
-  const urls = imageUrls.filter(Boolean).slice(0, 1)
+  const urls = imageUrls.filter(Boolean).slice(0, 10)
   if (urls.length === 1) {
     const created = await instagramGraphPost(`${auth.businessId}/media`, auth.accessToken, {
       image_url: urls[0],
       caption,
     })
-    const pub = await instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
-      creation_id: created.id,
+    await waitForInstagramMediaReady([created.id], auth.accessToken)
+
+    const pub = await publishInstagramMediaWithRetry({
+      creationId: created.id,
+      publish: () => instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
+        creation_id: created.id,
+      }),
+      waitUntilReady: () => waitForInstagramMediaReady([created.id], auth.accessToken, 15000),
     })
-    return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+    return resolveInstagramPublishResult(pub.id, auth.accessToken)
   }
 
   const childIds = []
@@ -1498,10 +1539,14 @@ async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
 
   await waitForInstagramMediaReady([carousel.id], auth.accessToken)
 
-  const pub = await instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
-    creation_id: carousel.id,
+  const pub = await publishInstagramMediaWithRetry({
+    creationId: carousel.id,
+    publish: () => instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
+      creation_id: carousel.id,
+    }),
+    waitUntilReady: () => waitForInstagramMediaReady([carousel.id], auth.accessToken, 15000),
   })
-  return { mediaId: pub.id, permalink: `https://instagram.com/p/${pub.id}/` }
+  return resolveInstagramPublishResult(pub.id, auth.accessToken)
 }
 
 async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000) {
