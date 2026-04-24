@@ -31,6 +31,14 @@ function apiFetch(path, options = {}) {
   })
 }
 
+function resolveMediaUrl(url) {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/output/') && API_BASE) return `${API_BASE}${url}`
+  if (url.startsWith('/') && typeof window !== 'undefined') return `${window.location.origin}${url}`
+  return url
+}
+
 const steps = [
   { id: 0, label: '채널 선택', icon: CheckCircle, desc: '작업할 채널을 선택하세요' },
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
@@ -421,9 +429,11 @@ export default function ExtractionPage() {
 
   const renderBlogPreviewCard = (section, index) => {
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
-    const firstImage = blogImageList.find(img => img?.imageUrl)
-    const image = blogImageList[index] || blogImageList.find(img => img?.heading === section?.heading)
-    const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
+    const matchedImage =
+      blogImageList.find(img => img?.heading === section?.heading && img?.imageUrl) ||
+      blogImageList[index] ||
+      null
+    const bgImageUrl = matchedImage?.imageUrl || null
     const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
     const accentPalette = {
       'bg-[#FFF3E0]': '#e57a00',
@@ -448,13 +458,40 @@ export default function ExtractionPage() {
       if (clean.length <= maxLength) return clean
       return `${clean.slice(0, maxLength).trim()}…`
     }
+    const deriveHeadlineKeyword = (text = '') => {
+      const clean = cleanCardText(text)
+        .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
+        .trim()
+
+      const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|와|과|도)\s+/)
+      if (particleMatch?.[1]) return particleMatch[1].trim()
+
+      const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
+      if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
+
+      const words = clean.split(/\s+/).filter(Boolean)
+      if (words.length >= 2) return words.slice(0, 2).join(' ')
+      return clean
+    }
+    const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
+      const cleanHeading = cleanCardText(heading)
+      const cleanHeadline = cleanCardText(headline)
+      const headingRemainder = cleanHeading
+        .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
+        .trim()
+
+      if (headingRemainder) return headingRemainder
+
+      return cleanCardText(fallbackContent || '')
+        .split(/[.!?\n]/)
+        .map(line => line.trim())
+        .find(Boolean) || cleanHeading
+    }
     const heading = cleanCardText(section?.heading || '')
-    const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
-    const headline = truncateCardText(keyPhrase || heading.split(/[:,-]/)[0] || heading, 18)
+    const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
+    const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || heading), 18)
     const description = truncateCardText(
-      heading && heading !== headline
-        ? heading
-        : cleanCardText(section?.content || '').split(/[.!?\n]/).map(line => line.trim()).find(Boolean) || heading,
+      deriveDescriptionCopy(heading, headline, section?.content || ''),
       34
     )
 
@@ -463,8 +500,17 @@ export default function ExtractionPage() {
     return (
       <div
         key={`${section?.heading || 'blog'}-${index}`}
-        className="shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light relative shadow-sm"
+        className={`shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light relative shadow-sm ${
+          bgImageUrl ? 'cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all' : ''
+        }`}
         style={{ fontFamily: "'Pretendard', sans-serif" }}
+        onClick={() => {
+          if (!bgImageUrl) return
+          setPreviewImage({
+            src: bgImageUrl,
+            title: section?.heading || `블로그 이미지 ${index + 1}`,
+          })
+        }}
       >
         {bgImageUrl ? (
           <img src={bgImageUrl} alt={section?.heading || `블로그 이미지 ${index + 1}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
@@ -1130,7 +1176,7 @@ DO NOT:
 
         const status = pollData.data?.status
         if (status === 'completed') {
-          const rawUrl = pollData.data?.video_url
+          const rawUrl = resolveMediaUrl(pollData.data?.video_url)
           if (!rawUrl) {
             throw new Error('HeyGen 영상 URL이 없습니다.')
           }
@@ -1151,8 +1197,8 @@ DO NOT:
             })
             const burnData = await readApiResponse(burnRes)
             if (burnRes.ok && burnData.url) {
-              finalUrl = burnData.url
-              srtUrl = burnData.srtUrl || null
+              finalUrl = resolveMediaUrl(burnData.url)
+              srtUrl = resolveMediaUrl(burnData.srtUrl || null)
             }
           } catch (burnErr) {
             console.warn('[subtitle burn fallback]', burnErr)

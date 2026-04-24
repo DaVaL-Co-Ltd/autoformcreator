@@ -681,6 +681,53 @@ export default function ExtractionResultPage() {
     )
   }
 
+  const cleanCardText = (text = '') => (
+    String(text)
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#>*_~`-]/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+
+  const truncateCardText = (text, maxLength = 34) => {
+    const clean = cleanCardText(text)
+    if (clean.length <= maxLength) return clean
+    return `${clean.slice(0, maxLength).trim()}…`
+  }
+
+  const deriveHeadlineKeyword = (text = '') => {
+    const clean = cleanCardText(text)
+      .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
+      .trim()
+
+    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|와|과|도)\s+/)
+    if (particleMatch?.[1]) return particleMatch[1].trim()
+
+    const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
+    if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
+
+    const words = clean.split(/\s+/).filter(Boolean)
+    if (words.length >= 2) return words.slice(0, 2).join(' ')
+    return clean
+  }
+
+  const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
+    const cleanHeading = cleanCardText(heading)
+    const cleanHeadline = cleanCardText(headline)
+    const headingRemainder = cleanHeading
+      .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
+      .trim()
+
+    if (headingRemainder) return headingRemainder
+
+    return cleanCardText(fallbackContent || '')
+      .split(/[.!?\n]/)
+      .map(line => line.trim())
+      .find(Boolean) || cleanHeading
+  }
+
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
     if (!text) return ''
@@ -1008,6 +1055,13 @@ export default function ExtractionResultPage() {
                   blogImageList[index] ||
                   null
                 const imageUrl = image?.imageUrl || null
+                const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
+                const headingText = cleanCardText(section?.heading || '')
+                const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || headingText), 18)
+                const description = truncateCardText(
+                  deriveDescriptionCopy(headingText, headline, section?.content || ''),
+                  34
+                )
 
                 if (!imageUrl) {
                   blogImagesRef.current[index] = null
@@ -1032,13 +1086,27 @@ export default function ExtractionResultPage() {
                       ) : (
                         <div
                           ref={el => { blogImagesRef.current[index] = el }}
-                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white"
+                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white cursor-zoom-in relative"
+                          onClick={() => setPreviewImage({
+                            src: imageUrl,
+                            title: section.heading || `블로그 이미지 ${index + 1}`,
+                          })}
                         >
                           <img
                             src={imageUrl}
                             alt={section.heading || `블로그 이미지 ${index + 1}`}
                             className="w-full h-auto block"
                           />
+                          <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+                          <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+                            <div className="w-[52%] max-w-[280px] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-5 py-5">
+                              {renderCardHeading(headline, 24)}
+                              <div className="w-12 h-1 rounded-full mt-3 mb-3 bg-primary/70" />
+                              <p className="text-sm text-gray-600 font-semibold leading-relaxed">
+                                {description}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
