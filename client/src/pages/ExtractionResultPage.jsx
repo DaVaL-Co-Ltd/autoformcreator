@@ -1,5 +1,6 @@
-﻿import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useMemo } from 'react'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink,
@@ -101,7 +102,10 @@ export default function ExtractionResultPage() {
   const [isPageLoading, setIsPageLoading] = useState(
     Boolean(location.state?.fromContents && location.state?.extractionId)
   )
-  const state = resolvedState || location.state || {}
+  const state = useMemo(
+    () => resolvedState || location.state || {},
+    [resolvedState, location.state]
+  )
   const dataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
   const firstAvailable = state.activeChannel && dataMap[state.activeChannel] ? state.activeChannel : menuItems.find(m => dataMap[m.id])?.id || 'blog'
   const [activeMenu, setActiveMenu] = useState(firstAvailable)
@@ -503,7 +507,7 @@ export default function ExtractionResultPage() {
   }, [initialBlogImages, initialShortsVideo, initialShortsNarration])
 
   // 블로그 이미지 HTML -> PNG 변환
-  const convertBlogImagesToPng = async () => {
+  const convertBlogImagesToPng = useCallback(async () => {
     const refs = blogImagesRef.current.filter(Boolean)
     if (refs.length === 0) return
     const urls = []
@@ -514,10 +518,10 @@ export default function ExtractionResultPage() {
       } catch { urls.push(null) }
     }
     setBlogPngUrls(urls)
-  }
+  }, [])
 
   // 인스타 카드 HTML -> PNG 변환
-  const convertInstaCardsToPng = async () => {
+  const convertInstaCardsToPng = useCallback(async () => {
     const cards = instagramContent?.cards || instagramContent?.cardTopics || []
     if (cards.length === 0) return
     const prevSlide = instaSlide
@@ -534,8 +538,7 @@ export default function ExtractionResultPage() {
     }
     setInstaPngUrls(urls)
     setInstaSlide(prevSlide)
-  }
-
+  }, [instagramContent, instaSlide])
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
     if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
@@ -543,31 +546,31 @@ export default function ExtractionResultPage() {
       const timer = setTimeout(() => convertBlogImagesToPng(), 500)
       return () => clearTimeout(timer)
     }
-  }, [activeMenu, blogContent])
+  }, [activeMenu, blogContent, blogPngUrls.length, convertBlogImagesToPng])
 
   // 네이버 블로그 업로드 서버 상태 확인
-  const checkBlogServer = () => {
+  const checkBlogServer = useCallback(() => {
     setBlogServerStatus('checking')
     // 블로그 탭일 때만 상태 체크
     if (activeMenu !== 'blog' || USE_REMOTE_BLOG_PUBLISH) { setBlogServerStatus('offline'); return }
     fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000) })
       .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
       .catch(() => setBlogServerStatus('offline'))
-  }
+  }, [activeMenu])
   useEffect(() => {
     if (activeMenu === 'blog') checkBlogServer()
     else setBlogServerStatus('offline')
-  }, [activeMenu])
+  }, [activeMenu, checkBlogServer])
 
   // compileBlogBody: sections를 [IMG:N] 마커 포함 본문으로 생성
-  const compileBlogBody = (sections = []) => {
+  const compileBlogBody = useCallback((sections = []) => {
     return ensureArray(sections).map((s, i) => {
       const heading = s.heading ? `${s.heading}\n` : ''
       const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
       return `${heading}[IMG:${i + 1}]\n${keyPhrase}${content}`
     }).join('\n\n---\n\n')
-  }
+  }, [])
 
   // blogTitle / blogBody 초기화 (blogContent 로드 시)
   useEffect(() => {
@@ -575,7 +578,7 @@ export default function ExtractionResultPage() {
       if (!blogTitle) setBlogTitle(blogContent.title || '')
       if (!blogBody) setBlogBody(compileBlogBody(ensureArray(blogContent.sections)))
     }
-  }, [blogContent])
+  }, [blogBody, blogContent, blogTitle, compileBlogBody])
 
   // 카드 이미지용 텍스트에서 ** 제거
   const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
@@ -661,7 +664,7 @@ export default function ExtractionResultPage() {
 
     saveOnceRef.current = true
     saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
-  }, [])
+  }, [location.state])
 
   // 기존 추출 결과에서 오면 id와 uploadStatus를 location.state에서 가져옴
   const [scheduleInfo, setScheduleInfo] = useState({}) // { [channel]: { scheduledAt } }
@@ -719,7 +722,7 @@ export default function ExtractionResultPage() {
       const timer = setTimeout(() => convertInstaCardsToPng(), 500)
       return () => clearTimeout(timer)
     }
-  }, [activeMenu, instagramContent])
+  }, [activeMenu, instagramContent, instaPngUrls.length, convertInstaCardsToPng])
 
   useEffect(() => {
     const nextDataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
