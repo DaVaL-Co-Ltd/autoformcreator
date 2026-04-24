@@ -121,6 +121,7 @@ export default function ExtractionResultPage() {
   }
   const [instaSlide, setInstaSlide] = useState(0)
   const [downloading, setDownloading] = useState(false)
+  const [previewImage, setPreviewImage] = useState(null)
   const blogImagesRef = useRef([])
   const instaCardsRef = useRef([])
   const [blogPngUrls, setBlogPngUrls] = useState([])
@@ -534,14 +535,18 @@ export default function ExtractionResultPage() {
 
   // 블로그 이미지 HTML -> PNG 변환
   const convertBlogImagesToPng = useCallback(async () => {
-    const refs = blogImagesRef.current.filter(Boolean)
-    if (refs.length === 0) return
-    const urls = []
-    for (const el of refs) {
+    const refs = blogImagesRef.current
+    if (!refs.some(Boolean)) return
+    const urls = new Array(refs.length).fill(null)
+    for (let index = 0; index < refs.length; index++) {
+      const el = refs[index]
+      if (!el) continue
       try {
-        const url = await captureElementPng(el, `Blog image preload ${urls.length + 1}`)
-        urls.push(url)
-      } catch { urls.push(null) }
+        const url = await captureElementPng(el, `Blog image preload ${index + 1}`)
+        urls[index] = url
+      } catch {
+        urls[index] = null
+      }
     }
     setBlogPngUrls(urls)
   }, [])
@@ -608,43 +613,6 @@ export default function ExtractionResultPage() {
 
   // 카드 이미지용 텍스트에서 ** 제거
   const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
-
-  const cleanCardText = (text = '') => (
-    String(text)
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#>*_~`-]/g, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-  )
-
-  const truncateCardText = (text, maxLength = 34) => {
-    const clean = cleanCardText(text)
-    if (clean.length <= maxLength) return clean
-    return `${clean.slice(0, maxLength).trim()}…`
-  }
-
-  const getBlogCardCopy = (section = {}, image = null) => {
-    const heading = cleanCardText(section?.heading || '')
-    const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
-    const headline = truncateCardText(
-      keyPhrase || heading.split(/[:,-]/)[0] || heading,
-      18
-    )
-
-    const descriptionSource = heading && heading !== headline
-      ? heading
-      : cleanCardText(section?.content || '')
-          .split(/[.!?\n]/)
-          .map(line => line.trim())
-          .find(Boolean) || heading
-
-    return {
-      headline,
-      description: truncateCardText(descriptionSource, 34),
-    }
-  }
 
   // 카드 제목을 2줄로 분리 (15자 이상이면 반드시 2줄)
   const splitHeading = (text) => {
@@ -1024,85 +992,50 @@ export default function ExtractionResultPage() {
           </h1>
         </div>
         <div className="p-6 sm:p-8 space-y-10">
-          {(() => {
-            const blogImageList = ensureArray(blogImages)
-            const firstImage = blogImageList.find(img => img?.imageUrl)
+            {(() => {
+              const blogImageList = ensureArray(blogImages)
 
-            return ensureArray(blogContent?.sections).map((section, index) => {
-              const image = blogImageList[index] || blogImageList.find(img => img?.heading === section.heading)
-              const bgImageUrl = firstImage?.imageUrl || image?.imageUrl || null
-              const { headline, description } = getBlogCardCopy(section, image)
-              const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
-              const accentPalette = {
-                'bg-[#FFF3E0]': '#e57a00',
-                'bg-[#E8F5E9]': '#2e7d32',
-                'bg-[#E3F2FD]': '#1565c0',
-                'bg-[#F3E5F5]': '#7b1fa2',
-              }
-              const fallbackBg = bgColors[index % bgColors.length]
-              const accentColor = accentPalette[fallbackBg] || '#6366f1'
+              return ensureArray(blogContent?.sections).map((section, index) => {
+                const image =
+                  blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
+                  blogImageList[index] ||
+                  null
+                const imageUrl = image?.imageUrl || null
 
-              const renderHeadingLines = (text, className, style) => (
-                text
-                  .split(/([,:])\s*/)
-                  .reduce((acc, tok) => {
-                    if (tok === ',' || tok === ':') {
-                      acc[acc.length - 1] += tok
-                    } else if (tok) {
-                      acc.push(tok)
-                    }
-                    return acc
-                  }, [])
-                  .map((part, partIndex, arr) => (
-                    <span key={partIndex} className={className} style={style}>
-                      <span style={{ whiteSpace: 'nowrap' }}>{part}</span>
-                      {partIndex < arr.length - 1 ? ' ' : ''}
-                    </span>
-                  ))
-              )
+                if (!imageUrl) {
+                  blogImagesRef.current[index] = null
+                }
 
               return (
                 <section key={index} className="space-y-5">
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
 
-                  <div className="mb-4">
-                    {blogPngUrls[index] ? (
-                      <img
-                        src={blogPngUrls[index]}
-                        alt={section.heading || `블로그 이미지 ${index + 1}`}
-                        className="w-full max-w-xl rounded-xl shadow-sm"
-                      />
-                    ) : (
-                      <div
-                        ref={el => blogImagesRef.current[index] = el}
-                        className="w-full max-w-xl aspect-square rounded-xl relative overflow-hidden shadow-sm border border-border"
-                        style={{ fontFamily: "'Pretendard', sans-serif" }}
-                      >
-                        {bgImageUrl ? (
-                          <img src={bgImageUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
-                        ) : (
-                          <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
-                        )}
-
-                        <div className="absolute inset-0 bg-black/10" />
-                        <div className="absolute inset-0 flex items-center justify-center p-6">
-                          <div
-                            className="w-[72%] aspect-square rounded-full bg-white/[0.94] shadow-lg backdrop-blur-sm flex flex-col items-center justify-center text-center px-7 py-7"
-                            style={{ wordBreak: 'keep-all' }}
-                          >
-                            <p
-                              className="font-black text-gray-800 leading-snug"
-                              style={{ fontSize: 'clamp(22px, 6vw, 30px)', letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'normal' }}
-                            >
-                              {renderHeadingLines(headline, '', {})}
-                            </p>
-                            <div className="w-10 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
-                            <p className="text-sm text-gray-500 font-semibold leading-snug">{description}</p>
-                          </div>
+                  {imageUrl && (
+                    <div className="mb-4">
+                      {blogPngUrls[index] ? (
+                        <img
+                          src={blogPngUrls[index]}
+                          alt={section.heading || `블로그 이미지 ${index + 1}`}
+                          className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+                          onClick={() => setPreviewImage({
+                            src: blogPngUrls[index],
+                            title: section.heading || `블로그 이미지 ${index + 1}`,
+                          })}
+                        />
+                      ) : (
+                        <div
+                          ref={el => { blogImagesRef.current[index] = el }}
+                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white"
+                        >
+                          <img
+                            src={imageUrl}
+                            alt={section.heading || `블로그 이미지 ${index + 1}`}
+                            className="w-full h-auto block"
+                          />
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
                   {section.keyPhrase && (
                     <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
@@ -1435,10 +1368,14 @@ export default function ExtractionResultPage() {
         </div>
         {videoUrl && (
           <div className="mt-2 flex items-center gap-3">
-            <a href={videoUrl} download={`숏츠_${versionLabel}.webm`}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors">
+            <button
+              type="button"
+              onClick={() => downloadShortsVideo(videoUrl, `숏츠_${versionLabel}.webm`)}
+              disabled={downloading}
+              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+            >
               <Download size={10} /> 다운로드
-            </a>
+            </button>
             <button
               onClick={() => navigate('/shorts/view', { state: {
                 combinedVideoUrl: videoUrl,
@@ -1551,6 +1488,32 @@ export default function ExtractionResultPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="max-w-5xl w-full"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              src={previewImage.src}
+              alt={previewImage.title}
+              className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain mx-auto"
+            />
+            <div className="flex items-center justify-between mt-3 px-1">
+              <span className="text-sm text-white font-medium">{previewImage.title}</span>
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
           onClick={() => navigate(state?.fromContents ? '/contents' : '/extraction')}

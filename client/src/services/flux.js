@@ -76,7 +76,7 @@ export async function generateBlogImages(sections, options = {}) {
       ]
       const variation = colorVariations[i % colorVariations.length]
       const paletteDesc = colorHint || `${variation.tone}`
-      const bgPrompt = `Generate a 1:1 square illustration for a Korean education blog thumbnail about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. Icons on edges: ${variation.icons}. CENTER MUST BE EMPTY - leave middle 60% blank for text overlay. Icons ONLY on edges and corners. NO text, NO letters, NO words, NO numbers. NO realistic photos, NO people. Cute Korean educational style.${extraHint}`
+      const bgPrompt = `Generate a 1:1 square illustration for a Korean education blog image about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. Include visual elements such as ${variation.icons} across the whole composition. Fill the full canvas with a cohesive illustration. DO NOT leave an empty center for text. DO NOT add any placeholder panel, blurred box, translucent square, floating frame, empty badge, or reserved text area. NO text, NO letters, NO words, NO numbers. NO realistic photos, NO people. Cute Korean educational style with a clean full-bleed composition.${extraHint}`
       const imageUrl = await generateImage(bgPrompt)
       results.push({
         heading: section.heading,
