@@ -291,19 +291,19 @@ export default function ContentPage() {
       return
     }
 
-    await updateUploadStatus(extractionId, channel, info)
-
-    await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
-
     if (channel !== 'blog' && info.status === 'scheduled' && info.scheduledAt) {
-      const target = scheduleTarget
-      createScheduledUpload({
+      const target = scheduleTarget || editScheduleTarget
+      await createScheduledUpload({
         platform: channel,
         content: { title: target?.title || '' },
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
       })
     }
+
+    await updateUploadStatus(extractionId, channel, info)
+
+    await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
   }
 
   const handleCancelSchedule = async (item) => {
@@ -640,12 +640,12 @@ export default function ContentPage() {
         defaultPlatform={scheduleTarget?.channel}
         lockPlatform={true}
         content={{ title: scheduleTarget?.title }}
-        onSave={({ scheduledAt }) => {
+        onSave={async ({ scheduledAt }) => {
           if (!scheduleTarget) return
           const nextInfo = ['blog', 'shorts'].includes(scheduleTarget.channel)
             ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : { status: 'scheduled', scheduledAt }
-          handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
+          await handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
             ...nextInfo,
           })
         }}
@@ -659,12 +659,12 @@ export default function ContentPage() {
         lockPlatform={true}
         content={{ title: editScheduleTarget?.title }}
         initialDatetime={editScheduleTarget?.scheduledAt}
-        onSave={({ scheduledAt }) => {
+        onSave={async ({ scheduledAt }) => {
           if (!editScheduleTarget) return
           const nextInfo = ['blog', 'shorts'].includes(editScheduleTarget.channel)
             ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : { status: 'scheduled', scheduledAt }
-          handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
+          await handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
             ...nextInfo,
           })
         }}

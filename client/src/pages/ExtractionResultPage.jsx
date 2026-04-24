@@ -702,7 +702,7 @@ export default function ExtractionResultPage() {
       .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
       .trim()
 
-    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|와|과|도)\s+/)
+    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
     if (particleMatch?.[1]) return particleMatch[1].trim()
 
     const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
@@ -817,6 +817,14 @@ export default function ExtractionResultPage() {
       : menuItems.find(m => nextDataMap[m.id])?.id || 'blog'
     setActiveMenu(prev => (nextDataMap[prev] ? prev : nextMenu))
   }, [state])
+
+  useEffect(() => {
+    setUploadError(null)
+
+    if (activeMenu !== 'blog' && blogUploadResult) {
+      setBlogUploadResult(null)
+    }
+  }, [activeMenu, blogUploadResult])
 
   if (isPageLoading) {
     return (
@@ -1474,11 +1482,16 @@ export default function ExtractionResultPage() {
 
   const renderShorts = () => {
     const shortsVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl
-    const sanitizedShortsDescription = stripResultCtaText(shortsScript?.uploadDescription || '')
+    const shortsTitle = shortsScript?.uploadTitle || shortsScript?.title || ''
+    const shortsHashtags = ensureArray(shortsScript?.hashtags)
+    const sanitizedShortsDescription = stripResultCtaText(
+      shortsScript?.uploadDescription ||
+      [shortsScript?.hook, shortsScript?.cta].filter(Boolean).join('\n\n')
+    )
     const shortsDetailText = [
-      shortsScript?.uploadTitle ? `제목\n${shortsScript.uploadTitle}` : '',
+      shortsTitle ? `제목\n${shortsTitle}` : '',
       sanitizedShortsDescription ? `설명\n${sanitizedShortsDescription}` : '',
-      ensureArray(shortsScript?.hashtags).length > 0 ? `태그\n${ensureArray(shortsScript?.hashtags).join(' ')}` : '',
+      shortsHashtags.length > 0 ? `태그\n${shortsHashtags.join(' ')}` : '',
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -1523,10 +1536,10 @@ export default function ExtractionResultPage() {
             <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
               <h4 className="text-sm font-semibold text-text mb-1">상세정보</h4>
 
-              {shortsScript?.uploadTitle && (
+              {shortsTitle && (
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-text-muted">영상 제목</p>
-                  <p className="text-sm text-text leading-6">{shortsScript.uploadTitle}</p>
+                  <p className="text-sm text-text leading-6">{shortsTitle}</p>
                 </div>
               )}
 
@@ -1537,11 +1550,11 @@ export default function ExtractionResultPage() {
                 </div>
               )}
 
-              {ensureArray(shortsScript?.hashtags).length > 0 && (
+              {shortsHashtags.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-xs font-semibold text-text-muted">태그</p>
                   <div className="flex flex-wrap gap-2">
-                    {ensureArray(shortsScript?.hashtags).map((tag, index) => (
+                    {shortsHashtags.map((tag, index) => (
                       <span
                         key={`${tag}-${index}`}
                         className="rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-500"
@@ -1666,7 +1679,7 @@ export default function ExtractionResultPage() {
         )}
       </div>
 
-      {blogUploadResult && (
+      {activeMenu === 'blog' && blogUploadResult && (
         <div className="flex items-start gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
           <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -1753,11 +1766,14 @@ export default function ExtractionResultPage() {
             handleUpload(platform, { scheduledAtOverride: scheduledAt })
             return
           } else {
-            await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
-            await createScheduledUpload({ platform, content, scheduledAt, extractionId: id }).catch(err => {
+            try {
+              await createScheduledUpload({ platform, content, scheduledAt, extractionId: id })
+            } catch (err) {
               console.error('[예약 생성 실패]', err)
               alert(`예약 생성 실패: ${err.message}`)
-            })
+              return
+            }
+            await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
             setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
           }
 

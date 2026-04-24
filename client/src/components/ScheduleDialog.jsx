@@ -98,21 +98,30 @@ function ScheduleDialogBody({
   const [platform, setPlatform] = useState(defaultPlatform)
   const [datetime, setDatetime] = useState(() => toLocalDatetimeValue(getDefaultScheduleDate(initialDatetime, defaultPlatform)))
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const showsNativeScheduleNotice = ['blog', 'shorts'].includes(platform)
   const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const scheduledAt = normalizeScheduledAtForPlatform(platform, datetime)
-    if (onSave) {
-      onSave({ platform, scheduledAt, content })
-    } else {
-      create({ platform, content, scheduledAt })
+    try {
+      setSaving(true)
+      if (onSave) {
+        await Promise.resolve(onSave({ platform, scheduledAt, content }))
+      } else {
+        await create({ platform, content, scheduledAt })
+      }
+    } catch (error) {
+      alert(error?.message || '예약 저장에 실패했습니다.')
+      setSaving(false)
+      return
     }
 
     setSaved(true)
     setTimeout(() => {
       setSaved(false)
+      setSaving(false)
       onClose()
     }, 800)
   }
@@ -264,11 +273,13 @@ function ScheduleDialogBody({
           )}
           <button
             onClick={handleSubmit}
-            disabled={saved}
+            disabled={saved || saving}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
           >
             {saved ? (
               <>{mode === 'edit' ? '변경 완료!' : '등록 완료!'}</>
+            ) : saving ? (
+              <>저장 중...</>
             ) : (
               <>
                 <Upload size={15} />
