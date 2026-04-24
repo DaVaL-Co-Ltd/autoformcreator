@@ -406,6 +406,65 @@ export default function ExtractionPage() {
     }))
   }
 
+  const cleanCardText = (text = '') => (
+    String(text)
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#>*_~`-]/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+
+  const truncateCardText = (text, maxLength = 34) => {
+    const clean = cleanCardText(text)
+    if (clean.length <= maxLength) return clean
+    const words = clean.split(/\s+/).filter(Boolean)
+    if (words.length <= 1) {
+      return `${clean.slice(0, maxLength).trim()}…`
+    }
+
+    let truncated = ''
+    for (const word of words) {
+      const next = truncated ? `${truncated} ${word}` : word
+      if (next.length > maxLength) break
+      truncated = next
+    }
+
+    return `${(truncated || clean.slice(0, maxLength)).trim()}…`
+  }
+
+  const deriveHeadlineKeyword = (text = '') => {
+    const clean = cleanCardText(text)
+      .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
+      .trim()
+
+    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
+    if (particleMatch?.[1]) return particleMatch[1].trim()
+
+    const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
+    if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
+
+    const words = clean.split(/\s+/).filter(Boolean)
+    if (words.length >= 2) return words.slice(0, 2).join(' ')
+    return clean
+  }
+
+  const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
+    const cleanHeading = cleanCardText(heading)
+    const cleanHeadline = cleanCardText(headline)
+    const headingRemainder = cleanHeading
+      .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
+      .trim()
+
+    if (headingRemainder) return headingRemainder
+
+    return cleanCardText(fallbackContent || '')
+      .split(/[.!?\n]/)
+      .map(line => line.trim())
+      .find(Boolean) || cleanHeading
+  }
+
   // 에러 발생 시 팝업 표시
   const showErrorAlert = (serviceName, detail) => {
     setErrorAlert(`${serviceName} 서비스에서 오류가 발생했습니다.\n\n${detail}\n\n해당 작업의 재시도 버튼을 눌러 다시 시도할 수 있습니다.`)
@@ -443,50 +502,6 @@ export default function ExtractionPage() {
     }
     const fallbackBg = bgColors[index % bgColors.length]
     const accentColor = accentPalette[fallbackBg] || '#6366f1'
-
-    const cleanCardText = (text = '') => (
-      String(text)
-        .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .replace(/[#>*_~`-]/g, ' ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    )
-    const truncateCardText = (text, maxLength = 34) => {
-      const clean = cleanCardText(text)
-      if (clean.length <= maxLength) return clean
-      return `${clean.slice(0, maxLength).trim()}…`
-    }
-    const deriveHeadlineKeyword = (text = '') => {
-      const clean = cleanCardText(text)
-        .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
-        .trim()
-
-      const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|와|과|도)\s+/)
-      if (particleMatch?.[1]) return particleMatch[1].trim()
-
-      const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-      if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
-
-      const words = clean.split(/\s+/).filter(Boolean)
-      if (words.length >= 2) return words.slice(0, 2).join(' ')
-      return clean
-    }
-    const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
-      const cleanHeading = cleanCardText(heading)
-      const cleanHeadline = cleanCardText(headline)
-      const headingRemainder = cleanHeading
-        .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
-        .trim()
-
-      if (headingRemainder) return headingRemainder
-
-      return cleanCardText(fallbackContent || '')
-        .split(/[.!?\n]/)
-        .map(line => line.trim())
-        .find(Boolean) || cleanHeading
-    }
     const heading = cleanCardText(section?.heading || '')
     const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
     const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || heading), 18)
@@ -529,6 +544,40 @@ export default function ExtractionPage() {
           </div>
         </div>
       </div>
+    )
+  }
+
+  const renderInstagramPreviewCard = (image, index) => {
+    const cardNumber = Number(image?.cardNumber) || index + 1
+    const cards = Array.isArray(instagramContent?.cardTopics) ? instagramContent.cardTopics : []
+    const matchedCard = cards.find(card => Number(card?.cardNumber) === cardNumber) || cards[index] || null
+    const imageUrl = image?.imageUrl || null
+    const headline = truncateCardText(matchedCard?.headline || `카드 ${cardNumber}`, 16)
+    const description = truncateCardText(matchedCard?.dataPoint || matchedCard?.content || '', 24)
+
+    if (!imageUrl) return null
+
+    return (
+      <button
+        key={`insta-preview-${cardNumber}-${index}`}
+        type="button"
+        onClick={() => setPreviewImage({ src: imageUrl, title: `인스타 카드 ${cardNumber}` })}
+        className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all text-left"
+      >
+        <img src={imageUrl} alt={`인스타 ${cardNumber}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
+        <div className="absolute inset-0 bg-black/15" />
+        <div className="absolute inset-0 p-2 flex flex-col justify-between">
+          <div className="self-start rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">
+            {cardNumber}
+          </div>
+          <div className="rounded-lg bg-white/92 px-2 py-1.5 shadow-sm">
+            <p className="text-[9px] font-black text-gray-800 leading-tight">{headline}</p>
+            {description && (
+              <p className="mt-1 text-[7px] font-semibold text-gray-600 leading-tight">{description}</p>
+            )}
+          </div>
+        </div>
+      </button>
     )
   }
 
@@ -1196,12 +1245,20 @@ DO NOT:
               }),
             })
             const burnData = await readApiResponse(burnRes)
-            if (burnRes.ok && burnData.url) {
-              finalUrl = resolveMediaUrl(burnData.url)
-              srtUrl = resolveMediaUrl(burnData.srtUrl || null)
+            if (!burnRes.ok) {
+              throw new Error(
+                burnData?.error?.message ||
+                burnData?.error ||
+                `자막 번인 실패 (${burnRes.status})`
+              )
             }
+            if (!burnData?.url) {
+              throw new Error('자막 번인 결과 영상 URL이 없습니다.')
+            }
+            finalUrl = resolveMediaUrl(burnData.url)
+            srtUrl = resolveMediaUrl(burnData.srtUrl || null)
           } catch (burnErr) {
-            console.warn('[subtitle burn fallback]', burnErr)
+            throw new Error(burnErr.message || '자막 번인 실패')
           }
 
           finalVideo = {
@@ -2403,18 +2460,10 @@ ${parsedText}
                   </div>
                   {hasImages && (
                     <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                      {instagramImages.filter(i => i.imageUrl).map((img, i) => (
-                        <div
-                          key={i}
-                          onClick={() => setPreviewImage({ src: img.imageUrl, title: `인스타 카드 ${i + 1}` })}
-                          className="relative shrink-0 w-14 h-14 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
-                        >
-                          <img src={img.imageUrl} alt={`인스타 ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
-                          <div className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-xs font-bold px-1 rounded">
-                            {img.cardNumber || i + 1}
-                          </div>
-                        </div>
-                      ))}
+                      {instagramImages
+                        .filter(i => i.imageUrl)
+                        .map((img, i) => renderInstagramPreviewCard(img, i))
+                        .filter(Boolean)}
                     </div>
                   )}
                 </div>
@@ -2652,10 +2701,6 @@ ${parsedText}
                           <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
                             <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
                           </div>
-                          <a href={shortsVideo.url} download="shorts_video.mp4" target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition-all shadow-md shadow-red-500/20">
-                            <Download size={14} /> 다운로드
-                          </a>
                         </div>
                       )}
                     </div>

@@ -694,7 +694,19 @@ export default function ExtractionResultPage() {
   const truncateCardText = (text, maxLength = 34) => {
     const clean = cleanCardText(text)
     if (clean.length <= maxLength) return clean
-    return `${clean.slice(0, maxLength).trim()}…`
+    const words = clean.split(/\s+/).filter(Boolean)
+    if (words.length <= 1) {
+      return `${clean.slice(0, maxLength).trim()}…`
+    }
+
+    let truncated = ''
+    for (const word of words) {
+      const next = truncated ? `${truncated} ${word}` : word
+      if (next.length > maxLength) break
+      truncated = next
+    }
+
+    return `${(truncated || clean.slice(0, maxLength)).trim()}…`
   }
 
   const deriveHeadlineKeyword = (text = '') => {
@@ -1144,15 +1156,19 @@ export default function ExtractionResultPage() {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
     const currentCardNumber = current?.cardNumber || current?.card_number || instaSlide + 1
-    const currentImage = ensureArray(instagramImages).find((image, index) => {
+    const fixedInstagramImage = ensureArray(instagramImages).find((image, index) => {
       const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
-      return imageCardNumber === currentCardNumber
-    }) || ensureArray(instagramImages)[instaSlide]
-    const currentImageUrl = currentImage?.imageUrl || currentImage?.url || null
+      return imageCardNumber === 1
+    }) || ensureArray(instagramImages)[0]
+    const currentImageUrl = fixedInstagramImage?.imageUrl || fixedInstagramImage?.url || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
-    const sanitizedSubtitle = stripResultCtaText(current?.subtitle || '')
-    const sanitizedPoints = ensureArray(current?.points).map(stripResultCtaText).filter(Boolean)
+    const currentTitle = current?.title || current?.heading || current?.headline || `인스타 카드 ${currentCardNumber}`
+    const sanitizedSubtitle = stripResultCtaText(current?.subtitle || current?.content || '')
+    const sanitizedPoints = [
+      ...ensureArray(current?.points).map(stripResultCtaText).filter(Boolean),
+      stripResultCtaText(current?.dataPoint || ''),
+    ].filter(Boolean)
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1185,28 +1201,28 @@ export default function ExtractionResultPage() {
                   ref={el => instaCardsRef.current[instaSlide] = el}
                   className="aspect-square relative bg-gradient-to-br from-pink-50 via-white to-orange-50"
                 >
-                  {currentImageUrl && (
-                    <>
-                      <img
-                        src={currentImageUrl}
-                        alt={current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        loading="lazy"
-                      />
+                    {currentImageUrl && (
+                      <>
+                        <img
+                          src={currentImageUrl}
+                          alt={fixedInstagramImage?.heading || current?.title || current?.heading || '인스타 카드 1'}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loading="lazy"
+                        />
                       <div className="absolute inset-0 bg-black/28" />
                     </>
                   )}
                   <div className="absolute inset-0 p-10 flex flex-col justify-between">
-                    <div className="space-y-4">
-                      {current?.kicker && (
-                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}>
-                          {current.kicker}
-                        </span>
-                      )}
-                      {renderCardHeading(current?.title || current?.heading, 34, { light: Boolean(currentImageUrl) })}
-                      {sanitizedSubtitle && (
-                        <p className={`text-base leading-7 ${currentImageUrl ? 'text-white/92' : 'text-gray-600'}`}>{stripBold(sanitizedSubtitle)}</p>
-                      )}
+                      <div className="space-y-4">
+                        {current?.kicker && (
+                          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}>
+                            {current.kicker}
+                          </span>
+                        )}
+                        {renderCardHeading(currentTitle, 34, { light: Boolean(currentImageUrl) })}
+                        {sanitizedSubtitle && (
+                          <p className={`text-base leading-7 ${currentImageUrl ? 'text-white/92' : 'text-gray-600'}`}>{stripBold(sanitizedSubtitle)}</p>
+                        )}
                     </div>
                     {sanitizedPoints.length > 0 && (
                       <ul className="space-y-3">
