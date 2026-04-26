@@ -72,8 +72,20 @@ function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+// SmartEditor가 입력 중 auto-format으로 변환하는 마커들 제거 (취소선 등 방지)
+// 단, 볼드 처리는 parseBoldInlineSegments가 별도로 처리하므로 ** 는 여기서 제거 안 함
+function stripAutoFormatMarkers(raw) {
+  return String(raw || '')
+    .replace(/~~([^~]+)~~/g, '$1')   // 취소선 마커
+    .replace(/--([^-\n]+)--/g, '$1')  // 일부 에디터 취소선
+    .replace(/__([^_]+)__/g, '$1')   // 굵게/밑줄 (언더스코어 변형)
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // 이탤릭 변형
+    .replace(/`([^`]+)`/g, '$1')      // 인라인 코드
+    .replace(/~/g, '')                // 잔여 단일 ~ (auto-format 트리거)
+}
+
 function typeMultiline(page, text) {
-  const lines = String(text).split(/\r?\n/)
+  const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
 
   return lines.reduce(async (previous, line, index) => {
     await previous
@@ -109,29 +121,11 @@ function parseBoldInlineSegments(text) {
 }
 
 async function toggleBoldFormatting(page) {
+  await releaseFormattingModifiers(page)
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyB')
   await page.keyboard.up('Control')
   await sleep(120)
-}
-
-function getStrikeSelectors() {
-  return [
-    'button[aria-label*="취소선"]',
-    '[role="button"][aria-label*="취소선"]',
-    'button[aria-label*="strikethrough" i]',
-    '[role="button"][aria-label*="strikethrough" i]',
-    'button[aria-label*="strike through" i]',
-    '[role="button"][aria-label*="strike through" i]',
-    '[data-click-area*="strike"]',
-    '[data-name*="strike"]',
-    '[data-command*="strike"]',
-    '[data-command*="lineThrough" i]',
-    'button.se-toolbar-item-lineThrough',
-    '.se-toolbar-item-lineThrough button',
-    'button.se-toolbar-item-strikethrough',
-    '.se-toolbar-item-strikethrough button',
-  ]
 }
 
 function getFormattingScopes(page) {
@@ -241,91 +235,6 @@ async function clickBoldButton(scope) {
   })
 }
 
-async function findStrikeButtonState(scope) {
-  const candidates = getStrikeSelectors()
-  return scope.evaluate((selectors) => {
-    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
-    const isVisible = (element) => {
-      if (!(element instanceof Element)) return false
-      const style = window.getComputedStyle(element)
-      const rect = element.getBoundingClientRect()
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
-    }
-
-    const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('취소선')) return 100
-      if (text.includes('strikethrough')) return 90
-      if (text.includes('strike through')) return 85
-      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('strike')) return 70
-      if (normalize(element.getAttribute('data-command')).includes('linethrough')) return 65
-      if (normalize(element.className).includes('linethrough')) return 60
-      if (normalize(element.className).includes('strikethrough')) return 55
-      return 0
-    }
-
-    const nodes = selectors
-      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-      .filter((element) => element instanceof HTMLElement && isVisible(element))
-      .sort((left, right) => score(right) - score(left))
-
-    const button = nodes.find((element) => score(element) > 0)
-    if (!button) return null
-
-    const ariaPressed = String(button.getAttribute('aria-pressed') || '').trim().toLowerCase()
-    const ariaChecked = String(button.getAttribute('aria-checked') || '').trim().toLowerCase()
-    const classText = normalize(button.className)
-    const parentClassText = normalize(button.parentElement?.className)
-    const active = ariaPressed === 'true' ||
-      ariaChecked === 'true' ||
-      classText.includes('active') ||
-      classText.includes('selected') ||
-      classText.includes('on') ||
-      parentClassText.includes('active') ||
-      parentClassText.includes('selected') ||
-      parentClassText.includes('on')
-
-    return { active }
-  }, candidates)
-}
-
-async function clickStrikeButton(scope) {
-  const candidates = getStrikeSelectors()
-  return scope.evaluate((selectors) => {
-    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
-    const isVisible = (element) => {
-      if (!(element instanceof Element)) return false
-      const style = window.getComputedStyle(element)
-      const rect = element.getBoundingClientRect()
-      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
-    }
-
-    const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('취소선')) return 100
-      if (text.includes('strikethrough')) return 90
-      if (text.includes('strike through')) return 85
-      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('strike')) return 70
-      if (normalize(element.getAttribute('data-command')).includes('linethrough')) return 65
-      if (normalize(element.className).includes('linethrough')) return 60
-      if (normalize(element.className).includes('strikethrough')) return 55
-      return 0
-    }
-
-    const button = selectors
-      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
-      .filter((element) => element instanceof HTMLElement && isVisible(element))
-      .sort((left, right) => score(right) - score(left))
-      .find((element) => score(element) > 0)
-
-    if (!button) return false
-    button.click()
-    return true
-  }, candidates)
-}
-
 async function releaseFormattingModifiers(page) {
   for (const key of ['Shift', 'Control', 'Alt', 'Meta']) {
     try {
@@ -334,76 +243,41 @@ async function releaseFormattingModifiers(page) {
   }
 }
 
-async function setBoldFormatting(page, enabled) {
-  await releaseFormattingModifiers(page)
-
-  for (const scope of getFormattingScopes(page)) {
-    try {
-      const state = await findBoldButtonState(scope)
-      if (!state) continue
-      if (state.active !== enabled) {
-        const clicked = await clickBoldButton(scope)
-        if (clicked) {
-          await sleep(120)
-        }
-      }
-      return
-    } catch {}
-  }
-
+async function setBoldFormatting(page, enabled, currentState) {
+  if (currentState === enabled) return currentState
   await toggleBoldFormatting(page)
-}
-
-async function ensureStrikeFormattingOff(page) {
-  await releaseFormattingModifiers(page)
-
-  for (const scope of getFormattingScopes(page)) {
-    try {
-      const state = await findStrikeButtonState(scope)
-      if (!state) continue
-      if (state.active) {
-        const clicked = await clickStrikeButton(scope)
-        if (clicked) {
-          await sleep(120)
-        }
-      }
-      return
-    } catch {}
-  }
+  return enabled
 }
 
 async function typeMultilineWithFormatting(page, text) {
-  const lines = String(text).split(/\r?\n/)
+  // 볼드 마커(**)는 parseBoldInlineSegments가 처리하므로 보존
+  // 그 외 ~~, __, _, --, ` 등 auto-format 트리거 마커만 제거
+  const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
+  let boldEnabled = false
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]
     const inlineSegments = parseBoldInlineSegments(line)
-    await ensureStrikeFormattingOff(page)
 
     for (const segment of inlineSegments) {
       if (!segment.text) continue
 
       if (segment.bold) {
-        await ensureStrikeFormattingOff(page)
-        await setBoldFormatting(page, true)
+        boldEnabled = await setBoldFormatting(page, true, boldEnabled)
         await page.keyboard.type(segment.text, { delay: 20 })
-        await setBoldFormatting(page, false)
-        await ensureStrikeFormattingOff(page)
+        boldEnabled = await setBoldFormatting(page, false, boldEnabled)
       } else {
-        await ensureStrikeFormattingOff(page)
         await page.keyboard.type(segment.text, { delay: 20 })
       }
     }
 
     if (lineIndex < lines.length - 1) {
-      await setBoldFormatting(page, false)
-      await ensureStrikeFormattingOff(page)
+      boldEnabled = await setBoldFormatting(page, false, boldEnabled)
       await page.keyboard.press('Enter')
     }
   }
 
-  await setBoldFormatting(page, false)
-  await ensureStrikeFormattingOff(page)
+  await setBoldFormatting(page, false, boldEnabled)
 }
 
 function ensureDebugDir() {
