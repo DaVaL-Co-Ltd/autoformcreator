@@ -115,29 +115,295 @@ async function toggleBoldFormatting(page) {
   await sleep(120)
 }
 
+function getStrikeSelectors() {
+  return [
+    'button[aria-label*="취소선"]',
+    '[role="button"][aria-label*="취소선"]',
+    'button[aria-label*="strikethrough" i]',
+    '[role="button"][aria-label*="strikethrough" i]',
+    'button[aria-label*="strike through" i]',
+    '[role="button"][aria-label*="strike through" i]',
+    '[data-click-area*="strike"]',
+    '[data-name*="strike"]',
+    '[data-command*="strike"]',
+    '[data-command*="lineThrough" i]',
+    'button.se-toolbar-item-lineThrough',
+    '.se-toolbar-item-lineThrough button',
+    'button.se-toolbar-item-strikethrough',
+    '.se-toolbar-item-strikethrough button',
+  ]
+}
+
+function getFormattingScopes(page) {
+  if (!page?.frames) return [page]
+  const frames = page.frames().filter((frame) => frame !== page.mainFrame())
+  return [page, ...frames]
+}
+
+async function findBoldButtonState(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="굵게"]',
+      '[role="button"][aria-label*="굵게"]',
+      'button[aria-label*="bold" i]',
+      '[role="button"][aria-label*="bold" i]',
+      '[data-click-area*="bold"]',
+      '[data-name="bold"]',
+      '[data-command="bold"]',
+      'button.se-toolbar-item-bold',
+      '.se-toolbar-item-bold button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize(element.textContent || element.getAttribute('aria-label'))
+      if (text.includes('굵게')) return 100
+      if (text.includes('bold')) return 90
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
+      if (normalize(element.className).includes('bold')) return 60
+      return 0
+    }
+
+    const nodes = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+
+    const button = nodes.find((element) => score(element) > 0)
+    if (!button) return null
+
+    const ariaPressed = normalize(button.getAttribute('aria-pressed'))
+    const ariaChecked = normalize(button.getAttribute('aria-checked'))
+    const classText = normalize(button.className)
+    const parentClassText = normalize(button.parentElement?.className)
+    const active = ariaPressed === 'true' ||
+      ariaChecked === 'true' ||
+      classText.includes('active') ||
+      classText.includes('selected') ||
+      classText.includes('on') ||
+      parentClassText.includes('active') ||
+      parentClassText.includes('selected') ||
+      parentClassText.includes('on')
+
+    return { active }
+  })
+}
+
+async function clickBoldButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="굵게"]',
+      '[role="button"][aria-label*="굵게"]',
+      'button[aria-label*="bold" i]',
+      '[role="button"][aria-label*="bold" i]',
+      '[data-click-area*="bold"]',
+      '[data-name="bold"]',
+      '[data-command="bold"]',
+      'button.se-toolbar-item-bold',
+      '.se-toolbar-item-bold button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize(element.textContent || element.getAttribute('aria-label'))
+      if (text.includes('굵게')) return 100
+      if (text.includes('bold')) return 90
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
+      if (normalize(element.className).includes('bold')) return 60
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
+async function findStrikeButtonState(scope) {
+  const candidates = getStrikeSelectors()
+  return scope.evaluate((selectors) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize(element.textContent || element.getAttribute('aria-label'))
+      if (text.includes('취소선')) return 100
+      if (text.includes('strikethrough')) return 90
+      if (text.includes('strike through')) return 85
+      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 80
+      if (normalize(element.getAttribute('data-name')).includes('strike')) return 70
+      if (normalize(element.getAttribute('data-command')).includes('linethrough')) return 65
+      if (normalize(element.className).includes('linethrough')) return 60
+      if (normalize(element.className).includes('strikethrough')) return 55
+      return 0
+    }
+
+    const nodes = selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+
+    const button = nodes.find((element) => score(element) > 0)
+    if (!button) return null
+
+    const ariaPressed = String(button.getAttribute('aria-pressed') || '').trim().toLowerCase()
+    const ariaChecked = String(button.getAttribute('aria-checked') || '').trim().toLowerCase()
+    const classText = normalize(button.className)
+    const parentClassText = normalize(button.parentElement?.className)
+    const active = ariaPressed === 'true' ||
+      ariaChecked === 'true' ||
+      classText.includes('active') ||
+      classText.includes('selected') ||
+      classText.includes('on') ||
+      parentClassText.includes('active') ||
+      parentClassText.includes('selected') ||
+      parentClassText.includes('on')
+
+    return { active }
+  }, candidates)
+}
+
+async function clickStrikeButton(scope) {
+  const candidates = getStrikeSelectors()
+  return scope.evaluate((selectors) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize(element.textContent || element.getAttribute('aria-label'))
+      if (text.includes('취소선')) return 100
+      if (text.includes('strikethrough')) return 90
+      if (text.includes('strike through')) return 85
+      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 80
+      if (normalize(element.getAttribute('data-name')).includes('strike')) return 70
+      if (normalize(element.getAttribute('data-command')).includes('linethrough')) return 65
+      if (normalize(element.className).includes('linethrough')) return 60
+      if (normalize(element.className).includes('strikethrough')) return 55
+      return 0
+    }
+
+    const button = selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  }, candidates)
+}
+
+async function releaseFormattingModifiers(page) {
+  for (const key of ['Shift', 'Control', 'Alt', 'Meta']) {
+    try {
+      await page.keyboard.up(key)
+    } catch {}
+  }
+}
+
+async function setBoldFormatting(page, enabled) {
+  await releaseFormattingModifiers(page)
+
+  for (const scope of getFormattingScopes(page)) {
+    try {
+      const state = await findBoldButtonState(scope)
+      if (!state) continue
+      if (state.active !== enabled) {
+        const clicked = await clickBoldButton(scope)
+        if (clicked) {
+          await sleep(120)
+        }
+      }
+      return
+    } catch {}
+  }
+
+  await toggleBoldFormatting(page)
+}
+
+async function ensureStrikeFormattingOff(page) {
+  await releaseFormattingModifiers(page)
+
+  for (const scope of getFormattingScopes(page)) {
+    try {
+      const state = await findStrikeButtonState(scope)
+      if (!state) continue
+      if (state.active) {
+        const clicked = await clickStrikeButton(scope)
+        if (clicked) {
+          await sleep(120)
+        }
+      }
+      return
+    } catch {}
+  }
+}
+
 async function typeMultilineWithFormatting(page, text) {
   const lines = String(text).split(/\r?\n/)
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]
     const inlineSegments = parseBoldInlineSegments(line)
+    await ensureStrikeFormattingOff(page)
 
     for (const segment of inlineSegments) {
       if (!segment.text) continue
 
       if (segment.bold) {
-        await toggleBoldFormatting(page)
+        await ensureStrikeFormattingOff(page)
+        await setBoldFormatting(page, true)
         await page.keyboard.type(segment.text, { delay: 20 })
-        await toggleBoldFormatting(page)
+        await setBoldFormatting(page, false)
+        await ensureStrikeFormattingOff(page)
       } else {
+        await ensureStrikeFormattingOff(page)
         await page.keyboard.type(segment.text, { delay: 20 })
       }
     }
 
     if (lineIndex < lines.length - 1) {
+      await setBoldFormatting(page, false)
+      await ensureStrikeFormattingOff(page)
       await page.keyboard.press('Enter')
     }
   }
+
+  await setBoldFormatting(page, false)
+  await ensureStrikeFormattingOff(page)
 }
 
 function ensureDebugDir() {

@@ -15,6 +15,8 @@ const AutoLaunch = require('auto-launch')
 const Store = require('electron-store')
 const { startServer, stopServer, getServerStatus, setShutdownHandler } = require('./src/server')
 const { hasSavedSession, getPlaywrightDiagnostics } = require('./src/naver-upload')
+const { clearSessionState, validateStoredNaverSession } = require('./src/session-state')
+const { naverLogin } = require('./src/naver-login')
 
 const APP_NAME = 'AutoForm Naver RPA'
 const APP_ID = 'com.autoformcreator.naverrpa'
@@ -258,13 +260,47 @@ function updateTrayStatus(status = 'running') {
   tray.setToolTip(labels[status] || labels.running)
 }
 
+async function promptForMissingNaverSession({ startHidden = false } = {}) {
+  if (startHidden) {
+    return
+  }
+
+  const sessionReady = hasSavedSession() && (await validateStoredNaverSession({ bypassCache: true }))
+  if (sessionReady) {
+    return
+  }
+
+  clearSessionState()
+
+  const { response } = await dialog.showMessageBox({
+    buttons: ['확인', '나중에'],
+    cancelId: 1,
+    defaultId: 0,
+    type: 'warning',
+    title: '네이버 로그인 필요',
+    message: '저장된 네이버 로그인 세션이 없습니다.',
+    detail: '확인을 누르면 네이버 로그인 화면이 열리고, 로그인 후 세션이 저장됩니다.',
+  })
+
+  if (response !== 0) {
+    return
+  }
+
+  mainWindow?.show()
+  mainWindow?.focus()
+
+  try {
+    await naverLogin()
+  } catch (error) {
+    dialog.showErrorBox('네이버 로그인 실패', error.message)
+  }
+}
+
 ipcMain.handle('get-status', () => getStatusPayload())
 ipcMain.handle('toggle-autolaunch', async (_event, enabled) => syncAutoLaunch(Boolean(enabled)))
 ipcMain.handle('restart-server', async () => restartServer())
 
 ipcMain.handle('login-naver', async () => {
-  const { naverLogin } = require('./src/naver-login')
-
   try {
     const result = await naverLogin()
     return { success: true, ...result }
@@ -277,6 +313,7 @@ ipcMain.handle('open-logs-folder', () => shell.openPath(app.getPath('userData'))
 
 app.whenReady().then(async () => {
   app.setAppUserModelId(APP_ID)
+  const startHidden = process.argv.includes('--hidden') || app.commandLine.hasSwitch('hidden')
   setShutdownHandler(() => {
     app.isQuitting = true
     app.quit()
@@ -303,6 +340,7 @@ app.whenReady().then(async () => {
     updateTrayStatus('error')
     dialog.showErrorBox('로컬 서버 시작 실패', error.message)
   }
+  await promptForMissingNaverSession({ startHidden })
 })
 
 app.on('activate', () => {

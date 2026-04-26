@@ -10,7 +10,12 @@ import {
   XCircle,
 } from 'lucide-react'
 import { DEMO_SHORTS_SCRIPT } from '../constants/demoShortsScript.js'
-import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+import {
+  buildShortsVideoAgentPrompt,
+  mapShortsSubtitleStyleToBurnStyle,
+  SHORTS_SUBTITLE_FONT_OPTIONS,
+  SHORTS_SUBTITLE_STYLE_OPTIONS,
+} from '../utils/shortsVideoAgent.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
@@ -78,6 +83,14 @@ async function readJsonSafely(response) {
   }
 }
 
+function resolveMediaUrl(url) {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+  if (url.startsWith('/output/') && API_BASE) return `${API_BASE}${url}`
+  if (url.startsWith('/') && typeof window !== 'undefined') return `${window.location.origin}${url}`
+  return url
+}
+
 export default function ShortsTest2Page() {
   const [avatars, setAvatars] = useState([])
   const [avatarsLoading, setAvatarsLoading] = useState(false)
@@ -93,6 +106,8 @@ export default function ShortsTest2Page() {
   const [voicesLoading, setVoicesLoading] = useState(false)
   const [selectedVoiceId, setSelectedVoiceId] = useState('')
   const [playingVoiceId, setPlayingVoiceId] = useState('')
+  const [subtitleStyle, setSubtitleStyle] = useState('style1')
+  const [subtitleFont, setSubtitleFont] = useState('default')
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
@@ -355,8 +370,8 @@ IMPORTANT REQUIREMENTS:
         script: demoShortsScript,
         avatar: selectedAvatar,
         voice: selectedVoice,
-        subtitleStyle: 'style1',
-        subtitleFont: 'default',
+        subtitleStyle,
+        subtitleFont,
       })
 
       const generateResponse = await fetchJson('/api/heygen/video-agent/generate', {
@@ -401,20 +416,19 @@ IMPORTANT REQUIREMENTS:
         setStatus(`렌더링 중... [${state || 'processing'}]`)
 
         if (state === 'completed') {
-          const rawUrl = videoData.video_url
+          const rawUrl = resolveMediaUrl(videoData.video_url)
           let finalUrl = rawUrl
           let srtUrl = ''
 
           setStatus('자막 번인 중...')
 
-          try {
             const burnResponse = await fetchJson('/api/subtitle/burn', {
               method: 'POST',
               body: JSON.stringify({
                 videoUrl: rawUrl,
                 scenes: demoShortsScript.scenes,
-                subtitleStyle: mapShortsSubtitleStyleToBurnStyle('style1'),
-                subtitleFont: 'default',
+                subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
+                subtitleFont,
               }),
             })
             const burnData = await readJsonSafely(burnResponse)
@@ -423,13 +437,11 @@ IMPORTANT REQUIREMENTS:
                 burnData.error?.message || burnData.error || `자막 번인 실패 (${burnResponse.status})`
               )
             }
-            if (burnData.url) {
-              finalUrl = burnData.url
-              srtUrl = burnData.srtUrl || ''
+            if (!burnData.url) {
+              throw new Error('자막 번인 결과 영상 URL이 없습니다.')
             }
-          } catch (burnError) {
-            console.warn('[ShortsTest2] subtitle burn fallback:', burnError)
-          }
+            finalUrl = resolveMediaUrl(burnData.url)
+            srtUrl = resolveMediaUrl(burnData.srtUrl || '')
 
           setResult({
             videoId,
@@ -439,6 +451,8 @@ IMPORTANT REQUIREMENTS:
             duration: demoShortsScript.duration,
             prompt,
             srtUrl,
+            subtitleStyle,
+            subtitleFont,
           })
           setStatus('완료')
           setGenerating(false)
@@ -687,6 +701,95 @@ IMPORTANT REQUIREMENTS:
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="bg-surface rounded-xl border border-border p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold text-text">자막 스타일</h2>
+          <CheckCircle size={16} className="text-success" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-semibold text-text-muted">폰트</p>
+          {SHORTS_SUBTITLE_FONT_OPTIONS.map((font) => {
+            const isSelected = subtitleFont === font.value
+            const fontStyle =
+              font.value === 'bold' ? { fontFamily: 'A2z, sans-serif', fontWeight: 700 } :
+              font.value === 'dongle' ? { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } :
+              font.value === 'handwriting' ? { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } :
+              font.value === 'gothic' ? { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } : {}
+
+            return (
+              <button
+                key={font.value}
+                onClick={() => setSubtitleFont(font.value)}
+                style={fontStyle}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                  isSelected
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-surface-light border-border text-text-muted hover:border-primary/20'
+                }`}
+              >
+                {font.label}
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {SHORTS_SUBTITLE_STYLE_OPTIONS.map((style) => {
+            const isSelected = subtitleStyle === style.value
+            const previewFontStyle =
+              subtitleFont === 'bold' ? { fontFamily: 'A2z, sans-serif', fontWeight: 700 } :
+              subtitleFont === 'dongle' ? { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } :
+              subtitleFont === 'handwriting' ? { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } :
+              subtitleFont === 'gothic' ? { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } : {}
+
+            return (
+              <button
+                key={style.value}
+                onClick={() => setSubtitleStyle(style.value)}
+                className={`flex flex-col gap-2 p-3 rounded-xl transition-all border ${
+                  isSelected
+                    ? 'bg-primary/10 border-primary/30 shadow-sm'
+                    : 'bg-surface-light border-border hover:border-primary/20'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-text'}`}>
+                    {style.label}
+                  </p>
+                  {isSelected && <CheckCircle size={14} className="text-primary" />}
+                </div>
+                <p className="text-[11px] text-text-muted text-left">
+                  {style.value === 'style1' ? '흰 글자 + 검정 반투명 박스' : '흰 글자 + 외곽선 (배경 없음)'}
+                </p>
+                <div className="bg-slate-400 rounded-lg px-2 py-2 flex items-center justify-center">
+                  {style.value === 'style1' && (
+                    <div className="bg-black/70 px-3 py-1.5 rounded">
+                      <p className="text-white text-xs font-medium text-center" style={previewFontStyle}>
+                        안녕하세요 AI 분석입니다
+                      </p>
+                    </div>
+                  )}
+                  {style.value === 'style2' && (
+                    <div className="px-3 py-1.5">
+                      <p
+                        className="text-white text-xs font-bold text-center"
+                        style={{
+                          ...previewFontStyle,
+                          textShadow: '0 0 1px rgba(0,0,0,1), 0 0 1px rgba(0,0,0,0.8)',
+                        }}
+                      >
+                        안녕하세요 AI 분석입니다
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
 

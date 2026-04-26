@@ -238,6 +238,25 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
 
+  const refreshPlatformStatuses = useCallback(async () => {
+    setStatusLoading(true)
+    setStatusError('')
+
+    try {
+      const [blog, instagram, shorts] = await Promise.all([
+        fetchNaverSessionStatus(),
+        fetchInstagramSessionStatus(),
+        fetchYoutubeSessionStatus(),
+      ])
+
+      setPlatformStatuses({ blog, instagram, shorts })
+    } catch (error) {
+      setStatusError(error.message)
+    } finally {
+      setStatusLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     const section = searchParams.get('section')
     if (VALID_SECTION_IDS.has(section) && section !== activeSection) {
@@ -282,25 +301,6 @@ export default function SettingsPage() {
   )
 
   const platformCards = useMemo(() => buildPlatformCards(platformStatuses), [platformStatuses])
-
-  const refreshPlatformStatuses = useCallback(async () => {
-    setStatusLoading(true)
-    setStatusError('')
-
-    try {
-      const [blog, instagram, shorts] = await Promise.all([
-        fetchNaverSessionStatus(),
-        fetchInstagramSessionStatus(),
-        fetchYoutubeSessionStatus(),
-      ])
-
-      setPlatformStatuses({ blog, instagram, shorts })
-    } catch (error) {
-      setStatusError(error.message)
-    } finally {
-      setStatusLoading(false)
-    }
-  }, [])
 
   useEffect(() => {
     if (activeSection !== 'desktop-helper' && activeSection !== 'platforms') {

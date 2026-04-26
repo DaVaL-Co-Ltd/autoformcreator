@@ -1,4 +1,4 @@
-import 'dotenv/config'
+﻿import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import fs from 'fs'
@@ -33,7 +33,7 @@ registerOptionalFont('TmoneyRoundWind-Regular.woff', 'TmoneyRoundWind')
 registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
 registerOptionalFont('A2z-Bold.woff2', 'A2z')
 
-// Supabase 클라이언트 (서버 전용)
+// Supabase ?대씪?댁뼵??(?쒕쾭 ?꾩슜)
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
 const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
   ? createSupabaseClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
@@ -43,14 +43,14 @@ const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_R
 
 const app = express()
 
-// CORS: ALLOWED_ORIGINS 환경변수 있으면 제한, 없으면 전체 허용 (개발용)
+// CORS: ALLOWED_ORIGINS ?섍꼍蹂???덉쑝硫??쒗븳, ?놁쑝硫??꾩껜 ?덉슜 (媛쒕컻??
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || null
 app.use(cors({
   origin: allowedOrigins || true,
   credentials: true,
 }))
 
-// JSON body for most routes (LlamaParse upload 제외)
+// JSON body for most routes (LlamaParse upload ?쒖쇅)
 app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path === '/api/output/upload') return next()
@@ -58,8 +58,8 @@ app.use((req, res, next) => {
   express.json({ limit: '150mb' })(req, res, next)
 })
 
-// API 시크릿 검증 미들웨어 (/api/* 엔드포인트 보호)
-// 예외: /health, /api/youtube/oauth/callback (Google이 리디렉트하는 공개 엔드포인트)
+// API ?쒗겕由?寃利?誘몃뱾?⑥뼱 (/api/* ?붾뱶?ъ씤??蹂댄샇)
+// ?덉쇅: /health, /api/youtube/oauth/callback (Google??由щ뵒?됲듃?섎뒗 怨듦컻 ?붾뱶?ъ씤??
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next()
   if (req.path === '/api/youtube/oauth/callback') return next()
@@ -67,7 +67,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/youtube/auth-status') return next()
   if (req.path === '/api/instagram/oauth/callback') return next()
   const expected = process.env.API_SECRET
-  if (!expected) return next() // dev 편의: 미설정 시 통과
+  if (!expected) return next() // dev ?몄쓽: 誘몄꽕?????듦낵
   const provided = req.headers['x-app-secret']
   if (provided !== expected) {
     console.log(`[AUTH FAIL] path=${req.path} provided=${provided?.slice(0, 20)} expected=${expected?.slice(0, 20)}`)
@@ -233,7 +233,7 @@ app.get('/api/heygen/video/status/:videoId', async (req, res) => {
   }
 })
 
-// ===== HeyGen 프리셋 아바타 목록 =====
+// ===== HeyGen ?꾨━???꾨컮? 紐⑸줉 =====
 app.get('/api/heygen/preset-avatars', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -255,7 +255,7 @@ app.get('/api/heygen/preset-avatars', async (req, res) => {
   }
 })
 
-// ===== HeyGen 커스텀 아바타 목록 (슬롯 확인용) =====
+// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ’ ?뺤씤?? =====
 app.get('/api/heygen/public-avatars', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -291,7 +291,7 @@ app.get('/api/heygen/public-avatars', async (req, res) => {
   }
 })
 
-// ===== HeyGen 커스텀 아바타 목록 (여부 확인용) =====
+// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ? ?뺤씤?? =====
 app.get('/api/heygen/avatar-list', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -309,7 +309,7 @@ app.get('/api/heygen/avatar-list', async (req, res) => {
   }
 })
 
-// ===== HeyGen 아바타 상태 확인 (avatars 목록에서 조회) =====
+// ===== HeyGen ?꾨컮? ?곹깭 ?뺤씤 (avatars 紐⑸줉?먯꽌 議고쉶) =====
 app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -331,7 +331,7 @@ app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
   }
 })
 
-// ===== HeyGen 테스트용: 성공한 이미지 직접 업로드 =====
+// ===== HeyGen ?뚯뒪?몄슜: ?깃났???대?吏 吏곸젒 ?낅줈??=====
 app.post('/api/heygen/upload-test-avatar', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -351,7 +351,7 @@ app.post('/api/heygen/upload-test-avatar', async (req, res) => {
   }
 })
 
-// ===== HeyGen Upload Asset (base64 or filePath → binary → HeyGen) =====
+// ===== HeyGen Upload Asset (base64 or filePath ??binary ??HeyGen) =====
 app.post('/api/heygen/upload-asset', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -379,7 +379,7 @@ app.post('/api/heygen/upload-asset', async (req, res) => {
   }
 })
 
-// ===== HeyGen Avatar Group 생성 (image_key → talking_photo_id) =====
+// ===== HeyGen Avatar Group ?앹꽦 (image_key ??talking_photo_id) =====
 app.post('/api/heygen/avatar-group/create', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -397,7 +397,7 @@ app.post('/api/heygen/avatar-group/create', async (req, res) => {
   }
 })
 
-// ===== 모션 배경 영상 생성 (FFmpeg) =====
+// ===== 紐⑥뀡 諛곌꼍 ?곸긽 ?앹꽦 (FFmpeg) =====
 app.post('/api/background/generate', async (req, res) => {
   const { style = 'gradient', duration = 8 } = req.body
   const outputDir2 = path.join(__dirname, '..', 'output')
@@ -406,7 +406,7 @@ app.post('/api/background/generate', async (req, res) => {
   const ts = Date.now()
   const outputPath = path.join(outputDir2, `bg_${style}_${ts}.mp4`)
 
-  // FFmpeg 필터로 모션 배경 생성 (1080x1920, 9:16)
+  // FFmpeg ?꾪꽣濡?紐⑥뀡 諛곌꼍 ?앹꽦 (1080x1920, 9:16)
   const filters = {
     gradient: `color=s=1080x1920:c=black:d=${duration},format=yuv420p,geq='r=30+20*sin(2*PI*T/4+Y/200):g=30+40*sin(2*PI*T/5+X/300):b=80+50*sin(2*PI*T/3+Y/150)'`,
     warm: `color=s=1080x1920:c=black:d=${duration},format=yuv420p,geq='r=60+40*sin(2*PI*T/6+Y/250):g=40+20*sin(2*PI*T/4+X/200):b=20+10*sin(2*PI*T/5)'`,
@@ -434,7 +434,7 @@ app.post('/api/background/generate', async (req, res) => {
   }
 })
 
-// ===== 타이틀 배경 이미지 생성 (Canvas, 왼쪽 상단 타이틀) =====
+// ===== ??댄? 諛곌꼍 ?대?吏 ?앹꽦 (Canvas, ?쇱そ ?곷떒 ??댄?) =====
 app.post('/api/title-bg/generate', async (req, res) => {
   const { scenes } = req.body
   if (!scenes?.length) return res.status(400).json({ error: 'Missing scenes' })
@@ -461,7 +461,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
     const canvas = createCanvas(W, H)
     const ctx = canvas.getContext('2d')
 
-    // 투명 배경 (아바타 위에 오버레이)
+    // ?щ챸 諛곌꼍 (?꾨컮? ?꾩뿉 ?ㅻ쾭?덉씠)
     ctx.clearRect(0, 0, W, H)
 
     const design = titleDesigns[(scene.sceneNumber - 1) % titleDesigns.length]
@@ -475,7 +475,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
     const lineHeight = fontSize * 1.5
     const maxWidth = W - x * 2
 
-    // 텍스트를 여러 줄로 분할 (특수문자, 공백 기준)
+    // ?띿뒪?몃? ?щ윭 以꾨줈 遺꾪븷 (?뱀닔臾몄옄, 怨듬갚 湲곗?)
     ctx.font = `${fontSize}px Pretendard`
     ctx.textAlign = 'left'
     const lines = []
@@ -486,10 +486,10 @@ app.post('/api/title-bg/generate', async (req, res) => {
       let cut = remaining.length
       for (let i = remaining.length - 1; i >= 1; i--) {
         if (ctx.measureText(remaining.slice(0, i)).width <= maxWidth) {
-          // 특수문자나 공백에서 자르기
+          // ?뱀닔臾몄옄??怨듬갚?먯꽌 ?먮Ⅴ湲?
           let bestCut = i
           for (let j = i; j >= Math.floor(i * 0.5); j--) {
-            if (/[\s,.:!?·\-]/.test(remaining[j])) { bestCut = j + 1; break }
+            if (/[\s,.:!?쨌\-]/.test(remaining[j])) { bestCut = j + 1; break }
           }
           cut = bestCut
           break
@@ -545,7 +545,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
   res.json({ images: results })
 })
 
-// ===== 인포그래픽 배경 이미지 생성 (Canvas + 한글 폰트) =====
+// ===== ?명룷洹몃옒??諛곌꼍 ?대?吏 ?앹꽦 (Canvas + ?쒓? ?고듃) =====
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath()
   ctx.moveTo(x + r, y)
@@ -591,29 +591,29 @@ app.post('/api/infographic/generate', async (req, res) => {
     const canvas = createCanvas(W, H)
     const ctx = canvas.getContext('2d')
 
-    // 배경
+    // 諛곌꼍
     ctx.fillStyle = theme.bg
     ctx.fillRect(0, 0, W, H)
 
-    // 상단 장식 원
+    // ?곷떒 ?μ떇 ??
     ctx.globalAlpha = 0.2; ctx.fillStyle = theme.accent
     ctx.beginPath(); ctx.arc(480, 200, 45, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 0.3
     ctx.beginPath(); ctx.arc(600, 200, 45, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
 
-    // 제목
+    // ?쒕ぉ
     ctx.font = '52px Pretendard'
     ctx.fillStyle = theme.text
     ctx.textAlign = 'center'
     ctx.fillText(title, W / 2, 400)
 
-    // 구분선
+    // 援щ텇??
     ctx.fillStyle = theme.accent; ctx.globalAlpha = 0.5
     roundRect(ctx, 340, 440, 400, 4, 2); ctx.fill()
     ctx.globalAlpha = 1
 
-    // 바 차트
+    // 諛?李⑦듃
     bullets.forEach((b, i) => {
       const y = 600 + i * 200
       const parts = b.split(':')
@@ -622,32 +622,32 @@ app.post('/api/infographic/generate', async (req, res) => {
       const numMatch = value.match(/[\d.]+/)
       const barWidth = numMatch ? Math.min(750, Math.max(200, parseFloat(numMatch[0]) * 10)) : 500
 
-      // 라벨
+      // ?쇰꺼
       ctx.font = '38px Pretendard'
       ctx.fillStyle = theme.text
       ctx.textAlign = 'left'
       ctx.fillText(label, 120, y)
 
-      // 배경 바
+      // 諛곌꼍 諛?
       ctx.globalAlpha = 0.3; ctx.fillStyle = theme.accent
       roundRect(ctx, 120, y + 20, barWidth, 55, 28); ctx.fill()
-      // 진행 바
+      // 吏꾪뻾 諛?
       ctx.globalAlpha = 1; ctx.fillStyle = theme.accent
       roundRect(ctx, 120, y + 20, barWidth * 0.85, 55, 28); ctx.fill()
 
-      // 값
+      // 媛?
       ctx.font = '34px Pretendard'
       ctx.fillStyle = theme.accent
       ctx.textAlign = 'left'
       ctx.fillText(value, 140 + barWidth * 0.85, y + 58)
     })
 
-    // 워터마크
+    // ?뚰꽣留덊겕
     ctx.font = '22px Pretendard'
     ctx.fillStyle = theme.sub
     ctx.globalAlpha = 0.5
     ctx.textAlign = 'right'
-    ctx.fillText('마이베스트', 1010, 1870)
+    ctx.fillText('MYBIZ', 1010, 1870)
     ctx.globalAlpha = 1
 
     try {
@@ -666,7 +666,7 @@ function escapeXml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-// ===== 인포그래픽 이미지 → HeyGen 업로드 → URL 반환 =====
+// ===== ?명룷洹몃옒???대?吏 ??HeyGen ?낅줈????URL 諛섑솚 =====
 app.post('/api/infographic/upload-to-heygen', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
@@ -688,8 +688,8 @@ app.post('/api/infographic/upload-to-heygen', async (req, res) => {
   }
 })
 
-// ===== 자막 번인 (FFmpeg) =====
-// 나레이션을 최대 maxLines줄 단위로 분할
+// ===== ?먮쭑 踰덉씤 (FFmpeg) =====
+// ?섎젅?댁뀡??理쒕? maxLines以??⑥쐞濡?遺꾪븷
 function splitNarration(text, maxCharsPerLine = 18) {
   const chunks = []
   let remaining = text.trim()
@@ -698,10 +698,10 @@ function splitNarration(text, maxCharsPerLine = 18) {
       chunks.push(remaining)
       break
     }
-    // 자연스러운 끊김: 마침표, 쉼표, 공백 기준
+    // ?먯뿰?ㅻ윭???딄?: 留덉묠?? ?쇳몴, 怨듬갚 湲곗?
     let cut = -1
     for (let i = Math.min(maxCharsPerLine, remaining.length) - 1; i >= Math.floor(maxCharsPerLine * 0.5); i--) {
-      if (/[.!?。，,\s]/.test(remaining[i])) { cut = i + 1; break }
+      if (/[.!??귨펽,\s]/.test(remaining[i])) { cut = i + 1; break }
     }
     if (cut === -1) cut = maxCharsPerLine
     chunks.push(remaining.slice(0, cut).trim())
@@ -710,7 +710,7 @@ function splitNarration(text, maxCharsPerLine = 18) {
   return chunks
 }
 
-// 스타일별 FFmpeg force_style 매핑 (9:16 유튜브 쇼츠 기준)
+// ?ㅽ??쇰퀎 FFmpeg force_style 留ㅽ븨 (9:16 ?좏뒠釉??쇱툩 湲곗?)
 const subtitleFontConfigs = {
   default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 20, bold: 0, italic: 0, spacing: 0 },
   bold: { fontName: 'A2z', fontSize: 10.8, marginV: 20, bold: -1, italic: 0, spacing: 0.2 },
@@ -742,7 +742,7 @@ function getForceStyle(style, fontKey = 'default') {
   return styles[style] || styles.classic
 }
 
-// 타이틀 오버레이 이미지 생성 (Canvas, 투명 배경)
+// ??댄? ?ㅻ쾭?덉씠 ?대?吏 ?앹꽦 (Canvas, ?щ챸 諛곌꼍)
 function generateTitleOverlay(text, design, palette, outputPath) {
   const W = 1080, H = 1920
   const canvas = createCanvas(W, H)
@@ -760,7 +760,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
   ctx.font = `${fontSize}px Pretendard`
   ctx.textAlign = 'left'
 
-  // 줄바꿈
+  // 以꾨컮轅?
   const lines = []
   let remaining = text
   while (remaining.length > 0) {
@@ -771,7 +771,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
       if (ctx.measureText(remaining.slice(0, i)).width <= maxWidth) {
         let bestCut = i
         for (let j = i; j >= Math.floor(i * 0.5); j--) {
-          if (/[\s,.:!?·\-]/.test(remaining[j])) { bestCut = j + 1; break }
+          if (/[\s,.:!?쨌\-]/.test(remaining[j])) { bestCut = j + 1; break }
         }
         cut = bestCut
         break
@@ -821,7 +821,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 app.post('/api/subtitle/burn', async (req, res) => {
   const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles } = req.body
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
-  // animatedTitles: [{ sceneNumber, localPath }] — WebM 알파 영상 오버레이
+  // animatedTitles: [{ sceneNumber, localPath }] ??WebM ?뚰뙆 ?곸긽 ?ㅻ쾭?덉씠
   const animatedTitleMap = {}
   if (Array.isArray(animatedTitles)) {
     animatedTitles.forEach(t => { if (t.sceneNumber && t.localPath && fs.existsSync(t.localPath)) animatedTitleMap[t.sceneNumber] = t.localPath })
@@ -844,13 +844,13 @@ app.post('/api/subtitle/burn', async (req, res) => {
   ]
 
   try {
-    // 1) HeyGen 영상 다운로드
+    // 1) HeyGen ?곸긽 ?ㅼ슫濡쒕뱶
     const videoRes = await fetch(videoUrl)
-    if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
+    if (!videoRes.ok) throw new Error(`?곸긽 ?ㅼ슫濡쒕뱶 ?ㅽ뙣: ${videoRes.status}`)
     const buffer = Buffer.from(await videoRes.arrayBuffer())
     fs.writeFileSync(inputPath, buffer)
 
-    // 2) 영상 길이 확인
+    // 2) ?곸긽 湲몄씠 ?뺤씤
     const duration = await new Promise((resolve) => {
       execFile(ffmpegPath, ['-i', inputPath], { timeout: 10000 }, (err, stdout, stderr) => {
         const match = (stderr || '').match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
@@ -862,7 +862,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     })
 
-    // 3) SRT 생성 — 기본 2줄, 총 3줄이면 3줄 유지, 4줄 이상이면 2줄씩 분할
+    // 3) SRT ?앹꽦 ??湲곕낯 2以? 珥?3以꾩씠硫?3以??좎?, 4以??댁긽?대㈃ 2以꾩뵫 遺꾪븷
     const maxCharsPerLine = 16
     let srtContent = ''
     let srtIdx = 1
@@ -872,7 +872,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     for (const scene of scenes) {
       const sceneDur = (scene.narration.length / totalChars) * duration
       const lines = splitNarration(scene.narration, maxCharsPerLine)
-      // 블록 분할: 2줄 기본, 3줄은 그대로 유지, 4줄 이상은 2줄씩
+      // 釉붾줉 遺꾪븷: 2以?湲곕낯, 3以꾩? 洹몃?濡??좎?, 4以??댁긽? 2以꾩뵫
       const blocks = []
       const linesPerBlock = lines.length === 3 ? 3 : 2
       for (let j = 0; j < lines.length; j += linesPerBlock) {
@@ -901,7 +901,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
 
     fs.writeFileSync(srtPath, srtContent, 'utf8')
 
-    // 4) 타이틀 오버레이 생성 (avatar_keyword 씬) — animatedTitles 있으면 WebM, 없으면 PNG
+    // 4) ??댄? ?ㅻ쾭?덉씠 ?앹꽦 (avatar_keyword ?? ??animatedTitles ?덉쑝硫?WebM, ?놁쑝硫?PNG
     const titleOverlays = []
     let titleTime = 0
     for (const scene of scenes) {
@@ -921,18 +921,18 @@ app.post('/api/subtitle/burn', async (req, res) => {
       titleTime += sceneDur
     }
 
-    // 5) FFmpeg로 자막 + 타이틀 오버레이 번인
+    // 5) FFmpeg濡??먮쭑 + ??댄? ?ㅻ쾭?덉씠 踰덉씤
     const srtPathEscaped = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:')
     const fontsDirEscaped = path.join(__dirname, 'fonts').replace(/\\/g, '/').replace(/:/g, '\\:')
     const resolvedFont = getSubtitleFontConfig(subtitleFont || 'default')
     const forceStyle = getForceStyle(subtitleStyle || 'classic', subtitleFont || 'default')
 
-    // FFmpeg 필터 구성: 자막 + 타이틀 오버레이 (애니메이션 WebM은 itsoffset으로 타이밍 맞춤)
+    // FFmpeg ?꾪꽣 援ъ꽦: ?먮쭑 + ??댄? ?ㅻ쾭?덉씠 (?좊땲硫붿씠??WebM? itsoffset?쇰줈 ??대컢 留욎땄)
     let filterComplex = ''
     const inputs = ['-i', inputPath]
     titleOverlays.forEach((t) => {
       if (t.animated) {
-        // WebM 알파 영상: itsoffset으로 씬 시작 시간에 맞추고, 씬 길이만큼 반복
+        // WebM ?뚰뙆 ?곸긽: itsoffset?쇰줈 ???쒖옉 ?쒓컙??留욎텛怨? ??湲몄씠留뚰겮 諛섎났
         inputs.push('-itsoffset', t.start.toFixed(3), '-stream_loop', '-1', '-i', t.path)
       } else {
         inputs.push('-i', t.path)
@@ -940,7 +940,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     })
 
     if (titleOverlays.length > 0) {
-      // overlay 체인: [0]에 자막 → 타이틀 순차 오버레이
+      // overlay 泥댁씤: [0]???먮쭑 ????댄? ?쒖감 ?ㅻ쾭?덉씠
       let chain = `[0:v]subtitles='${srtPathEscaped}':fontsdir='${fontsDirEscaped}':force_style='${forceStyle}'[sub]`
       let prevLabel = 'sub'
       titleOverlays.forEach((t, i) => {
@@ -954,12 +954,12 @@ app.post('/api/subtitle/burn', async (req, res) => {
       await new Promise((resolve, reject) => {
         const args = [...inputs, '-filter_complex', filterComplex, '-map', '[out]', '-map', '0:a', '-c:a', 'copy', '-y', outputPath]
         execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-          if (err) reject(new Error(`FFmpeg 오류: ${err.message}\n${(stderr || '').slice(-500)}`))
+          if (err) reject(new Error(`FFmpeg ?ㅻ쪟: ${err.message}\n${(stderr || '').slice(-500)}`))
           else resolve()
         })
       })
     } else {
-      // 타이틀 없으면 자막만
+      // ??댄? ?놁쑝硫??먮쭑留?
       await new Promise((resolve, reject) => {
         const args = [
           '-i', inputPath,
@@ -968,16 +968,16 @@ app.post('/api/subtitle/burn', async (req, res) => {
           '-y', outputPath,
         ]
         execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-          if (err) reject(new Error(`FFmpeg 오류: ${err.message}\n${(stderr || '').slice(-500)}`))
+          if (err) reject(new Error(`FFmpeg ?ㅻ쪟: ${err.message}\n${(stderr || '').slice(-500)}`))
           else resolve()
         })
       })
     }
 
-    // 타이틀 임시 파일 정리 (PNG만 삭제, 애니메이션 WebM은 보존)
+    // ??댄? ?꾩떆 ?뚯씪 ?뺣━ (PNG留???젣, ?좊땲硫붿씠??WebM? 蹂댁〈)
     titleOverlays.forEach(t => { if (t.cleanup) { try { fs.unlinkSync(t.path) } catch {} } })
 
-    // 5) 응답
+    // 5) ?묐떟
     const size = fs.statSync(outputPath).size
     const url = `/output/final_${ts}.mp4`
     res.json({
@@ -988,7 +988,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       resolvedFont: resolvedFont.fontName,
     })
 
-    // 원본 파일 정리 (지연 삭제)
+    // ?먮낯 ?뚯씪 ?뺣━ (吏????젣)
     setTimeout(() => { try { fs.unlinkSync(inputPath) } catch {} }, 60000)
   } catch (err) {
     try { fs.unlinkSync(inputPath) } catch {}
@@ -997,7 +997,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
   }
 })
 
-// ===== Remotion 서버사이드 렌더링 =====
+// ===== Remotion ?쒕쾭?ъ씠???뚮뜑留?=====
 let remotionBundleUrl = null
 let remotionBundleMtime = 0
 
@@ -1030,27 +1030,27 @@ app.post('/api/remotion/render', async (req, res) => {
     const { bundle } = await import('@remotion/bundler')
     const { renderMedia, selectComposition } = await import('@remotion/renderer')
 
-    // 번들 캐싱 + 소스 변경 시 자동 재번들링
+    // 踰덈뱾 罹먯떛 + ?뚯뒪 蹂寃????먮룞 ?щ쾲?ㅻ쭅
     const sourceMtime = getRemotionSourceMtime()
     if (!remotionBundleUrl || sourceMtime > remotionBundleMtime) {
-      console.log(`[Remotion] ${remotionBundleUrl ? '소스 변경 감지, 재번들링' : '번들링 시작'}...`)
+      console.log(`[Remotion] ${remotionBundleUrl ? '?뚯뒪 蹂寃?媛먯?, ?щ쾲?ㅻ쭅' : '踰덈뱾留??쒖옉'}...`)
       const entryPoint = path.join(__dirname, '..', 'client', 'src', 'remotion', 'index.jsx')
       remotionBundleUrl = await bundle({
         entryPoint,
-        onProgress: (p) => { if (p % 20 === 0) console.log(`[Remotion] 번들 진행: ${p}%`) },
+        onProgress: (p) => { if (p % 20 === 0) console.log(`[Remotion] 踰덈뱾 吏꾪뻾: ${p}%`) },
       })
       remotionBundleMtime = sourceMtime
-      console.log('[Remotion] 번들 완료:', remotionBundleUrl)
+      console.log('[Remotion] 踰덈뱾 ?꾨즺:', remotionBundleUrl)
     }
 
-    // 컴포지션 선택
+    // 而댄룷吏???좏깮
     const composition = await selectComposition({
       serveUrl: remotionBundleUrl,
       id: compositionId,
       inputProps: props || {},
     })
 
-    // durationInFrames / fps 오버라이드
+    // durationInFrames / fps ?ㅻ쾭?쇱씠??
     composition.durationInFrames = durationInFrames
     composition.fps = fps
 
@@ -1059,7 +1059,7 @@ app.post('/api/remotion/render', async (req, res) => {
     const codec = transparent ? 'vp8' : 'h264'
     const outputPath = path.join(outputDir2, `remotion_${compositionId}_${ts}.${ext}`)
 
-    console.log(`[Remotion] 렌더 시작: ${compositionId} (${durationInFrames}f, ${fps}fps, ${codec}${transparent ? ', transparent' : ''})`)
+    console.log(`[Remotion] ?뚮뜑 ?쒖옉: ${compositionId} (${durationInFrames}f, ${fps}fps, ${codec}${transparent ? ', transparent' : ''})`)
     await renderMedia({
       composition,
       serveUrl: remotionBundleUrl,
@@ -1069,19 +1069,19 @@ app.post('/api/remotion/render', async (req, res) => {
       imageFormat: transparent ? 'png' : 'jpeg',
       pixelFormat: transparent ? 'yuva420p' : 'yuv420p',
     })
-    console.log(`[Remotion] 렌더 완료: ${outputPath}`)
+    console.log(`[Remotion] ?뚮뜑 ?꾨즺: ${outputPath}`)
 
     const size = fs.statSync(outputPath).size
     res.json({ url: `/output/remotion_${compositionId}_${ts}.${ext}`, filePath: outputPath, size })
   } catch (err) {
-    console.error('[Remotion] 렌더 에러:', err)
-    // 번들 에러 시 캐시 초기화
+    console.error('[Remotion] ?뚮뜑 ?먮윭:', err)
+    // 踰덈뱾 ?먮윭 ??罹먯떆 珥덇린??
     if (err.message?.includes('bundle')) remotionBundleUrl = null
     res.status(500).json({ error: err.message })
   }
 })
 
-// Remotion 렌더링 결과 MP4 → HeyGen 업로드
+// Remotion ?뚮뜑留?寃곌낵 MP4 ??HeyGen ?낅줈??
 app.post('/api/remotion/upload-to-heygen', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
@@ -1106,7 +1106,7 @@ app.post('/api/remotion/upload-to-heygen', async (req, res) => {
 // ===== Static file serving for output/ =====
 const outputDir = path.join(__dirname, '..', 'output')
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
-// ngrok 무료 경고 페이지 우회: Content-Type을 강제 설정
+// ngrok 臾대즺 寃쎄퀬 ?섏씠吏 ?고쉶: Content-Type??媛뺤젣 ?ㅼ젙
 app.use('/output', (req, res, next) => {
   const ext = path.extname(req.path).toLowerCase()
   const mimeMap = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.png': 'image/png', '.jpg': 'image/jpeg' }
@@ -1115,7 +1115,7 @@ app.use('/output', (req, res, next) => {
   next()
 }, express.static(outputDir))
 
-// ===== File upload → public URL =====
+// ===== File upload ??public URL =====
 app.post('/api/output/upload', (req, res) => {
   const MAX_UPLOAD = 100 * 1024 * 1024 // 100MB
   const chunks = []
@@ -1128,7 +1128,7 @@ app.post('/api/output/upload', (req, res) => {
     res.status(status).json({ error: msg })
   }
 
-  // 60초 타임아웃 (Imagen 이미지 용량 대비)
+  // 60珥???꾩븘??(Imagen ?대?吏 ?⑸웾 ?鍮?
   const timeout = setTimeout(() => fail(408, 'Upload timeout (60s)'), 60000)
 
   req.on('data', chunk => {
@@ -1372,23 +1372,23 @@ async function resolveInstagramPublishResult(mediaId, accessToken) {
   }
 }
 
-// 이미지 업로드 (단일 또는 캐러셀)
+// ?대?吏 ?낅줈??(?⑥씪 ?먮뒗 罹먮윭?)
 async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
-    throw new Error('Instagram 환경변수(INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID) 미설정')
+    throw new Error('Instagram environment variables are missing: INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID')
   }
-  if (!imageUrls.length) throw new Error('이미지 URL이 없습니다')
+  if (!imageUrls.length) throw new Error('?대?吏 URL???놁뒿?덈떎')
 
   const urls = imageUrls.filter(Boolean).slice(0, 10)
   if (urls.length === 1) {
-    // 단일 이미지
+    // ?⑥씪 ?대?吏
     const createRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_url: urls[0], caption, access_token: IG_ACCESS_TOKEN }),
     })
     const created = await createRes.json()
-    if (!createRes.ok || !created.id) throw new Error(`컨테이너 생성 실패: ${JSON.stringify(created)}`)
+    if (!createRes.ok || !created.id) throw new Error(`而⑦뀒?대꼫 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(created)}`)
     await waitForMediaReadyLegacy([created.id])
 
     const pub = await publishInstagramMediaWithRetry({
@@ -1408,7 +1408,7 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
     return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
   }
 
-  // 캐러셀 (여러 이미지)
+  // 罹먮윭? (?щ윭 ?대?吏)
   const childIds = []
   for (const url of urls) {
     const r = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
@@ -1417,11 +1417,11 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
       body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token: IG_ACCESS_TOKEN }),
     })
     const d = await r.json()
-    if (!r.ok || !d.id) throw new Error(`캐러셀 자식 생성 실패: ${JSON.stringify(d)}`)
+    if (!r.ok || !d.id) throw new Error(`罹먮윭? ?먯떇 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(d)}`)
     childIds.push(d.id)
   }
 
-  // 자식 미디어들이 FINISHED 될 때까지 대기
+  // ?먯떇 誘몃뵒?대뱾??FINISHED ???뚭퉴吏 ?湲?
   await waitForMediaReadyLegacy(childIds)
 
   const carouselRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
@@ -1435,9 +1435,9 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
     }),
   })
   const carousel = await carouselRes.json()
-  if (!carouselRes.ok || !carousel.id) throw new Error(`캐러셀 컨테이너 생성 실패: ${JSON.stringify(carousel)}`)
+  if (!carouselRes.ok || !carousel.id) throw new Error(`罹먮윭? 而⑦뀒?대꼫 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(carousel)}`)
 
-  // 캐러셀 컨테이너도 FINISHED 될 때까지 대기
+  // 罹먮윭? 而⑦뀒?대꼫??FINISHED ???뚭퉴吏 ?湲?
   await waitForMediaReadyLegacy([carousel.id])
 
   const pub = await publishInstagramMediaWithRetry({
@@ -1457,7 +1457,7 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
 }
 
-// 미디어 컨테이너가 게시 준비될 때까지 대기 (최대 60초)
+// 誘몃뵒??而⑦뀒?대꼫媛 寃뚯떆 以鍮꾨맆 ?뚭퉴吏 ?湲?(理쒕? 60珥?
 async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
   const interval = 2000
   const start = Date.now()
@@ -1467,19 +1467,19 @@ async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
       const d = await r.json()
       if (d.status_code === 'FINISHED') break
       if (d.status_code === 'ERROR' || d.status_code === 'EXPIRED') {
-        throw new Error(`미디어 처리 실패 (${id}): ${d.status_code}`)
+        throw new Error(`誘몃뵒??泥섎━ ?ㅽ뙣 (${id}): ${d.status_code}`)
       }
       await new Promise(res => setTimeout(res, interval))
     }
   }
 }
 
-// base64 data URL을 Supabase Storage에 업로드 후 공개 URL 반환
+// base64 data URL??Supabase Storage???낅줈????怨듦컻 URL 諛섑솚
 async function uploadDataUrlToStorage(dataUrl, filename) {
-  if (!supabaseAdmin) throw new Error('Supabase 미설정')
-  if (!dataUrl?.startsWith('data:')) return dataUrl // 이미 URL이면 그대로
+  if (!supabaseAdmin) throw new Error('Supabase is not configured')
+  if (!dataUrl?.startsWith('data:')) return dataUrl // ?대? URL?대㈃ 洹몃?濡?
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) throw new Error('잘못된 data URL')
+  if (!match) throw new Error('?섎せ??data URL')
   const [, mime, b64] = match
   const buf = Buffer.from(b64, 'base64')
   const ext = mime.split('/')[1] || 'png'
@@ -1488,7 +1488,7 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
     contentType: mime,
     upsert: false,
   })
-  if (error) throw new Error(`스토리지 업로드 실패: ${error.message}`)
+  if (error) throw new Error(`?ㅽ넗由ъ? ?낅줈???ㅽ뙣: ${error.message}`)
   const { data: pub } = supabaseAdmin.storage.from('extraction-images').getPublicUrl(path)
   return pub?.publicUrl
 }
@@ -1496,7 +1496,7 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
 async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
   const auth = getInstagramAuthMaterial()
   if (!auth?.accessToken || !auth?.businessId) {
-    throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
+    throw new Error('Instagram ?몄쬆 ?뺣낫媛 ?놁뒿?덈떎. ?ㅼ젙?먯꽌 ?ㅼ떆 ?곌껐??二쇱꽭??')
   }
   if (!imageUrls.length) {
     throw new Error('Instagram image URL is missing')
@@ -1575,12 +1575,12 @@ async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000
 app.post('/api/naver/publish', async (req, res) => {
   try {
     const { title, content, tags } = req.body
-    if (!title || !content) return res.status(400).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: 'title, content 필수' })
+    if (!title || !content) return res.status(400).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: 'title, content ?꾩닔' })
     const { uploadToNaverBlog } = await import('./services/naver-blog.js')
     const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
     res.json({ success: true, source: 'server-api', endpoint: '/api/naver/publish', url: result.url })
   } catch (err) {
-    console.error('[Naver Blog] 업로드 실패:', err.message)
+    console.error('[Naver Blog] ?낅줈???ㅽ뙣:', err.message)
     res.status(500).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: err.message })
   }
 })
@@ -1588,7 +1588,7 @@ app.post('/api/naver/publish', async (req, res) => {
 app.post('/api/instagram/publish', async (req, res) => {
   try {
     const { imageUrls = [], caption } = req.body
-    // data URL이면 Supabase에 업로드 후 공개 URL로 변환
+    // data URL?대㈃ Supabase???낅줈????怨듦컻 URL濡?蹂??
     const publicUrls = []
     for (const url of imageUrls) {
       if (typeof url === 'string' && url.startsWith('data:')) {
@@ -1600,12 +1600,12 @@ app.post('/api/instagram/publish', async (req, res) => {
     const result = await publishInstagramPostV2({ imageUrls: publicUrls, caption })
     res.json({ success: true, ...result, uploadedUrls: publicUrls })
   } catch (err) {
-    console.error('[Instagram] 업로드 실패:', err.message)
+    console.error('[Instagram] ?낅줈???ㅽ뙣:', err.message)
     res.status(500).json({ success: false, error: err.message })
   }
 })
 
-// ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
+// ===== YouTube Data API v3 (OAuth 2.0 + ?낅줈?? =====
 app.get('/api/instagram/auth-status', (_req, res) => {
   validateInstagramSession()
     .then((status) => res.json(status))
@@ -1625,7 +1625,7 @@ app.get('/api/instagram/auth-status', (_req, res) => {
 
 const { google } = require('googleapis')
 
-// 환경변수 우선, 없으면 client_secret.json 파일 폴백 (개발 편의)
+// ?섍꼍蹂???곗꽑, ?놁쑝硫?client_secret.json ?뚯씪 ?대갚 (媛쒕컻 ?몄쓽)
 const ytCredentials = (() => {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     return {
@@ -1643,7 +1643,7 @@ const YOUTUBE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhos
 let ytOAuth2Client = null
 let ytTokens = null
 
-// 토큰 저장소: Supabase 우선, 없으면 파일 폴백
+// ?좏겙 ??μ냼: Supabase ?곗꽑, ?놁쑝硫??뚯씪 ?대갚
 const ytTokenPath = path.join(__dirname, '.youtube_tokens.json')
 
 async function loadYtTokens() {
@@ -1651,7 +1651,7 @@ async function loadYtTokens() {
     try {
       const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', 'default').maybeSingle()
       if (!error && data?.tokens) return data.tokens
-    } catch (err) { console.warn('[YouTube] Supabase 토큰 로드 실패:', err.message) }
+    } catch (err) { console.warn('[YouTube] Supabase ?좏겙 濡쒕뱶 ?ㅽ뙣:', err.message) }
   }
   try {
     if (fs.existsSync(ytTokenPath)) return JSON.parse(fs.readFileSync(ytTokenPath, 'utf-8'))
@@ -1667,9 +1667,9 @@ async function saveYtTokens(tokens) {
         tokens,
         updated_at: new Date().toISOString(),
       })
-      if (error) console.warn('[YouTube] Supabase 토큰 저장 실패:', error.message)
+      if (error) console.warn('[YouTube] Supabase ?좏겙 ????ㅽ뙣:', error.message)
       else return
-    } catch (err) { console.warn('[YouTube] Supabase 토큰 저장 오류:', err.message) }
+    } catch (err) { console.warn('[YouTube] Supabase ?좏겙 ????ㅻ쪟:', err.message) }
   }
   try { fs.writeFileSync(ytTokenPath, JSON.stringify(tokens, null, 2)) } catch {}
 }
@@ -1695,7 +1695,7 @@ async function clearYtTokens() {
   try { fs.unlinkSync(ytTokenPath) } catch {}
 }
 
-// 서버 시작 시 토큰 로드 (비동기)
+// ?쒕쾭 ?쒖옉 ???좏겙 濡쒕뱶 (鍮꾨룞湲?
 loadYtTokens().then(t => { if (t) ytTokens = t })
 
 function getYtOAuth2Client() {
@@ -1818,7 +1818,7 @@ async function validateInstagramSessionV2() {
   }
 }
 
-// OAuth 인증 URL 생성
+// OAuth ?몄쬆 URL ?앹꽦
 loadInstagramTokens().then((tokens) => {
   if (tokens) {
     instagramTokens = tokens
@@ -1909,13 +1909,13 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
   const { code, error, state } = req.query
 
   if (error) {
-    return res.status(400).send(`<html><body><h2>Instagram 인증 거부</h2><p>${error}</p></body></html>`)
+    return res.status(400).send(`<html><body><h2>Instagram ?몄쬆 嫄곕?</h2><p>${error}</p></body></html>`)
   }
   if (!code) {
     return res.status(400).send('Missing code')
   }
   if (instagramOAuthState && state !== instagramOAuthState) {
-    return res.status(400).send('<html><body><h2>Instagram 인증 실패</h2><p>state mismatch</p></body></html>')
+    return res.status(400).send('<html><body><h2>Instagram ?몄쬆 ?ㅽ뙣</h2><p>state mismatch</p></body></html>')
   }
 
   instagramOAuthState = null
@@ -1963,10 +1963,10 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
       updatedAt: new Date().toISOString(),
     })
 
-    res.send('<html><body><h2>Instagram 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+    res.send('<html><body><h2>Instagram ?몄쬆 ?꾨즺!</h2><p>??李쎌쓣 ?リ퀬 ?뚯븘媛?몄슂.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
     console.error('[Instagram OAuth] callback failed:', err.message)
-    res.status(500).send(`<html><body><h2>Instagram 인증 실패</h2><p>${err.message}</p></body></html>`)
+    res.status(500).send(`<html><body><h2>Instagram ?몄쬆 ?ㅽ뙣</h2><p>${err.message}</p></body></html>`)
   }
 })
 
@@ -1986,27 +1986,27 @@ app.get('/api/youtube/auth-url', (req, res) => {
   res.json({ url })
 })
 
-// OAuth 콜백
+// OAuth 肄쒕갚
 app.get('/api/youtube/oauth/callback', async (req, res) => {
   const { code, error } = req.query
   console.log('[YouTube OAuth callback]', { hasCode: !!code, error })
-  if (error) return res.status(400).send(`<html><body><h2>인증 거부됨</h2><p>${error}</p></body></html>`)
+  if (error) return res.status(400).send(`<html><body><h2>?몄쬆 嫄곕???/h2><p>${error}</p></body></html>`)
   if (!code) return res.status(400).send('Missing code')
   try {
     const client = getYtOAuth2Client()
     const { tokens } = await client.getToken(code)
-    console.log('[YouTube OAuth] 토큰 획득 성공, scopes:', tokens.scope)
+    console.log('[YouTube OAuth] ?좏겙 ?띾뱷 ?깃났, scopes:', tokens.scope)
     client.setCredentials(tokens)
     await persistYtTokens(tokens)
-    console.log('[YouTube OAuth] 토큰 저장 완료')
-    res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+    console.log('[YouTube OAuth] ?좏겙 ????꾨즺')
+    res.send('<html><body><h2>YouTube ?몄쬆 ?꾨즺!</h2><p>??李쎌쓣 ?リ퀬 ?뚯븘媛?몄슂.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
-    console.error('[YouTube OAuth] 토큰 획득 실패:', err.message)
-    res.status(500).send(`<html><body><h2>인증 실패</h2><p>${err.message}</p></body></html>`)
+    console.error('[YouTube OAuth] ?좏겙 ?띾뱷 ?ㅽ뙣:', err.message)
+    res.status(500).send(`<html><body><h2>?몄쬆 ?ㅽ뙣</h2><p>${err.message}</p></body></html>`)
   }
 })
 
-// 인증 상태 확인
+// ?몄쬆 ?곹깭 ?뺤씤
 app.get('/api/youtube/auth-status', async (_req, res) => {
   try {
     const status = await validateYouTubeSession()
@@ -2021,7 +2021,7 @@ app.get('/api/youtube/auth-status', async (_req, res) => {
   }
 })
 
-// 인증 해제
+// ?몄쬆 ?댁젣
 app.post('/api/youtube/logout', async (req, res) => {
   ytTokens = null
   await clearYtTokens()
@@ -2029,9 +2029,9 @@ app.post('/api/youtube/logout', async (req, res) => {
   res.json({ success: true })
 })
 
-// 실제 업로드
+// ?ㅼ젣 ?낅줈??
 app.post('/api/youtube/upload', async (req, res) => {
-  // 평면 구조 또는 { snippet, status, videoUrl } 구조 모두 지원
+  // ?됰㈃ 援ъ“ ?먮뒗 { snippet, status, videoUrl } 援ъ“ 紐⑤몢 吏??
   const body = req.body || {}
   const snippet = body.snippet || {}
   const status = body.status || {}
@@ -2043,40 +2043,40 @@ app.post('/api/youtube/upload', async (req, res) => {
   const requestedPublishAt = body.scheduledAt || status.publishAt || null
   const videoUrl = body.videoUrl
 
-  if (!ytTokens) return res.status(401).json({ error: 'YouTube 인증이 필요합니다. 먼저 Google 계정을 연결하세요.' })
-  if (!videoUrl) return res.status(400).json({ error: 'videoUrl이 필요합니다.' })
+  if (!ytTokens) return res.status(401).json({ error: 'YouTube ?몄쬆???꾩슂?⑸땲?? 癒쇱? Google 怨꾩젙???곌껐?섏꽭??' })
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl???꾩슂?⑸땲??' })
 
   const publishAt = requestedPublishAt ? new Date(requestedPublishAt) : null
   if (publishAt && Number.isNaN(publishAt.getTime())) {
-    return res.status(400).json({ error: '예약 발행 시간은 ISO 8601 형식이 필요합니다.' })
+    return res.status(400).json({ error: '?덉빟 諛쒗뻾 ?쒓컙? ISO 8601 ?뺤떇???꾩슂?⑸땲??' })
   }
 
   const client = getYtOAuth2Client()
   const youtube = google.youtube({ version: 'v3', auth: client })
 
   try {
-    // 영상 다운로드 (로컬 경로 또는 URL)
+    // ?곸긽 ?ㅼ슫濡쒕뱶 (濡쒖뺄 寃쎈줈 ?먮뒗 URL)
     let videoBuffer
     const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
     if (localPath && fs.existsSync(localPath)) {
       videoBuffer = fs.readFileSync(localPath)
     } else {
       const videoRes = await fetch(videoUrl)
-      if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
+      if (!videoRes.ok) throw new Error(`?곸긽 ?ㅼ슫濡쒕뱶 ?ㅽ뙣: ${videoRes.status}`)
       videoBuffer = Buffer.from(await videoRes.arrayBuffer())
     }
 
-    // 임시 파일로 저장 (스트림 필요)
+    // ?꾩떆 ?뚯씪濡????(?ㅽ듃由??꾩슂)
     const tmpPath = path.join(__dirname, '..', 'output', `yt_upload_${Date.now()}.mp4`)
     fs.writeFileSync(tmpPath, videoBuffer)
 
-    console.log('[YouTube] 업로드 시작:', { title, tags, size: videoBuffer.length })
+    console.log('[YouTube] ?낅줈???쒖옉:', { title, tags, size: videoBuffer.length })
 
     const response = await youtube.videos.insert({
       part: ['snippet', 'status'],
       requestBody: {
         snippet: {
-          title: title || '숏폼 테스트',
+          title: title || 'Shorts test',
           description: description || '',
           tags: tags || [],
           categoryId: categoryId || '22',
@@ -2092,11 +2092,11 @@ app.post('/api/youtube/upload', async (req, res) => {
       },
     })
 
-    // 임시 파일 삭제
+    // ?꾩떆 ?뚯씪 ??젣
     setTimeout(() => { try { fs.unlinkSync(tmpPath) } catch {} }, 5000)
 
     const videoId = response.data.id
-    console.log('[YouTube] 업로드 완료:', videoId)
+    console.log('[YouTube] ?낅줈???꾨즺:', videoId)
 
     res.json({
       success: true,
@@ -2107,7 +2107,7 @@ app.post('/api/youtube/upload', async (req, res) => {
       snippet: response.data.snippet,
     })
   } catch (err) {
-    console.error('[YouTube] 업로드 실패 전체:', JSON.stringify({
+    console.error('[YouTube] ?낅줈???ㅽ뙣 ?꾩껜:', JSON.stringify({
       code: err.code,
       message: err.message,
       status: err.status,
@@ -2121,7 +2121,7 @@ app.post('/api/youtube/upload', async (req, res) => {
 })
 
 // ======================================================================
-// 예약 업로드 (Scheduled Uploads) — Supabase 기반
+// ?덉빟 ?낅줈??(Scheduled Uploads) ??Supabase 湲곕컲
 // ======================================================================
 
 const API_SECRET = process.env.API_SECRET || ''
@@ -2134,16 +2134,34 @@ function requireApiSecret(req, res, next) {
   next()
 }
 
-// 예약 생성
+// ?덉빟 ?앹꽦
 app.post('/api/scheduled/create', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
-    const { platform, extractionId, content, scheduledAt } = req.body
+    const { platform, extractionId, content, scheduledAt, scheduledId } = req.body
     if (!platform || !extractionId || !scheduledAt) {
-      return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
+      return res.status(400).json({ error: 'platform, extractionId, scheduledAt ?꾩닔' })
     }
 
-    // 중복 방지: 동일 extraction_id + platform의 pending 예약이 있으면 update
+    if (scheduledId) {
+      const { data, error } = await supabaseAdmin
+        .from('scheduled_uploads')
+        .update({
+          scheduled_at: scheduledAt,
+          content: content || {},
+        })
+        .eq('id', scheduledId)
+        .eq('extraction_id', extractionId)
+        .eq('platform', platform)
+        .eq('status', 'pending')
+        .select()
+        .single()
+
+      if (error) throw error
+      return res.json(data)
+    }
+
+    // 以묐났 諛⑹?: ?숈씪 extraction_id + platform??pending ?덉빟???덉쑝硫?update
     const { data: existingList } = await supabaseAdmin
       .from('scheduled_uploads')
       .select('*')
@@ -2154,7 +2172,7 @@ app.post('/api/scheduled/create', async (req, res) => {
 
     if (existingList && existingList.length > 0) {
       const first = existingList[0]
-      // 중복된 나머지 pending 정리
+      // 以묐났???섎㉧吏 pending ?뺣━
       if (existingList.length > 1) {
         const extraIds = existingList.slice(1).map(r => r.id)
         await supabaseAdmin.from('scheduled_uploads').delete().in('id', extraIds)
@@ -2190,7 +2208,7 @@ app.post('/api/scheduled/create', async (req, res) => {
   }
 })
 
-// 예약 목록
+// ?덉빟 紐⑸줉
 app.get('/api/scheduled/list', async (req, res) => {
   if (!supabaseAdmin) return res.json([])
   try {
@@ -2202,14 +2220,14 @@ app.get('/api/scheduled/list', async (req, res) => {
     res.json(data)
   } catch (err) {
     if (err?.code === '42P01') {
-      console.warn('[scheduled/list] scheduled_uploads 테이블이 없어 빈 목록으로 처리합니다.')
+      console.warn('[scheduled/list] scheduled_uploads ?뚯씠釉붿씠 ?놁뼱 鍮?紐⑸줉?쇰줈 泥섎━?⑸땲??')
       return res.json([])
     }
     res.status(500).json({ error: err.message })
   }
 })
 
-// 예약 삭제
+// ?덉빟 ??젣
 app.delete('/api/scheduled/:id', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
@@ -2224,7 +2242,7 @@ app.delete('/api/scheduled/:id', async (req, res) => {
   }
 })
 
-// 예약 수정
+// ?덉빟 ?섏젙
 app.patch('/api/scheduled/:id', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
@@ -2246,12 +2264,12 @@ app.patch('/api/scheduled/:id', async (req, res) => {
   }
 })
 
-// GitHub Actions 호출 — 예약된 업로드 실행 (글로벌 x-app-secret 미들웨어로 인증)
+// GitHub Actions ?몄텧 ???덉빟???낅줈???ㅽ뻾 (湲濡쒕쾶 x-app-secret 誘몃뱾?⑥뼱濡??몄쬆)
 app.post('/api/scheduled/run', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
 
   try {
-    // 실행 시각 도달한 pending 항목 조회
+    // ?ㅽ뻾 ?쒓컖 ?꾨떖??pending ??ぉ 議고쉶
     const nowIso = new Date().toISOString()
     const { data: dueItems, error: fetchErr } = await supabaseAdmin
       .from('scheduled_uploads')
@@ -2265,7 +2283,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
     const results = []
     for (const item of (dueItems || [])) {
-      // 업로드 중으로 표시
+      // ?낅줈??以묒쑝濡??쒖떆
       await supabaseAdmin
         .from('scheduled_uploads')
         .update({ status: 'uploading', attempts: (item.attempts || 0) + 1 })
@@ -2274,117 +2292,16 @@ app.post('/api/scheduled/run', async (req, res) => {
       try {
         let uploadResult = null
 
-        // 플랫폼별 업로드 실행
-        if (item.platform === 'shorts' || item.platform === 'youtube') {
-          const c = item.content || {}
-          let videoUrl = c.videoUrl
-          let title = c.title
-          let description = c.description
-          let tags = c.tags
-
-          // content에 videoUrl 없으면 extractions 테이블에서 조회
-          if (!videoUrl && item.extraction_id) {
-            const { data: ext } = await supabaseAdmin
-              .from('extractions')
-              .select('shorts_video, shorts_script')
-              .eq('id', item.extraction_id)
-              .maybeSingle()
-            const sv = ext?.shorts_video
-            const ss = ext?.shorts_script
-            videoUrl = sv?.url || sv?.videoUrl
-            if (!title) title = ss?.uploadTitle || ss?.title
-            if (!description && ss) {
-              const parts = []
-              if (ss.hook) parts.push(ss.hook)
-              if (Array.isArray(ss.scenes)) ss.scenes.forEach((s, i) => s.narration && parts.push(`${i + 1}. ${s.narration}`))
-              if (ss.cta) parts.push(`\n${ss.cta}`)
-              description = parts.join('\n')
-            }
-            if (!tags?.length) tags = (ss?.hashtags || []).map(t => t.replace(/^#/, ''))
-          }
-
-          if (!videoUrl) throw new Error('videoUrl 없음')
-
-          const client = getYtOAuth2Client()
-          if (!client) throw new Error('YouTube 인증 필요')
-          const youtube = google.youtube({ version: 'v3', auth: client })
-          const { Readable } = require('stream')
-          const videoRes = await fetch(videoUrl)
-          if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
-          const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
-          const stream = Readable.from(videoBuffer)
-
-          const finalTitle = (title || '숏폼 영상').slice(0, 100)
-          const titleWithShorts = finalTitle.includes('#Shorts') ? finalTitle : `${finalTitle} #Shorts`.slice(0, 100)
-          const finalTags = Array.isArray(tags) ? tags : []
-          if (!finalTags.includes('Shorts')) finalTags.unshift('Shorts')
-
-          const response = await youtube.videos.insert({
-            part: ['snippet', 'status'],
-            requestBody: {
-              snippet: {
-                title: titleWithShorts,
-                description: (description || '').slice(0, 5000),
-                tags: finalTags,
-                categoryId: '22',
-              },
-              status: { privacyStatus: c.privacyStatus || 'public', selfDeclaredMadeForKids: false },
-            },
-            media: { body: stream },
-          })
-          uploadResult = { url: `https://youtu.be/${response.data.id}`, videoId: response.data.id }
-
-        } else if (item.platform === 'blog' || item.platform === 'naver') {
-          const c = item.content || {}
-          let title = c.title
-          let content = c.body || c.content
-          let tags = c.tags
-
-          // extraction에서 블로그 콘텐츠 조회
-          if ((!title || !content) && item.extraction_id) {
-            const { data: ext } = await supabaseAdmin
-              .from('extractions')
-              .select('blog_content')
-              .eq('id', item.extraction_id)
-              .maybeSingle()
-            const blog = ext?.blog_content
-            if (blog) {
-              title = title || blog.title
-              let raw = blog.body || blog.content || ''
-              if (!raw && Array.isArray(blog.sections)) {
-                raw = blog.sections.map(s => {
-                  const heading = s.heading ? `${s.heading}\n` : ''
-                  const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
-                  const body = s.content || ''
-                  return `${heading}${keyPhrase}${body}`
-                }).join('\n\n---\n\n')
-              }
-              content = content || raw
-                .replace(/```[\s\S]*?```/g, '')
-                .replace(/^#{1,6}\s+/gm, '')
-                .replace(/\*\*([^*]+)\*\*/g, '$1')
-                .replace(/\*([^*]+)\*/g, '$1')
-                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-                .replace(/`([^`]+)`/g, '$1')
-                .replace(/^>\s+/gm, '')
-                .replace(/^[-*]\s+/gm, '• ')
-                .trim()
-              tags = tags || blog.tags || blog.hashtags || []
-            }
-          }
-
-          if (!title || !content) throw new Error('블로그 제목/본문이 없습니다')
-
-          const { uploadToNaverBlog } = await import('./services/naver-blog.js')
-          const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
-          uploadResult = { url: result.url }
-
-        } else if (item.platform === 'instagram') {
+        // ?뚮옯?쇰퀎 ?낅줈???ㅽ뻾
+        // ?덉빟 ?ㅽ뻾 寃쎈줈???몄뒪?洹몃옩留??좎??섍퀬, 釉붾줈洹??좏뒠釉??덇굅??遺꾧린??鍮꾪솢?깊솕?쒕떎.
+        // 예약 실행 경로는 인스타그램만 유지한다.
+        // 레거시 YouTube/블로그 예약 실행 경로는 제거됨
+        if (item.platform === 'instagram') {
           const c = item.content || {}
           let imageUrls = c.imageUrls || []
           let caption = c.caption || ''
 
-          // content에 이미지 없으면 extraction에서 조회
+          // content???대?吏 ?놁쑝硫?extraction?먯꽌 議고쉶
           if (!imageUrls.length && item.extraction_id) {
             const { data: ext } = await supabaseAdmin
               .from('extractions')
@@ -2419,7 +2336,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           })
           .eq('id', item.id)
 
-        // extractions.upload_status 에도 업로드 완료 반영 (콘텐츠 관리에서 표시용)
+        // extractions.upload_status ?먮룄 ?낅줈???꾨즺 諛섏쁺 (肄섑뀗痢?愿由ъ뿉???쒖떆??
         if (item.extraction_id) {
           try {
             const { data: extRow } = await supabaseAdmin
@@ -2440,7 +2357,7 @@ app.post('/api/scheduled/run', async (req, res) => {
               .update({ upload_status: newStatus })
               .eq('id', item.extraction_id)
           } catch (e) {
-            console.warn('[extractions.upload_status 업데이트 실패]', e.message)
+            console.warn('[extractions.upload_status ?낅뜲?댄듃 ?ㅽ뙣]', e.message)
           }
         }
 

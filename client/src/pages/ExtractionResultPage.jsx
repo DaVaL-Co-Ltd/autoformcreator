@@ -12,8 +12,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
-import { create as createScheduledUpload, getAll as getAllScheduledUploads } from '../utils/scheduledUploads'
+import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
+import { buildInstagramScheduledContent } from '../utils/scheduledPayloads'
 import {
   getAll as getPlatformConnections,
   loadAll as loadPlatformConnections,
@@ -97,6 +98,11 @@ const footerLinkMeta = {
   newsletter: { badge: '✉', bg: '#2563eb', fallbackLabel: '뉴스레터 바로가기' },
   instagram: { badge: '◐', bg: '#E1306C', fallbackLabel: '인스타그램 바로가기' },
   shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '유튜브 바로가기' },
+}
+
+const normalizeInstagramCardStyle = (value) => {
+  if (value === 'center-card' || value === 'center-focus') return 'center-card'
+  return 'background-text'
 }
 
 export default function ExtractionResultPage() {
@@ -520,6 +526,8 @@ export default function ExtractionResultPage() {
   const [instagramImages, setInstagramImages] = useState(initialInstagramImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
+  const showBlogImageTextOverlay = (blogContent?.imageTextOverlay || 'with-text') !== 'without-text'
+  const isPhotoBlogImageStyle = (blogContent?.imageStyle || 'pastel') === 'photo'
   const shortsVideoRef = useRef(null)
   const shortsAudioRefs = useRef([])
   const [currentScene, setCurrentScene] = useState(-1)
@@ -599,9 +607,14 @@ export default function ExtractionResultPage() {
       const heading = s.heading ? `${s.heading}\n` : ''
       const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
-      return `${heading}[IMG:${i + 1}]\n${keyPhrase}${content}`
+      const imageMarker = isPhotoBlogImageStyle
+        ? `[IMG:${i + 1}]\n`
+        : i === 0
+          ? '[IMG:1]\n'
+          : ''
+      return `${heading}${imageMarker}${keyPhrase}${content}`
     }).join('\n\n')
-  }, [])
+  }, [isPhotoBlogImageStyle])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     String(content || '')
@@ -621,52 +634,44 @@ export default function ExtractionResultPage() {
   // 카드 이미지용 텍스트에서 ** 제거
   const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
 
-  // 카드 제목을 2줄로 분리 (15자 이상이면 반드시 2줄)
+  const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
+
+  const splitCardTokens = (text = '') => {
+    const clean = cleanCardText(text)
+    if (!clean) return []
+    return clean
+      .split(/(\s+|,+|:+|\/+|\\+)/)
+      .map(token => token.trim())
+      .filter(Boolean)
+  }
+
   const splitHeading = (text) => {
-    if (!text) return [text]
-    const parts = text.split(/([&:,])\s*/)
-    const tokens = []
-    for (let i = 0; i < parts.length; i++) {
-      const p = parts[i]
-      if (/^[&:,]$/.test(p)) {
-        if (tokens.length > 0) tokens[tokens.length - 1] += p
-      } else if (p.trim()) {
-        tokens.push(p.trim())
-      }
+    const clean = trimCardTitleEnding(stripBold(text || ''))
+    if (!clean) return ['']
+
+    const maxLineLength = clean.length <= 14 ? 18 : 14
+    if (clean.length <= maxLineLength) return [clean]
+
+    const tokens = splitCardTokens(clean)
+    if (tokens.length <= 1) return [clean]
+
+    let line1 = ''
+    let splitIndex = -1
+    for (let i = 0; i < tokens.length; i++) {
+      const next = line1 ? `${line1} ${tokens[i]}` : tokens[i]
+      if (next.length > maxLineLength) break
+      line1 = next
+      splitIndex = i
     }
-    if (tokens.length > 1) {
-      const totalLen = tokens.reduce((sum, t) => sum + t.length, 0)
-      let line1 = '', line2 = '', acc = 0
-      for (let i = 0; i < tokens.length; i++) {
-        acc += tokens[i].length
-        if (acc >= totalLen / 2 && !line2) {
-          line1 = tokens.slice(0, i + 1).join(' ')
-          line2 = tokens.slice(i + 1).join(' ')
-        }
-      }
-      if (line2) return [line1, line2]
-    }
-    if (text.length >= 15) {
-      const words = text.split(/\s+/)
-      if (words.length >= 2) {
-        const mid = Math.ceil(text.length / 2)
-        let line1 = words[0], best = 0
-        for (let i = 1; i < words.length; i++) {
-          const candidate = words.slice(0, i + 1).join(' ')
-          if (Math.abs(candidate.length - mid) <= Math.abs(line1.length - mid)) {
-            line1 = candidate
-            best = i
-          }
-        }
-        const line2 = words.slice(best + 1).join(' ')
-        if (line2) return [line1, line2]
-      }
-    }
-    return [text]
+
+    if (splitIndex <= -1 || splitIndex >= tokens.length - 1) return [clean]
+
+    const line2 = tokens.slice(splitIndex + 1).join(' ')
+    return line2 ? [line1, line2] : [clean]
   }
 
   const renderCardHeading = (text, fontSize, options = {}) => {
-    const clean = stripBold(text)
+    const clean = trimCardTitleEnding(stripBold(text))
     const lines = splitHeading(clean)
     const textClassName = options.light ? 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]' : 'text-gray-800 drop-shadow-sm'
     return (
@@ -692,9 +697,9 @@ export default function ExtractionResultPage() {
   )
 
   const truncateCardText = (text, maxLength = 34) => {
-    const clean = cleanCardText(text)
+    const clean = trimCardTitleEnding(cleanCardText(text))
     if (clean.length <= maxLength) return clean
-    const words = clean.split(/\s+/).filter(Boolean)
+    const words = splitCardTokens(clean)
     if (words.length <= 1) {
       return `${clean.slice(0, maxLength).trim()}…`
     }
@@ -709,20 +714,40 @@ export default function ExtractionResultPage() {
     return `${(truncated || clean.slice(0, maxLength)).trim()}…`
   }
 
+  const deriveBlogHeadline = (text = '') => {
+    const base = trimCardTitleEnding(deriveHeadlineKeyword(text))
+    if (!base) return ''
+    if (base.length <= 16) return base
+
+    const tokens = splitCardTokens(base)
+    if (tokens.length > 1) {
+      let compact = ''
+      for (const token of tokens.slice(0, 3)) {
+        const next = compact ? `${compact} ${token}` : token
+        if (next.length > 16) break
+        compact = next
+      }
+      if (compact) return trimCardTitleEnding(compact)
+      return trimCardTitleEnding(tokens[0] || '')
+    }
+
+    return trimCardTitleEnding(base.slice(0, 16))
+  }
+
   const deriveHeadlineKeyword = (text = '') => {
-    const clean = cleanCardText(text)
+    const clean = trimCardTitleEnding(cleanCardText(text))
       .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
       .trim()
 
     const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
-    if (particleMatch?.[1]) return particleMatch[1].trim()
+    if (particleMatch?.[1]) return trimCardTitleEnding(particleMatch[1])
 
     const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-    if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
+    if (dividerMatch && dividerMatch.length < clean.length) return trimCardTitleEnding(dividerMatch)
 
     const words = clean.split(/\s+/).filter(Boolean)
-    if (words.length >= 2) return words.slice(0, 2).join(' ')
-    return clean
+    if (words.length >= 2) return trimCardTitleEnding(words.slice(0, 2).join(' '))
+    return trimCardTitleEnding(clean)
   }
 
   const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
@@ -798,7 +823,7 @@ export default function ExtractionResultPage() {
         setScheduleInfo(prev => {
           const next = { ...prev }
           mine.forEach(item => {
-            next[item.platform] = { scheduledAt: item.scheduledAt }
+            next[item.platform] = { scheduledAt: item.scheduledAt, scheduledId: item.id }
           })
           return next
         })
@@ -1070,14 +1095,17 @@ export default function ExtractionResultPage() {
               const blogImageList = ensureArray(blogImages)
 
               return ensureArray(blogContent?.sections).map((section, index) => {
+                const shouldShowBlogImage = isPhotoBlogImageStyle || index === 0
                 const image =
-                  blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
-                  blogImageList[index] ||
-                  null
+                  shouldShowBlogImage
+                    ? blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
+                      blogImageList[index] ||
+                      null
+                    : null
                 const imageUrl = image?.imageUrl || null
                 const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
                 const headingText = cleanCardText(section?.heading || '')
-                const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || headingText), 18)
+                const headline = deriveBlogHeadline(keyPhrase || headingText)
                 const description = truncateCardText(
                   deriveDescriptionCopy(headingText, headline, section?.content || ''),
                   34
@@ -1117,16 +1145,20 @@ export default function ExtractionResultPage() {
                             alt={section.heading || `블로그 이미지 ${index + 1}`}
                             className="w-full h-auto block"
                           />
-                          <div className="absolute inset-0 bg-black/10 pointer-events-none" />
-                          <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-                            <div className="w-[52%] max-w-[280px] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-5 py-5">
-                              {renderCardHeading(headline, 24)}
-                              <div className="w-12 h-1 rounded-full mt-3 mb-3 bg-primary/70" />
-                              <p className="text-sm text-gray-600 font-semibold leading-relaxed">
-                                {description}
-                              </p>
-                            </div>
-                          </div>
+                          {showBlogImageTextOverlay && (
+                            <>
+                              <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+                              <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
+                                <div className="w-[52%] max-w-[280px] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-5 py-5">
+                                  {renderCardHeading(headline, 24)}
+                                  <div className="w-12 h-1 rounded-full mt-3 mb-3 bg-primary/70" />
+                                  <p className="text-sm text-gray-600 font-semibold leading-relaxed">
+                                    {description}
+                                  </p>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1156,11 +1188,13 @@ export default function ExtractionResultPage() {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
     const currentCardNumber = current?.cardNumber || current?.card_number || instaSlide + 1
-    const fixedInstagramImage = ensureArray(instagramImages).find((image, index) => {
+    const instagramCardStyle = normalizeInstagramCardStyle(instagramContent?.cardStyle)
+    const currentInstagramImage = ensureArray(instagramImages).find((image, index) => {
       const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
-      return imageCardNumber === 1
+      return imageCardNumber === currentCardNumber
     }) || ensureArray(instagramImages)[0]
-    const currentImageUrl = fixedInstagramImage?.imageUrl || fixedInstagramImage?.url || null
+    const currentImageUrl = currentInstagramImage?.imageUrl || currentInstagramImage?.url || null
+    const currentCardPngUrl = instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
     const currentTitle = current?.title || current?.heading || current?.headline || `인스타 카드 ${currentCardNumber}`
@@ -1169,6 +1203,10 @@ export default function ExtractionResultPage() {
       ...ensureArray(current?.points).map(stripResultCtaText).filter(Boolean),
       stripResultCtaText(current?.dataPoint || ''),
     ].filter(Boolean)
+    const isCenterCard = instagramCardStyle === 'center-card'
+    const cardTitleFont = isCenterCard ? 'clamp(16px, 2.2vw, 24px)' : 'clamp(15px, 2vw, 22px)'
+    const cardSubtitleFont = isCenterCard ? 'clamp(10px, 1.2vw, 13px)' : 'clamp(10px, 1.1vw, 12px)'
+    const cardPointFont = 'clamp(10px, 1.15vw, 13px)'
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1194,48 +1232,95 @@ export default function ExtractionResultPage() {
         </div>
 
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-          <div className="space-y-4 sm:w-[360px] sm:shrink-0">
+          <div className="space-y-4 sm:w-[440px] sm:shrink-0">
             <div className="bg-white rounded-[28px] p-4 shadow-xl border border-gray-100">
               <div className="rounded-[28px] overflow-hidden bg-gray-100">
-                <div
-                  ref={el => instaCardsRef.current[instaSlide] = el}
-                  className="aspect-square relative bg-gradient-to-br from-pink-50 via-white to-orange-50"
-                >
-                    {currentImageUrl && (
-                      <>
-                        <img
-                          src={currentImageUrl}
-                          alt={fixedInstagramImage?.heading || current?.title || current?.heading || '인스타 카드 1'}
-                          className="absolute inset-0 w-full h-full object-cover"
-                          loading="lazy"
-                        />
-                      <div className="absolute inset-0 bg-black/28" />
-                    </>
-                  )}
-                  <div className="absolute inset-0 p-10 flex flex-col justify-between">
-                      <div className="space-y-4">
-                        {current?.kicker && (
-                          <span className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}>
-                            {current.kicker}
-                          </span>
-                        )}
-                        {renderCardHeading(currentTitle, 34, { light: Boolean(currentImageUrl) })}
-                        {sanitizedSubtitle && (
-                          <p className={`text-base leading-7 ${currentImageUrl ? 'text-white/92' : 'text-gray-600'}`}>{stripBold(sanitizedSubtitle)}</p>
-                        )}
-                    </div>
-                    {sanitizedPoints.length > 0 && (
-                      <ul className="space-y-3">
-                        {sanitizedPoints.map((point, idx) => (
-                          <li key={idx} className={`flex items-start gap-3 ${currentImageUrl ? 'text-white/92' : 'text-gray-700'}`}>
-                            <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${currentImageUrl ? 'bg-white/90' : 'bg-pink-500'}`} />
-                            <span className="leading-7">{stripBold(point)}</span>
-                          </li>
-                        ))}
-                      </ul>
+                {currentCardPngUrl ? (
+                  <img
+                    src={currentCardPngUrl}
+                    alt={currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
+                    className="block w-full h-auto"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div
+                    ref={el => instaCardsRef.current[instaSlide] = el}
+                    className={`aspect-square relative ${isCenterCard ? 'bg-gradient-to-br from-violet-100 via-fuchsia-50 to-sky-100' : 'bg-gradient-to-br from-pink-50 via-white to-orange-50'}`}
+                  >
+                      {currentImageUrl && (
+                        <>
+                          <img
+                            src={currentImageUrl}
+                            alt={currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/18'}`} />
+                      </>
+                    )}
+                    {isCenterCard ? (
+                      <div className="absolute inset-0 p-[7%] flex items-center justify-center">
+                        <div className="w-[70%] rounded-[30px] bg-white/84 backdrop-blur-md border border-white/70 px-[7%] py-[8%] shadow-xl text-center">
+                          <div
+                            className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 font-extrabold tracking-[0.18em] text-primary-dark mb-4"
+                            style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
+                          >
+                            CARD {String(currentCardNumber).padStart(2, '0')}
+                          </div>
+                          <div className="space-y-4">
+                            {renderCardHeading(currentTitle, cardTitleFont, { light: false })}
+                            {sanitizedSubtitle && (
+                              <p className="text-gray-600" style={{ fontSize: cardSubtitleFont, lineHeight: 1.7 }}>{stripBold(sanitizedSubtitle)}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-4">
+                            {current?.kicker && (
+                              <span
+                                className={`inline-flex px-3 py-1 rounded-full font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}
+                                style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
+                              >
+                                {current.kicker}
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            className="rounded-full bg-black/62 px-3 py-1.5 font-bold text-white shadow-sm"
+                            style={{ fontSize: 'clamp(11px, 1.2vw, 14px)' }}
+                          >
+                            {currentCardNumber}
+                          </div>
+                        </div>
+                        <div className="space-y-4">
+                          <div className="rounded-[24px] bg-white/86 px-[5%] py-[4.5%] shadow-sm">
+                            <div className="space-y-3">
+                              {renderCardHeading(currentTitle, cardTitleFont, { light: false })}
+                              {sanitizedSubtitle && (
+                                <p className="text-gray-600" style={{ fontSize: cardSubtitleFont, lineHeight: 1.65 }}>{stripBold(sanitizedSubtitle)}</p>
+                              )}
+                            </div>
+                          </div>
+                          {sanitizedPoints.length > 0 && (
+                            <div className="rounded-[24px] bg-black/28 backdrop-blur-sm px-[5%] py-[4.5%]">
+                              <ul className="space-y-3">
+                                {sanitizedPoints.map((point, idx) => (
+                                  <li key={idx} className="flex items-start gap-3 text-white/92">
+                                    <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-white/90" />
+                                    <span style={{ fontSize: cardPointFont, lineHeight: 1.65 }}>{stripBold(point)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -1680,7 +1765,12 @@ export default function ExtractionResultPage() {
                   )}
                   <button
                     onClick={() => {
-                      const contentMap = { blog: blogContent, newsletter: newsletterContent, instagram: instagramContent, shorts: shortsScript }
+                      const contentMap = {
+                        blog: blogContent,
+                        newsletter: newsletterContent,
+                        instagram: buildInstagramScheduledContent({ instagramContent, instagramImages }),
+                        shorts: shortsScript,
+                      }
                       setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
                     }}
                     className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
@@ -1783,7 +1873,12 @@ export default function ExtractionResultPage() {
             return
           } else {
             try {
-              await createScheduledUpload({ platform, content, scheduledAt, extractionId: id })
+              const scheduledId = scheduleInfo[platform]?.scheduledId || null
+              const savedSchedule = await createScheduledUpload({ platform, content, scheduledAt, extractionId: id, scheduledId })
+              setScheduleInfo(p => ({
+                ...p,
+                [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
+              }))
             } catch (err) {
               console.error('[예약 생성 실패]', err)
               alert(`예약 생성 실패: ${err.message}`)
@@ -1793,10 +1888,25 @@ export default function ExtractionResultPage() {
             setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
           }
 
-          setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
+          setScheduleInfo(p => ({
+            ...p,
+            [platform]: {
+              scheduledAt,
+              scheduledId: p[platform]?.scheduledId || null,
+            },
+          }))
         }}
-        onDelete={scheduleDialog.mode === 'edit' ? () => {
+        onDelete={scheduleDialog.mode === 'edit' ? async () => {
           const platform = scheduleDialog.platform
+          const scheduledId = scheduleInfo[platform]?.scheduledId
+          if (scheduledId && platform !== 'blog' && platform !== 'shorts') {
+            try {
+              await removeScheduledUpload(scheduledId)
+            } catch (err) {
+              alert(`예약 삭제 실패: ${err.message}`)
+              return
+            }
+          }
           if (extractionId) {
             if (platform === 'blog') {
               const nextStatus = uploadStatus[platform] === 'done' ? 'uploaded' : 'not_uploaded'

@@ -127,11 +127,28 @@ function countDataSignals(text) {
   return numericMatches.length + metricMatches.length + comparisonMatches.length
 }
 
+function hasDenseDataFormatting(text) {
+  const source = String(text || '')
+  if (!source.trim()) return false
+
+  const separators = (source.match(/[/|,:]/g) || []).length
+  const lineBreaks = (source.match(/\n/g) || []).length
+  const parentheticalBits = (source.match(/\([^)]*\)/g) || []).length
+
+  return separators >= 3 || lineBreaks >= 2 || parentheticalBits >= 2
+}
+
 function sceneNeedsTextOnlyOverlay(scene) {
   const combined = [scene?.narration, scene?.textOverlay].filter(Boolean).join(' ')
   const dataSignalCount = countDataSignals(combined)
   const overlayLength = String(scene?.textOverlay || '').trim().length
-  return dataSignalCount >= 4 || (dataSignalCount >= 3 && overlayLength >= 18)
+  const denseFormatting = hasDenseDataFormatting(combined)
+
+  return (
+    dataSignalCount >= 6 ||
+    (dataSignalCount >= 5 && overlayLength >= 30) ||
+    (dataSignalCount >= 4 && overlayLength >= 24 && denseFormatting)
+  )
 }
 
 function buildSceneLines(script) {
@@ -139,8 +156,8 @@ function buildSceneLines(script) {
     .map((scene) => {
       const overlay = scene?.textOverlay ? ` / 화면 텍스트: ${scene.textOverlay}` : ''
       const layoutDirection = sceneNeedsTextOnlyOverlay(scene)
-        ? ' / Layout direction: switch away from the avatar and use a clean full-screen text or infographic scene for this part.'
-        : ' / Layout direction: keep any text overlay compact and away from the subtitle zone and avatar face.'
+        ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
+        : ' / Layout direction: keep the avatar on screen and use only a small, compact text overlay away from the subtitle zone and avatar face.'
       return `- 장면 ${scene.sceneNumber} (${scene.duration}초): ${scene.narration}${overlay}${layoutDirection}`
     })
     .join('\n')
@@ -169,10 +186,10 @@ export function buildShortsVideoAgentPrompt({
   const isAnimalAvatar = isAnimalOrCharacterAvatar(avatar)
   const resolvedVoiceInstruction =
     voiceStyle && voiceStyle !== 'auto'
-      ? `Voice direction: ${voiceStyle}.`
+      ? `Voice direction: ${voiceStyle}. Keep the same single narrator voice across the entire video, with stable identity, stable tone, and stable pitch from scene to scene. Avoid abrupt changes in timbre, age impression, or energy between scenes.`
       : isAnimalAvatar
-        ? 'Use a cute, charming Korean character voice that matches a lovable animal mascot. Make it playful, bright, and endearing, but still easy to understand and not overly childish.'
-        : ''
+        ? 'Use a cute, lovable Korean character voice that matches a friendly animal mascot, but keep it soft, warm, and comfortable to hear. Prefer a gentle medium pitch over a very high or squeaky voice. Keep the same single narrator voice across the entire video with consistent pitch, tone, and character identity.'
+        : 'Use one consistent Korean narrator voice for the entire video. Prefer a warm, natural, pleasant voice with a slightly lower and more comfortable medium-low pitch. Avoid overly high-pitched, sharp, squeaky, or childish delivery. Keep the same speaker identity, tone, and pitch stable across every scene.'
 
   return [
     'Create a polished vertical 9:16 YouTube Shorts video in Korean.',
@@ -187,13 +204,15 @@ export function buildShortsVideoAgentPrompt({
     'Keep the lower third visually clean and mostly empty except for subtitles.',
     'Treat the middle facial area of the avatar as a protected no-text zone.',
     'Keep subtitle timing clean, readable, and synchronized with each spoken phrase.',
+    'Subtitles are mandatory in the final exported video, not optional.',
     'Do not let subtitles overlap the avatar face, mouth, or important facial details.',
     'Keep all subtitles and scene text overlays away from the avatar face.',
     'Never place labels, headlines, highlights, charts, or callout text inside the bottom subtitle zone.',
     'For regular scenes, place compact text overlays in the upper-safe area or the lower-left safe area above subtitles, never over the face.',
     'Prefer top-safe, upper-middle-safe, or lower-left-safe placement for all scene text overlays.',
-    'If a scene needs multiple numbers, rankings, percentages, comparisons, or dense factual text, do not keep the avatar on screen for that moment.',
-    'For dense data scenes, cut to a dedicated text-only or infographic-only scene so the information can fill the frame cleanly.',
+    'Only switch to a text-only or infographic-only scene when a scene is genuinely crowded with numbers, rankings, percentages, comparisons, or multiple dense factual lines.',
+    'For normal scenes, keep the avatar on screen and use only a light, compact overlay.',
+    'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
     'When using a text-only scene, keep the center and bottom subtitle area separate so subtitles never collide with the main data card.',
     avatarName
       ? avatarKind === 'talking_photo'

@@ -6,6 +6,7 @@ const { app } = require('electron')
 const { uploadToNaver, hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
 const { getUploadRuntimeState } = require('./upload-runtime')
 const { naverLogin } = require('./naver-login')
+const { clearSessionState, validateStoredNaverSession } = require('./session-state')
 
 const PORT = 3000
 const MAX_UPLOAD_FILE_SIZE = 15 * 1024 * 1024
@@ -70,6 +71,29 @@ function getUploadsDir() {
   const uploadsDir = path.join(app.getPath('userData'), 'uploads')
   fs.mkdirSync(uploadsDir, { recursive: true })
   return uploadsDir
+}
+
+async function helperSessionReady(uploadRuntime) {
+  if (!hasSavedSession()) {
+    return false
+  }
+
+  const activeEditorUrl = uploadRuntime?.activeUpload?.editorUrl || ''
+  if (/^https:\/\/nid\.naver\.com\/nidlogin\.login/i.test(activeEditorUrl)) {
+    return false
+  }
+
+  const editorUrl = uploadRuntime?.lastFailedUpload?.editorUrl || ''
+  const lastError = uploadRuntime?.lastFailedUpload?.error || ''
+  if (/^https:\/\/nid\.naver\.com\/nidlogin\.login/i.test(editorUrl)) {
+    return false
+  }
+
+  if (/log in again|session is missing|session could not be loaded|session expired/i.test(lastError)) {
+    return false
+  }
+
+  return validateStoredNaverSession()
 }
 
 function parseTags(rawTags) {
@@ -154,25 +178,27 @@ function createApp() {
     next()
   })
 
-  expressApp.get('/', (_req, res) => {
+  expressApp.get('/', async (_req, res) => {
     const playwright = getPlaywrightDiagnostics()
+    const uploadRuntime = getUploadRuntimeState()
     res.json({
       appVersion: app.getVersion(),
       chromiumReady: playwright.bundledBrowserFound || playwright.systemBrowserCacheDetected,
-      sessionReady: hasSavedSession(),
+      sessionReady: await helperSessionReady(uploadRuntime),
       status: 'ok',
-      uploadRuntime: getUploadRuntimeState(),
+      uploadRuntime,
     })
   })
 
-  expressApp.get('/api/health', (_req, res) => {
+  expressApp.get('/api/health', async (_req, res) => {
     const playwright = getPlaywrightDiagnostics()
+    const uploadRuntime = getUploadRuntimeState()
     res.json({
       appVersion: app.getVersion(),
       chromiumReady: playwright.bundledBrowserFound || playwright.systemBrowserCacheDetected,
-      sessionReady: hasSavedSession(),
+      sessionReady: await helperSessionReady(uploadRuntime),
       status: 'ok',
-      uploadRuntime: getUploadRuntimeState(),
+      uploadRuntime,
     })
   })
 
@@ -228,7 +254,9 @@ function createApp() {
     const photoPaths = (req.files || []).map((file) => file.path)
 
     try {
-      if (!hasSavedSession()) {
+      const sessionReady = await validateStoredNaverSession({ bypassCache: true })
+      if (!sessionReady) {
+        clearSessionState()
         cleanupFiles(photoPaths)
         res.status(400).json({
           endpoint: `http://127.0.0.1:${PORT}/api/upload`,

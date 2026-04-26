@@ -19,6 +19,7 @@ import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
 import PromptLabPage from './pages/PromptLabPage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
+import DesignTestPage from './pages/DesignTestPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
 import { DESKTOP_HELPER } from './constants/desktopHelper.js'
@@ -55,6 +56,7 @@ function AppLayout() {
           <Route path="/contents" element={<ContentPage />} />
           <Route path="/contents/view" element={<ExtractionResultPage />} />
           <Route path="/prompt-lab" element={<PromptLabPage />} />
+          <Route path="/design-test" element={<DesignTestPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />

@@ -52,7 +52,7 @@ export default function ServiceGuideButton() {
         <>
           <p>
             네이버 블로그 업로드를 사용하려면{' '}
-            <strong className="text-text">블로그 업로드 서버 파일을 먼저 설치</strong>
+            <strong className="text-text">블로그 업로드 도우미 파일을 먼저 설치</strong>
             해야 합니다.
           </p>
           <p>
@@ -72,18 +72,27 @@ export default function ServiceGuideButton() {
       description: (
         <>
           <p>
-            예약 업로드를 등록한 뒤에는{' '}
-            <strong className="text-text">이 서비스 안에서 예약 시간을 변경할 수 없습니다.</strong>
+            <strong className="text-text">블로그와 유튜브는</strong> 예약 업로드를 등록한 뒤
+            이 홈페이지에서 예약 시간을 다시 수정할 수 없습니다.
           </p>
           <p>
-            예약 시간 변경이 필요하면{' '}
+            블로그와 유튜브 예약 시간을 변경하려면{' '}
             <strong className="text-text">해당 플랫폼 업로드 페이지에서 직접 수정</strong>
             해야 합니다.
           </p>
           <p>
-            예약 업로드 상태와 결과는{' '}
-            <strong className="text-text">콘텐츠 관리</strong>에서 다시 확인하는 것이 가장
-            정확합니다.
+            <strong className="text-text">인스타그램은</strong> 이 홈페이지에서 예약 변경이
+            가능합니다.
+          </p>
+          <p>
+            예약 업로드는 외부 플랫폼 및 스케줄 실행 환경 영향으로{' '}
+            <strong className="text-text">설정한 시간과 실제 업로드 시간 사이에 약간의 차이</strong>
+            가 발생할 수 있습니다.
+          </p>
+          <p>
+            예약 업로드 상태는 결과보다{' '}
+            <strong className="text-text">콘텐츠 관리에서 다시 확인</strong>
+            하는 것이 가장 정확합니다.
           </p>
         </>
       ),
@@ -121,9 +130,9 @@ export default function ServiceGuideButton() {
             해야 합니다.
           </p>
           <p>
-            인스타그램, 유튜브 숏츠 생성 기능은{' '}
-            <strong className="text-text">외부 플랫폼 정책과 API 권한</strong>의 영향을 받을
-            수 있습니다.
+            인스타그램, 유튜브, 숏폼 생성 기능은{' '}
+            <strong className="text-text">각 플랫폼 정책과 API 권한</strong>의 영향을 받을 수
+            있습니다.
           </p>
           <p>
             문제가 생기면 <strong className="text-text">플랫폼 연동 상태를 먼저 확인</strong>
@@ -166,7 +175,7 @@ export default function ServiceGuideButton() {
                 </div>
                 <h2 className="mt-3 text-xl font-semibold text-text">서비스 안내</h2>
                 <p className="mt-1 text-sm text-text-muted">
-                  업로드, 예약, 계정 설정 전에 꼭 알아야 하는 내용을 정리했습니다.
+                  업로드, 예약, 계정 설정 전에 꼭 알아두어야 하는 내용을 정리했습니다.
                 </p>
               </div>
               <button

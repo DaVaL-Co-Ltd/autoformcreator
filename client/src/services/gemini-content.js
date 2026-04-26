@@ -1,161 +1,287 @@
 import { callGeminiWithFallback, parseJSON } from './gemini-core'
 
+function stripMarkdownEmphasis(text = '') {
+  return String(text || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .trim()
+}
+
+function sanitizeInstagramContent(content) {
+  if (!content) return content
+  return {
+    ...content,
+    title: stripMarkdownEmphasis(content.title || ''),
+    body: stripMarkdownEmphasis(content.body || ''),
+    caption: stripMarkdownEmphasis(content.caption || ''),
+    cardTopics: Array.isArray(content.cardTopics)
+      ? content.cardTopics.map((topic) => ({
+          ...topic,
+          headline: stripMarkdownEmphasis(topic?.headline || ''),
+          content: stripMarkdownEmphasis(topic?.content || ''),
+          dataPoint: stripMarkdownEmphasis(topic?.dataPoint || ''),
+        }))
+      : [],
+  }
+}
+
+function sanitizeShortsContent(content) {
+  if (!content) return content
+  return {
+    ...content,
+    title: stripMarkdownEmphasis(content.title || ''),
+    hook: stripMarkdownEmphasis(content.hook || ''),
+    cta: stripMarkdownEmphasis(content.cta || ''),
+    uploadTitle: stripMarkdownEmphasis(content.uploadTitle || ''),
+    uploadDescription: stripMarkdownEmphasis(content.uploadDescription || ''),
+    scenes: Array.isArray(content.scenes)
+      ? content.scenes.map((scene) => ({
+          ...scene,
+          narration: stripMarkdownEmphasis(scene?.narration || ''),
+          textOverlay: stripMarkdownEmphasis(scene?.textOverlay || ''),
+        }))
+      : [],
+  }
+}
+
 function buildEmphasisInstruction(emphasis) {
   if (!emphasis || emphasis.trim() === '') return ''
-  return `\n## 강조 요청\n사용자가 다음 내용을 특별히 강조해달라고 요청했습니다: "${emphasis.trim()}"\n위 내용을 모든 채널의 콘텐츠에서 중심 주제로 부각하고, 관련 데이터와 인사이트를 더 비중 있게 다뤄주세요.\n`
+  return `
+## 강조 요청
+사용자가 다음 내용을 중요하게 다뤄달라고 요청했습니다: "${emphasis.trim()}"
+- 이 내용은 모든 채널의 핵심 메시지에 자연스럽게 녹여서 반영하세요.
+- 없는 사실을 추가하지 말고, 제공된 요약과 원문 범위 안에서만 강조하세요.
+`
 }
 
 function buildOptionsInstruction(options = {}) {
   const parts = []
   const toneMap = {
-    friendly: '친근하고 편안한',
-    professional: '전문적이고 신뢰감 있는',
-    humorous: '유머러스하고 재미있는',
-    formal: '진지하고 격식 있는',
+    friendly: '친근하고 읽기 쉬운 톤',
+    professional: '전문적이고 신뢰감 있는 톤',
+    humorous: '가볍고 재치 있는 톤',
+    formal: '정중하고 공식적인 톤',
   }
+
   if (options.tone && options.tone !== 'auto' && toneMap[options.tone]) {
-    parts.push(`글의 어조: ${toneMap[options.tone]} 톤으로 작성하세요.`)
+    parts.push(`- 전체 톤: ${toneMap[options.tone]}`)
   }
-  if (options.commonExtra) parts.push(`공통 지시: ${options.commonExtra}`)
-  if (options.blogExtra) parts.push(`블로그 추가 지시: ${options.blogExtra}`)
-  if (options.newsletterExtra) parts.push(`뉴스레터 추가 지시: ${options.newsletterExtra}`)
-  if (options.instaExtra) parts.push(`인스타그램 추가 지시: ${options.instaExtra}`)
-  if (options.shortsExtra) parts.push(`숏폼 추가 지시: ${options.shortsExtra}`)
-  return parts.length > 0 ? '\n## ⚠️ 사용자 설정 (최우선 적용 - 아래 모든 기본 가이드라인보다 우선합니다)\n' + parts.join('\n') + '\n위 사용자 설정은 다른 모든 규칙(채널별 기본 톤, 어조 등)보다 우선해서 적용해야 합니다.\n' : ''
+  if (options.commonExtra) parts.push(`- 공통 추가 지시: ${options.commonExtra}`)
+  if (options.blogExtra) parts.push(`- 블로그 추가 지시: ${options.blogExtra}`)
+  if (options.newsletterExtra) parts.push(`- 뉴스레터 추가 지시: ${options.newsletterExtra}`)
+  if (options.instaExtra) parts.push(`- 인스타그램 추가 지시: ${options.instaExtra}`)
+  if (options.shortsExtra) parts.push(`- 숏폼 추가 지시: ${options.shortsExtra}`)
+
+  if (!parts.length) return ''
+
+  return `
+## 사용자 설정
+아래 설정은 기본 규칙보다 우선해서 반영하세요.
+${parts.join('\n')}
+`
 }
 
-// 4개 채널 (블로그, 뉴스레터, 인스타그램, 숏폼)
-async function generate4Channels(summary, rawText, emphasis, options = {}) {
-  const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 4개 채널의 콘텐츠를 작성해주세요.
+function buildBlogTitleRules() {
+  return `
+## 블로그 제목 규칙
+- 형식: "핵심 키워드, 설명 문장"
+- 검색량이 높을 핵심 키워드 1~2개를 제목 맨 앞에 배치하세요.
+- 구분자는 쉼표(,)만 사용하세요.
+- 콜론(:), 파이프(|)는 사용하지 마세요.
+- 연도, 대상, 세부 설명은 뒤쪽에 배치하세요.
+- 제목은 30자 안팎으로 간결하게 유지하세요.
+`
+}
 
-## 핵심 규칙
-- 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
-- 사실에 기반한 내용만 작성하세요.
-- 특정 대학교(예: 건국대, 성균관대 등)에만 해당하는 세부 내용은 최소화하세요. 여러 대학에 공통으로 적용되는 트렌드, 제도 변화, 일반적인 전략 등 공통적인 내용을 중심으로 작성하세요. 특정 대학은 예시로만 간단히 언급하세요.
-- 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
-
-## 블로그 제목 작성 규칙 (매우 중요)
-- 제목 형식: "핵심키워드, 소제목 설명문" (쉼표로 구분)
-- 검색량이 높은 핵심 키워드 1~2개를 제목 맨 앞에 배치하세요.
-- 쉼표(,) 뒤에 소제목으로 구체적인 설명을 충분히 붙이세요.
-- ":" 또는 "|"는 사용하지 마세요. 반드시 쉼표(,)로 구분하세요.
-- 연도, 대상 등 부가 정보는 키워드 뒤쪽에 배치하세요.
-- 좋은 예: "수능최저 국어 고득점, 내신과 선행까지 한번에 잡는 실속형 로드맵"
-- 좋은 예: "2026 대입 핵심 변화, 학생부종합전형 준비 전략 총정리"
-- 나쁜 예: "수능최저 준비 | 국어 고득점" ("|" 사용, 소제목이 너무 짧음)
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
-
-## 요약 데이터
+function buildBasePrompt(summary, rawText, emphasis, options) {
+  return `
+## 입력 데이터
+### 요약 데이터
 ${JSON.stringify(summary, null, 2)}
 
-## 원본 텍스트
+### 원문
 ${rawText.slice(0, 8000)}
+${buildEmphasisInstruction(emphasis)}
+${buildOptionsInstruction(options)}
+`
+}
 
----
+async function generate4Channels(summary, rawText, emphasis, options = {}) {
+  const prompt = `당신은 멀티채널 콘텐츠 전략가입니다. 아래 정보를 바탕으로 블로그, 뉴스레터, 인스타그램, 유튜브 숏폼 콘텐츠를 한 번에 생성하세요.
 
-아래 JSON 형식으로 4개 채널 콘텐츠를 생성하세요:
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- 각 채널의 형식과 독자 기대에 맞게 다시 써 주세요.
+- 반드시 JSON만 출력하세요.
+
+${buildBlogTitleRules()}
+
+## 인스타그램 규칙
+- body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 카드 주제는 6~10개로 구성하세요.
+- cardTopics는 카드 이미지 생성에 사용되므로 headline/content/dataPoint를 짧고 명확하게 작성하세요.
+
+## 유튜브 숏폼 규칙
+- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- scenes는 3개 이상으로 구성하세요.
+- 총 길이는 20~30초 수준으로 작성하세요.
+- uploadTitle은 60자 이내, uploadDescription은 200~400자 수준으로 작성하세요.
+- hashtags는 8~12개 배열로 반환하세요.
+
+## 뉴스레터 규칙
+- 첫 인사말은 자연스럽게 작성하되, 과장된 판매 문구는 피하세요.
+
+## 블로그 규칙
+- 섹션은 3개 이상 구성하세요.
+- sections[].content는 충분한 길이의 본문으로 작성하세요.
+
+${buildBasePrompt(summary, rawText, emphasis, options)}
+
+## 출력 스키마
 {
-  "blog": {"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심을 한눈에 보여주는 키워드 요약(예: 일반 논술 vs 약술형 논술, 2028 대입 핵심 3가지)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"},
-  "newsletter": {"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"},
-  "instagram": {"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]},
-  "shorts": {"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}
-}
-
-주의사항:
-- 인스타그램 body는 게시글 본문으로, 핵심 내용을 마크다운으로 상세히 작성하세요.
-- 인스타그램 cardTopics는 Step 5에서 카드 이미지 생성에 사용될 소재입니다. 6~10개로 구성하세요.
-- 인스타그램 caption은 다음 형식으로 작성하세요:
-  1) 도입 한 줄 (관심을 끄는 문장)
-  2) 각 핵심을 이모지와 함께 키워드 중심으로 요약
-  3) "~하세요", "~합니다" 같은 경어체 대신 "~정리", "~변화", "~포인트" 같이 명사/키워드로 끝내세요.
-  4) 마지막에 CTA 한 줄
-- 숏폼은 반드시 3씬 이상으로 구성하세요. 총 약 20초. 각 씬은 6~7초. 나레이션은 씬당 1~2문장. scenes 배열에 3개 이상의 씬 객체를 넣으세요.
-- 숏폼 씬 구성 규칙:
-  * 첫 번째 씬: 인사/소개 (예: "안녕하세요~ 오늘의 입시 정보를 알려드릴게요!"). visualDescription은 귀여운 고양이 캐릭터가 인사하는 애니메이션.
-  * 중간 씬들: 핵심 내용 전달. visualDescription은 내용과 어울리는 배경 이미지 묘사 (교실, 차트, 책 등). 텍스트 없이 시각적 이미지 위주로.
-  * 마지막 씬: 마무리/CTA (예: "더 많은 정보는 프로필에서 확인하세요!"). visualDescription은 고양이 캐릭터가 손 흔들며 작별하는 애니메이션.
-- 첫 번째와 마지막 씬의 visualDescription만 고양이 캐릭터 애니메이션으로, 중간 씬은 배경 이미지로 묘사하세요.
-- ⚠️ 사용자 설정(글의 어조, 추가 지시사항)이 있으면 위의 채널별 기본 톤보다 사용자 설정을 무조건 우선 적용하세요.
-- 반드시 위 JSON 구조만 출력하세요.`
-
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 32768, jsonMode: true })
-  console.log('[Gemini 4채널] raw 응답 길이:', result?.length, '미리보기:', result?.slice(0, 500))
-  const parsed = parseJSON(result, null)
-  if (!parsed) {
-    console.error('[Gemini 4채널] JSON 파싱 실패. 전체 응답:', result)
+  "blog": {
+    "title": "블로그 제목",
+    "metaDescription": "메타 설명",
+    "sections": [
+      {
+        "heading": "섹션 제목",
+        "keyPhrase": "핵심 키워드 또는 짧은 요약",
+        "content": "섹션 본문",
+        "imagePrompt": "Image prompt in English"
+      }
+    ],
+    "tags": ["태그"],
+    "summary": "글 요약"
+  },
+  "newsletter": {
+    "subject": "메일 제목",
+    "preheader": "프리헤더",
+    "greeting": "인사말",
+    "headline": "헤드라인",
+    "keyPoints": ["핵심 포인트"],
+    "body": "본문",
+    "dataHighlights": [{ "label": "항목", "value": "값" }],
+    "cta": { "text": "CTA", "description": "설명" },
+    "closingNote": "마무리 문구"
+  },
+  "instagram": {
+    "title": "게시물 제목",
+    "body": "게시물 본문",
+    "caption": "인스타그램 캡션",
+    "hashtags": ["#태그"],
+    "cardTopics": [
+      {
+        "cardNumber": 1,
+        "headline": "카드 제목",
+        "content": "카드 내용",
+        "dataPoint": "핵심 수치"
+      }
+    ]
+  },
+  "shorts": {
+    "title": "숏폼 제목",
+    "duration": "20",
+    "hook": "첫 문장",
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "6",
+        "narration": "나레이션",
+        "visualDescription": "Visual description in English",
+        "textOverlay": "텍스트 오버레이"
+      }
+    ],
+    "cta": "마무리 문구",
+    "thumbnailPrompt": "Thumbnail prompt in English",
+    "uploadTitle": "YouTube 제목",
+    "uploadDescription": "YouTube 설명",
+    "hashtags": ["#Shorts", "#태그"]
   }
-  return parsed
+}`
+
+  const result = await callGeminiWithFallback(prompt, {
+    temperature: 0.4,
+    maxOutputTokens: 32768,
+    jsonMode: true,
+  })
+  return parseJSON(result, null)
 }
 
-// 4개 채널 콘텐츠 생성
 export async function generateAllContent(summary, rawText, emphasis, options = {}) {
   const [fourResult] = await Promise.allSettled([
     generate4Channels(summary, rawText, emphasis, options),
   ])
 
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null
-
   if (!four) {
-    console.error('[Gemini] 4채널 에러 - status:', fourResult.status, 'reason:', fourResult.reason, 'value:', fourResult.value)
+    console.error('[Gemini] multi-channel generation failed', fourResult)
     throw new Error('콘텐츠 생성 결과를 파싱하지 못했습니다.')
   }
 
   return {
     blog: four?.blog || null,
     newsletter: four?.newsletter || null,
-    instagram: four?.instagram || null,
-    shorts: four?.shorts || null,
+    instagram: sanitizeInstagramContent(four?.instagram || null),
+    shorts: sanitizeShortsContent(four?.shorts || null),
   }
 }
 
-// 실패한 채널들만 1회 API 호출로 통합 재생성
 const CHANNEL_SCHEMAS = {
-  blog: `"blog":{"title":"핵심키워드, 소제목 설명문(쉼표 구분, 키워드를 맨 앞에)","metaDescription":"메타 설명(160자 이내)","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약(예: 일반 논술 vs 약술형 논술)","content":"섹션 내용(마크다운, 충분히 길게)","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약(200자)"}`,
-  newsletter: `"newsletter":{"subject":"이메일 제목","preheader":"프리헤더(100자 이내)","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트1","포인트2"],"body":"본문(마크다운)","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`,
-  instagram: `"instagram":{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용 상세 작성)","caption":"인스타그램 캡션(이모지 포함)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}`,
-  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":2,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"},{"sceneNumber":3,"duration":"6","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)"}`,
+  blog: `"blog":{"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`,
+  newsletter: `"newsletter":{"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`,
+  instagram: `"instagram":{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`,
+  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
 }
 
 const CHANNEL_LABELS = {
   blog: '네이버 블로그',
   newsletter: '뉴스레터',
-  instagram: '인스타그램 게시글(본문+카드 소재 6~10개)',
-  shorts: '숏폼 대본(20~30초, 3~4씬)',
+  instagram: '인스타그램',
+  shorts: '유튜브 숏폼',
 }
 
 async function retryNonLongform(channels, summary, rawText, emphasis, options = {}) {
-  const schemaLines = channels.map(ch => CHANNEL_SCHEMAS[ch]).join(',\n  ')
-  const channelNames = channels.map(ch => CHANNEL_LABELS[ch]).join(', ')
-  const optionsInstruction = buildOptionsInstruction(options)
+  const schemaLines = channels.map((channel) => CHANNEL_SCHEMAS[channel]).join(',\n  ')
+  const channelNames = channels.map((channel) => CHANNEL_LABELS[channel]).join(', ')
 
-  const prompt = `당신은 멀티 채널 콘텐츠 전문가입니다. 아래 데이터를 바탕으로 다음 채널의 콘텐츠를 작성해주세요: ${channelNames}
+  const prompt = `당신은 멀티채널 콘텐츠 전략가입니다. 아래 정보를 바탕으로 다음 채널만 다시 생성하세요: ${channelNames}
 
-## 핵심 규칙
-- 모든 숫자, 통계, 데이터는 원본 그대로 사용하세요. 절대 변경하지 마세요.
-- 사실에 기반한 내용만 작성하세요.
-- 볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- 반드시 JSON만 출력하세요.
 
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
+## 인스타그램 규칙
+- body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 
-## 원본 텍스트
-${rawText.slice(0, 8000)}
+## 유튜브 숏폼 규칙
+- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 
-반드시 아래 JSON 형식으로만 응답하세요:
+${buildBlogTitleRules()}
+${buildBasePrompt(summary, rawText, emphasis, options)}
+
+## 출력 스키마
 {
   ${schemaLines}
 }`
 
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, maxOutputTokens: 32768, jsonMode: true })
+  const result = await callGeminiWithFallback(prompt, {
+    temperature: 0.4,
+    maxOutputTokens: 32768,
+    jsonMode: true,
+  })
   const parsed = parseJSON(result, null)
   if (!parsed) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
 
   const output = {}
-  for (const ch of channels) {
-    output[ch] = parsed[ch] || null
+  for (const channel of channels) {
+    output[channel] = parsed[channel] || null
   }
+  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram)
+  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   return output
 }
 
@@ -167,112 +293,104 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis, 
   ])
 
   const output = {}
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value) {
-      Object.assign(output, r.value)
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      Object.assign(output, result.value)
     }
   }
 
+  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram)
+  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
   return output
 }
 
-// 개별 채널 재시도용 함수들 (1개만 실패 시 사용)
 export async function generateBlogContent(summary, rawText, emphasis, options = {}) {
-  const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 네이버 블로그 인기글 전문 작가입니다. 아래 데이터를 바탕으로 블로그 글을 작성해주세요.
-모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-볼드 처리는 반드시 **텍스트** 형식만 사용하세요. ***는 절대 사용하지 마세요. *이탤릭*도 사용하지 마세요.
+  const prompt = `당신은 네이버 블로그 전문 작가입니다. 아래 정보를 바탕으로 블로그 글을 작성하세요.
 
-## 제목 작성 규칙 (매우 중요 — 반드시 지켜주세요)
-- 제목 형식: "핵심키워드, 소제목 설명문" (쉼표로 구분)
-- 검색량이 높은 핵심 키워드 1~2개를 제목 맨 앞에 배치하세요.
-- 쉼표(,) 뒤에 소제목으로 구체적인 설명을 충분히 붙이세요.
-- ":" 또는 "|"는 사용하지 마세요. 반드시 쉼표(,)로 구분하세요.
-- 연도, 대상 등 부가 정보는 키워드 뒤쪽에 배치하세요.
-- 좋은 예: "수능최저 국어 고득점, 내신과 선행까지 한번에 잡는 실속형 로드맵"
-- 좋은 예: "2026 대입 핵심 변화, 학생부종합전형 준비 전략 총정리"
-- 나쁜 예: "수능최저 준비 | 국어 고득점" ("|" 사용, 소제목이 너무 짧음)
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- 섹션은 3개 이상 구성하세요.
+- 블로그 본문에서는 markdown bold(**텍스트**)를 사용해도 됩니다.
 
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
+${buildBlogTitleRules()}
+${buildBasePrompt(summary, rawText, emphasis, options)}
 
-## 원본 텍스트
-${rawText.slice(0, 3000)}
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{"title":"블로그 제목(30자 이내, 핵심 키워드를 맨 앞에)","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"본문 핵심 키워드 요약","content":"섹션 내용","imagePrompt":"이미지 설명(영문)"}],"tags":["태그"],"summary":"글 요약"}`
+## 출력 스키마
+{"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })
 }
 
 export async function generateNewsletterContent(summary, rawText, emphasis, options = {}) {
-  const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 뉴스레터 전문 에디터입니다. 아래 데이터를 바탕으로 뉴스레터를 작성해주세요.
-모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
+  const prompt = `당신은 뉴스레터 에디터입니다. 아래 정보를 바탕으로 뉴스레터를 작성하세요.
 
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- 뉴스레터 본문은 메일 복사에 적합하도록 읽기 쉽게 구성하세요.
 
-## 원본 텍스트
-${rawText.slice(0, 3000)}
+${buildBasePrompt(summary, rawText, emphasis, options)}
 
-반드시 아래 JSON 형식으로만 응답하세요:
-{"subject":"이메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리"}`
+## 출력 스키마
+{"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return parseJSON(result, { subject: '뉴스레터 생성 실패', keyPoints: [], body: '', dataHighlights: [] })
 }
 
 export async function generateInstagramContent(summary, rawText, emphasis, options = {}) {
-  const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 인스타그램 콘텐츠 전문가입니다. 게시글 본문과 카드 이미지 소재를 작성해주세요.
-모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
+  const prompt = `당신은 인스타그램 콘텐츠 전략가입니다. 아래 정보를 바탕으로 인스타그램 게시물 본문과 카드 주제를 작성하세요.
 
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- cardTopics는 6~10개로 구성하세요.
+- 각 카드 문구는 짧고 명확하게 작성하세요.
 
-## 원본 텍스트
-${rawText.slice(0, 3000)}
+${buildBasePrompt(summary, rawText, emphasis, options)}
 
-반드시 아래 JSON 형식으로만 응답하세요:
-{"title":"게시글 제목","body":"게시글 본문(마크다운, 핵심 내용을 상세하게 작성)","caption":"인스타그램 캡션(이모지 포함, 키워드 중심)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용(30자 이내)","dataPoint":"핵심 수치"}]}
-
-주의: cardTopics는 6~10개로 구성하세요. 이 데이터는 카드 이미지 생성에 사용됩니다.`
+## 출력 스키마
+{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] })
+  return sanitizeInstagramContent(
+    parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] }),
+  )
 }
 
 export async function generateShortsScript(summary, rawText, emphasis, options = {}) {
-  const optionsInstruction = buildOptionsInstruction(options)
-  const prompt = `당신은 유튜브 숏폼 전문 크리에이터입니다. 약 20초 분량의 숏폼 대본을 반드시 3씬 이상으로 작성해주세요.
-각 씬은 6~7초이며 나레이션은 씬당 1~2문장으로 짧게. scenes 배열에 3개 이상 씬 객체를 넣으세요.
-첫 씬: 인사/소개, 마지막 씬: 마무리/CTA, 중간 씬: 핵심 내용 전달.
-첫/마지막 visualDescription은 고양이 캐릭터 애니메이션, 중간 씬은 내용과 어울리는 배경 이미지 묘사.
-모든 숫자, 통계, 데이터는 원본 그대로 사용하세요.
+  const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 20~30초 분량의 숏폼 대본을 작성하세요.
 
-또한 YouTube Shorts 업로드용 메타데이터를 함께 작성해야 합니다:
-- uploadTitle: 유튜브 영상 제목 (60자 이내, 핵심 키워드 + 후킹 포함, #Shorts 미포함)
-- uploadDescription: 영상 설명 (200~400자, 핵심 내용 요약 + 줄바꿈 + CTA 포함). 본문 끝에 해시태그(#)를 넣지 말 것 — hashtags 필드로 별도 관리
-- hashtags: 해시태그 배열 (8~12개, #Shorts 포함, #포함 형식)
+## 공통 규칙
+- 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
+- 없는 사실을 추가하지 마세요.
+- scenes는 3개 이상으로 구성하세요.
+- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 씬당 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
-${buildEmphasisInstruction(emphasis)}${optionsInstruction}
+## 업로드 메타데이터 규칙
+- uploadTitle: 60자 이내
+- uploadDescription: 200~400자
+- hashtags: 8~12개 배열, #Shorts 포함
 
-## 요약 데이터
-${JSON.stringify(summary, null, 2)}
+${buildBasePrompt(summary, rawText, emphasis, options)}
 
-## 원본 텍스트
-${rawText.slice(0, 3000)}
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{"title":"영상 제목","duration":"초","hook":"오프닝 훅","scenes":[{"sceneNumber":1,"duration":"초","narration":"나레이션","visualDescription":"화면 설명(영문)","textOverlay":"텍스트"}],"cta":"콜투액션","thumbnailPrompt":"썸네일(영문)","uploadTitle":"유튜브 제목","uploadDescription":"유튜브 설명","hashtags":["#Shorts","#태그"]}`
+## 출력 스키마
+{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return parseJSON(result, { title: '숏폼 대본 생성 실패', scenes: [], duration: '0', uploadTitle: '', uploadDescription: '', hashtags: [] })
+  return sanitizeShortsContent(
+    parseJSON(result, {
+      title: '숏폼 대본 생성 실패',
+      scenes: [],
+      duration: '0',
+      uploadTitle: '',
+      uploadDescription: '',
+      hashtags: [],
+    }),
+  )
 }
-

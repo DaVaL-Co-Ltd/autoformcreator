@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Sparkles, Settings, LogOut, X, ChevronRight, Beaker } from 'lucide-react'
+import { Sparkles, Settings, LogOut, X, ChevronRight, Beaker, LayoutTemplate } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 const navItems = [
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출', description: 'AI 자동 생성' },
   { to: '/prompt-lab', icon: Beaker, label: '프롬프트 테스트', description: '결과 비교 실험실' },
+  { to: '/design-test', icon: LayoutTemplate, label: '시안 테스트', description: '이미지 레이아웃 비교' },
   { to: '/settings', icon: Settings, label: '설정', description: '플랫폼 연동 관리' },
 ]
 
@@ -44,12 +45,11 @@ export default function Sidebar({ onClose }) {
               key={item.to}
               to={item.to}
               onClick={onClose}
-              className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
-                ${
-                  isActive
-                    ? 'bg-primary/15 text-white'
-                    : 'text-sidebar-text hover:text-white hover:bg-sidebar-hover'
-                }`}
+              className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                isActive
+                  ? 'bg-primary/15 text-white'
+                  : 'text-sidebar-text hover:text-white hover:bg-sidebar-hover'
+              }`}
             >
               <div
                 className={`p-1.5 rounded-lg transition-colors ${
@@ -62,11 +62,7 @@ export default function Sidebar({ onClose }) {
               </div>
               <div className="flex-1 min-w-0">
                 <span className="block truncate">{label}</span>
-                <span
-                  className={`block text-[10px] truncate ${
-                    isActive ? 'text-primary-light' : 'text-sidebar-text/50'
-                  }`}
-                >
+                <span className={`block text-[10px] truncate ${isActive ? 'text-primary-light' : 'text-sidebar-text/50'}`}>
                   {description}
                 </span>
               </div>

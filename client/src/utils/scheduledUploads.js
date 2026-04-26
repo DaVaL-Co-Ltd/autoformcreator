@@ -19,13 +19,14 @@ export async function getById(id) {
   return items.find(item => item.id === id) || null
 }
 
-export async function create({ platform, extractionId, content, scheduledAt }) {
+export async function create({ platform, extractionId, content, scheduledAt, scheduledId }) {
   const res = await fetch(`${API_BASE}/api/scheduled/create`, {
     method: 'POST',
     headers: apiHeaders(),
     body: JSON.stringify({
       platform,
       extractionId,
+      scheduledId,
       content: content || {},
       scheduledAt: scheduledAt instanceof Date ? scheduledAt.toISOString() : scheduledAt,
     }),

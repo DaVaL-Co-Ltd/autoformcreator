@@ -190,26 +190,139 @@ const mockShortsScript = {
   hashtags: ['#Shorts', '#디지털교육', '#에듀테크', '#AI튜터', '#개인화학습', '#교육트렌드', '#마이크로러닝', '#교육콘텐츠'],
 }
 
-const mockBlogImages = [
-  { imageUrl: 'https://placehold.co/800x400/6366f1/white?text=Blog+Image+1', prompt: 'digital education classroom' },
-  { imageUrl: 'https://placehold.co/800x400/8b5cf6/white?text=Blog+Image+2', prompt: 'AI tutor and personalized learning' },
-]
-
-const mockInstagramImages = [
-  { cardNumber: 1, imageUrl: 'https://placehold.co/1080x1080/6366f1/white?text=Card+1', prompt: 'digital learning adoption' },
-  { cardNumber: 2, imageUrl: 'https://placehold.co/1080x1080/8b5cf6/white?text=Card+2', prompt: 'LMS usage in education' },
-  { cardNumber: 3, imageUrl: 'https://placehold.co/1080x1080/a855f7/white?text=Card+3', prompt: 'personalized learning improvement' },
-  { cardNumber: 4, imageUrl: 'https://placehold.co/1080x1080/ec4899/white?text=Card+4', prompt: 'real-time feedback in classroom' },
-  { cardNumber: 5, imageUrl: 'https://placehold.co/1080x1080/f59e0b/white?text=Card+5', prompt: 'AI tutor classroom' },
-  { cardNumber: 6, imageUrl: 'https://placehold.co/1080x1080/10b981/white?text=Card+6', prompt: 'microlearning education content' },
-]
-
 const mockShortsVideo = {
   url: '/test.mp4',
   videoUrl: '/test.mp4',
   duration: '30',
   status: 'completed',
   isDemo: true,
+}
+
+const BLOG_IMAGE_STYLE_EXAMPLES = {
+  pastel: {
+    src: '/prompt-examples/style-pastel.png',
+    title: '파스텔 일러스트 예시',
+    description: '부드러운 컬러와 손그림 느낌이 살아 있는 블로그 대표 이미지 예시입니다.',
+  },
+  '3d': {
+    src: '/prompt-examples/style-3d.png',
+    title: '3D 렌더링 예시',
+    description: '입체감과 광택이 느껴지는 블로그 대표 이미지 예시입니다.',
+  },
+  photo: {
+    src: '/prompt-examples/style-photo.png',
+    title: '사실적 사진 예시',
+    description: '실제 사람과 사물이 보이는 현실 사진형 블로그 대표 이미지 예시입니다.',
+  },
+  watercolor: {
+    src: '/prompt-examples/style-watercolor.png',
+    title: '수채화 예시',
+    description: '번짐과 질감이 살아 있는 블로그 대표 이미지 예시입니다.',
+  },
+  'solid-pattern': {
+    src: '/prompt-examples/style-solid-pattern.png',
+    title: '단색/패턴 배경 예시',
+    description: '단색 또는 단순 패턴 배경 위에 글자가 올라가는 블로그 대표 이미지 예시입니다.',
+  },
+}
+
+const INSTAGRAM_IMAGE_STYLE_EXAMPLES = {
+  pastel: {
+    src: '/prompt-examples/style-pastel.png',
+    title: '파스텔 일러스트 예시',
+    description: '부드러운 일러스트 배경에 카드 오버레이가 올라가는 인스타 대표 예시입니다.',
+  },
+  '3d': {
+    src: '/prompt-examples/style-3d.png',
+    title: '3D 렌더링 예시',
+    description: '입체 오브젝트와 광택이 느껴지는 인스타 대표 예시입니다.',
+  },
+  photo: {
+    src: '/prompt-examples/style-photo.png',
+    title: '사실적 사진 예시',
+    description: '실제 사람과 학습 공간이 보이는 인스타 대표 예시입니다.',
+  },
+  watercolor: {
+    src: '/prompt-examples/style-watercolor.png',
+    title: '수채화 예시',
+    description: '수채화 질감의 배경 위에 카드 텍스트가 올라가는 인스타 대표 예시입니다.',
+  },
+  'solid-pattern': {
+    src: '/prompt-examples/style-solid-pattern.png',
+    title: '단색/패턴 배경 예시',
+    description: '단순 배경색과 패턴 중심의 인스타 대표 예시입니다.',
+  },
+}
+
+const MAIN_COLOR_EXAMPLES = {
+  auto: {
+    src: '/prompt-examples/color-auto.png',
+    title: '자동 추천 색상 예시',
+    description: '글과 어울리는 저채도 대표 색상을 자동으로 추천해 적용한 예시입니다.',
+  },
+  blue: {
+    src: '/prompt-examples/color-blue.png',
+    title: '파란 계열 예시',
+    description: '슬레이트 블루와 차분한 쿨톤 계열 대표 색상 예시입니다.',
+  },
+  pink: {
+    src: '/prompt-examples/color-pink.png',
+    title: '분홍 계열 예시',
+    description: '로즈 톤과 부드러운 핑크 계열 대표 색상 예시입니다.',
+  },
+  green: {
+    src: '/prompt-examples/color-green.png',
+    title: '초록 계열 예시',
+    description: '세이지/틸 계열의 안정적인 초록 대표 색상 예시입니다.',
+  },
+  purple: {
+    src: '/prompt-examples/color-purple.png',
+    title: '보라 계열 예시',
+    description: '스모키 바이올렛 중심의 차분한 보라 대표 색상 예시입니다.',
+  },
+}
+
+const INSTAGRAM_CARD_STYLE_EXAMPLES = {
+  'background-text': {
+    src: '/prompt-examples/instagram-card-background-text.svg',
+    title: '배경 + 텍스트 예시',
+    description: '배경 이미지를 크게 보여주고 하단 정보 박스에 텍스트가 올라가는 인스타 카드 예시입니다.',
+  },
+  'center-card': {
+    src: '/prompt-examples/instagram-card-center-card.svg',
+    title: '중앙 카드 강조 텍스트 예시',
+    description: '배경 위 중앙 카드 영역에 핵심 텍스트를 강조해서 보여주는 인스타 카드 예시입니다.',
+  },
+}
+
+const normalizeInstagramCardStyle = (value) => {
+  if (value === 'center-card' || value === 'center-focus') return 'center-card'
+  return 'background-text'
+}
+
+function getMockBlogImages(style = 'pastel') {
+  const src = BLOG_IMAGE_STYLE_EXAMPLES[style]?.src || BLOG_IMAGE_STYLE_EXAMPLES.pastel.src
+  if (style === 'photo') {
+    return [
+      { imageUrl: src, prompt: 'full realistic classroom photo' },
+      { imageUrl: src, prompt: 'full realistic study scene photo' },
+    ]
+  }
+  return [
+    { imageUrl: src, prompt: 'digital education classroom' },
+  ]
+}
+
+function getMockInstagramImages(style = 'pastel') {
+  const src = INSTAGRAM_IMAGE_STYLE_EXAMPLES[style]?.src || INSTAGRAM_IMAGE_STYLE_EXAMPLES.pastel.src
+  return [
+    { cardNumber: 1, imageUrl: src, prompt: style === 'photo' ? 'full realistic study photo' : 'digital learning adoption' },
+    { cardNumber: 2, imageUrl: src, prompt: style === 'photo' ? 'full realistic campus photo' : 'LMS usage in education' },
+    { cardNumber: 3, imageUrl: src, prompt: style === 'photo' ? 'full realistic tutoring photo' : 'personalized learning improvement' },
+    { cardNumber: 4, imageUrl: src, prompt: style === 'photo' ? 'full realistic classroom feedback photo' : 'real-time feedback in classroom' },
+    { cardNumber: 5, imageUrl: src, prompt: style === 'photo' ? 'full realistic AI tutor photo' : 'AI tutor classroom' },
+    { cardNumber: 6, imageUrl: src, prompt: style === 'photo' ? 'full realistic microlearning photo' : 'microlearning education content' },
+  ]
 }
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms))
@@ -335,16 +448,30 @@ export default function ExtractionPage() {
   const [previewImage, setPreviewImage] = useState(null)
   const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
   const [shortsTab, setShortsTab] = useState('script') // 'script' | 'upload'
+  const [mediaPreviewOpen, setMediaPreviewOpen] = useState({
+    blogStyle: false,
+    instagramStyle: false,
+    mainColor: false,
+    instagramCardStyle: false,
+  })
 
   // 프롬프트 설정 (각 Step별)
   const [promptSettings, setPromptSettings] = useState({
     analysis: { focus: '', extra: '' },
     summary: { keywords: '', style: 'auto', extra: '' },
     content: { tone: 'auto', commonExtra: '', blogExtra: '', newsletterExtra: '', instaExtra: '', shortsExtra: '' },
-    media: { imageStyle: 'pastel', mainColor: 'auto', extra: '' },
+    media: {
+      blogImageStyle: 'pastel',
+      instagramImageStyle: 'pastel',
+      blogTextOverlay: 'with-text',
+      mainColor: 'auto',
+      instagramCardStyle: 'background-text',
+      extra: '',
+    },
     shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '' },
   })
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
+  const toggleMediaPreview = (key) => setMediaPreviewOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const contentPromptOptions = promptSettings.content
 
   // Data states
@@ -416,10 +543,84 @@ export default function ExtractionPage() {
       .trim()
   )
 
-  const truncateCardText = (text, maxLength = 34) => {
+  const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
+
+  const splitCardTokens = (text = '') => {
     const clean = cleanCardText(text)
+    if (!clean) return []
+    return clean
+      .split(/(\s+|,+|:+|\/+|\\+)/)
+      .map(token => token.trim())
+      .filter(Boolean)
+  }
+
+  const splitHeading = (text) => {
+    const clean = trimCardTitleEnding(cleanCardText(text || ''))
+    if (!clean) return ['']
+
+    const maxLineLength = clean.length <= 14 ? 18 : 14
+    if (clean.length <= maxLineLength) return [clean]
+
+    const tokens = splitCardTokens(clean)
+    if (tokens.length <= 1) return [clean]
+
+    let line1 = ''
+    let splitIndex = -1
+    for (let i = 0; i < tokens.length; i++) {
+      const next = line1 ? `${line1} ${tokens[i]}` : tokens[i]
+      if (next.length > maxLineLength) break
+      line1 = next
+      splitIndex = i
+    }
+
+    if (splitIndex <= -1 || splitIndex >= tokens.length - 1) return [clean]
+
+    const line2 = tokens.slice(splitIndex + 1).join(' ')
+    return line2 ? [line1, line2] : [clean]
+  }
+
+  const renderCardHeading = (text, fontSize) => {
+    const clean = trimCardTitleEnding(cleanCardText(text))
+    const lines = splitHeading(clean)
+    return (
+      <p
+        className="font-black text-gray-800 leading-snug"
+        style={{ fontSize, letterSpacing: '-0.35px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+      >
+        {lines.map((line, li) => (
+          <span key={li}>
+            {li > 0 && <br />}
+            {line}
+          </span>
+        ))}
+      </p>
+    )
+  }
+
+  const deriveBlogHeadline = (text = '') => {
+    const base = trimCardTitleEnding(deriveHeadlineKeyword(text))
+    if (!base) return ''
+    if (base.length <= 16) return base
+
+    const tokens = splitCardTokens(base)
+    if (tokens.length > 1) {
+      let compact = ''
+      for (const token of tokens.slice(0, 3)) {
+        const next = compact ? `${compact} ${token}` : token
+        if (next.length > 16) break
+        compact = next
+      }
+      if (compact) return trimCardTitleEnding(compact)
+      return trimCardTitleEnding(tokens[0] || '')
+    }
+
+    return trimCardTitleEnding(base.slice(0, 16))
+  }
+
+  const truncateCardText = (text, maxLength = 34) => {
+    const clean = trimCardTitleEnding(cleanCardText(text))
     if (clean.length <= maxLength) return clean
-    const words = clean.split(/\s+/).filter(Boolean)
+    const words = splitCardTokens(clean)
     if (words.length <= 1) {
       return `${clean.slice(0, maxLength).trim()}…`
     }
@@ -435,19 +636,19 @@ export default function ExtractionPage() {
   }
 
   const deriveHeadlineKeyword = (text = '') => {
-    const clean = cleanCardText(text)
+    const clean = trimCardTitleEnding(cleanCardText(text))
       .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
       .trim()
 
     const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
-    if (particleMatch?.[1]) return particleMatch[1].trim()
+    if (particleMatch?.[1]) return trimCardTitleEnding(particleMatch[1])
 
     const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-    if (dividerMatch && dividerMatch.length < clean.length) return dividerMatch
+    if (dividerMatch && dividerMatch.length < clean.length) return trimCardTitleEnding(dividerMatch)
 
     const words = clean.split(/\s+/).filter(Boolean)
-    if (words.length >= 2) return words.slice(0, 2).join(' ')
-    return clean
+    if (words.length >= 2) return trimCardTitleEnding(words.slice(0, 2).join(' '))
+    return trimCardTitleEnding(clean)
   }
 
   const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
@@ -486,7 +687,81 @@ export default function ExtractionPage() {
     if (step <= 5) clearStepErrors('shorts')
   }
 
-  const renderBlogPreviewCard = (section, index) => {
+  const renderBlogTextOverlay = ({
+    variant = 'circle',
+    headline,
+    description,
+    accentColor,
+    mode = 'thumb',
+  }) => {
+    if (variant === 'plain') {
+      return mode === 'modal' ? (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/34 via-black/10 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-5">
+            <div className="rounded-[24px] bg-white/92 border border-white/85 shadow-lg px-5 py-4">
+              {renderCardHeading(headline, 22)}
+              {description && (
+                <p className="mt-2 text-[13px] font-semibold text-gray-600 leading-relaxed">
+                  {description}
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/28 via-transparent to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 p-2">
+            <div className="rounded-xl bg-white/92 border border-white/85 shadow-sm px-2.5 py-2">
+              {renderCardHeading(headline, 7)}
+              {description && (
+                <p className="mt-1 text-[5px] font-semibold text-gray-600 leading-tight">
+                  {description}
+                </p>
+              )}
+            </div>
+          </div>
+        </>
+      )
+    }
+
+    return mode === 'modal' ? (
+      <>
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="absolute inset-0 flex items-center justify-center p-6">
+          <div className="w-[52%] max-w-[320px] aspect-square rounded-full bg-white/[0.94] shadow-xl flex flex-col items-center justify-center text-center px-5 py-5">
+            {renderCardHeading(headline, 24)}
+            <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
+            {description && (
+              <p className="text-[13px] text-gray-600 font-semibold leading-relaxed">
+                {description}
+              </p>
+            )}
+          </div>
+        </div>
+      </>
+    ) : (
+      <>
+        <div className="absolute inset-0 bg-black/8" />
+        <div className="absolute inset-0 flex items-center justify-center p-2">
+          <div className="w-[72%] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2 py-2">
+            {renderCardHeading(headline, 7)}
+            <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
+            {description && (
+              <p className="text-[5px] text-gray-600 font-semibold leading-tight">
+                {description}
+              </p>
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  const renderBlogPreviewCards = (section, index) => {
+    const shouldShowBlogImage = promptSettings.media.blogImageStyle === 'photo' || index === 0
+    if (!shouldShowBlogImage) return []
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
     const matchedImage =
       blogImageList.find(img => img?.heading === section?.heading && img?.imageUrl) ||
@@ -504,47 +779,66 @@ export default function ExtractionPage() {
     const accentColor = accentPalette[fallbackBg] || '#6366f1'
     const heading = cleanCardText(section?.heading || '')
     const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
-    const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || heading), 18)
+    const headline = deriveBlogHeadline(keyPhrase || heading)
     const description = truncateCardText(
       deriveDescriptionCopy(heading, headline, section?.content || ''),
       34
     )
+    const showBlogTextOverlay = promptSettings.media.blogTextOverlay !== 'without-text'
 
-    if (!bgImageUrl && !section?.heading) return null
+    if (!bgImageUrl) return []
 
-    return (
+    const variants = showBlogTextOverlay
+      ? [{ key: 'circle', label: null }]
+      : [{ key: 'image', label: null }]
+
+    return variants.map((variant) => (
       <div
-        key={`${section?.heading || 'blog'}-${index}`}
-        className={`shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light relative shadow-sm ${
-          bgImageUrl ? 'cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all' : ''
-        }`}
-        style={{ fontFamily: "'Pretendard', sans-serif" }}
-        onClick={() => {
-          if (!bgImageUrl) return
-          setPreviewImage({
-            src: bgImageUrl,
-            title: section?.heading || `블로그 이미지 ${index + 1}`,
-          })
-        }}
+        key={`${section?.heading || 'blog'}-${index}-${variant.key}`}
+        className="shrink-0 flex flex-col items-center gap-1.5"
       >
-        {bgImageUrl ? (
-          <img src={bgImageUrl} alt={section?.heading || `블로그 이미지 ${index + 1}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
-        ) : (
-          <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
-        )}
+        <button
+          type="button"
+          className={`relative w-28 h-28 rounded-md overflow-hidden border border-border bg-surface-light shadow-sm ${
+            bgImageUrl ? 'cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all' : ''
+          }`}
+          style={{ fontFamily: "'Pretendard', sans-serif" }}
+          onClick={() => {
+            if (!bgImageUrl) return
+            setPreviewImage(
+              showBlogTextOverlay
+                ? {
+                    renderType: 'blog-card',
+                    variant: variant.key,
+                    src: bgImageUrl,
+                    title: section?.heading || `블로그 이미지 ${index + 1}`,
+                    headline,
+                    description,
+                    accentColor,
+                  }
+                : {
+                    src: bgImageUrl,
+                    title: section?.heading || `블로그 이미지 ${index + 1}`,
+                  }
+            )
+          }}
+        >
+          {bgImageUrl ? (
+            <img src={bgImageUrl} alt={section?.heading || `블로그 이미지 ${index + 1}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
+          ) : (
+            <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
+          )}
 
-        <div className="absolute inset-0 bg-black/10" />
-        <div className="absolute inset-0 flex items-center justify-center p-2">
-          <div className="w-[78%] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2.5 py-2">
-            <p className="font-black text-gray-800 leading-tight text-[9px]" style={{ letterSpacing: '-0.3px' }}>
-              {headline}
-            </p>
-            <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
-            <p className="text-[7px] text-gray-600 font-semibold leading-tight">{description}</p>
-          </div>
-        </div>
+          {showBlogTextOverlay && renderBlogTextOverlay({
+            variant: variant.key,
+            headline,
+            description,
+            accentColor,
+            mode: 'thumb',
+          })}
+        </button>
       </div>
-    )
+    ))
   }
 
   const renderInstagramPreviewCard = (image, index) => {
@@ -554,30 +848,161 @@ export default function ExtractionPage() {
     const imageUrl = image?.imageUrl || null
     const headline = truncateCardText(matchedCard?.headline || `카드 ${cardNumber}`, 16)
     const description = truncateCardText(matchedCard?.dataPoint || matchedCard?.content || '', 24)
+    const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
+    const isCenterCard = cardStyle === 'center-card'
 
     if (!imageUrl) return null
+
+    const renderInstagramPreviewOverlay = (mode = 'thumb') => {
+      const isModal = mode === 'modal'
+      if (isCenterCard) {
+        return (
+          <div className={`absolute inset-0 ${isModal ? 'p-[7%]' : 'p-2'} flex items-center justify-center`}>
+            <div className={`${isModal ? 'w-[70%] rounded-[30px] px-[7%] py-[8%]' : 'w-[78%] rounded-[18px] px-3 py-3'} bg-white/82 backdrop-blur-sm border border-white/70 shadow-sm text-center`}>
+              <div className={`inline-flex items-center rounded-full bg-primary/10 text-primary-dark ${isModal ? 'px-3 py-1 mb-4 text-xs font-extrabold tracking-[0.18em]' : 'px-2 py-0.5 mb-2 text-[9px] font-bold'}`}>
+                CARD {cardNumber}
+              </div>
+              <p className={`${isModal ? 'text-[clamp(16px,2.2vw,24px)]' : 'text-[9px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
+              {description && (
+                <p className={`${isModal ? 'mt-3 text-[clamp(10px,1.2vw,13px)]' : 'mt-1.5 text-[6px]'} font-semibold text-gray-600 leading-tight`}>{description}</p>
+              )}
+            </div>
+          </div>
+        )
+      }
+
+      return (
+        <div className={`absolute inset-0 ${isModal ? 'p-[7%]' : 'p-2'} flex flex-col justify-between`}>
+          <div className={`self-start rounded-full bg-black/65 text-white font-bold ${isModal ? 'px-3 py-1.5 text-[clamp(11px,1.2vw,14px)]' : 'px-1.5 py-0.5 text-[10px]'}`}>
+            {cardNumber}
+          </div>
+          <div className={`${isModal ? 'rounded-[24px] px-[5%] py-[4.5%]' : 'rounded-lg px-2 py-1.5'} bg-white/88 shadow-sm`}>
+            <p className={`${isModal ? 'text-[clamp(15px,2vw,22px)]' : 'text-[8px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
+            {description && (
+              <p className={`${isModal ? 'mt-2 text-[clamp(10px,1.1vw,12px)]' : 'mt-1 text-[6px]'} font-semibold text-gray-600 leading-tight`}>{description}</p>
+            )}
+          </div>
+        </div>
+      )
+    }
 
     return (
       <button
         key={`insta-preview-${cardNumber}-${index}`}
         type="button"
-        onClick={() => setPreviewImage({ src: imageUrl, title: `인스타 카드 ${cardNumber}` })}
+        onClick={() => setPreviewImage({
+          renderType: 'instagram-card',
+          src: imageUrl,
+          title: `인스타 카드 ${cardNumber}`,
+          cardNumber,
+          headline,
+          description,
+          cardStyle,
+        })}
         className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all text-left"
       >
         <img src={imageUrl} alt={`인스타 ${cardNumber}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
-        <div className="absolute inset-0 bg-black/15" />
-        <div className="absolute inset-0 p-2 flex flex-col justify-between">
-          <div className="self-start rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] font-bold text-white">
-            {cardNumber}
-          </div>
-          <div className="rounded-lg bg-white/92 px-2 py-1.5 shadow-sm">
-            <p className="text-[9px] font-black text-gray-800 leading-tight">{headline}</p>
-            {description && (
-              <p className="mt-1 text-[7px] font-semibold text-gray-600 leading-tight">{description}</p>
-            )}
+        <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/10'}`} />
+        {renderInstagramPreviewOverlay('thumb')}
+      </button>
+    )
+  }
+
+  const renderImageStyleExample = (kind, label) => {
+    const styleValue = kind === 'blog' ? promptSettings.media.blogImageStyle : promptSettings.media.instagramImageStyle
+    const example =
+      kind === 'blog'
+        ? BLOG_IMAGE_STYLE_EXAMPLES[styleValue]
+        : INSTAGRAM_IMAGE_STYLE_EXAMPLES[styleValue]
+    if (!example) return null
+
+    return (
+      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => setPreviewImage({ src: example.src, title: `${label} - ${example.title}` })}
+            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
+          >
+            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
+          </button>
+          <div className="min-w-0 space-y-1">
+            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
+            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
+            <button
+              type="button"
+              onClick={() => setPreviewImage({ src: example.src, title: `${label} - ${example.title}` })}
+              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
+            >
+              <Eye size={12} />
+              크게 보기
+            </button>
           </div>
         </div>
-      </button>
+      </div>
+    )
+  }
+
+  const renderMainColorExample = () => {
+    const example = MAIN_COLOR_EXAMPLES[promptSettings.media.mainColor] || MAIN_COLOR_EXAMPLES.auto
+    if (!example) return null
+
+    return (
+      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => setPreviewImage({ src: example.src, title: `대표 색상 - ${example.title}` })}
+            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
+          >
+            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
+          </button>
+          <div className="min-w-0 space-y-1">
+            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
+            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
+            <button
+              type="button"
+              onClick={() => setPreviewImage({ src: example.src, title: `대표 색상 - ${example.title}` })}
+              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
+            >
+              <Eye size={12} />
+              크게 보기
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const renderInstagramCardStyleExample = () => {
+    const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
+    const example = INSTAGRAM_CARD_STYLE_EXAMPLES[cardStyle]
+    if (!example) return null
+
+    return (
+      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => setPreviewImage({ src: example.src, title: `인스타 카드 스타일 - ${example.title}` })}
+            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
+          >
+            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
+          </button>
+          <div className="min-w-0 space-y-1">
+            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
+            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
+            <button
+              type="button"
+              onClick={() => setPreviewImage({ src: example.src, title: `인스타 카드 스타일 - ${example.title}` })}
+              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
+            >
+              <Eye size={12} />
+              크게 보기
+            </button>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -914,13 +1339,13 @@ export default function ExtractionPage() {
 
     if (selectedChannels.blog && !alreadyDone.blogImg) {
       tasks.push(
-        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
+        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
       )
     }
 
     if (selectedChannels.instagram && !alreadyDone.instaImg && instagramContent?.cardTopics?.length) {
       tasks.push(
-        { key: 'instaImg', service: 'gemini', channel: '인스타 카드', fn: () => generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }), setter: setInstagramImages },
+        { key: 'instaImg', service: 'gemini', channel: '인스타 카드', fn: () => generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra }), setter: setInstagramImages },
       )
     }
 
@@ -1304,18 +1729,18 @@ DO NOT:
       blogImg: {
         channel: '블로그 이미지',
         service: 'gemini',
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
+        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setBlogImages,
-        demoData: mockBlogImages,
+        demoData: getMockBlogImages(promptSettings.media.blogImageStyle),
       },
       instaImg: {
         channel: '인스타 카드',
         service: 'gemini',
         fn: () => instagramContent?.cardTopics?.length
-          ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra })
+          ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra })
           : Promise.resolve([]),
         setter: setInstagramImages,
-        demoData: mockInstagramImages,
+        demoData: getMockInstagramImages(promptSettings.media.instagramImageStyle),
       },
       shortsVid: {
         channel: '숏폼 영상',
@@ -1359,8 +1784,8 @@ DO NOT:
   const retryMediaItem = async (err) => {
     if (demoMode) {
       const mockMap = {
-        '블로그 이미지': { data: mockBlogImages, setter: setBlogImages },
-        '인스타 카드': { data: mockInstagramImages, setter: setInstagramImages },
+        '블로그 이미지': { data: getMockBlogImages(promptSettings.media.blogImageStyle), setter: setBlogImages },
+        '인스타 카드': { data: getMockInstagramImages(promptSettings.media.instagramImageStyle), setter: setInstagramImages },
         '숏폼 영상': { data: mockShortsVideo, setter: setShortsVideo },
       }
       const mock = mockMap[err.channel]
@@ -1379,11 +1804,11 @@ DO NOT:
 
     const mediaMap = {
       '블로그 이미지': {
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
+        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setBlogImages,
       },
       '인스타 카드': {
-        fn: () => instagramContent?.cardTopics ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.imageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
+        fn: () => instagramContent?.cardTopics ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setInstagramImages,
       },
       '숏폼 영상': {
@@ -1520,10 +1945,25 @@ ${parsedText}
       }
     }
 
+    const blogContentForResult = blogContent
+      ? {
+          ...blogContent,
+          imageStyle: promptSettings.media.blogImageStyle,
+          imageTextOverlay: promptSettings.media.blogTextOverlay,
+        }
+      : blogContent
+
+    const instagramContentForResult = instagramContent
+      ? {
+          ...instagramContent,
+          cardStyle: promptSettings.media.instagramCardStyle,
+        }
+      : instagramContent
+
     navigate('/extraction/result', {
       state: {
         parsedText, verification, summary,
-        blogContent, newsletterContent, instagramContent,
+        blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
         shortsScript,
         blogImages, instagramImages, shortsVideo,
         fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
@@ -1572,7 +2012,56 @@ ${parsedText}
       {previewImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
           <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
-            <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+            {previewImage.renderType === 'blog-card' ? (
+              <div
+                className="relative w-[min(78vw,640px)] aspect-square rounded-[28px] overflow-hidden shadow-2xl bg-surface-light"
+                style={{ fontFamily: "'Pretendard', sans-serif" }}
+              >
+                <img src={previewImage.src} alt={previewImage.title} className="w-full h-full object-cover absolute inset-0" />
+                {renderBlogTextOverlay({
+                  variant: previewImage.variant,
+                  headline: previewImage.headline,
+                  description: previewImage.description,
+                  accentColor: previewImage.accentColor,
+                  mode: 'modal',
+                })}
+              </div>
+            ) : previewImage.renderType === 'instagram-card' ? (
+              <div
+                className="relative w-[min(78vw,640px)] aspect-square rounded-[28px] overflow-hidden shadow-2xl bg-surface-light"
+                style={{ fontFamily: "'Pretendard', sans-serif" }}
+              >
+                <img src={previewImage.src} alt={previewImage.title} className="w-full h-full object-cover absolute inset-0" />
+                <div className={`absolute inset-0 ${previewImage.cardStyle === 'center-card' ? 'bg-black/14' : 'bg-black/10'}`} />
+                {previewImage.cardStyle === 'center-card' ? (
+                  <div className="absolute inset-0 p-[7%] flex items-center justify-center">
+                    <div className="w-[70%] rounded-[30px] bg-white/82 backdrop-blur-sm border border-white/70 px-[7%] py-[8%] shadow-sm text-center">
+                      <div className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-extrabold tracking-[0.18em] text-primary-dark mb-4">
+                        CARD {previewImage.cardNumber}
+                      </div>
+                      <p className="text-[clamp(16px,2.2vw,24px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
+                      {previewImage.description && (
+                        <p className="mt-3 text-[clamp(10px,1.2vw,13px)] font-semibold text-gray-600 leading-tight">{previewImage.description}</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
+                    <div className="self-start rounded-full bg-black/65 px-3 py-1.5 text-[clamp(11px,1.2vw,14px)] font-bold text-white">
+                      {previewImage.cardNumber}
+                    </div>
+                    <div className="rounded-[24px] bg-white/88 px-[5%] py-[4.5%] shadow-sm">
+                      <p className="text-[clamp(15px,2vw,22px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
+                      {previewImage.description && (
+                        <p className="mt-2 text-[clamp(10px,1.1vw,12px)] font-semibold text-gray-600 leading-tight">{previewImage.description}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+            )}
             <div className="absolute -top-10 left-0 right-0 flex items-center justify-between">
               <span className="text-sm text-white font-medium">{previewImage.title}</span>
               <button onClick={() => setPreviewImage(null)} className="text-white/70 hover:text-white transition-colors"><XCircle size={20} /></button>
@@ -2338,10 +2827,109 @@ ${parsedText}
       {(selectedChannels.blog || selectedChannels.instagram) && (
       <div id="step-4" className="flex gap-4 items-stretch">
         <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
-          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 이미지 설정</p>
-          {PF('이미지 스타일', { type: 'select', value: promptSettings.media.imageStyle, onChange: v => updatePrompt('media', 'imageStyle', v), options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'minimal', label: '미니멀 플랫' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }] })}
-          {PF('메인 컬러', { type: 'select', value: promptSettings.media.mainColor, onChange: v => updatePrompt('media', 'mainColor', v), options: [{ value: 'auto', label: '자동' }, { value: 'blue', label: '파란 계열' }, { value: 'pink', label: '분홍 계열' }, { value: 'green', label: '초록 계열' }, { value: 'purple', label: '보라 계열' }] })}
-          {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '캐릭터 포함 등', value: promptSettings.media.extra, onChange: v => updatePrompt('media', 'extra', v) })}
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 이미지 설정</p>
+            <span className="text-[11px] text-text-muted">예시는 필요할 때만 펼쳐보기</span>
+          </div>
+
+          {selectedChannels.blog && (
+            <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-text">블로그</p>
+                  <p className="text-xs text-text-muted">대표 이미지 스타일과 글자 표시 방식을 정합니다.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleMediaPreview('blogStyle')}
+                  className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
+                >
+                  {mediaPreviewOpen.blogStyle ? '예시 숨기기' : '예시 보기'}
+                </button>
+              </div>
+              {PF('블로그 이미지 스타일', {
+                type: 'select',
+                value: promptSettings.media.blogImageStyle,
+                onChange: v => updatePrompt('media', 'blogImageStyle', v),
+                options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }, { value: 'solid-pattern', label: '단색/패턴 배경' }],
+              })}
+              {PF('블로그 이미지 글자 표시', {
+                type: 'select',
+                value: promptSettings.media.blogTextOverlay,
+                onChange: v => updatePrompt('media', 'blogTextOverlay', v),
+                options: [
+                  { value: 'with-text', label: '글자 넣기' },
+                  { value: 'without-text', label: '글자 없이 보기' },
+                ],
+              })}
+              {PF('블로그 메인 컬러', { type: 'select', value: promptSettings.media.mainColor, onChange: v => updatePrompt('media', 'mainColor', v), options: [{ value: 'auto', label: '자동' }, { value: 'blue', label: '파란 계열' }, { value: 'pink', label: '분홍 계열' }, { value: 'green', label: '초록 계열' }, { value: 'purple', label: '보라 계열' }] })}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => toggleMediaPreview('mainColor')}
+                  className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
+                >
+                  {mediaPreviewOpen.mainColor ? '색상 숨기기' : '색상 예시'}
+                </button>
+              </div>
+              {mediaPreviewOpen.blogStyle && renderImageStyleExample('blog', '블로그 이미지 스타일')}
+              {mediaPreviewOpen.mainColor && renderMainColorExample()}
+            </div>
+          )}
+
+          {selectedChannels.instagram && (
+            <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-text">인스타그램</p>
+                  <p className="text-xs text-text-muted">배경 스타일과 카드 텍스트 배치를 함께 조정합니다.</p>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleMediaPreview('instagramStyle')}
+                    className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
+                  >
+                    {mediaPreviewOpen.instagramStyle ? '배경 숨기기' : '배경 예시'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleMediaPreview('instagramCardStyle')}
+                    className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
+                  >
+                    {mediaPreviewOpen.instagramCardStyle ? '카드 숨기기' : '카드 예시'}
+                  </button>
+                </div>
+              </div>
+              {PF('인스타 이미지 스타일', {
+                type: 'select',
+                value: promptSettings.media.instagramImageStyle,
+                onChange: v => updatePrompt('media', 'instagramImageStyle', v),
+                options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }, { value: 'solid-pattern', label: '단색/패턴 배경' }],
+              })}
+              {PF('인스타 카드 스타일', {
+                type: 'select',
+                value: promptSettings.media.instagramCardStyle,
+                onChange: v => updatePrompt('media', 'instagramCardStyle', v),
+                options: [
+                  { value: 'background-text', label: '배경 + 텍스트' },
+                  { value: 'center-card', label: '중앙 카드 강조 텍스트' },
+                ],
+              })}
+              {mediaPreviewOpen.instagramStyle && renderImageStyleExample('instagram', '인스타 이미지 스타일')}
+              {mediaPreviewOpen.instagramCardStyle && renderInstagramCardStyleExample()}
+            </div>
+          )}
+
+          <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
+            <div>
+              <div>
+                <p className="text-sm font-semibold text-text">공통</p>
+                <p className="text-xs text-text-muted">추가 지시사항만 전체 이미지 생성에 공통 적용합니다.</p>
+              </div>
+            </div>
+            {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '캐릭터 포함 등', value: promptSettings.media.extra, onChange: v => updatePrompt('media', 'extra', v) })}
+          </div>
         </div>
         <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === 4 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-50' : ''}`}>
         <div className="flex items-center justify-between p-5 border-b border-border">
@@ -2419,7 +3007,7 @@ ${parsedText}
                   {ok && (
                     <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
                       {(blogContent?.sections || [])
-                        .map((section, i) => renderBlogPreviewCard(section, i))
+                        .flatMap((section, i) => renderBlogPreviewCards(section, i))
                         .filter(Boolean)}
                     </div>
                   )}

@@ -2,8 +2,32 @@ const fs = require('fs')
 const { app, safeStorage } = require('electron')
 const path = require('path')
 
+const NAVER_WRITE_URL = 'https://blog.naver.com/GoBlogWrite.naver'
+const NAVER_SESSION_VALIDATION_TTL_MS = 30 * 1000
+
+let lastSessionValidation = {
+  checkedAt: 0,
+  result: false,
+}
+
 function getSessionPath() {
   return path.join(app.getPath('userData'), 'naver-session.json')
+}
+
+function isAuthCookie(cookie) {
+  return cookie?.name === 'NID_AUT' || cookie?.name === 'NID_SES'
+}
+
+function isCookieExpired(cookie) {
+  if (!cookie || typeof cookie.expires !== 'number') {
+    return false
+  }
+
+  if (cookie.expires <= 0) {
+    return false
+  }
+
+  return cookie.expires * 1000 <= Date.now()
 }
 
 function wrapSessionPayload(storageState) {
@@ -57,8 +81,103 @@ function saveSessionState(storageState) {
   return sessionPath
 }
 
+function clearSessionState() {
+  const sessionPath = getSessionPath()
+  if (fs.existsSync(sessionPath)) {
+    fs.rmSync(sessionPath, { force: true })
+  }
+}
+
+function hasUsableSessionState() {
+  try {
+    const state = loadSessionState()
+    if (!state) {
+      return false
+    }
+
+    return (state.cookies || []).some((cookie) => isAuthCookie(cookie) && !isCookieExpired(cookie))
+  } catch {
+    return false
+  }
+}
+
+function cookieMatchesUrl(cookie, targetUrl) {
+  try {
+    const url = new URL(targetUrl)
+    const hostname = url.hostname
+    const cookieDomain = String(cookie?.domain || '').replace(/^\./, '')
+    const cookiePath = String(cookie?.path || '/')
+
+    if (!cookieDomain || (hostname !== cookieDomain && !hostname.endsWith(`.${cookieDomain}`))) {
+      return false
+    }
+
+    return url.pathname.startsWith(cookiePath)
+  } catch {
+    return false
+  }
+}
+
+function buildCookieHeader(cookies, targetUrl) {
+  return (cookies || [])
+    .filter((cookie) => !isCookieExpired(cookie) && cookieMatchesUrl(cookie, targetUrl))
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join('; ')
+}
+
+function isNaverLoginUrl(url = '') {
+  return /^https:\/\/nid\.naver\.com\/nidlogin\.login/i.test(String(url))
+}
+
+async function validateStoredNaverSession({ bypassCache = false } = {}) {
+  if (!hasUsableSessionState()) {
+    lastSessionValidation = { checkedAt: Date.now(), result: false }
+    return false
+  }
+
+  if (!bypassCache && Date.now() - lastSessionValidation.checkedAt < NAVER_SESSION_VALIDATION_TTL_MS) {
+    return lastSessionValidation.result
+  }
+
+  try {
+    const state = loadSessionState()
+    if (!state) {
+      lastSessionValidation = { checkedAt: Date.now(), result: false }
+      return false
+    }
+
+    const cookieHeader = buildCookieHeader(state.cookies || [], NAVER_WRITE_URL)
+    if (!cookieHeader) {
+      lastSessionValidation = { checkedAt: Date.now(), result: false }
+      return false
+    }
+
+    const response = await fetch(NAVER_WRITE_URL, {
+      headers: {
+        cookie: cookieHeader,
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+      },
+      redirect: 'manual',
+    })
+
+    const redirectedTo = response.headers.get('location') || ''
+    const finalUrl = response.url || ''
+    const isValid = !isNaverLoginUrl(redirectedTo) && !isNaverLoginUrl(finalUrl) && response.status < 400
+
+    lastSessionValidation = { checkedAt: Date.now(), result: isValid }
+    return isValid
+  } catch {
+    lastSessionValidation = { checkedAt: Date.now(), result: false }
+    return false
+  }
+}
+
 module.exports = {
+  clearSessionState,
   getSessionPath,
+  hasUsableSessionState,
   loadSessionState,
   saveSessionState,
+  validateStoredNaverSession,
 }

@@ -18,7 +18,8 @@ import {
 } from 'lucide-react'
 import { deleteExtractionChannel, getExtractionsPaged, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
-import { create as createScheduledUpload } from '../utils/scheduledUploads'
+import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
+import { buildInstagramScheduledContent } from '../utils/scheduledPayloads'
 
 const channelConfig = {
   all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
@@ -37,11 +38,12 @@ const _uploadStatusConfig = {
 
 const EXTRACTION_BATCH_SIZE = 10
 
-function toContentItems(extractions) {
+function toContentItems(extractions, scheduledMap = new Map()) {
   return extractions.flatMap(ext =>
     ext.channels.map(ch => {
       const uploadInfo = ext.uploadStatus?.[ch.channel] || { status: 'not_uploaded' }
       const nativeSchedule = Boolean(uploadInfo.nativeSchedule)
+      const scheduledMeta = scheduledMap.get(`${ext.id}:${ch.channel}`) || null
 
       return {
         extractionId: ext.id,
@@ -57,6 +59,7 @@ function toContentItems(extractions) {
         uploadStatusMap: ext.uploadStatus || {},
         scheduledAt: uploadInfo.scheduledAt || null,
         uploadedAt: uploadInfo.uploadedAt || null,
+        scheduledId: scheduledMeta?.id || null,
       }
     })
   )
@@ -116,6 +119,13 @@ export default function ContentPage() {
     }
 
     try {
+      const scheduledRows = await getAllScheduledUploads()
+      const scheduledMap = new Map(
+        scheduledRows
+          .filter((row) => row.status === 'pending')
+          .map((row) => [`${row.extractionId}:${row.platform}`, row]),
+      )
+
       const startIndex = (page - 1) * size
         const pageItems = []
       let matchedCount = 0
@@ -135,7 +145,7 @@ export default function ContentPage() {
 
         if (!items.length) break
 
-        const batchItems = toContentItems(items)
+        const batchItems = toContentItems(items, scheduledMap)
         const countedBatch = batchItems.filter(item =>
           matchesFilters(item, channel, 'all', query)
         )
@@ -261,7 +271,7 @@ export default function ContentPage() {
     })
   }
 
-  const handleScheduleSave = async (extractionId, channel, info) => {
+  const handleScheduleSave = async (extractionId, channel, info, scheduledContent = null, scheduledId = null) => {
     if (channel === 'blog' && info.scheduledAt) {
       await updateUploadStatus(extractionId, channel, info)
       const target = scheduleTarget || editScheduleTarget
@@ -295,9 +305,12 @@ export default function ContentPage() {
       const target = scheduleTarget || editScheduleTarget
       await createScheduledUpload({
         platform: channel,
-        content: { title: target?.title || '' },
+        content: scheduledContent || (channel === 'instagram'
+          ? buildInstagramScheduledContent(target?.data)
+          : { title: target?.title || '' }),
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
+        scheduledId,
       })
     }
 
@@ -307,6 +320,10 @@ export default function ContentPage() {
   }
 
   const handleCancelSchedule = async (item) => {
+    if (item.scheduledId) {
+      await removeScheduledUpload(item.scheduledId)
+    }
+
     if (item.channel === 'blog') {
       const nextStatus = item.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded'
       await updateUploadStatus(item.extractionId, item.channel, {
@@ -639,7 +656,9 @@ export default function ContentPage() {
         onClose={() => setScheduleTarget(null)}
         defaultPlatform={scheduleTarget?.channel}
         lockPlatform={true}
-        content={{ title: scheduleTarget?.title }}
+        content={scheduleTarget?.channel === 'instagram'
+          ? buildInstagramScheduledContent(scheduleTarget?.data)
+          : { title: scheduleTarget?.title }}
         onSave={async ({ scheduledAt }) => {
           if (!scheduleTarget) return
           const nextInfo = ['blog', 'shorts'].includes(scheduleTarget.channel)
@@ -647,7 +666,7 @@ export default function ContentPage() {
             : { status: 'scheduled', scheduledAt }
           await handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
             ...nextInfo,
-          })
+          }, scheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(scheduleTarget.data) : null, scheduleTarget.scheduledId)
         }}
       />
 
@@ -657,7 +676,9 @@ export default function ContentPage() {
         onClose={() => setEditScheduleTarget(null)}
         defaultPlatform={editScheduleTarget?.channel}
         lockPlatform={true}
-        content={{ title: editScheduleTarget?.title }}
+        content={editScheduleTarget?.channel === 'instagram'
+          ? buildInstagramScheduledContent(editScheduleTarget?.data)
+          : { title: editScheduleTarget?.title }}
         initialDatetime={editScheduleTarget?.scheduledAt}
         onSave={async ({ scheduledAt }) => {
           if (!editScheduleTarget) return
@@ -666,7 +687,7 @@ export default function ContentPage() {
             : { status: 'scheduled', scheduledAt }
           await handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
             ...nextInfo,
-          })
+          }, editScheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(editScheduleTarget.data) : null, editScheduleTarget.scheduledId)
         }}
         onDelete={() => {
           if (!editScheduleTarget) return
