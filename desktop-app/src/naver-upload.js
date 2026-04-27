@@ -207,6 +207,18 @@ function sanitizeForTyping(raw) {
     .replace(/~/g, '')                // 잔여 단일 ~ 제거 (auto-format 트리거)
 }
 
+// 본문(typeMultilineWithFormatting) 입력 전용. **bold** 마커는 parseBoldInlineSegments 가 처리하므로 보존하고
+// 그 외에 SmartEditor 가 입력 중 자동 변환하는 마커(취소선/이탤릭/언더스코어 등)만 제거한다.
+function sanitizeForFormattingTyping(raw) {
+  return String(raw || '')
+    .replace(/~~([^~]+)~~/g, '$1')   // 취소선
+    .replace(/--([^-\n]+)--/g, '$1')  // 일부 에디터 취소선
+    .replace(/__([^_]+)__/g, '$1')   // 언더스코어 변형
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // 이탤릭(언더스코어)
+    .replace(/`([^`]+)`/g, '$1')     // 인라인 코드
+    .replace(/~/g, '')                // 잔여 단일 ~ 제거 (auto-format 트리거)
+}
+
 function typeMultiline(page, text) {
   const sanitized = sanitizeForTyping(text)
   const lines = sanitized.split(/\r?\n/)
@@ -377,7 +389,8 @@ async function setBoldFormatting(page, enabled, currentState) {
 }
 
 async function typeMultilineWithFormatting(page, text) {
-  const lines = String(text).split(/\r?\n/)
+  // **bold** 외 자동 포맷 트리거 마커(취소선 등)를 제거해 SmartEditor 가 타이핑 중 취소선을 토글하는 것을 방지한다.
+  const lines = sanitizeForFormattingTyping(text).split(/\r?\n/)
   let boldEnabled = false
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -2639,6 +2652,8 @@ async function uploadToNaver({ title, content, tags = [], photoPaths = [], headl
         id: runtimeUpload.id,
         stage: currentStep,
         stageLabel: publishOutcome.scheduled ? 'schedule-complete' : 'publish-complete',
+        mode: publishOutcome.mode,
+        scheduled: Boolean(publishOutcome.scheduled),
         scheduledAt,
         url: publishOutcome.url,
       })

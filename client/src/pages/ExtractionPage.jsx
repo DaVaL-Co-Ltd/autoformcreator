@@ -300,15 +300,16 @@ const normalizeInstagramCardStyle = (value) => {
   return 'background-text'
 }
 
-function getMockBlogImages(style = 'pastel') {
+function getMockBlogImages(style = 'pastel', textOverlay = 'with-text') {
   const src = BLOG_IMAGE_STYLE_EXAMPLES[style]?.src || BLOG_IMAGE_STYLE_EXAMPLES.pastel.src
-  if (style === 'photo') {
+  if (textOverlay === 'without-text') {
     return [
-      { imageUrl: src, prompt: 'full realistic classroom photo' },
-      { imageUrl: src, prompt: 'full realistic study scene photo' },
+      { imageUrl: src, prompt: style === 'photo' ? 'full realistic classroom photo' : 'digital education classroom' },
+      { imageUrl: src, prompt: style === 'photo' ? 'full realistic study scene photo' : 'LMS adoption education visual' },
     ]
   }
   return [
+    { imageUrl: src, prompt: 'digital education classroom' },
     { imageUrl: src, prompt: 'digital education classroom' },
   ]
 }
@@ -666,6 +667,44 @@ export default function ExtractionPage() {
       .find(Boolean) || cleanHeading
   }
 
+  const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
+    const cleanKeyPhrase = cleanCardText(keyPhrase)
+    if (cleanKeyPhrase) {
+      return cleanCardText(fallbackContent || '')
+        .split(/[.!?\n]/)
+        .map(line => line.trim())
+        .find(Boolean) || cleanKeyPhrase
+    }
+
+    return deriveDescriptionCopy(heading, deriveBlogHeadline(heading), fallbackContent)
+  }
+
+  const deriveInstagramDetailLines = (card) => {
+    const lines = []
+    const contentText = cleanCardText(card?.content || '')
+    const dataPointText = cleanCardText(card?.dataPoint || '')
+
+    const contentSentences = contentText
+      .split(/(?<=[.!?。！？])\s+|\n+/)
+      .map(sentence => sentence.trim())
+      .filter(Boolean)
+
+    for (const sentence of contentSentences) {
+      if (lines.length >= 3) break
+      lines.push(truncateCardText(sentence, 34))
+    }
+
+    if (dataPointText && lines.length < 3) {
+      lines.push(truncateCardText(dataPointText, 30))
+    }
+
+    if (lines.length === 0 && contentText) {
+      lines.push(truncateCardText(contentText, 34))
+    }
+
+    return lines.slice(0, 3)
+  }
+
   // 에러 발생 시 팝업 표시
   const showErrorAlert = (serviceName, detail) => {
     setErrorAlert(`${serviceName} 서비스에서 오류가 발생했습니다.\n\n${detail}\n\n해당 작업의 재시도 버튼을 눌러 다시 시도할 수 있습니다.`)
@@ -760,8 +799,6 @@ export default function ExtractionPage() {
   }
 
   const renderBlogPreviewCards = (section, index) => {
-    const shouldShowBlogImage = promptSettings.media.blogImageStyle === 'photo' || index === 0
-    if (!shouldShowBlogImage) return []
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
     const matchedImage =
       blogImageList.find(img => img?.heading === section?.heading && img?.imageUrl) ||
@@ -781,7 +818,7 @@ export default function ExtractionPage() {
     const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
     const headline = deriveBlogHeadline(keyPhrase || heading)
     const description = truncateCardText(
-      deriveDescriptionCopy(heading, headline, section?.content || ''),
+      deriveBlogImageDescription(keyPhrase, heading, section?.content || ''),
       34
     )
     const showBlogTextOverlay = promptSettings.media.blogTextOverlay !== 'without-text'
@@ -847,7 +884,9 @@ export default function ExtractionPage() {
     const matchedCard = cards.find(card => Number(card?.cardNumber) === cardNumber) || cards[index] || null
     const imageUrl = image?.imageUrl || null
     const headline = truncateCardText(matchedCard?.headline || `카드 ${cardNumber}`, 16)
-    const description = truncateCardText(matchedCard?.dataPoint || matchedCard?.content || '', 24)
+    const detailLines = deriveInstagramDetailLines(matchedCard)
+    // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드가 너무 비어 보이지 않도록 한다.
+    const descriptionLines = detailLines.filter(Boolean)
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
     const isCenterCard = cardStyle === 'center-card'
 
@@ -863,8 +902,17 @@ export default function ExtractionPage() {
                 CARD {cardNumber}
               </div>
               <p className={`${isModal ? 'text-[clamp(16px,2.2vw,24px)]' : 'text-[9px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
-              {description && (
-                <p className={`${isModal ? 'mt-3 text-[clamp(10px,1.2vw,13px)]' : 'mt-1.5 text-[6px]'} font-semibold text-gray-600 leading-tight`}>{description}</p>
+              {descriptionLines.length > 0 && (
+                <div className={`${isModal ? 'mt-3 space-y-1.5' : 'mt-1.5 space-y-1'}`}>
+                  {descriptionLines.map((line, idx) => (
+                    <p
+                      key={idx}
+                      className={`${isModal ? 'text-[clamp(10px,1.2vw,13px)]' : 'text-[6px]'} font-semibold text-gray-600 leading-tight`}
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -878,8 +926,17 @@ export default function ExtractionPage() {
           </div>
           <div className={`${isModal ? 'rounded-[24px] px-[5%] py-[4.5%]' : 'rounded-lg px-2 py-1.5'} bg-white/88 shadow-sm`}>
             <p className={`${isModal ? 'text-[clamp(15px,2vw,22px)]' : 'text-[8px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
-            {description && (
-              <p className={`${isModal ? 'mt-2 text-[clamp(10px,1.1vw,12px)]' : 'mt-1 text-[6px]'} font-semibold text-gray-600 leading-tight`}>{description}</p>
+            {descriptionLines.length > 0 && (
+              <div className={`${isModal ? 'mt-2 space-y-1.5' : 'mt-1 space-y-1'}`}>
+                {descriptionLines.map((line, idx) => (
+                  <p
+                    key={idx}
+                    className={`${isModal ? 'text-[clamp(10px,1.1vw,12px)]' : 'text-[6px]'} font-semibold text-gray-600 leading-tight`}
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -896,7 +953,7 @@ export default function ExtractionPage() {
           title: `인스타 카드 ${cardNumber}`,
           cardNumber,
           headline,
-          description,
+          descriptionLines,
           cardStyle,
         })}
         className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all text-left"
@@ -1339,7 +1396,7 @@ export default function ExtractionPage() {
 
     if (selectedChannels.blog && !alreadyDone.blogImg) {
       tasks.push(
-        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
+        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
       )
     }
 
@@ -1729,9 +1786,9 @@ DO NOT:
       blogImg: {
         channel: '블로그 이미지',
         service: 'gemini',
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
+        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setBlogImages,
-        demoData: getMockBlogImages(promptSettings.media.blogImageStyle),
+        demoData: getMockBlogImages(promptSettings.media.blogImageStyle, promptSettings.media.blogTextOverlay),
       },
       instaImg: {
         channel: '인스타 카드',
@@ -1784,7 +1841,7 @@ DO NOT:
   const retryMediaItem = async (err) => {
     if (demoMode) {
       const mockMap = {
-        '블로그 이미지': { data: getMockBlogImages(promptSettings.media.blogImageStyle), setter: setBlogImages },
+        '블로그 이미지': { data: getMockBlogImages(promptSettings.media.blogImageStyle, promptSettings.media.blogTextOverlay), setter: setBlogImages },
         '인스타 카드': { data: getMockInstagramImages(promptSettings.media.instagramImageStyle), setter: setInstagramImages },
         '숏폼 영상': { data: mockShortsVideo, setter: setShortsVideo },
       }
@@ -1804,7 +1861,7 @@ DO NOT:
 
     const mediaMap = {
       '블로그 이미지': {
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
+        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setBlogImages,
       },
       '인스타 카드': {
@@ -2040,8 +2097,12 @@ ${parsedText}
                         CARD {previewImage.cardNumber}
                       </div>
                       <p className="text-[clamp(16px,2.2vw,24px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
-                      {previewImage.description && (
-                        <p className="mt-3 text-[clamp(10px,1.2vw,13px)] font-semibold text-gray-600 leading-tight">{previewImage.description}</p>
+                      {Array.isArray(previewImage.descriptionLines) && previewImage.descriptionLines.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          {previewImage.descriptionLines.map((line, idx) => (
+                            <p key={idx} className="text-[clamp(10px,1.2vw,13px)] font-semibold text-gray-600 leading-tight">{line}</p>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2052,8 +2113,12 @@ ${parsedText}
                     </div>
                     <div className="rounded-[24px] bg-white/88 px-[5%] py-[4.5%] shadow-sm">
                       <p className="text-[clamp(15px,2vw,22px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
-                      {previewImage.description && (
-                        <p className="mt-2 text-[clamp(10px,1.1vw,12px)] font-semibold text-gray-600 leading-tight">{previewImage.description}</p>
+                      {Array.isArray(previewImage.descriptionLines) && previewImage.descriptionLines.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {previewImage.descriptionLines.map((line, idx) => (
+                            <p key={idx} className="text-[clamp(10px,1.1vw,12px)] font-semibold text-gray-600 leading-tight">{line}</p>
+                          ))}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2600,13 +2665,12 @@ ${parsedText}
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
-                      {blogContent.sections?.map((sec, i) => (
-                        <div key={i} className="border-l-2 border-primary/30 pl-3">
-                          <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
-                          {sec.keyPhrase && <span className="inline-block text-xs bg-primary/10 text-primary-light px-2 py-0.5 rounded mt-1">{sec.keyPhrase}</span>}
-                          <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{sec.content}</p>
-                        </div>
-                      ))}
+                        {blogContent.sections?.map((sec, i) => (
+                          <div key={i} className="border-l-2 border-primary/30 pl-3">
+                            <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
+                            <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{sec.content}</p>
+                          </div>
+                        ))}
                       {blogContent.tags?.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 pt-2 border-t border-border">
                           {blogContent.tags.map((tag, i) => <span key={i} className="text-xs px-2 py-0.5 bg-surface-light rounded-full text-text-muted">#{tag}</span>)}

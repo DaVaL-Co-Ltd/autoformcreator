@@ -1303,11 +1303,10 @@ export default function ExtractionResultPage() {
       const imageUrl = cardImage?.imageUrl || cardImage?.url || null
       const cardTitle = card?.title || card?.heading || card?.headline || `인스타 카드 ${cardNumber}`
       const detailLines = deriveInstagramDetailLines(card)
-      const subtitle = detailLines[0] || ''
-      const points = [
-        ...ensureArray(card?.points).map(stripResultCtaText).filter(Boolean),
-        ...detailLines.slice(1),
-      ].filter(Boolean)
+      // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드 본문이 너무 짧게 보이지 않도록 한다.
+      const descriptionLines = detailLines.filter(Boolean)
+      // card.points 가 명시적으로 제공된 레거시 데이터만 별도 포인트 영역으로 노출한다.
+      const points = ensureArray(card?.points).map(stripResultCtaText).filter(Boolean)
 
       return (
         <div
@@ -1336,13 +1335,18 @@ export default function ExtractionResultPage() {
                 </div>
                 <div className="space-y-4">
                   {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
-                  {subtitle && (
-                    <p
-                      className="text-gray-600"
-                      style={{ fontSize: cardSubtitleFont, lineHeight: 1.7, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                    >
-                      {renderBalancedLines(subtitle, 22)}
-                    </p>
+                  {descriptionLines.length > 0 && (
+                    <div className="space-y-1.5">
+                      {descriptionLines.map((line, idx) => (
+                        <p
+                          key={idx}
+                          className="text-gray-600"
+                          style={{ fontSize: cardSubtitleFont, lineHeight: 1.7, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                        >
+                          {renderBalancedLines(line, 22)}
+                        </p>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1371,13 +1375,18 @@ export default function ExtractionResultPage() {
                 <div className="rounded-[24px] bg-white/86 px-[5%] py-[4.5%] shadow-sm">
                   <div className="space-y-3">
                     {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
-                    {subtitle && (
-                      <p
-                        className="text-gray-600"
-                        style={{ fontSize: cardSubtitleFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                      >
-                        {renderBalancedLines(subtitle, 22)}
-                      </p>
+                    {descriptionLines.length > 0 && (
+                      <div className="space-y-1.5">
+                        {descriptionLines.map((line, idx) => (
+                          <p
+                            key={idx}
+                            className="text-gray-600"
+                            style={{ fontSize: cardSubtitleFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                          >
+                            {renderBalancedLines(line, 22)}
+                          </p>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
