@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink,
-  Upload, Loader2, AlertCircle, Calendar, XCircle, RefreshCw, Eye, EyeOff
+  Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff
 } from 'lucide-react'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { domToPng } from 'modern-screenshot'
@@ -25,6 +25,7 @@ import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
+import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -69,6 +70,8 @@ const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/pu
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
 const BLOG_IMAGE_CAPTURE_TIMEOUT_MS = 15000
 const BLOG_UPLOAD_REQUEST_TIMEOUT_MS = 120000
+const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
+const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 
 async function captureElementPng(el, label) {
@@ -128,7 +131,6 @@ export default function ExtractionResultPage() {
   }
   const [instaSlide, setInstaSlide] = useState(0)
   const [downloading, setDownloading] = useState(false)
-  const [previewImage, setPreviewImage] = useState(null)
   const blogImagesRef = useRef([])
   const instaCardsRef = useRef([])
   const [blogPngUrls, setBlogPngUrls] = useState([])
@@ -235,10 +237,11 @@ export default function ExtractionResultPage() {
         const tags = ensureTagArray(blogContent?.tags).map(t => t.replace(/^#/, ''))
         const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
 
-        let response
+        let data
+        let responseStatus = 0
         if (USE_REMOTE_BLOG_PUBLISH) {
           const remoteContent = content.replace(/\[IMG:\d+\]\s*/g, '').trim()
-          response = await fetchWithTimeout(`${API_BASE}/api/naver/publish`, {
+          const response = await fetchWithTimeout(`${API_BASE}/api/naver/publish`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -246,6 +249,22 @@ export default function ExtractionResultPage() {
             },
             body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags }),
           }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
+          responseStatus = response.status
+
+          try {
+            data = await withTimeout(
+              () => readApiResponse(response),
+              API_RESPONSE_TIMEOUT_MS,
+              'Upload response parsing'
+            )
+          } catch (error) {
+            const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+            throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
+          }
+
+          if (!response.ok) {
+            data = { ...data, success: false }
+          }
         } else {
           const formData = new FormData()
           formData.append('title', title)
@@ -264,29 +283,45 @@ export default function ExtractionResultPage() {
             formData.append('photos', new File([blob], `section_${i + 1}.png`, { type: 'image/png' }))
           }
 
+          let startResponse
           try {
-            response = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
+            startResponse = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
               headers: BLOG_UPLOAD_HEADERS,
               method: 'POST',
               body: formData,
-            }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request')
+            }, BLOG_UPLOAD_START_TIMEOUT_MS, 'Desktop helper upload start')
           } catch (error) {
             const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
             throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
           }
+
+          responseStatus = startResponse.status
+
+          let startData
+          try {
+            startData = await withTimeout(
+              () => readApiResponse(startResponse),
+              API_RESPONSE_TIMEOUT_MS,
+              'Upload start response parsing'
+            )
+          } catch (error) {
+            const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
+            throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
+          }
+
+          if (!startResponse.ok || !startData.success || !startData.jobId) {
+            data = { ...startData, success: false }
+          } else {
+            try {
+              data = await pollUploadCompletion(startData.jobId, {
+                maxWaitMs: BLOG_UPLOAD_MAX_WAIT_MS,
+              })
+            } catch (error) {
+              throw new Error(error.message)
+            }
+          }
         }
 
-        let data
-        try {
-          data = await withTimeout(
-            () => readApiResponse(response),
-            API_RESPONSE_TIMEOUT_MS,
-            'Upload response parsing'
-          )
-        } catch (error) {
-          const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
-          throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
-        }
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
           if (extractionId) {
@@ -308,7 +343,7 @@ export default function ExtractionResultPage() {
           })
         } else {
           setUploadStatus(p => ({ ...p, blog: 'error' }))
-          setUploadError(`네이버 블로그 업로드 실패: ${formatBlogUploadError(data, `네이버 블로그 업로드 실패 (${response.status})`)}`)
+          setUploadError(`네이버 블로그 업로드 실패: ${formatBlogUploadError(data, `네이버 블로그 업로드 실패 (${responseStatus || 'unknown'})`)}`)
         }
       } catch (err) {
         setUploadStatus(p => ({ ...p, blog: 'error' }))
@@ -470,18 +505,14 @@ export default function ExtractionResultPage() {
           }
         }
       } else {
-        // 인스타그램: 각 카드를 순서대로 캡처
+        // 인스타그램: 숨겨진 컨테이너에 모든 카드가 마운트되어 있으므로 슬라이드 이동 없이 순서대로 캡처
         const cards = instagramContent?.cards || instagramContent?.cardTopics || []
-        const prevSlide = instaSlide
         for (let idx = 0; idx < cards.length; idx++) {
-          setInstaSlide(idx)
-          await new Promise(r => setTimeout(r, 400))
           const el = instaCardsRef.current[idx]
           if (!el) continue
           await captureElement(el, `인스타그램_${idx + 1}.png`)
           await new Promise(r => setTimeout(r, 500))
         }
-        setInstaSlide(prevSlide)
       }
     } catch (err) {
       console.error('다운로드 실패:', err)
@@ -559,15 +590,12 @@ export default function ExtractionResultPage() {
     setBlogPngUrls(urls)
   }, [])
 
-  // 인스타 카드 HTML -> PNG 변환
+  // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
     const cards = instagramContent?.cards || instagramContent?.cardTopics || []
     if (cards.length === 0) return
-    const prevSlide = instaSlide
     const urls = []
     for (let i = 0; i < cards.length; i++) {
-      setInstaSlide(i)
-      await new Promise(r => setTimeout(r, 300))
       const el = instaCardsRef.current[i]
       if (!el) { urls.push(null); continue }
       try {
@@ -576,8 +604,7 @@ export default function ExtractionResultPage() {
       } catch { urls.push(null) }
     }
     setInstaPngUrls(urls)
-    setInstaSlide(prevSlide)
-  }, [instagramContent, instaSlide])
+  }, [instagramContent])
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
     if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
@@ -605,10 +632,9 @@ export default function ExtractionResultPage() {
   const compileBlogBody = useCallback((sections = []) => {
     return ensureArray(sections).map((s, i) => {
       const heading = s.heading ? `${s.heading}\n` : ''
-      const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
       const imageMarker = `[IMG:${i + 1}]\n`
-      return `${heading}${imageMarker}${keyPhrase}${content}`
+      return `${heading}${imageMarker}${content}`
     }).join('\n\n')
   }, [])
 
@@ -664,6 +690,54 @@ export default function ExtractionResultPage() {
 
     const line2 = tokens.slice(splitIndex + 1).join(' ')
     return line2 ? [line1, line2] : [clean]
+  }
+
+  // 단어/특수문자 단위로 분리한 뒤 minimax 분할로 각 줄 길이가 비슷해지도록 균형을 맞춘다.
+  // 마지막 줄에 단어 한 개만 남는 경우 앞 줄 단어를 함께 끌어내려 자연스럽게 채운다.
+  const balanceLines = (text, maxLineLength) => {
+    const clean = trimCardTitleEnding(stripBold(text || ''))
+    if (!clean) return []
+    if (clean.length <= maxLineLength) return [clean]
+    const tokens = splitCardTokens(clean)
+    if (tokens.length <= 1) return [clean]
+
+    const partition = (toks, maxLen) => {
+      const lines = []
+      let line = ''
+      for (const t of toks) {
+        const next = line ? `${line} ${t}` : t
+        if (next.length > maxLen && line) { lines.push(line); line = t }
+        else line = next
+      }
+      if (line) lines.push(line)
+      return lines
+    }
+
+    // 1) 기본 maxLineLength 로 그리디 분할 → 자연스러운 줄 수 결정
+    const greedy = partition(tokens, maxLineLength)
+    const lineCount = greedy.length
+    if (lineCount <= 1) return greedy
+
+    // 2) 같은 줄 수를 유지하면서 가장 긴 줄을 최소화하도록 maxLen 을 이분 탐색 → 자연스러운 균형 맞추기
+    let lo = Math.max(...tokens.map(t => t.length))
+    let hi = clean.length
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2)
+      if (partition(tokens, mid).length <= lineCount) hi = mid
+      else lo = mid + 1
+    }
+    return partition(tokens, lo)
+  }
+
+  const renderBalancedLines = (text, maxLineLength) => {
+    const lines = balanceLines(text, maxLineLength)
+    if (lines.length === 0) return null
+    return lines.map((line, idx) => (
+      <span key={idx}>
+        {idx > 0 && <br />}
+        {line}
+      </span>
+    ))
   }
 
   const renderCardHeading = (text, fontSize, options = {}) => {
@@ -759,6 +833,18 @@ export default function ExtractionResultPage() {
       .split(/[.!?\n]/)
       .map(line => line.trim())
       .find(Boolean) || cleanHeading
+  }
+
+  const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
+    const cleanKeyPhrase = cleanCardText(keyPhrase)
+    if (cleanKeyPhrase) {
+      return cleanCardText(fallbackContent || '')
+        .split(/[.!?\n]/)
+        .map(line => line.trim())
+        .find(Boolean) || cleanKeyPhrase
+    }
+
+    return deriveDescriptionCopy(heading, deriveBlogHeadline(heading), fallbackContent)
   }
 
   const deriveInstagramDetailLines = (card) => {
@@ -1126,7 +1212,7 @@ export default function ExtractionResultPage() {
                 const headingText = cleanCardText(section?.heading || '')
                 const headline = deriveBlogHeadline(keyPhrase || headingText)
                 const description = truncateCardText(
-                  deriveDescriptionCopy(headingText, headline, section?.content || ''),
+                  deriveBlogImageDescription(keyPhrase, headingText, section?.content || ''),
                   34
                 )
 
@@ -1144,20 +1230,12 @@ export default function ExtractionResultPage() {
                         <img
                           src={blogPngUrls[index]}
                           alt={section.heading || `블로그 이미지 ${index + 1}`}
-                          className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
-                          onClick={() => setPreviewImage({
-                            src: blogPngUrls[index],
-                            title: section.heading || `블로그 이미지 ${index + 1}`,
-                          })}
+                          className="w-full max-w-xl rounded-xl shadow-sm"
                         />
                       ) : (
                         <div
                           ref={el => { blogImagesRef.current[index] = el }}
-                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white cursor-zoom-in relative"
-                          onClick={() => setPreviewImage({
-                            src: imageUrl,
-                            title: section.heading || `블로그 이미지 ${index + 1}`,
-                          })}
+                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white relative"
                         >
                           <img
                             src={imageUrl}
@@ -1180,12 +1258,6 @@ export default function ExtractionResultPage() {
                           )}
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {section.keyPhrase && (
-                    <div className="border-l-4 border-primary pl-4 py-2 mb-4 bg-primary/5 rounded-r-lg">
-                      <p className="text-sm font-bold text-text">{section.keyPhrase}</p>
                     </div>
                   )}
 
@@ -1212,21 +1284,125 @@ export default function ExtractionResultPage() {
       const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
       return imageCardNumber === currentCardNumber
     }) || ensureArray(instagramImages)[0]
-    const currentImageUrl = currentInstagramImage?.imageUrl || currentInstagramImage?.url || null
     const currentCardPngUrl = instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
-    const currentTitle = current?.title || current?.heading || current?.headline || `인스타 카드 ${currentCardNumber}`
-    const instagramDetailLines = deriveInstagramDetailLines(current)
-    const sanitizedSubtitle = instagramDetailLines[0] || ''
-    const sanitizedPoints = [
-      ...ensureArray(current?.points).map(stripResultCtaText).filter(Boolean),
-      ...instagramDetailLines.slice(1),
-    ].filter(Boolean)
     const isCenterCard = instagramCardStyle === 'center-card'
     const cardTitleFont = isCenterCard ? 'clamp(16px, 2.2vw, 24px)' : 'clamp(15px, 2vw, 22px)'
     const cardSubtitleFont = isCenterCard ? 'clamp(10px, 1.2vw, 13px)' : 'clamp(10px, 1.1vw, 12px)'
     const cardPointFont = 'clamp(10px, 1.15vw, 13px)'
+
+    // 카드 한 장의 내부 아트워크. 화면에 보이는 카드는 attachRef=false 로 호출하고,
+    // PNG 캡처용 숨김 컨테이너에서는 attachRef=true 로 호출해 instaCardsRef 를 채운다.
+    const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
+      const cardNumber = card?.cardNumber || card?.card_number || cardIndex + 1
+      const cardImage = ensureArray(instagramImages).find((image, i) => {
+        const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
+        return imageCardNumber === cardNumber
+      }) || ensureArray(instagramImages)[0]
+      const imageUrl = cardImage?.imageUrl || cardImage?.url || null
+      const cardTitle = card?.title || card?.heading || card?.headline || `인스타 카드 ${cardNumber}`
+      const detailLines = deriveInstagramDetailLines(card)
+      const subtitle = detailLines[0] || ''
+      const points = [
+        ...ensureArray(card?.points).map(stripResultCtaText).filter(Boolean),
+        ...detailLines.slice(1),
+      ].filter(Boolean)
+
+      return (
+        <div
+          ref={attachRef ? (el => { instaCardsRef.current[cardIndex] = el }) : undefined}
+          className={`aspect-square relative ${isCenterCard ? 'bg-gradient-to-br from-violet-100 via-fuchsia-50 to-sky-100' : 'bg-gradient-to-br from-pink-50 via-white to-orange-50'}`}
+        >
+          {imageUrl && (
+            <>
+              <img
+                src={imageUrl}
+                alt={cardImage?.heading || card?.title || card?.heading || `인스타 카드 ${cardNumber}`}
+                className="absolute inset-0 w-full h-full object-cover"
+                loading="lazy"
+              />
+              <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/18'}`} />
+            </>
+          )}
+          {isCenterCard ? (
+            <div className="absolute inset-0 p-[7%] flex items-center justify-center">
+              <div className="w-[70%] rounded-[30px] bg-white/84 backdrop-blur-md border border-white/70 px-[7%] py-[8%] shadow-xl text-center">
+                <div
+                  className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 font-extrabold tracking-[0.18em] text-primary-dark mb-4"
+                  style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
+                >
+                  CARD {String(cardNumber).padStart(2, '0')}
+                </div>
+                <div className="space-y-4">
+                  {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
+                  {subtitle && (
+                    <p
+                      className="text-gray-600"
+                      style={{ fontSize: cardSubtitleFont, lineHeight: 1.7, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                    >
+                      {renderBalancedLines(subtitle, 22)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-4">
+                  {card?.kicker && (
+                    <span
+                      className={`inline-flex px-3 py-1 rounded-full font-bold ${imageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}
+                      style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
+                    >
+                      {card.kicker}
+                    </span>
+                  )}
+                </div>
+                <div
+                  className="rounded-full bg-black/62 px-3 py-1.5 font-bold text-white shadow-sm"
+                  style={{ fontSize: 'clamp(11px, 1.2vw, 14px)' }}
+                >
+                  {cardNumber}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-[24px] bg-white/86 px-[5%] py-[4.5%] shadow-sm">
+                  <div className="space-y-3">
+                    {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
+                    {subtitle && (
+                      <p
+                        className="text-gray-600"
+                        style={{ fontSize: cardSubtitleFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                      >
+                        {renderBalancedLines(subtitle, 22)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {points.length > 0 && (
+                  <div className="rounded-[24px] bg-black/28 backdrop-blur-sm px-[5%] py-[4.5%]">
+                    <ul className="space-y-3">
+                      {points.map((point, i) => (
+                        <li key={i} className="flex items-start gap-3 text-white/92">
+                          <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-white/90" />
+                          <span
+                            style={{ fontSize: cardPointFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word', display: 'inline-block' }}
+                          >
+                            {renderBalancedLines(point, 22)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1263,83 +1439,7 @@ export default function ExtractionResultPage() {
                     loading="lazy"
                   />
                 ) : (
-                  <div
-                    ref={el => instaCardsRef.current[instaSlide] = el}
-                    className={`aspect-square relative ${isCenterCard ? 'bg-gradient-to-br from-violet-100 via-fuchsia-50 to-sky-100' : 'bg-gradient-to-br from-pink-50 via-white to-orange-50'}`}
-                  >
-                      {currentImageUrl && (
-                        <>
-                          <img
-                            src={currentImageUrl}
-                            alt={currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
-                            className="absolute inset-0 w-full h-full object-cover"
-                            loading="lazy"
-                          />
-                        <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/18'}`} />
-                      </>
-                    )}
-                    {isCenterCard ? (
-                      <div className="absolute inset-0 p-[7%] flex items-center justify-center">
-                        <div className="w-[70%] rounded-[30px] bg-white/84 backdrop-blur-md border border-white/70 px-[7%] py-[8%] shadow-xl text-center">
-                          <div
-                            className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 font-extrabold tracking-[0.18em] text-primary-dark mb-4"
-                            style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
-                          >
-                            CARD {String(currentCardNumber).padStart(2, '0')}
-                          </div>
-                          <div className="space-y-4">
-                            {renderCardHeading(currentTitle, cardTitleFont, { light: false })}
-                            {sanitizedSubtitle && (
-                              <p className="text-gray-600" style={{ fontSize: cardSubtitleFont, lineHeight: 1.7 }}>{stripBold(sanitizedSubtitle)}</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-4">
-                            {current?.kicker && (
-                              <span
-                                className={`inline-flex px-3 py-1 rounded-full font-bold ${currentImageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}
-                                style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
-                              >
-                                {current.kicker}
-                              </span>
-                            )}
-                          </div>
-                          <div
-                            className="rounded-full bg-black/62 px-3 py-1.5 font-bold text-white shadow-sm"
-                            style={{ fontSize: 'clamp(11px, 1.2vw, 14px)' }}
-                          >
-                            {currentCardNumber}
-                          </div>
-                        </div>
-                        <div className="space-y-4">
-                          <div className="rounded-[24px] bg-white/86 px-[5%] py-[4.5%] shadow-sm">
-                            <div className="space-y-3">
-                              {renderCardHeading(currentTitle, cardTitleFont, { light: false })}
-                              {sanitizedSubtitle && (
-                                <p className="text-gray-600" style={{ fontSize: cardSubtitleFont, lineHeight: 1.65 }}>{stripBold(sanitizedSubtitle)}</p>
-                              )}
-                            </div>
-                          </div>
-                          {sanitizedPoints.length > 0 && (
-                            <div className="rounded-[24px] bg-black/28 backdrop-blur-sm px-[5%] py-[4.5%]">
-                              <ul className="space-y-3">
-                                {sanitizedPoints.map((point, idx) => (
-                                  <li key={idx} className="flex items-start gap-3 text-white/92">
-                                    <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-white/90" />
-                                    <span style={{ fontSize: cardPointFont, lineHeight: 1.65 }}>{stripBold(point)}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  renderInstaCardArt(current, instaSlide, false)
                 )}
               </div>
             </div>
@@ -1383,6 +1483,28 @@ export default function ExtractionResultPage() {
             </div>
           </div>
         </div>
+
+        {/* PNG 캡처용 숨겨진 카드 컨테이너. 화면에 보이는 슬라이드를 건드리지 않기 위해 모든 카드를 오프스크린에 마운트한다. */}
+        {cards.length > 0 && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '-100000px',
+              top: 0,
+              width: '440px',
+              pointerEvents: 'none',
+            }}
+          >
+            {cards.map((card, idx) => (
+              <div key={`insta-capture-${idx}`} className="bg-white rounded-[28px] p-4">
+                <div className="rounded-[28px] overflow-hidden bg-gray-100">
+                  {renderInstaCardArt(card, idx, true)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -1697,32 +1819,6 @@ export default function ExtractionResultPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
-      {previewImage && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-          onClick={() => setPreviewImage(null)}
-        >
-          <div
-            className="max-w-5xl w-full"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <img
-              src={previewImage.src}
-              alt={previewImage.title}
-              className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain mx-auto"
-            />
-            <div className="flex items-center justify-between mt-3 px-1">
-              <span className="text-sm text-white font-medium">{previewImage.title}</span>
-              <button
-                onClick={() => setPreviewImage(null)}
-                className="text-white/70 hover:text-white transition-colors"
-              >
-                <XCircle size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="flex flex-wrap items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
           onClick={() => navigate(state?.fromContents ? '/contents' : '/extraction')}
