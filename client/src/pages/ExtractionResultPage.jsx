@@ -23,6 +23,7 @@ import {
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
+import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -79,7 +80,7 @@ async function captureElementPng(el, label) {
 }
 
 function formatBlogUploadError(data, fallbackMessage) {
-  const message = getApiErrorMessage(data, fallbackMessage)
+  const message = normalizeNaverHelperMessage(getApiErrorMessage(data, fallbackMessage))
   const source = data?.source || BLOG_UPLOAD_SOURCE
   const endpoint = data?.endpoint || BLOG_UPLOAD_ENDPOINT
   const helperStatus = formatDesktopHelperStatus(extractDesktopHelperStatus(data?.uploadRuntime))
@@ -271,7 +272,7 @@ export default function ExtractionResultPage() {
             }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Desktop helper upload request')
           } catch (error) {
             const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
-            throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+            throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
           }
         }
 
@@ -284,7 +285,7 @@ export default function ExtractionResultPage() {
           )
         } catch (error) {
           const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
-          throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+          throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
         }
         if (data.success) {
           setUploadStatus(p => ({ ...p, blog: 'done' }))
@@ -527,7 +528,6 @@ export default function ExtractionResultPage() {
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
   const showBlogImageTextOverlay = (blogContent?.imageTextOverlay || 'with-text') !== 'without-text'
-  const isPhotoBlogImageStyle = (blogContent?.imageStyle || 'pastel') === 'photo'
   const shortsVideoRef = useRef(null)
   const shortsAudioRefs = useRef([])
   const [currentScene, setCurrentScene] = useState(-1)
@@ -607,14 +607,10 @@ export default function ExtractionResultPage() {
       const heading = s.heading ? `${s.heading}\n` : ''
       const keyPhrase = s.keyPhrase ? `${s.keyPhrase}\n\n` : ''
       const content = s.content || ''
-      const imageMarker = isPhotoBlogImageStyle
-        ? `[IMG:${i + 1}]\n`
-        : i === 0
-          ? '[IMG:1]\n'
-          : ''
+      const imageMarker = `[IMG:${i + 1}]\n`
       return `${heading}${imageMarker}${keyPhrase}${content}`
     }).join('\n\n')
-  }, [isPhotoBlogImageStyle])
+  }, [])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     String(content || '')
@@ -763,6 +759,32 @@ export default function ExtractionResultPage() {
       .split(/[.!?\n]/)
       .map(line => line.trim())
       .find(Boolean) || cleanHeading
+  }
+
+  const deriveInstagramDetailLines = (card) => {
+    const lines = []
+    const contentText = cleanCardText(card?.content || '')
+    const dataPointText = cleanCardText(card?.dataPoint || '')
+
+    const contentSentences = contentText
+      .split(/(?<=[.!?。！？])\s+|\n+/)
+      .map(sentence => sentence.trim())
+      .filter(Boolean)
+
+    for (const sentence of contentSentences) {
+      if (lines.length >= 3) break
+      lines.push(truncateCardText(sentence, 40))
+    }
+
+    if (dataPointText && lines.length < 3) {
+      lines.push(truncateCardText(dataPointText, 34))
+    }
+
+    if (lines.length === 0 && contentText) {
+      lines.push(truncateCardText(contentText, 40))
+    }
+
+    return lines.slice(0, 3)
   }
 
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
@@ -1095,13 +1117,10 @@ export default function ExtractionResultPage() {
               const blogImageList = ensureArray(blogImages)
 
               return ensureArray(blogContent?.sections).map((section, index) => {
-                const shouldShowBlogImage = isPhotoBlogImageStyle || index === 0
                 const image =
-                  shouldShowBlogImage
-                    ? blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
-                      blogImageList[index] ||
-                      null
-                    : null
+                  blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
+                  blogImageList[index] ||
+                  null
                 const imageUrl = image?.imageUrl || null
                 const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
                 const headingText = cleanCardText(section?.heading || '')
@@ -1198,10 +1217,11 @@ export default function ExtractionResultPage() {
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
     const currentTitle = current?.title || current?.heading || current?.headline || `인스타 카드 ${currentCardNumber}`
-    const sanitizedSubtitle = stripResultCtaText(current?.subtitle || current?.content || '')
+    const instagramDetailLines = deriveInstagramDetailLines(current)
+    const sanitizedSubtitle = instagramDetailLines[0] || ''
     const sanitizedPoints = [
       ...ensureArray(current?.points).map(stripResultCtaText).filter(Boolean),
-      stripResultCtaText(current?.dataPoint || ''),
+      ...instagramDetailLines.slice(1),
     ].filter(Boolean)
     const isCenterCard = instagramCardStyle === 'center-card'
     const cardTitleFont = isCenterCard ? 'clamp(16px, 2.2vw, 24px)' : 'clamp(15px, 2vw, 22px)'

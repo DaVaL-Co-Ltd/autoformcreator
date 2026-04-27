@@ -2,6 +2,7 @@ import { getExtractionById } from './storage'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
+import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 
@@ -46,6 +47,8 @@ function stripMarkdown(md) {
 }
 
 async function buildDesktopHelperRequestError(error) {
+  const normalizedMessage = normalizeNaverHelperMessage(error.message)
+  error = { ...error, message: normalizedMessage }
   const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
   if (helperStatus) {
     return `네이버 블로그 업로드 실패: ${error.message} ${helperStatus} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`
@@ -168,7 +171,7 @@ export async function uploadToBlog(extractionId, options = {}) {
     'Desktop helper response parsing',
   ).catch(async (error) => {
     const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
-    throw new Error(`${error.message}${helperStatus ? ` ${helperStatus}` : ''}`)
+    throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
   })
 
   if (!res.ok || !data.success) {
@@ -293,7 +296,13 @@ export async function uploadToInstagram(extractionId) {
 }
 
 export async function uploadToPlatform(platform, extractionId, options = {}) {
-  if (platform === 'blog') return uploadToBlog(extractionId, options)
+  if (platform === 'blog') {
+    try {
+      return await uploadToBlog(extractionId, options)
+    } catch (error) {
+      throw new Error(normalizeNaverHelperMessage(error.message))
+    }
+  }
   if (platform === 'shorts') return uploadToYoutube(extractionId, options)
   if (platform === 'instagram') return uploadToInstagram(extractionId)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -37,7 +37,6 @@ const _uploadStatusConfig = {
 }
 
 const EXTRACTION_BATCH_SIZE = 10
-const CONTENT_PAGE_CACHE_KEY = 'content-page-cache-v1'
 
 function toContentItems(extractions, scheduledMap = new Map()) {
   return extractions.flatMap(ext =>
@@ -81,40 +80,27 @@ function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
 
 export default function ContentPage() {
   const navigate = useNavigate()
-  const cacheRef = useRef(null)
-  const skipInitialRefreshRef = useRef(false)
-  if (cacheRef.current === null && typeof window !== 'undefined') {
-    try {
-      const raw = window.sessionStorage.getItem(CONTENT_PAGE_CACHE_KEY)
-      cacheRef.current = raw ? JSON.parse(raw) : null
-      skipInitialRefreshRef.current = Boolean(cacheRef.current)
-    } catch {
-      cacheRef.current = null
-      skipInitialRefreshRef.current = false
-    }
-  }
-  const cachedState = cacheRef.current
-  const [activeChannel, setActiveChannel] = useState(() => cachedState?.activeChannel || 'all')
-  const [activeStatus, setActiveStatus] = useState(() => cachedState?.activeStatus || 'all')
-  const [contents, setContents] = useState(() => cachedState?.contents || [])
-  const [hasNextPage, setHasNextPage] = useState(() => cachedState?.hasNextPage || false)
-  const [totalPages, setTotalPages] = useState(() => cachedState?.totalPages || 1)
-  const [aggregateCounts, setAggregateCounts] = useState(() => cachedState?.aggregateCounts || {
+  const [activeChannel, setActiveChannel] = useState('all')
+  const [activeStatus, setActiveStatus] = useState('all')
+  const [contents, setContents] = useState([])
+  const [hasNextPage, setHasNextPage] = useState(false)
+  const [totalPages, setTotalPages] = useState(1)
+  const [aggregateCounts, setAggregateCounts] = useState({
     all: 0,
     not_uploaded: 0,
     scheduled: 0,
     uploaded: 0,
   })
-  const [initialLoading, setInitialLoading] = useState(() => !cachedState)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [listLoading, setListLoading] = useState(false)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(() => Boolean(cachedState))
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
   const [uploadingIds, setUploadingIds] = useState(new Set())
-  const [pageSize, setPageSize] = useState(() => cachedState?.pageSize || 10)
-  const [currentPage, setCurrentPage] = useState(() => cachedState?.currentPage || 1)
-  const [searchQuery, setSearchQuery] = useState(() => cachedState?.searchQuery || '')
+  const [pageSize, setPageSize] = useState(10)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
 
   const refreshContents = useCallback(async (
     showSpinner = false,
@@ -220,44 +206,8 @@ export default function ContentPage() {
   }, [activeChannel, activeStatus, currentPage, hasLoadedOnce, pageSize, searchQuery])
 
   useEffect(() => {
-    if (skipInitialRefreshRef.current) {
-      skipInitialRefreshRef.current = false
-      return
-    }
-
-    refreshContents(!hasLoadedOnce, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
-  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery, hasLoadedOnce])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.sessionStorage.setItem(CONTENT_PAGE_CACHE_KEY, JSON.stringify({
-        activeChannel,
-        activeStatus,
-        contents,
-        hasNextPage,
-        totalPages,
-        aggregateCounts,
-        hasLoadedOnce,
-        pageSize,
-        currentPage,
-        searchQuery,
-      }))
-    } catch {
-      // Ignore sessionStorage write failures.
-    }
-  }, [
-    activeChannel,
-    activeStatus,
-    contents,
-    hasNextPage,
-    totalPages,
-    aggregateCounts,
-    hasLoadedOnce,
-    pageSize,
-    currentPage,
-    searchQuery,
-  ])
+    refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
 
   const paginationGroupStart = Math.floor((currentPage - 1) / 10) * 10 + 1
   const paginationGroupEnd = Math.min(paginationGroupStart + 9, totalPages)
@@ -394,6 +344,37 @@ export default function ContentPage() {
     })}`
   }
 
+  const beginFilterRefresh = () => {
+    if (hasLoadedOnce) {
+      setListLoading(true)
+    }
+  }
+
+  const handleResetFilters = () => {
+    const changed = activeStatus !== 'all' || activeChannel !== 'all' || searchQuery !== '' || currentPage !== 1
+    if (!changed) return
+    beginFilterRefresh()
+    setActiveStatus('all')
+    setActiveChannel('all')
+    setSearchQuery('')
+    setCurrentPage(1)
+  }
+
+  const handleStatusFilterChange = (nextStatus) => {
+    const resolvedStatus = activeStatus === nextStatus ? 'all' : nextStatus
+    if (resolvedStatus === activeStatus && currentPage === 1) return
+    beginFilterRefresh()
+    setActiveStatus(resolvedStatus)
+    setCurrentPage(1)
+  }
+
+  const handleChannelFilterChange = (nextChannel) => {
+    if (nextChannel === activeChannel && currentPage === 1) return
+    beginFilterRefresh()
+    setActiveChannel(nextChannel)
+    setCurrentPage(1)
+  }
+
   if (initialLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
@@ -427,12 +408,7 @@ export default function ContentPage() {
             bg: 'bg-primary/10',
             color: 'text-primary-light',
             label: '전체',
-            onClick: () => {
-              setActiveStatus('all')
-              setActiveChannel('all')
-              setSearchQuery('')
-              setCurrentPage(1)
-            },
+            onClick: handleResetFilters,
           },
           { key: 'not_uploaded', icon: Upload, bg: 'bg-surface-light', color: 'text-text-muted', label: '미업로드' },
           { key: 'scheduled', icon: Calendar, bg: 'bg-info/10', color: 'text-info', label: '예약 완료' },
@@ -443,10 +419,7 @@ export default function ContentPage() {
           return (
           <button
             key={statusItem.key}
-            onClick={statusItem.onClick || (() => {
-              setActiveStatus(activeStatus === statusItem.key ? 'all' : statusItem.key)
-              setCurrentPage(1)
-            })}
+            onClick={statusItem.onClick || (() => handleStatusFilterChange(statusItem.key))}
             className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
               activeStatus === statusItem.key || (statusItem.key === 'all' && activeStatus === 'all' && activeChannel === 'all')
                 ? 'border-primary/40 bg-primary/5'
@@ -473,10 +446,7 @@ export default function ContentPage() {
             return (
             <button
               key={key}
-              onClick={() => {
-                setActiveChannel(key)
-                setCurrentPage(1)
-              }}
+              onClick={() => handleChannelFilterChange(key)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 activeChannel === key
                   ? 'bg-primary/15 text-primary-light'
