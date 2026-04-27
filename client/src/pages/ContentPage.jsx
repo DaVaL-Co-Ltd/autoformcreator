@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -37,6 +37,7 @@ const _uploadStatusConfig = {
 }
 
 const EXTRACTION_BATCH_SIZE = 10
+const CONTENT_PAGE_CACHE_KEY = 'content-page-cache-v1'
 
 function toContentItems(extractions, scheduledMap = new Map()) {
   return extractions.flatMap(ext =>
@@ -80,27 +81,40 @@ function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
 
 export default function ContentPage() {
   const navigate = useNavigate()
-  const [activeChannel, setActiveChannel] = useState('all')
-  const [activeStatus, setActiveStatus] = useState('all')
-  const [contents, setContents] = useState([])
-  const [hasNextPage, setHasNextPage] = useState(false)
-  const [totalPages, setTotalPages] = useState(1)
-  const [aggregateCounts, setAggregateCounts] = useState({
+  const cacheRef = useRef(null)
+  const skipInitialRefreshRef = useRef(false)
+  if (cacheRef.current === null && typeof window !== 'undefined') {
+    try {
+      const raw = window.sessionStorage.getItem(CONTENT_PAGE_CACHE_KEY)
+      cacheRef.current = raw ? JSON.parse(raw) : null
+      skipInitialRefreshRef.current = Boolean(cacheRef.current)
+    } catch {
+      cacheRef.current = null
+      skipInitialRefreshRef.current = false
+    }
+  }
+  const cachedState = cacheRef.current
+  const [activeChannel, setActiveChannel] = useState(() => cachedState?.activeChannel || 'all')
+  const [activeStatus, setActiveStatus] = useState(() => cachedState?.activeStatus || 'all')
+  const [contents, setContents] = useState(() => cachedState?.contents || [])
+  const [hasNextPage, setHasNextPage] = useState(() => cachedState?.hasNextPage || false)
+  const [totalPages, setTotalPages] = useState(() => cachedState?.totalPages || 1)
+  const [aggregateCounts, setAggregateCounts] = useState(() => cachedState?.aggregateCounts || {
     all: 0,
     not_uploaded: 0,
     scheduled: 0,
     uploaded: 0,
   })
-  const [initialLoading, setInitialLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(() => !cachedState)
   const [listLoading, setListLoading] = useState(false)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(() => Boolean(cachedState))
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
   const [uploadingIds, setUploadingIds] = useState(new Set())
-  const [pageSize, setPageSize] = useState(10)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [pageSize, setPageSize] = useState(() => cachedState?.pageSize || 10)
+  const [currentPage, setCurrentPage] = useState(() => cachedState?.currentPage || 1)
+  const [searchQuery, setSearchQuery] = useState(() => cachedState?.searchQuery || '')
 
   const refreshContents = useCallback(async (
     showSpinner = false,
@@ -206,17 +220,44 @@ export default function ContentPage() {
   }, [activeChannel, activeStatus, currentPage, hasLoadedOnce, pageSize, searchQuery])
 
   useEffect(() => {
-    refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
-  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
-
-  useEffect(() => {
-    const onFocus = () => {
-      refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+    if (skipInitialRefreshRef.current) {
+      skipInitialRefreshRef.current = false
+      return
     }
 
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
+    refreshContents(!hasLoadedOnce, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery, hasLoadedOnce])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(CONTENT_PAGE_CACHE_KEY, JSON.stringify({
+        activeChannel,
+        activeStatus,
+        contents,
+        hasNextPage,
+        totalPages,
+        aggregateCounts,
+        hasLoadedOnce,
+        pageSize,
+        currentPage,
+        searchQuery,
+      }))
+    } catch {
+      // Ignore sessionStorage write failures.
+    }
+  }, [
+    activeChannel,
+    activeStatus,
+    contents,
+    hasNextPage,
+    totalPages,
+    aggregateCounts,
+    hasLoadedOnce,
+    pageSize,
+    currentPage,
+    searchQuery,
+  ])
 
   const paginationGroupStart = Math.floor((currentPage - 1) / 10) * 10 + 1
   const paginationGroupEnd = Math.min(paginationGroupStart + 9, totalPages)
