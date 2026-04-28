@@ -5,6 +5,7 @@ import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desk
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
+import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -14,6 +15,8 @@ const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH
   ? `${API_BASE}/api/naver/publish`
   : `${UPLOAD_BLOG_SERVER}/api/upload`
 const BLOG_UPLOAD_REQUEST_TIMEOUT_MS = 120000
+const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
+const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
@@ -152,39 +155,46 @@ export async function uploadToBlog(extractionId, options = {}) {
     }
   }
 
-  const res = await fetchWithTimeout(
+  const startRes = await fetchWithTimeout(
     `${UPLOAD_BLOG_SERVER}/api/upload`,
     {
       method: 'POST',
       headers: blogHeaders,
       body: formData,
     },
-    BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
-    'Desktop helper upload request',
+    BLOG_UPLOAD_START_TIMEOUT_MS,
+    'Desktop helper upload start',
   ).catch(async (error) => {
     throw new Error(await buildDesktopHelperRequestError(error))
   })
 
-  const data = await withTimeout(
-    () => readApiResponse(res),
+  const startData = await withTimeout(
+    () => readApiResponse(startRes),
     API_RESPONSE_TIMEOUT_MS,
-    'Desktop helper response parsing',
+    'Desktop helper start response parsing',
   ).catch(async (error) => {
     const helperStatus = formatDesktopHelperStatus(await getDesktopHelperStatus())
     throw new Error(`${normalizeNaverHelperMessage(error.message)}${helperStatus ? ` ${helperStatus}` : ''}`)
   })
 
-  if (!res.ok || !data.success) {
+  if (!startRes.ok || !startData.success || !startData.jobId) {
     throw new Error(
-      `${getApiErrorMessage(data, `네이버 블로그 업로드 실패 (${res.status})`)} [source=${data?.source || BLOG_UPLOAD_SOURCE} endpoint=${data?.endpoint || BLOG_UPLOAD_ENDPOINT}]`,
+      `${getApiErrorMessage(startData, `네이버 블로그 업로드 시작 실패 (${startRes.status})`)} [source=${startData?.source || BLOG_UPLOAD_SOURCE} endpoint=${startData?.endpoint || BLOG_UPLOAD_ENDPOINT}]`,
     )
   }
 
+  const completion = await pollUploadCompletion(startData.jobId, {
+    maxWaitMs: BLOG_UPLOAD_MAX_WAIT_MS,
+    onProgress: options.onProgress,
+  }).catch((error) => {
+    throw new Error(`${error.message} [source=${BLOG_UPLOAD_SOURCE} endpoint=${BLOG_UPLOAD_ENDPOINT}]`)
+  })
+
   return {
-    mode: data.mode,
-    scheduled: Boolean(data.scheduled),
-    scheduledAt: data.scheduledAt || scheduledAt,
-    url: data.url,
+    mode: completion.mode,
+    scheduled: Boolean(completion.scheduled),
+    scheduledAt: completion.scheduledAt || scheduledAt,
+    url: completion.url,
   }
 }
 

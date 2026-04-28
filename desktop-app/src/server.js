@@ -4,7 +4,7 @@ const path = require('path')
 const fs = require('fs')
 const { app } = require('electron')
 const { uploadToNaver, hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
-const { getUploadRuntimeState } = require('./upload-runtime')
+const { getUploadById, getUploadRuntimeState } = require('./upload-runtime')
 const { naverLogin } = require('./naver-login')
 const { clearSessionState, validateStoredNaverSession } = require('./session-state')
 
@@ -252,6 +252,21 @@ function createApp() {
 
   expressApp.post('/api/upload', helperClientGuard, upload.array('photos', 20), async (req, res) => {
     const photoPaths = (req.files || []).map((file) => file.path)
+    const endpoint = `http://127.0.0.1:${PORT}/api/upload`
+
+    const existingRuntime = getUploadRuntimeState()
+    if (existingRuntime.activeUpload) {
+      cleanupFiles(photoPaths)
+      res.status(409).json({
+        endpoint,
+        source: UPLOAD_SOURCE,
+        success: false,
+        error: 'Another Naver blog upload is already in progress.',
+        activeJobId: existingRuntime.activeUpload.id,
+        uploadRuntime: existingRuntime,
+      })
+      return
+    }
 
     try {
       const sessionReady = await validateStoredNaverSession({ bypassCache: true })
@@ -259,7 +274,7 @@ function createApp() {
         clearSessionState()
         cleanupFiles(photoPaths)
         res.status(400).json({
-          endpoint: `http://127.0.0.1:${PORT}/api/upload`,
+          endpoint,
           source: UPLOAD_SOURCE,
           success: false,
           error: 'Naver session is missing. Please log in again from the desktop app.',
@@ -272,7 +287,7 @@ function createApp() {
       const tags = parseTags(req.body.tags)
       const headless = showBrowser !== 'true'
 
-      const result = await uploadToNaver({
+      const uploadPromise = uploadToNaver({
         content,
         headless,
         photoPaths,
@@ -281,24 +296,121 @@ function createApp() {
         title,
       })
 
-      cleanupFiles(photoPaths)
-      res.json({
-        ...result,
-        endpoint: `http://127.0.0.1:${PORT}/api/upload`,
+      const initialRuntime = getUploadRuntimeState()
+      if (!initialRuntime.activeUpload) {
+        // Synchronous validation inside uploadToNaver rejected before registering a job.
+        try {
+          await uploadPromise
+        } catch (validationError) {
+          cleanupFiles(photoPaths)
+          console.error('[Desktop API] upload rejected before start', validationError)
+          res.status(400).json({
+            endpoint,
+            source: UPLOAD_SOURCE,
+            success: false,
+            error: validationError.message,
+            uploadRuntime: getUploadRuntimeState(),
+          })
+          return
+        }
+
+        cleanupFiles(photoPaths)
+        res.status(500).json({
+          endpoint,
+          source: UPLOAD_SOURCE,
+          success: false,
+          error: 'Upload completed without registering a job.',
+          uploadRuntime: getUploadRuntimeState(),
+        })
+        return
+      }
+
+      const jobId = initialRuntime.activeUpload.id
+
+      uploadPromise
+        .catch((error) => {
+          console.error('[Desktop API] background upload failed', error)
+        })
+        .finally(() => {
+          cleanupFiles(photoPaths)
+        })
+
+      res.status(202).json({
+        endpoint,
         source: UPLOAD_SOURCE,
+        success: true,
+        jobId,
+        status: 'queued',
         uploadRuntime: getUploadRuntimeState(),
       })
     } catch (error) {
       cleanupFiles(photoPaths)
       console.error('[Desktop API]', error)
       res.status(500).json({
-        endpoint: `http://127.0.0.1:${PORT}/api/upload`,
+        endpoint,
         source: UPLOAD_SOURCE,
         success: false,
         error: error.message,
         uploadRuntime: getUploadRuntimeState(),
       })
     }
+  })
+
+  expressApp.get('/api/upload/:id', helperClientGuard, (req, res) => {
+    const { id } = req.params
+    const endpoint = `http://127.0.0.1:${PORT}/api/upload/${id}`
+    const found = getUploadById(id)
+
+    if (!found) {
+      res.status(404).json({
+        endpoint,
+        source: UPLOAD_SOURCE,
+        success: false,
+        error: 'Upload job not found. The desktop helper may have restarted.',
+        uploadRuntime: getUploadRuntimeState(),
+      })
+      return
+    }
+
+    const { state, upload: uploadData } = found
+
+    if (state === 'active') {
+      res.json({
+        endpoint,
+        source: UPLOAD_SOURCE,
+        success: true,
+        status: 'in_progress',
+        upload: uploadData,
+        uploadRuntime: getUploadRuntimeState(),
+      })
+      return
+    }
+
+    if (state === 'completed') {
+      res.json({
+        endpoint,
+        source: UPLOAD_SOURCE,
+        success: true,
+        status: 'completed',
+        mode: uploadData.mode || null,
+        scheduled: Boolean(uploadData.scheduled),
+        scheduledAt: uploadData.scheduledAt || null,
+        url: uploadData.url || null,
+        upload: uploadData,
+        uploadRuntime: getUploadRuntimeState(),
+      })
+      return
+    }
+
+    res.json({
+      endpoint,
+      source: UPLOAD_SOURCE,
+      success: false,
+      status: 'failed',
+      error: uploadData.error || 'Upload failed.',
+      upload: uploadData,
+      uploadRuntime: getUploadRuntimeState(),
+    })
   })
 
   return expressApp

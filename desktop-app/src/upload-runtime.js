@@ -79,9 +79,30 @@ function getUploadRuntimeState() {
   }
 }
 
+function getUploadById(id) {
+  if (!id) {
+    return null
+  }
+
+  if (runtimeState.activeUpload?.id === id) {
+    return { state: 'active', upload: runtimeState.activeUpload }
+  }
+
+  if (runtimeState.lastCompletedUpload?.id === id) {
+    return { state: 'completed', upload: runtimeState.lastCompletedUpload }
+  }
+
+  if (runtimeState.lastFailedUpload?.id === id) {
+    return { state: 'failed', upload: runtimeState.lastFailedUpload }
+  }
+
+  return null
+}
+
 module.exports = {
   failUpload,
   finishUpload,
+  getUploadById,
   getUploadRuntimeState,
   startUpload,
   updateUploadStage,
