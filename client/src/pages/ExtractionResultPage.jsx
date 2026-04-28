@@ -14,7 +14,7 @@ import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
-import { buildInstagramScheduledContent } from '../utils/scheduledPayloads'
+import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 import {
   getAll as getPlatformConnections,
   loadAll as loadPlatformConnections,
@@ -26,6 +26,15 @@ import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelper
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
+import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
+import {
+  cleanCardText,
+  deriveBlogHeadline,
+  deriveBlogImageDescription,
+  deriveInstagramDetailLines,
+  normalizeInstagramCardStyle,
+  truncateCardText,
+} from '../utils/contentImageOverlay'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -102,11 +111,6 @@ const footerLinkMeta = {
   newsletter: { badge: '✉', bg: '#2563eb', fallbackLabel: '뉴스레터 바로가기' },
   instagram: { badge: '◐', bg: '#E1306C', fallbackLabel: '인스타그램 바로가기' },
   shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '유튜브 바로가기' },
-}
-
-const normalizeInstagramCardStyle = (value) => {
-  if (value === 'center-card' || value === 'center-focus') return 'center-card'
-  return 'background-text'
 }
 
 export default function ExtractionResultPage() {
@@ -656,226 +660,6 @@ export default function ExtractionResultPage() {
     }
   }, [blogBody, blogContent, blogTitle, compileBlogBody])
 
-  // 카드 이미지용 텍스트에서 ** 제거
-  const stripBold = (text) => (text || '').replace(/\*{1,3}/g, '')
-
-  const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
-
-  const splitCardTokens = (text = '') => {
-    const clean = cleanCardText(text)
-    if (!clean) return []
-    return clean
-      .split(/(\s+|,+|:+|\/+|\\+)/)
-      .map(token => token.trim())
-      .filter(Boolean)
-  }
-
-  const splitHeading = (text) => {
-    const clean = trimCardTitleEnding(stripBold(text || ''))
-    if (!clean) return ['']
-
-    const maxLineLength = clean.length <= 14 ? 18 : 14
-    if (clean.length <= maxLineLength) return [clean]
-
-    const tokens = splitCardTokens(clean)
-    if (tokens.length <= 1) return [clean]
-
-    let line1 = ''
-    let splitIndex = -1
-    for (let i = 0; i < tokens.length; i++) {
-      const next = line1 ? `${line1} ${tokens[i]}` : tokens[i]
-      if (next.length > maxLineLength) break
-      line1 = next
-      splitIndex = i
-    }
-
-    if (splitIndex <= -1 || splitIndex >= tokens.length - 1) return [clean]
-
-    const line2 = tokens.slice(splitIndex + 1).join(' ')
-    return line2 ? [line1, line2] : [clean]
-  }
-
-  // 단어/특수문자 단위로 분리한 뒤 minimax 분할로 각 줄 길이가 비슷해지도록 균형을 맞춘다.
-  // 마지막 줄에 단어 한 개만 남는 경우 앞 줄 단어를 함께 끌어내려 자연스럽게 채운다.
-  const balanceLines = (text, maxLineLength) => {
-    const clean = trimCardTitleEnding(stripBold(text || ''))
-    if (!clean) return []
-    if (clean.length <= maxLineLength) return [clean]
-    const tokens = splitCardTokens(clean)
-    if (tokens.length <= 1) return [clean]
-
-    const partition = (toks, maxLen) => {
-      const lines = []
-      let line = ''
-      for (const t of toks) {
-        const next = line ? `${line} ${t}` : t
-        if (next.length > maxLen && line) { lines.push(line); line = t }
-        else line = next
-      }
-      if (line) lines.push(line)
-      return lines
-    }
-
-    // 1) 기본 maxLineLength 로 그리디 분할 → 자연스러운 줄 수 결정
-    const greedy = partition(tokens, maxLineLength)
-    const lineCount = greedy.length
-    if (lineCount <= 1) return greedy
-
-    // 2) 같은 줄 수를 유지하면서 가장 긴 줄을 최소화하도록 maxLen 을 이분 탐색 → 자연스러운 균형 맞추기
-    let lo = Math.max(...tokens.map(t => t.length))
-    let hi = clean.length
-    while (lo < hi) {
-      const mid = Math.floor((lo + hi) / 2)
-      if (partition(tokens, mid).length <= lineCount) hi = mid
-      else lo = mid + 1
-    }
-    return partition(tokens, lo)
-  }
-
-  const renderBalancedLines = (text, maxLineLength) => {
-    const lines = balanceLines(text, maxLineLength)
-    if (lines.length === 0) return null
-    return lines.map((line, idx) => (
-      <span key={idx}>
-        {idx > 0 && <br />}
-        {line}
-      </span>
-    ))
-  }
-
-  const renderCardHeading = (text, fontSize, options = {}) => {
-    const clean = trimCardTitleEnding(stripBold(text))
-    const lines = splitHeading(clean)
-    const textClassName = options.light ? 'text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.45)]' : 'text-gray-800 drop-shadow-sm'
-    return (
-      <p className={`font-black leading-snug ${textClassName}`} style={{ fontSize, letterSpacing: '-0.5px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-        {lines.map((line, li) => (
-          <span key={li}>
-            {li > 0 && <br />}
-            {line}
-          </span>
-        ))}
-      </p>
-    )
-  }
-
-  const cleanCardText = (text = '') => (
-    String(text)
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#>*_~`-]/g, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-  )
-
-  const truncateCardText = (text, maxLength = 34) => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-    if (clean.length <= maxLength) return clean
-    const words = splitCardTokens(clean)
-    if (words.length <= 1) {
-      return `${clean.slice(0, maxLength).trim()}…`
-    }
-
-    let truncated = ''
-    for (const word of words) {
-      const next = truncated ? `${truncated} ${word}` : word
-      if (next.length > maxLength) break
-      truncated = next
-    }
-
-    return `${(truncated || clean.slice(0, maxLength)).trim()}…`
-  }
-
-  const deriveBlogHeadline = (text = '') => {
-    const base = trimCardTitleEnding(deriveHeadlineKeyword(text))
-    if (!base) return ''
-    if (base.length <= 16) return base
-
-    const tokens = splitCardTokens(base)
-    if (tokens.length > 1) {
-      let compact = ''
-      for (const token of tokens.slice(0, 3)) {
-        const next = compact ? `${compact} ${token}` : token
-        if (next.length > 16) break
-        compact = next
-      }
-      if (compact) return trimCardTitleEnding(compact)
-      return trimCardTitleEnding(tokens[0] || '')
-    }
-
-    return trimCardTitleEnding(base.slice(0, 16))
-  }
-
-  const deriveHeadlineKeyword = (text = '') => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-      .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
-      .trim()
-
-    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
-    if (particleMatch?.[1]) return trimCardTitleEnding(particleMatch[1])
-
-    const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-    if (dividerMatch && dividerMatch.length < clean.length) return trimCardTitleEnding(dividerMatch)
-
-    const words = clean.split(/\s+/).filter(Boolean)
-    if (words.length >= 2) return trimCardTitleEnding(words.slice(0, 2).join(' '))
-    return trimCardTitleEnding(clean)
-  }
-
-  const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
-    const cleanHeading = cleanCardText(heading)
-    const cleanHeadline = cleanCardText(headline)
-    const headingRemainder = cleanHeading
-      .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
-      .trim()
-
-    if (headingRemainder) return headingRemainder
-
-    return cleanCardText(fallbackContent || '')
-      .split(/[.!?\n]/)
-      .map(line => line.trim())
-      .find(Boolean) || cleanHeading
-  }
-
-  const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
-    const cleanKeyPhrase = cleanCardText(keyPhrase)
-    if (cleanKeyPhrase) {
-      return cleanCardText(fallbackContent || '')
-        .split(/[.!?\n]/)
-        .map(line => line.trim())
-        .find(Boolean) || cleanKeyPhrase
-    }
-
-    return deriveDescriptionCopy(heading, deriveBlogHeadline(heading), fallbackContent)
-  }
-
-  const deriveInstagramDetailLines = (card) => {
-    const lines = []
-    const contentText = cleanCardText(card?.content || '')
-    const dataPointText = cleanCardText(card?.dataPoint || '')
-
-    const contentSentences = contentText
-      .split(/(?<=[.!?。！？])\s+|\n+/)
-      .map(sentence => sentence.trim())
-      .filter(Boolean)
-
-    for (const sentence of contentSentences) {
-      if (lines.length >= 3) break
-      lines.push(truncateCardText(sentence, 40))
-    }
-
-    if (dataPointText && lines.length < 3) {
-      lines.push(truncateCardText(dataPointText, 34))
-    }
-
-    if (lines.length === 0 && contentText) {
-      lines.push(truncateCardText(contentText, 40))
-    }
-
-    return lines.slice(0, 3)
-  }
-
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
     if (!text) return ''
@@ -1236,33 +1020,17 @@ export default function ExtractionResultPage() {
                           className="w-full max-w-xl rounded-xl shadow-sm"
                         />
                       ) : (
-                        <div
-                          ref={el => { blogImagesRef.current[index] = el }}
-                          className="w-full max-w-xl rounded-xl overflow-hidden shadow-sm border border-border bg-white relative"
-                        >
-                          <img
-                            src={imageUrl}
-                            alt={section.heading || `블로그 이미지 ${index + 1}`}
-                            className="w-full h-auto block"
-                          />
-                          {showBlogImageTextOverlay && (
-                            <>
-                              <div className="absolute inset-0 bg-black/10 pointer-events-none" />
-                              <div className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none">
-                                <div className="w-[52%] max-w-[280px] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-5 py-5">
-                                  {renderCardHeading(headline, 24)}
-                                  <div className="w-12 h-1 rounded-full mt-3 mb-3 bg-primary/70" />
-                                  <p
-                                    className="text-sm text-gray-600 font-semibold leading-relaxed"
-                                    style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                                  >
-                                    {renderBalancedLines(description, 14)}
-                                  </p>
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
+                        <BlogImageArtwork
+                          innerRef={el => { blogImagesRef.current[index] = el }}
+                          src={imageUrl}
+                          alt={section.heading || `블로그 이미지 ${index + 1}`}
+                          headline={headline}
+                          description={description}
+                          accentColor="#6366f1"
+                          showTextOverlay={showBlogImageTextOverlay}
+                          mode="result"
+                          containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
+                        />
                       )}
                     </div>
                   )}
@@ -1293,13 +1061,6 @@ export default function ExtractionResultPage() {
     const currentCardPngUrl = instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
-    const isCenterCard = instagramCardStyle === 'center-card'
-    const cardTitleFont = isCenterCard ? 'clamp(16px, 2.2vw, 24px)' : 'clamp(15px, 2vw, 22px)'
-    const cardSubtitleFont = isCenterCard ? 'clamp(10px, 1.2vw, 13px)' : 'clamp(10px, 1.1vw, 12px)'
-    const cardPointFont = 'clamp(10px, 1.15vw, 13px)'
-
-    // 카드 한 장의 내부 아트워크. 화면에 보이는 카드는 attachRef=false 로 호출하고,
-    // PNG 캡처용 숨김 컨테이너에서는 attachRef=true 로 호출해 instaCardsRef 를 채운다.
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
       const cardNumber = card?.cardNumber || card?.card_number || cardIndex + 1
       const cardImage = ensureArray(instagramImages).find((image, i) => {
@@ -1309,113 +1070,21 @@ export default function ExtractionResultPage() {
       const imageUrl = cardImage?.imageUrl || cardImage?.url || null
       const cardTitle = card?.title || card?.heading || card?.headline || `인스타 카드 ${cardNumber}`
       const detailLines = deriveInstagramDetailLines(card)
-      // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드 본문이 너무 짧게 보이지 않도록 한다.
       const descriptionLines = detailLines.filter(Boolean)
-      // card.points 가 명시적으로 제공된 레거시 데이터만 별도 포인트 영역으로 노출한다.
       const points = ensureArray(card?.points).map(stripResultCtaText).filter(Boolean)
-
       return (
-        <div
-          ref={attachRef ? (el => { instaCardsRef.current[cardIndex] = el }) : undefined}
-          className={`aspect-square relative ${isCenterCard ? 'bg-gradient-to-br from-violet-100 via-fuchsia-50 to-sky-100' : 'bg-gradient-to-br from-pink-50 via-white to-orange-50'}`}
-        >
-          {imageUrl && (
-            <>
-              <img
-                src={imageUrl}
-                alt={cardImage?.heading || card?.title || card?.heading || `인스타 카드 ${cardNumber}`}
-                className="absolute inset-0 w-full h-full object-cover"
-                loading="lazy"
-              />
-              <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/18'}`} />
-            </>
-          )}
-          {isCenterCard ? (
-            <div className="absolute inset-0 p-[7%] flex items-center justify-center">
-              <div className="w-[70%] rounded-[30px] bg-white/84 backdrop-blur-md border border-white/70 px-[7%] py-[8%] shadow-xl text-center">
-                <div
-                  className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 font-extrabold tracking-[0.18em] text-primary-dark mb-4"
-                  style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
-                >
-                  CARD {String(cardNumber).padStart(2, '0')}
-                </div>
-                <div className="space-y-4">
-                  {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
-                  {descriptionLines.length > 0 && (
-                    <div className="space-y-1.5">
-                      {descriptionLines.map((line, idx) => (
-                        <p
-                          key={idx}
-                          className="text-gray-600"
-                          style={{ fontSize: cardSubtitleFont, lineHeight: 1.7, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                        >
-                          {renderBalancedLines(line, 22)}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-4">
-                  {card?.kicker && (
-                    <span
-                      className={`inline-flex px-3 py-1 rounded-full font-bold ${imageUrl ? 'bg-white/18 text-white backdrop-blur-sm' : 'bg-pink-500/10 text-pink-500'}`}
-                      style={{ fontSize: 'clamp(9px, 1vw, 12px)' }}
-                    >
-                      {card.kicker}
-                    </span>
-                  )}
-                </div>
-                <div
-                  className="rounded-full bg-black/62 px-3 py-1.5 font-bold text-white shadow-sm"
-                  style={{ fontSize: 'clamp(11px, 1.2vw, 14px)' }}
-                >
-                  {cardNumber}
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="rounded-[24px] bg-white/86 px-[5%] py-[4.5%] shadow-sm">
-                  <div className="space-y-3">
-                    {renderCardHeading(cardTitle, cardTitleFont, { light: false })}
-                    {descriptionLines.length > 0 && (
-                      <div className="space-y-1.5">
-                        {descriptionLines.map((line, idx) => (
-                          <p
-                            key={idx}
-                            className="text-gray-600"
-                            style={{ fontSize: cardSubtitleFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                          >
-                            {renderBalancedLines(line, 22)}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {points.length > 0 && (
-                  <div className="rounded-[24px] bg-black/28 backdrop-blur-sm px-[5%] py-[4.5%]">
-                    <ul className="space-y-3">
-                      {points.map((point, i) => (
-                        <li key={i} className="flex items-start gap-3 text-white/92">
-                          <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-white/90" />
-                          <span
-                            style={{ fontSize: cardPointFont, lineHeight: 1.65, wordBreak: 'keep-all', overflowWrap: 'break-word', display: 'inline-block' }}
-                          >
-                            {renderBalancedLines(point, 22)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        <InstagramImageArtwork
+          innerRef={attachRef ? (el => { instaCardsRef.current[cardIndex] = el }) : undefined}
+          imageUrl={imageUrl}
+          alt={cardImage?.heading || card?.title || card?.heading || `인스타 카드 ${cardNumber}`}
+          cardNumber={cardNumber}
+          cardTitle={cardTitle}
+          descriptionLines={descriptionLines}
+          points={points}
+          kicker={card?.kicker}
+          cardStyle={instagramCardStyle}
+          mode="result"
+        />
       )
     }
 
@@ -2023,7 +1692,10 @@ export default function ExtractionResultPage() {
           } else {
             try {
               const scheduledId = scheduleInfo[platform]?.scheduledId || null
-              const savedSchedule = await createScheduledUpload({ platform, content, scheduledAt, extractionId: id, scheduledId })
+              const scheduledContent = platform === 'instagram'
+                ? await buildInstagramScheduledUploadContent({ instagramContent, instagramImages, instaPngUrls })
+                : content
+              const savedSchedule = await createScheduledUpload({ platform, content: scheduledContent, scheduledAt, extractionId: id, scheduledId })
               setScheduleInfo(p => ({
                 ...p,
                 [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
@@ -2073,4 +1745,3 @@ export default function ExtractionResultPage() {
     </div>
   )
 }
-

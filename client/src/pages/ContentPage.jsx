@@ -19,7 +19,7 @@ import {
 import { deleteExtractionChannel, getExtractionsPaged, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
-import { buildInstagramScheduledContent } from '../utils/scheduledPayloads'
+import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 
 const channelConfig = {
   all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
@@ -294,9 +294,12 @@ export default function ContentPage() {
 
     if (channel !== 'blog' && info.status === 'scheduled' && info.scheduledAt) {
       const target = scheduleTarget || editScheduleTarget
+      const instagramScheduledContent = channel === 'instagram'
+        ? await buildInstagramScheduledUploadContent(target?.data)
+        : null
       await createScheduledUpload({
         platform: channel,
-        content: scheduledContent || (channel === 'instagram'
+        content: instagramScheduledContent || scheduledContent || (channel === 'instagram'
           ? buildInstagramScheduledContent(target?.data)
           : { title: target?.title || '' }),
         scheduledAt: new Date(info.scheduledAt).toISOString(),
