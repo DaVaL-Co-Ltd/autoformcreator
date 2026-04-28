@@ -9,6 +9,79 @@ function stripMarkdownEmphasis(text = '') {
     .trim()
 }
 
+function escapeRegExp(text = '') {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function trimBlogBoldCandidate(text = '') {
+  return stripMarkdownEmphasis(String(text || ''))
+    .replace(/[\s,.:;!?/\\]+$/g, '')
+    .trim()
+}
+
+function deriveBlogBoldCandidates(section = {}) {
+  const keyPhrase = trimBlogBoldCandidate(section?.keyPhrase || '')
+  const heading = trimBlogBoldCandidate(section?.heading || '')
+  const candidates = []
+
+  if (keyPhrase) candidates.push(keyPhrase)
+  if (heading && heading !== keyPhrase) candidates.push(heading)
+
+  for (const value of [keyPhrase, heading]) {
+    if (!value) continue
+    const tokens = value.split(/\s+/).filter(Boolean)
+    if (tokens.length >= 2) {
+      const compact = tokens.slice(0, 2).join(' ')
+      if (compact && !candidates.includes(compact)) candidates.push(compact)
+    }
+    if (tokens[0] && !candidates.includes(tokens[0])) candidates.push(tokens[0])
+  }
+
+  return candidates.filter(Boolean)
+}
+
+function applySingleBold(content = '', candidate = '') {
+  const cleanCandidate = trimBlogBoldCandidate(candidate)
+  if (!cleanCandidate) return content
+  if (String(content).includes(`**${cleanCandidate}**`)) return content
+
+  const escapedCandidate = escapeRegExp(cleanCandidate)
+  const regex = new RegExp(`(^|[\\s("'])(${escapedCandidate})(?=($|[\\s,.:;!?)'"]))`)
+  if (!regex.test(content)) return content
+
+  return content.replace(regex, (_, prefix, match) => `${prefix}**${match}**`)
+}
+
+function ensureBlogSectionBold(section = {}) {
+  const content = String(section?.content || '')
+  if (!content.trim()) return section
+  if (/\*\*[^*]+\*\*/.test(content)) return section
+
+  let nextContent = content
+  for (const candidate of deriveBlogBoldCandidates(section)) {
+    const updated = applySingleBold(nextContent, candidate)
+    if (updated !== nextContent) {
+      nextContent = updated
+      break
+    }
+  }
+
+  return {
+    ...section,
+    content: nextContent,
+  }
+}
+
+function finalizeBlogContent(content) {
+  if (!content) return content
+  return {
+    ...content,
+    sections: Array.isArray(content.sections)
+      ? content.sections.map(ensureBlogSectionBold)
+      : [],
+  }
+}
+
 function sanitizeInstagramContent(content) {
   if (!content) return content
   return {
@@ -222,7 +295,7 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
   }
 
   return {
-    blog: four?.blog || null,
+    blog: finalizeBlogContent(four?.blog || null),
     newsletter: four?.newsletter || null,
     instagram: sanitizeInstagramContent(four?.instagram || null),
     shorts: sanitizeShortsContent(four?.shorts || null),
@@ -299,6 +372,7 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis, 
     }
   }
 
+  if (output.blog) output.blog = finalizeBlogContent(output.blog)
   if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram)
   if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
@@ -321,7 +395,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 {"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })
+  return finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' }))
 }
 
 export async function generateNewsletterContent(summary, rawText, emphasis, options = {}) {

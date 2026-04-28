@@ -13,7 +13,7 @@ import {
   generateBlogContent, generateNewsletterContent,
   generateInstagramContent, generateShortsScript
 } from '../services/gemini-content'
-import { generateBlogImages, generateInstagramImages } from '../services/flux'
+import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 

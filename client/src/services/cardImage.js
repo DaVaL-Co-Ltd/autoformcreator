@@ -103,9 +103,11 @@ export async function generateBlogImages(sections, options = {}) {
   const styleHint = options.imageStyle && options.imageStyle !== 'auto' && STYLE_PROMPTS[options.imageStyle]
     ? STYLE_PROMPTS[options.imageStyle]
     : STYLE_PROMPTS.pastel
+  const reuseSingleBackground = options.textOverlay !== 'without-text'
   const isPhotoStyle = options.imageStyle === 'photo'
   const extraHint = options.extra ? ` ${options.extra}.` : ''
-  const targetSections = (isPhotoStyle ? sections : sections.slice(0, 1)).filter(Boolean)
+  const allSections = sections.filter(Boolean)
+  const targetSections = reuseSingleBackground ? allSections.slice(0, 1) : allSections
 
   const results = []
   for (let i = 0; i < targetSections.length; i++) {
@@ -148,6 +150,17 @@ export async function generateBlogImages(sections, options = {}) {
       })
     }
   }
+
+  if (reuseSingleBackground) {
+    const sharedImage = results[0]?.imageUrl || null
+    return allSections.map((section) => ({
+      heading: section.heading,
+      imageUrl: sharedImage,
+      keyPhrase: section.keyPhrase || section.heading,
+      style: 'overlay',
+    }))
+  }
+
   return results
 }
 

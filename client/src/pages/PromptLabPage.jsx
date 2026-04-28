@@ -16,7 +16,7 @@ import {
   generateNewsletterContent,
   generateShortsScript,
 } from '../services/gemini-content'
-import { generateBlogImages, generateInstagramImages } from '../services/flux'
+import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
 
 const DEFAULT_SOURCE_TEXT = `2026 디지털 교육 전환 보고서
 초중등 교육기관의 78.4%가 AI 기반 학습 플랫폼을 도입했고, 대학 및 평생교육기관의 LMS 활용률은 83.1%까지 확대됐습니다.
