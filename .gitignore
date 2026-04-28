@@ -6,6 +6,8 @@ dist/
 *.log
 api/uploads/
 .omc/
+.omx/
+.tmp/
 
 # OAuth secrets
 server/client_secret.json
