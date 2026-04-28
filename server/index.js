@@ -2317,7 +2317,17 @@ app.post('/api/scheduled/run', async (req, res) => {
             }
           }
 
-          const result = await publishInstagramPostV2({ imageUrls, caption })
+          // Instagram Graph API는 공개 HTTPS URL만 받으므로 data: URL을 Supabase Storage 공개 URL로 치환한다.
+          const publicImageUrls = []
+          for (const url of imageUrls) {
+            if (typeof url === 'string' && url.startsWith('data:')) {
+              publicImageUrls.push(await uploadDataUrlToStorage(url))
+            } else if (url) {
+              publicImageUrls.push(url)
+            }
+          }
+
+          const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption })
           uploadResult = { url: result.permalink, mediaId: result.mediaId }
 
         } else {
