@@ -196,6 +196,9 @@ ${buildBlogTitleRules()}
 - body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - 카드 주제는 6~10개로 구성하세요.
 - cardTopics는 카드 이미지 생성에 사용되므로 headline/content/dataPoint를 짧고 명확하게 작성하세요.
+- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요. 전체 분량은 600~1200자(공백 포함) 수준으로, 블로그 본문보다 짧지만 한 호흡에 읽기 좋게 작성하세요.
+- caption 첫 문단은 시선을 끄는 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요.
+- caption에는 해시태그(#)를 포함하지 마세요. 해시태그는 hashtags 필드에만 작성하세요.
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
@@ -329,6 +332,8 @@ async function retryNonLongform(channels, summary, rawText, emphasis, options = 
 
 ## 인스타그램 규칙
 - body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요. 전체 분량은 600~1200자(공백 포함) 수준으로 작성하세요.
+- caption 첫 문단은 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요. 해시태그(#)는 caption에 포함하지 말고 hashtags 필드에만 작성하세요.
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
@@ -425,10 +430,16 @@ export async function generateInstagramContent(summary, rawText, emphasis, optio
 - cardTopics는 6~10개로 구성하세요.
 - 각 카드 문구는 짧고 명확하게 작성하세요.
 
+## caption 작성 규칙
+- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요.
+- 전체 분량은 600~1200자(공백 포함) 수준으로 작성하세요. 블로그 본문보다는 짧지만 한 호흡에 읽기 좋도록 충분히 풍부하게 쓰세요.
+- 첫 문단은 시선을 끄는 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요.
+- 해시태그(#)는 caption에 포함하지 마세요. 해시태그는 hashtags 필드에만 작성하세요.
+
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
+{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션 본문(줄글, 600~1200자)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return sanitizeInstagramContent(
