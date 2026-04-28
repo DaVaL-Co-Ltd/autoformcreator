@@ -580,6 +580,52 @@ export default function ExtractionPage() {
     return line2 ? [line1, line2] : [clean]
   }
 
+  // 단어/특수문자 단위로 분리한 뒤 minimax 분할로 각 줄 길이가 비슷해지도록 균형을 맞춘다.
+  // 마지막 줄에 단어 한 개만 남는 경우 앞 줄 단어를 함께 끌어내려 자연스럽게 채운다.
+  const balanceLines = (text, maxLineLength) => {
+    const clean = trimCardTitleEnding(cleanCardText(text || ''))
+    if (!clean) return []
+    if (clean.length <= maxLineLength) return [clean]
+    const tokens = splitCardTokens(clean)
+    if (tokens.length <= 1) return [clean]
+
+    const partition = (toks, maxLen) => {
+      const lines = []
+      let line = ''
+      for (const t of toks) {
+        const next = line ? `${line} ${t}` : t
+        if (next.length > maxLen && line) { lines.push(line); line = t }
+        else line = next
+      }
+      if (line) lines.push(line)
+      return lines
+    }
+
+    const greedy = partition(tokens, maxLineLength)
+    const lineCount = greedy.length
+    if (lineCount <= 1) return greedy
+
+    let lo = Math.max(...tokens.map(t => t.length))
+    let hi = clean.length
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2)
+      if (partition(tokens, mid).length <= lineCount) hi = mid
+      else lo = mid + 1
+    }
+    return partition(tokens, lo)
+  }
+
+  const renderBalancedLines = (text, maxLineLength) => {
+    const lines = balanceLines(text, maxLineLength)
+    if (lines.length === 0) return null
+    return lines.map((line, idx) => (
+      <span key={idx}>
+        {idx > 0 && <br />}
+        {line}
+      </span>
+    ))
+  }
+
   const renderCardHeading = (text, fontSize) => {
     const clean = trimCardTitleEnding(cleanCardText(text))
     const lines = splitHeading(clean)
@@ -741,8 +787,11 @@ export default function ExtractionPage() {
             <div className="rounded-[24px] bg-white/92 border border-white/85 shadow-lg px-5 py-4">
               {renderCardHeading(headline, 22)}
               {description && (
-                <p className="mt-2 text-[13px] font-semibold text-gray-600 leading-relaxed">
-                  {description}
+                <p
+                  className="mt-2 text-[13px] font-semibold text-gray-600 leading-relaxed"
+                  style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                >
+                  {renderBalancedLines(description, 22)}
                 </p>
               )}
             </div>
@@ -755,8 +804,11 @@ export default function ExtractionPage() {
             <div className="rounded-xl bg-white/92 border border-white/85 shadow-sm px-2.5 py-2">
               {renderCardHeading(headline, 7)}
               {description && (
-                <p className="mt-1 text-[5px] font-semibold text-gray-600 leading-tight">
-                  {description}
+                <p
+                  className="mt-1 text-[5px] font-semibold text-gray-600 leading-tight"
+                  style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                >
+                  {renderBalancedLines(description, 18)}
                 </p>
               )}
             </div>
@@ -773,8 +825,11 @@ export default function ExtractionPage() {
             {renderCardHeading(headline, 24)}
             <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
             {description && (
-              <p className="text-[13px] text-gray-600 font-semibold leading-relaxed">
-                {description}
+              <p
+                className="text-[13px] text-gray-600 font-semibold leading-relaxed"
+                style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+              >
+                {renderBalancedLines(description, 14)}
               </p>
             )}
           </div>
@@ -788,8 +843,11 @@ export default function ExtractionPage() {
             {renderCardHeading(headline, 7)}
             <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
             {description && (
-              <p className="text-[5px] text-gray-600 font-semibold leading-tight">
-                {description}
+              <p
+                className="text-[5px] text-gray-600 font-semibold leading-tight"
+                style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+              >
+                {renderBalancedLines(description, 14)}
               </p>
             )}
           </div>

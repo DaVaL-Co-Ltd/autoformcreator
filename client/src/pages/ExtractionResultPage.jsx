@@ -619,7 +619,7 @@ export default function ExtractionResultPage() {
     setBlogServerStatus('checking')
     // 블로그 탭일 때만 상태 체크
     if (activeMenu !== 'blog' || USE_REMOTE_BLOG_PUBLISH) { setBlogServerStatus('offline'); return }
-    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000) })
+    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000), targetAddressSpace: 'local' })
       .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
       .catch(() => setBlogServerStatus('offline'))
   }, [activeMenu])
@@ -1249,8 +1249,11 @@ export default function ExtractionResultPage() {
                                 <div className="w-[52%] max-w-[280px] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-5 py-5">
                                   {renderCardHeading(headline, 24)}
                                   <div className="w-12 h-1 rounded-full mt-3 mb-3 bg-primary/70" />
-                                  <p className="text-sm text-gray-600 font-semibold leading-relaxed">
-                                    {description}
+                                  <p
+                                    className="text-sm text-gray-600 font-semibold leading-relaxed"
+                                    style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+                                  >
+                                    {renderBalancedLines(description, 14)}
                                   </p>
                                 </div>
                               </div>
