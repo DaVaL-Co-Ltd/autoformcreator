@@ -257,11 +257,12 @@ function parseBoldInlineSegments(text) {
 }
 
 async function toggleBoldFormatting(page) {
-  await releaseFormattingModifiers(page)
+  // releaseFormattingModifiers 는 typeMultilineWithFormatting 진입 시 1회만 호출 → 매 토글마다 4개의 keyup
+  // 이벤트를 발생시켜 SmartEditor 툴바를 매번 재렌더링시키던 비용을 제거한다.
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyB')
   await page.keyboard.up('Control')
-  await sleep(120)
+  await sleep(50)
 }
 
 function getFormattingScopes(page) {
@@ -330,6 +331,103 @@ async function findBoldButtonState(scope) {
   })
 }
 
+// SmartEditor 의 소제목/제목 스타일 버튼을 시도. 클릭 성공 여부를 반환하고, 실패하면 호출자가 우회한다.
+// SmartEditor 2 의 단락 스타일은 통상 툴바 드롭다운 내 "소제목 1/2/3" 또는 "제목" 버튼이며,
+// aria-label/data 속성/클래스 명이 환경마다 다를 수 있어 후보 셀렉터를 다중 시도한다.
+async function clickSubheadingButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="소제목"]',
+      'button[aria-label*="제목 1"]',
+      'button[aria-label*="제목 2"]',
+      'button[aria-label*="제목 3"]',
+      'button[aria-label*="Heading"]',
+      'button[aria-label*="Subtitle"]',
+      '[role="button"][aria-label*="소제목"]',
+      '[role="button"][aria-label*="제목"]',
+      '[data-name="header1"]',
+      '[data-name="header2"]',
+      '[data-name="header3"]',
+      '[data-name="heading"]',
+      '[data-name="subtitle"]',
+      '[data-click-area*="header"]',
+      '[data-click-area*="heading"]',
+      '[data-click-area*="subtitle"]',
+      'button.se-toolbar-item-h1',
+      'button.se-toolbar-item-h2',
+      'button.se-toolbar-item-h3',
+      'button.se-toolbar-item-headline',
+      'button.se-toolbar-item-subtitle',
+      'button.se-toolbar-item-paragraph-style',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize(element.getAttribute('aria-label') || element.textContent)
+      if (text.includes('소제목')) return 100
+      if (text.includes('제목 2')) return 95
+      if (text.includes('제목 1')) return 90
+      if (text.includes('제목 3')) return 85
+      if (text.includes('subtitle')) return 80
+      if (text.includes('heading')) return 75
+      if (normalize(element.getAttribute('data-name') || '').includes('header')) return 70
+      if (normalize(element.getAttribute('data-click-area') || '').includes('header')) return 65
+      if (normalize(element.className).includes('headline') || normalize(element.className).includes('subtitle')) return 60
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((a, b) => score(b) - score(a))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
+// 호출 측에서 토글 상태를 추적해 setSubheadingFormatting(page, true/false, currentState) 식으로 사용.
+// 버튼이 없으면 currentState 를 그대로 반환해 다음 호출도 wraparound 으로 자연스럽게 무력화된다.
+let subheadingButtonAvailable = null
+async function setSubheadingFormatting(page, enabled, currentState) {
+  if (currentState === enabled) return currentState
+  if (subheadingButtonAvailable === false) return currentState  // 이전에 시도했고 부재 확인됨
+
+  // releaseFormattingModifiers 는 typeMultilineWithFormatting 진입 시 1회만 호출 → 매 토글마다
+  // 불필요한 keyup 이벤트로 SmartEditor 툴바가 재렌더링되던 비용을 제거한다.
+  const scopes = getFormattingScopes(page)
+  let clicked = false
+  for (const scope of scopes) {
+    try {
+      if (await clickSubheadingButton(scope)) {
+        clicked = true
+        break
+      }
+    } catch {}
+  }
+
+  if (!clicked) {
+    if (subheadingButtonAvailable === null) {
+      subheadingButtonAvailable = false
+      console.warn('[Naver Upload] Subheading toolbar button not found — sections will use bold-only formatting (no enlarged size).')
+    }
+    return currentState
+  }
+
+  subheadingButtonAvailable = true
+  await sleep(80)
+  return enabled
+}
+
 async function clickBoldButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
@@ -388,13 +486,29 @@ async function setBoldFormatting(page, enabled, currentState) {
   return enabled
 }
 
+// `## ` 로 시작하는 라인은 클라이언트가 섹션 제목임을 표시한 것 — SmartEditor 의 소제목 스타일을 토글한다.
+const SUBHEADING_PREFIX = /^##\s+/
+
 async function typeMultilineWithFormatting(page, text) {
   // **bold** 외 자동 포맷 트리거 마커(취소선 등)를 제거해 SmartEditor 가 타이핑 중 취소선을 토글하는 것을 방지한다.
   const lines = sanitizeForFormattingTyping(text).split(/\r?\n/)
+  // 잔여 modifier 상태가 있다면 1회만 정리. 이후 토글마다 keyup 이벤트를 반복 발생시키지 않는다.
+  await releaseFormattingModifiers(page)
   let boldEnabled = false
+  let subheadingEnabled = false
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex]
+    let line = lines[lineIndex]
+    const isSubheading = SUBHEADING_PREFIX.test(line)
+    if (isSubheading) {
+      // `## ` 마커는 어떤 경우에도 본문에 노출되지 않도록 제거한다 (소제목 토글 성공 여부와 무관).
+      line = line.replace(SUBHEADING_PREFIX, '')
+      subheadingEnabled = await setSubheadingFormatting(page, true, subheadingEnabled)
+    } else if (subheadingEnabled) {
+      // 일반 본문 줄로 돌아왔으면 소제목 모드 해제
+      subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
+    }
+
     const inlineSegments = parseBoldInlineSegments(line)
 
     for (const segment of inlineSegments) {
@@ -402,10 +516,10 @@ async function typeMultilineWithFormatting(page, text) {
 
       if (segment.bold) {
         boldEnabled = await setBoldFormatting(page, true, boldEnabled)
-        await page.keyboard.type(segment.text, { delay: 20 })
+        await page.keyboard.type(segment.text, { delay: 12 })
         boldEnabled = await setBoldFormatting(page, false, boldEnabled)
       } else {
-        await page.keyboard.type(segment.text, { delay: 20 })
+        await page.keyboard.type(segment.text, { delay: 12 })
       }
     }
 
@@ -416,6 +530,9 @@ async function typeMultilineWithFormatting(page, text) {
   }
 
   await setBoldFormatting(page, false, boldEnabled)
+  if (subheadingEnabled) {
+    await setSubheadingFormatting(page, false, subheadingEnabled)
+  }
 }
 
 function getDebugDir() {

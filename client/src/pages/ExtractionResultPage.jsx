@@ -629,9 +629,12 @@ export default function ExtractionResultPage() {
   }, [activeMenu, checkBlogServer])
 
   // compileBlogBody: sections를 [IMG:N] 마커 포함 본문으로 생성
+  // 섹션 제목은 `## **...**` 로 감싸 데스크톱 RPA 가 SmartEditor 소제목 스타일(큰 글씨)을 토글하면서
+  // 동시에 볼드를 적용하도록 한다. 소제목 토글 실패 시에도 ** 마커는 그대로 살아 있어 볼드 처리는 보장된다.
   const compileBlogBody = useCallback((sections = []) => {
     return ensureArray(sections).map((s, i) => {
-      const heading = s.heading ? `${s.heading}\n` : ''
+      const headingText = String(s.heading || '').trim()
+      const heading = headingText ? `## **${headingText}**\n` : ''
       const content = s.content || ''
       const imageMarker = `[IMG:${i + 1}]\n`
       return `${heading}${imageMarker}${content}`
@@ -1892,11 +1895,29 @@ export default function ExtractionResultPage() {
                     </button>
                   )}
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      let resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
+                      if (ch === 'instagram' && !resolvedInstaPngUrls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
+                        try {
+                          await convertInstaCardsToPng()
+                          await new Promise((resolve) => setTimeout(resolve, 200))
+                          resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
+                          if (!resolvedInstaPngUrls.length) {
+                            resolvedInstaPngUrls = (await Promise.all(
+                              (instaCardsRef.current || []).filter(Boolean).map(async (el, idx) => {
+                                try { return await captureElementPng(el, `Instagram schedule capture ${idx + 1}`) }
+                                catch { return null }
+                              })
+                            )).filter(Boolean)
+                          }
+                        } catch (err) {
+                          console.warn('[Schedule] 인스타 카드 PNG 캡처 실패:', err)
+                        }
+                      }
                       const contentMap = {
                         blog: blogContent,
                         newsletter: newsletterContent,
-                        instagram: buildInstagramScheduledContent({ instagramContent, instagramImages }),
+                        instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
                         shorts: shortsScript,
                       }
                       setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
