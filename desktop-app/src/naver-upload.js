@@ -677,6 +677,8 @@ async function recoverFormattingContext(page) {
 }
 
 async function setStrikethroughFormatting(page, enabled, currentState) {
+  if (currentState === enabled) return currentState
+
   const scopes = getFormattingScopes(page)
   const readStrikethroughState = async () => {
     for (const scope of scopes) {
@@ -718,6 +720,8 @@ async function setStrikethroughFormatting(page, enabled, currentState) {
 }
 
 async function setBoldFormatting(page, enabled, currentState) {
+  if (currentState === enabled) return currentState
+
   const scopes = getFormattingScopes(page)
   const readBoldState = async () => {
     for (const scope of scopes) {
@@ -960,8 +964,12 @@ async function typeMultilineWithFormatting(page, text) {
     }
 
     if (lineIndex < lines.length - 1) {
-      strikethroughEnabled = await setStrikethroughFormatting(page, false, strikethroughEnabled)
-      boldEnabled = await setBoldFormatting(page, false, boldEnabled)
+      if (strikethroughEnabled) {
+        strikethroughEnabled = await setStrikethroughFormatting(page, false, strikethroughEnabled)
+      }
+      if (boldEnabled) {
+        boldEnabled = await setBoldFormatting(page, false, boldEnabled)
+      }
       if (isSubheading) {
         subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
         fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
@@ -973,8 +981,12 @@ async function typeMultilineWithFormatting(page, text) {
     }
   }
 
-  await setStrikethroughFormatting(page, false, strikethroughEnabled)
-  await setBoldFormatting(page, false, boldEnabled)
+  if (strikethroughEnabled) {
+    await setStrikethroughFormatting(page, false, strikethroughEnabled)
+  }
+  if (boldEnabled) {
+    await setBoldFormatting(page, false, boldEnabled)
+  }
   if (subheadingEnabled) {
     await setSubheadingFormatting(page, false, subheadingEnabled)
   }
