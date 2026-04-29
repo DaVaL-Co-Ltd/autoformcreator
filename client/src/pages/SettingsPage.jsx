@@ -30,6 +30,7 @@ import {
   waitForYoutubeReconnect,
 } from '../services/platformSessions'
 import { getAll, loadAll as loadPlatformConnections, updateDisplay } from '../utils/platformConnections'
+import { getBlogUploadShowBrowser, setBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 
 const sections = [
   { id: 'desktop-helper', label: '블로그 서버 설치', icon: MonitorDown },
@@ -201,6 +202,7 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState(
     VALID_SECTION_IDS.has(initialSection) ? initialSection : 'desktop-helper'
   )
+  const [showBlogUploadBrowser, setShowBlogUploadBrowserState] = useState(() => getBlogUploadShowBrowser())
 
   const [footerDrafts, setFooterDrafts] = useState(() => {
     const all = getAll()
@@ -334,6 +336,11 @@ export default function SettingsPage() {
   const selectSection = (sectionId) => {
     setActiveSection(sectionId)
     setSearchParams({ section: sectionId }, { replace: true })
+  }
+
+  const handleBlogUploadBrowserToggle = (nextValue) => {
+    setShowBlogUploadBrowserState(nextValue)
+    setBlogUploadShowBrowser(nextValue)
   }
 
   const handleFooterSave = async (key) => {
@@ -550,6 +557,36 @@ export default function SettingsPage() {
               <div className="rounded-2xl border border-border bg-surface-light p-5">
                 <h4 className="text-sm font-semibold text-text mb-3">운영 메모</h4>
                 <div className="space-y-3 text-sm text-text-muted leading-6">
+                  <button
+                    type="button"
+                    onClick={() => handleBlogUploadBrowserToggle(!showBlogUploadBrowser)}
+                    className={`mb-1 flex w-full items-start justify-between gap-4 rounded-2xl border px-4 py-4 text-left transition-all ${
+                      showBlogUploadBrowser
+                        ? 'border-primary/30 bg-primary/5'
+                        : 'border-border bg-white hover:bg-surface'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-sm font-semibold text-text">
+                        {showBlogUploadBrowser ? 'RPA 작동 과정 보이기' : 'RPA 창 숨기기'}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-text-muted">
+                        켜면 네이버 블로그 RPA 브라우저 창이 보여서 진행 과정을 직접 확인할 수 있고,
+                        끄면 창을 숨긴 상태로 백그라운드 업로드를 진행합니다.
+                      </p>
+                    </div>
+                    <span
+                      className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-all ${
+                        showBlogUploadBrowser ? 'bg-primary' : 'bg-slate-300'
+                      }`}
+                    >
+                      <span
+                        className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                          showBlogUploadBrowser ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </span>
+                  </button>
                   <p>helper가 켜져 있지 않으면 블로그 업로드는 실패합니다.</p>
                   <p>세션이 만료되면 설정 페이지 또는 helper 쪽에서 다시 로그인하면 됩니다.</p>
                   <p>네이버 예약 발행은 업로드 시점에 네이버 자체 예약으로 등록되므로 예약 뒤에는 서버를 계속 켜둘 필요가 없습니다.</p>

@@ -84,16 +84,16 @@ function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-// SmartEditor가 입력 중 auto-format으로 변환하는 마커들 제거 (취소선 등 방지)
-// 단, 볼드 처리는 parseBoldInlineSegments가 별도로 처리하므로 ** 는 여기서 제거 안 함
+// SmartEditor가 ?�력 �?auto-format?�로 변?�하??마커???�거 (취소????방�?)
+// ?? 볼드 처리??parseBoldInlineSegments가 별도�?처리?��?�?** ???�기???�거 ????
 function stripAutoFormatMarkers(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소선 마커
-    .replace(/--([^-\n]+)--/g, '$1')  // 일부 에디터 취소선
-    .replace(/__([^_]+)__/g, '$1')   // 굵게/밑줄 (언더스코어 변형)
-    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // 이탤릭 변형
-    .replace(/`([^`]+)`/g, '$1')      // 인라인 코드
-    .replace(/~/g, '')                // 잔여 단일 ~ (auto-format 트리거)
+    .replace(/~~([^~]+)~~/g, '$1')   // 취소??마커
+    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
+    .replace(/__([^_]+)__/g, '$1')   // 굵게/밑줄 (?�더?�코??변??
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // ?�탤�?변??
+    .replace(/`([^`]+)`/g, '$1')      // ?�라??코드
+    .replace(/~/g, '')                // ?�여 ?�일 ~ (auto-format ?�리�?
 }
 
 function typeMultiline(page, text) {
@@ -149,13 +149,15 @@ function getFormattingScopes(page) {
 async function findBoldButtonState(scope) {
   return scope.evaluate(() => {
     const candidates = [
-      'button[aria-label*="굵게"]',
-      '[role="button"][aria-label*="굵게"]',
       'button[aria-label*="bold" i]',
       '[role="button"][aria-label*="bold" i]',
+      'button[title*="bold" i]',
+      '[role="button"][title*="bold" i]',
       '[data-click-area*="bold"]',
       '[data-name="bold"]',
       '[data-command="bold"]',
+      '[data-tool="bold"]',
+      '[data-testid*="bold"]',
       'button.se-toolbar-item-bold',
       '.se-toolbar-item-bold button',
     ]
@@ -169,12 +171,18 @@ async function findBoldButtonState(scope) {
     }
 
     const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('굵게')) return 100
-      if (text.includes('bold')) return 90
-      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
-      if (normalize(element.className).includes('bold')) return 60
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('bold')) return 100
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 90
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 80
+      if (normalize(element.className).includes('bold')) return 70
       return 0
     }
 
@@ -188,31 +196,44 @@ async function findBoldButtonState(scope) {
 
     const ariaPressed = normalize(button.getAttribute('aria-pressed'))
     const ariaChecked = normalize(button.getAttribute('aria-checked'))
+    const dataActive = normalize(button.getAttribute('data-active'))
+    const dataSelected = normalize(button.getAttribute('data-selected'))
     const classText = normalize(button.className)
     const parentClassText = normalize(button.parentElement?.className)
     const active = ariaPressed === 'true' ||
       ariaChecked === 'true' ||
+      dataActive === 'true' ||
+      dataSelected === 'true' ||
       classText.includes('active') ||
       classText.includes('selected') ||
       classText.includes('on') ||
+      classText.includes('is-active') ||
+      classText.includes('is-selected') ||
       parentClassText.includes('active') ||
       parentClassText.includes('selected') ||
-      parentClassText.includes('on')
+      parentClassText.includes('on') ||
+      parentClassText.includes('is-active') ||
+      parentClassText.includes('is-selected')
 
-    return { active }
+    return {
+      active,
+      selectorText: button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '',
+    }
   })
 }
 
 async function clickBoldButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
-      'button[aria-label*="굵게"]',
-      '[role="button"][aria-label*="굵게"]',
       'button[aria-label*="bold" i]',
       '[role="button"][aria-label*="bold" i]',
+      'button[title*="bold" i]',
+      '[role="button"][title*="bold" i]',
       '[data-click-area*="bold"]',
       '[data-name="bold"]',
       '[data-command="bold"]',
+      '[data-tool="bold"]',
+      '[data-testid*="bold"]',
       'button.se-toolbar-item-bold',
       '.se-toolbar-item-bold button',
     ]
@@ -226,12 +247,18 @@ async function clickBoldButton(scope) {
     }
 
     const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('굵게')) return 100
-      if (text.includes('bold')) return 90
-      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
-      if (normalize(element.className).includes('bold')) return 60
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('bold')) return 100
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 90
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 80
+      if (normalize(element.className).includes('bold')) return 70
       return 0
     }
 
@@ -255,20 +282,294 @@ async function releaseFormattingModifiers(page) {
   }
 }
 
+async function recoverFormattingContext(page) {
+  try {
+    const targets = getEditorTargets(page)
+    await dismissEditorPopups(page, targets)
+    await focusField(page, targets, BODY_SELECTORS, 'body')
+    await sleep(120)
+  } catch {}
+}
+
 async function setBoldFormatting(page, enabled, currentState) {
+  const scopes = getFormattingScopes(page)
+  const readBoldState = async () => {
+    for (const scope of scopes) {
+      try {
+        const state = await findBoldButtonState(scope)
+        if (state && typeof state.active === 'boolean') {
+          return state.active
+        }
+      } catch {}
+    }
+    return null
+  }
+
+  let observedState = await readBoldState()
+  if (observedState === null) {
+    await recoverFormattingContext(page)
+    observedState = await readBoldState()
+  }
+  if (observedState === enabled) return enabled
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await toggleBoldFormatting(page)
+    const nextState = await readBoldState()
+    if (nextState === enabled) {
+      return enabled
+    }
+    if (nextState === null) {
+      for (const scope of scopes) {
+        try {
+          if (await clickBoldButton(scope)) {
+            await sleep(80)
+            const clickedState = await readBoldState()
+            if (clickedState === enabled) {
+              return enabled
+            }
+            break
+          }
+        } catch {}
+      }
+      await recoverFormattingContext(page)
+      await sleep(80)
+    }
+  }
+
+  return observedState === null ? enabled : observedState
+}
+
+async function clickSubheadingButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="Heading" i]',
+      'button[aria-label*="Subtitle" i]',
+      '[role="button"][aria-label*="Heading" i]',
+      '[role="button"][aria-label*="Subtitle" i]',
+      '[data-name="header1"]',
+      '[data-name="header2"]',
+      '[data-name="header3"]',
+      '[data-name="heading"]',
+      '[data-name="subtitle"]',
+      '[data-click-area*="header"]',
+      '[data-click-area*="heading"]',
+      '[data-click-area*="subtitle"]',
+      'button.se-toolbar-item-h1',
+      'button.se-toolbar-item-h2',
+      'button.se-toolbar-item-h3',
+      'button.se-toolbar-item-headline',
+      'button.se-toolbar-item-subtitle',
+      'button.se-toolbar-item-paragraph-style',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-click-area'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('subtitle')) return 100
+      if (text.includes('heading')) return 95
+      if (text.includes('header2')) return 90
+      if (text.includes('header1')) return 85
+      if (text.includes('header3')) return 80
+      if (text.includes('header')) return 75
+      if (normalize(element.className).includes('headline') || normalize(element.className).includes('subtitle')) return 70
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
+async function clickFontSizeButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="글???�기"]',
+      '[role="button"][aria-label*="글???�기"]',
+      'button[aria-label*="font size" i]',
+      '[role="button"][aria-label*="font size" i]',
+      '[data-name="fontSize"]',
+      '[data-name="fontsize"]',
+      '[data-command="fontSize"]',
+      '[data-click-area*="font"]',
+      'button.se-toolbar-item-font-size',
+      '.se-toolbar-item-font-size button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('글???�기')) return 100
+      if (text.includes('font size')) return 95
+      if (normalize(element.getAttribute('data-name')).includes('fontsize')) return 85
+      if (normalize(element.getAttribute('data-click-area')).includes('font')) return 75
+      if (normalize(element.className).includes('font')) return 65
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
+async function clickFontSizeOption(scope, sizeLabel) {
+  return scope.evaluate((targetSize) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const target = normalize(targetSize)
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const matchesTarget = (element) => {
+      const values = [
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('data-value'),
+        element.getAttribute('value'),
+      ].map(normalize)
+
+      return values.some((value) => value === target || value === `${target}px` || value.startsWith(`${target}px`) || value.includes(` ${target}`))
+    }
+
+    const option = Array.from(document.querySelectorAll('button, [role="button"], [role="option"], li, [data-value], [value]'))
+      .filter((element) => element instanceof HTMLElement && isVisible(element) && matchesTarget(element))[0]
+
+    if (!option) return false
+    option.click()
+    return true
+  }, sizeLabel)
+}
+
+let subheadingButtonAvailable = null
+let fontSizeControlAvailable = null
+
+async function setSubheadingFormatting(page, enabled, currentState) {
   if (currentState === enabled) return currentState
-  await toggleBoldFormatting(page)
+  if (subheadingButtonAvailable === false) return currentState
+
+  const scopes = getFormattingScopes(page)
+  let clicked = false
+  for (const scope of scopes) {
+    try {
+      if (await clickSubheadingButton(scope)) {
+        clicked = true
+        break
+      }
+    } catch {}
+  }
+
+  if (!clicked) {
+    if (subheadingButtonAvailable === null) {
+      subheadingButtonAvailable = false
+      console.warn('[Naver Blog] Subheading toolbar button not found ??headings will use bold-only formatting.')
+    }
+    return currentState
+  }
+
+  subheadingButtonAvailable = true
+  await sleep(80)
   return enabled
 }
 
+async function setFontSizeFormatting(page, sizeLabel, currentState) {
+  if (currentState === sizeLabel) return currentState
+  if (fontSizeControlAvailable === false) return currentState
+
+  const scopes = getFormattingScopes(page)
+  let applied = false
+  for (const scope of scopes) {
+    try {
+      if (!(await clickFontSizeButton(scope))) continue
+      await sleep(80)
+      if (await clickFontSizeOption(scope, sizeLabel)) {
+        applied = true
+        break
+      }
+    } catch {}
+  }
+
+  if (!applied) {
+    if (fontSizeControlAvailable === null) {
+      fontSizeControlAvailable = false
+      console.warn('[Naver Blog] Font size control not found ??headings will keep the editor default size.')
+    }
+    return currentState
+  }
+
+  fontSizeControlAvailable = true
+  await sleep(80)
+  return sizeLabel
+}
+
+const SUBHEADING_PREFIX = /^##\s+/
+const SUBHEADING_FONT_SIZE = '24'
+const BODY_FONT_SIZE = '16'
+
 async function typeMultilineWithFormatting(page, text) {
-  // 볼드 마커(**)는 parseBoldInlineSegments가 처리하므로 보존
-  // 그 외 ~~, __, _, --, ` 등 auto-format 트리거 마커만 제거
+  // 볼드 마커(**)??parseBoldInlineSegments가 처리?��?�?보존
+  // �???~~, __, _, --, ` ??auto-format ?�리�?마커�??�거
   const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
+  await recoverFormattingContext(page)
   let boldEnabled = false
+  let subheadingEnabled = false
+  let fontSize = null
+  boldEnabled = await setBoldFormatting(page, false, boldEnabled)
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex]
+    let line = lines[lineIndex]
+    const isSubheading = SUBHEADING_PREFIX.test(line)
+    if (isSubheading) {
+      line = line.replace(SUBHEADING_PREFIX, '')
+      subheadingEnabled = await setSubheadingFormatting(page, true, subheadingEnabled)
+      fontSize = await setFontSizeFormatting(page, SUBHEADING_FONT_SIZE, fontSize)
+    } else if (subheadingEnabled) {
+      subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
+      fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
+    }
+
     const inlineSegments = parseBoldInlineSegments(line)
 
     for (const segment of inlineSegments) {
@@ -285,11 +586,24 @@ async function typeMultilineWithFormatting(page, text) {
 
     if (lineIndex < lines.length - 1) {
       boldEnabled = await setBoldFormatting(page, false, boldEnabled)
+      if (isSubheading) {
+        subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
+        fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
+      }
       await page.keyboard.press('Enter')
+      if (isSubheading) {
+        await recoverFormattingContext(page)
+      }
     }
   }
 
   await setBoldFormatting(page, false, boldEnabled)
+  if (subheadingEnabled) {
+    await setSubheadingFormatting(page, false, subheadingEnabled)
+  }
+  if (fontSize) {
+    await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
+  }
 }
 
 function ensureDebugDir() {
@@ -622,7 +936,7 @@ async function clickPublishButtonByDom(scope, which = 'first') {
         .filter(isVisible)
         .find((element) => {
           const text = normalize(element.textContent)
-          return text.includes('카테고리') && text.includes('공개 설정') && text.includes('발행 시간')
+          return text.includes('카테고리') && text.includes('공개 ?�정') && text.includes('발행 ?�간')
         })
 
       if (panelRoot) {
@@ -1061,3 +1375,4 @@ export async function uploadToNaverBlog({ title, content, tags = [] }) {
     await browser.close()
   }
 }
+

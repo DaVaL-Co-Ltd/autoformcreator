@@ -10,9 +10,47 @@ function stripMarkdownEmphasis(text = '') {
     .trim()
 }
 
+function stripUnsupportedBlogFormatting(text = '') {
+  return String(text || '')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/--([^-\n]+)--/g, '$1')
+    .trim()
+}
+
 function escapeRegExp(text = '') {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+const BLOG_BOLD_TOKEN_STOPWORDS = new Set([
+  '안내', '준비', '전략', '방법', '내용', '정보', '포인트', '체크', '진행', '예정', '관련',
+  '중요', '핵심', '대비', '필요', '발표', '접수', '지원', '일정', '날짜', '학생', '학생들',
+])
+
+const BLOG_PRIORITY_KEYWORDS = [
+  '논술',
+  '면접',
+  '수능',
+  '원서접수',
+  '최저학력기준',
+  '학생부종합전형',
+  '학생부교과전형',
+  '교과전형',
+  '종합전형',
+  '정시',
+  '수시',
+  '실기',
+  '자소서',
+  '지원전략',
+  '경쟁률',
+  '충원율',
+  '합격선',
+  '모집인원',
+  '내신',
+  '모의고사',
+  '추가합격',
+  '상향지원',
+  '안정지원',
+]
 
 function trimBlogBoldCandidate(text = '') {
   return stripMarkdownEmphasis(String(text || ''))
@@ -20,14 +58,165 @@ function trimBlogBoldCandidate(text = '') {
     .trim()
 }
 
+const WEAK_BLOG_KEYPHRASE_TERMS = new Set([
+  '중요성',
+  '핵심내용',
+  '핵심',
+  '변화',
+  '활용',
+  '전망',
+  '필요성',
+  '효과',
+  '의미',
+  '개요',
+])
+
+const WEAK_BLOG_HEADING_TERMS = new Set([
+  '핵심 내용',
+  '핵심 정리',
+  '주요 내용',
+  '활용 방안',
+  '참고 사항',
+  '유의 사항',
+  '기본 개요',
+  '주요 변화',
+])
+
+function normalizeBlogLabel(text = '') {
+  return trimBlogBoldCandidate(text)
+    .replace(/\s+/g, '')
+    .toLowerCase()
+}
+
+function isWeakBlogKeyPhraseValue(keyPhrase = '', heading = '') {
+  const clean = trimBlogBoldCandidate(keyPhrase)
+  if (!clean) return true
+  if (clean.length > 16) return true
+  if (clean.split(/\s+/).filter(Boolean).length > 4) return true
+  if (/[.!?]/.test(clean)) return true
+  if (/(입니다|합니다|됩니다|있습니다|할 수|하는 방법)$/u.test(clean)) return true
+
+  const normalized = normalizeBlogLabel(clean)
+  if (WEAK_BLOG_KEYPHRASE_TERMS.has(normalized)) return true
+
+  const normalizedHeading = normalizeBlogLabel(heading)
+  if (normalizedHeading && normalizedHeading === normalized) return true
+
+  return false
+}
+
+function isWeakBlogHeadingValue(heading = '', keyPhrase = '') {
+  const clean = trimBlogBoldCandidate(heading)
+  if (!clean) return true
+  if (clean.length > 34) return true
+  if (/[.!?]/.test(clean)) return true
+  if (clean.split(/\s+/).filter(Boolean).length < 2) return true
+  if (/(입니다|합니다|됩니다|있습니다)$/u.test(clean)) return true
+
+  const normalized = normalizeBlogLabel(clean)
+  if (WEAK_BLOG_HEADING_TERMS.has(clean) || WEAK_BLOG_KEYPHRASE_TERMS.has(normalized)) return true
+
+  const normalizedKeyPhrase = normalizeBlogLabel(keyPhrase)
+  if (normalizedKeyPhrase && normalizedKeyPhrase === normalized) return true
+
+  return false
+}
+
+function shouldReanalyzeBlogSectionLabels(section = {}) {
+  const keyPhrase = trimBlogBoldCandidate(section?.keyPhrase || '')
+  const heading = trimBlogBoldCandidate(section?.heading || '')
+  return isWeakBlogKeyPhraseValue(keyPhrase, heading) || isWeakBlogHeadingValue(heading, keyPhrase)
+}
+
+async function reanalyzeBlogSectionLabels(section = {}, blogContext = {}) {
+  const content = String(section?.content || '').trim()
+  if (!content) return section
+
+  const prompt = `당신은 블로그 섹션 라벨 편집자입니다. 아래 본문을 읽고 이미지용 큰 제목에 쓸 keyPhrase와 본문 섹션 제목으로 쓸 heading을 다시 정하세요.
+
+규칙:
+- keyPhrase는 이미지 큰 제목용입니다.
+- keyPhrase는 2~10자 내외의 짧은 명사구로 작성하세요.
+- heading은 본문 섹션 제목용입니다.
+- heading은 keyPhrase보다 설명이 조금 더 있는 10~26자 내외 제목으로 작성하세요.
+- keyPhrase와 heading은 완전히 같은 문구를 쓰지 마세요.
+- 추상적인 단어(중요성, 변화, 활용, 개요, 효과)만 단독으로 쓰지 마세요.
+- 문장형 표현(~입니다, ~합니다)은 피하세요.
+- 새로운 사실을 추가하지 말고 본문 안의 핵심만 재구성하세요.
+- JSON만 출력하세요.
+
+블로그 제목: ${String(blogContext.title || '').trim() || '없음'}
+블로그 요약: ${String(blogContext.summary || '').trim() || '없음'}
+현재 heading: ${String(section?.heading || '').trim() || '없음'}
+현재 keyPhrase: ${String(section?.keyPhrase || '').trim() || '없음'}
+
+본문:
+${content.slice(0, 1800)}
+
+출력 스키마:
+{"heading":"섹션 제목","keyPhrase":"핵심 키워드"}`
+
+  try {
+    const result = await callGeminiWithFallback(prompt, {
+      temperature: 0.2,
+      maxOutputTokens: 512,
+      jsonMode: true,
+    })
+    const parsed = parseJSON(result, null)
+    const nextHeading = trimBlogBoldCandidate(parsed?.heading || '')
+    const nextKeyPhrase = trimBlogBoldCandidate(parsed?.keyPhrase || '')
+
+    return {
+      ...section,
+      heading: nextHeading || section?.heading || '',
+      keyPhrase: nextKeyPhrase || section?.keyPhrase || '',
+    }
+  } catch {
+    return section
+  }
+}
+
+function extractPriorityBlogTokens(text = '') {
+  return trimBlogBoldCandidate(text)
+    .split(/[\s,()[\]{}"'?,.:;!?/\\|-]+/)
+    .map((token) => token.trim())
+    .filter((token) => (
+      token.length >= 2 &&
+      token.length <= 10 &&
+      !/^\d+$/.test(token) &&
+      !BLOG_BOLD_TOKEN_STOPWORDS.has(token)
+    ))
+}
+function derivePriorityKeywordCandidates(section = {}) {
+  const haystack = [
+    section?.keyPhrase || '',
+    section?.heading || '',
+    section?.content || '',
+  ].join(' ')
+  const candidates = []
+  for (const keyword of BLOG_PRIORITY_KEYWORDS) {
+    if (haystack.includes(keyword) && !candidates.includes(keyword)) {
+      candidates.push(keyword)
+    }
+  }
+  return candidates
+}
+
 function deriveBlogBoldCandidates(section = {}) {
   const keyPhrase = trimBlogBoldCandidate(section?.keyPhrase || '')
   const heading = trimBlogBoldCandidate(section?.heading || '')
   const candidates = []
-
-  if (keyPhrase) candidates.push(keyPhrase)
-  if (heading && heading !== keyPhrase) candidates.push(heading)
-
+  for (const keyword of derivePriorityKeywordCandidates(section)) {
+    if (!candidates.includes(keyword)) candidates.push(keyword)
+  }
+  for (const token of extractPriorityBlogTokens(keyPhrase)) {
+    if (!candidates.includes(token)) candidates.push(token)
+  }
+  if (keyPhrase && !candidates.includes(keyPhrase)) candidates.push(keyPhrase)
+  for (const token of extractPriorityBlogTokens(heading)) {
+    if (!candidates.includes(token)) candidates.push(token)
+  }
+  if (heading && heading !== keyPhrase && !candidates.includes(heading)) candidates.push(heading)
   for (const value of [keyPhrase, heading]) {
     if (!value) continue
     const tokens = value.split(/\s+/).filter(Boolean)
@@ -37,8 +226,36 @@ function deriveBlogBoldCandidates(section = {}) {
     }
     if (tokens[0] && !candidates.includes(tokens[0])) candidates.push(tokens[0])
   }
-
   return candidates.filter(Boolean)
+}
+
+function applyRegexBold(content = '', regex) {
+  return String(content || '').replace(regex, (match, ...args) => {
+    const source = args[args.length - 1]
+    const offset = args[args.length - 2]
+    const before = String(source).slice(Math.max(0, offset - 2), offset)
+    const after = String(source).slice(offset + match.length, offset + match.length + 2)
+    if (before === '**' && after === '**') return match
+    return `**${match.trim()}**`
+  })
+}
+
+function applyBlogScheduleAndDateBold(content = '') {
+  const slashDatePattern = String.raw`\d{1,4}[./-]\d{1,2}(?:[./-]\d{1,2})?`
+  const koreanDatePattern = String.raw`\d{1,4}\s*년\s*\d{1,2}\s*월(?:\s*\d{1,2}\s*일)?`
+  const weekdayPattern = String.raw`(?:\s*(?:\([^)]+\)|\[[^\]]+\]|[월화수목금토일]요일?))?`
+  const rangePattern = String.raw`(?:\s*(?:~|부터)\s*(?:${slashDatePattern}|${koreanDatePattern})${weekdayPattern})?`
+  const datePattern = String.raw`(?:${slashDatePattern}|${koreanDatePattern})${weekdayPattern}${rangePattern}`
+  const labelPattern = String.raw`[\p{Script=Hangul}A-Za-z0-9·ㆍ&+]{2,20}`
+  const schedulePattern = new RegExp(
+    String.raw`(${labelPattern}\s*(?:[:：]\s*|\s+)?${datePattern})`,
+    'gu',
+  )
+  const bareDatePattern = new RegExp(String.raw`(?<!\*)(${datePattern})(?!\*)`, 'gu')
+
+  let nextContent = applyRegexBold(content, schedulePattern)
+  nextContent = applyRegexBold(nextContent, bareDatePattern)
+  return nextContent
 }
 
 function applySingleBold(content = '', candidate = '') {
@@ -54,16 +271,17 @@ function applySingleBold(content = '', candidate = '') {
 }
 
 function ensureBlogSectionBold(section = {}) {
-  const content = String(section?.content || '')
+  const content = stripUnsupportedBlogFormatting(section?.content || '')
   if (!content.trim()) return section
-  if (/\*\*[^*]+\*\*/.test(content)) return section
 
-  let nextContent = content
+  let nextContent = applyBlogScheduleAndDateBold(content)
+  let appliedKeywords = 0
   for (const candidate of deriveBlogBoldCandidates(section)) {
     const updated = applySingleBold(nextContent, candidate)
     if (updated !== nextContent) {
       nextContent = updated
-      break
+      appliedKeywords += 1
+      if (appliedKeywords >= 2) break
     }
   }
 
@@ -155,7 +373,7 @@ export function normalizeBlogSectionLineBreaks(content = '') {
 }
 
 function ensureBlogSectionLineBreaks(section = {}) {
-  const content = String(section?.content || '')
+  const content = stripUnsupportedBlogFormatting(section?.content || '')
   if (!content.trim()) return section
 
   return {
@@ -164,12 +382,23 @@ function ensureBlogSectionLineBreaks(section = {}) {
   }
 }
 
-function finalizeBlogContent(content) {
+async function finalizeBlogSection(section = {}, blogContext = {}) {
+  const relabeledSection = shouldReanalyzeBlogSectionLabels(section)
+    ? await reanalyzeBlogSectionLabels(section, blogContext)
+    : section
+
+  return ensureBlogSectionBold(ensureBlogSectionLineBreaks(relabeledSection))
+}
+
+async function finalizeBlogContent(content) {
   if (!content) return content
   const nextContent = {
     ...content,
     sections: Array.isArray(content.sections)
-      ? content.sections.map(ensureBlogSectionLineBreaks).map(ensureBlogSectionBold)
+      ? await Promise.all(content.sections.map((section) => finalizeBlogSection(section, {
+          title: content.title,
+          summary: content.summary,
+        })))
       : [],
   }
   return {
@@ -178,21 +407,214 @@ function finalizeBlogContent(content) {
   }
 }
 
-function sanitizeInstagramContent(content) {
-  if (!content) return content
+const UNIVERSITY_ADMISSIONS_KEYWORDS = [
+  '대학교',
+  '대학',
+  '수시',
+  '정시',
+  '전형',
+  '수능',
+  '최저',
+  '학생부',
+  '교과',
+  '종합',
+  '면접',
+  '서류',
+  '논술',
+]
+
+const UNIVERSITY_NAME_STOPWORDS = new Set([
+  '상위권대',
+  '지방대',
+  '수도권대',
+  '전문대',
+])
+
+function extractUniversityNames(text = '') {
+  const matches = String(text || '').match(/[가-힣]{2,12}(?:대학교|대학|대)/g) || []
+  const seen = new Set()
+  return matches.filter((name) => {
+    const clean = String(name || '').trim()
+    if (!clean || UNIVERSITY_NAME_STOPWORDS.has(clean) || seen.has(clean)) return false
+    seen.add(clean)
+    return true
+  })
+}
+
+function hasUniversityAdmissionsContext(summary, rawText, content) {
+  const summaryText = [
+    summary?.title || '',
+    summary?.summary || '',
+    ...(Array.isArray(summary?.keywords) ? summary.keywords : []),
+    ...(Array.isArray(summary?.insights) ? summary.insights : []),
+  ].join(' ')
+  const cardText = Array.isArray(content?.cardTopics)
+    ? content.cardTopics.map((topic) => [topic?.headline, topic?.content, topic?.dataPoint].join(' ')).join(' ')
+    : ''
+  const combined = `${summaryText} ${String(rawText || '').slice(0, 3000)} ${cardText}`
+  const universityCount = extractUniversityNames(combined).length
+  const keywordHits = UNIVERSITY_ADMISSIONS_KEYWORDS.filter((keyword) => combined.includes(keyword)).length
+  return universityCount >= 3 && keywordHits >= 2
+}
+
+function normalizeUniversityConditionText(text = '') {
+  return String(text || '')
+    .replace(/[가-힣]{2,12}(?:대학교|대학|대)/g, ' ')
+    .replace(/\s*(?:와|과|및|등)\s*/g, ' ')
+    .replace(/[(){}[\]'"“”‘’]/g, ' ')
+    .replace(/[·ㆍ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:은|는|이|가|도|의|에서|에선|에서는|기준|경우)\s+/u, '')
+    .replace(/\s+(?:은|는|이|가|도|의|에서|에선|에서는)\s+/gu, ' ')
+    .replace(/^[,.:;!?/-]+\s*/g, '')
+    .replace(/\s*[,.:;!?/-]+\s*$/g, '')
+    .trim()
+}
+
+function buildUniversityConditionInfo(topic = {}) {
+  const headline = stripMarkdownEmphasis(topic?.headline || '')
+  const content = stripMarkdownEmphasis(topic?.content || '')
+  const dataPoint = stripMarkdownEmphasis(topic?.dataPoint || '')
+  const combined = `${headline} ${content} ${dataPoint}`
+  const universities = extractUniversityNames(combined)
+  if (universities.length !== 1) return null
+
+  const conditionSource = [content, dataPoint, headline].filter(Boolean).join(' ')
+  const displayCondition = normalizeUniversityConditionText(conditionSource)
+  if (!displayCondition || displayCondition.length < 4) return null
+
+  const compactKey = displayCondition
+    .replace(/\s+/g, '')
+    .replace(/[,:;!?/\\-]/g, '')
+    .toLowerCase()
+
+  if (!compactKey || compactKey.length < 4) return null
+
   return {
+    universities,
+    displayCondition,
+    key: compactKey,
+    dataPoint,
+  }
+}
+
+function buildGroupedUniversityHeadline(displayCondition = '') {
+  if (displayCondition.includes('수능')) return '수능 최저 공통'
+  if (displayCondition.includes('면접')) return '면접 공통 포인트'
+  if (displayCondition.includes('학생부')) return '학생부 반영 공통'
+  if (displayCondition.includes('서류')) return '서류 준비 공통'
+  if (displayCondition.includes('논술')) return '논술 전형 공통'
+  if (displayCondition.includes('교과')) return '교과 전형 공통'
+  if (displayCondition.includes('종합')) return '종합 전형 공통'
+  return '공통 준비 포인트'
+}
+
+function formatUniversityGroupNames(names = []) {
+  const uniqueNames = [...new Set(names.filter(Boolean))]
+  if (uniqueNames.length <= 3) return uniqueNames.join(', ')
+  return `${uniqueNames.slice(0, 3).join(', ')} 등`
+}
+
+function regroupUniversityInstagramCardTopics(cardTopics = []) {
+  const grouped = new Map()
+  const passthrough = []
+
+  ensureArray(cardTopics).forEach((topic, index) => {
+    const info = buildUniversityConditionInfo(topic)
+    if (!info) {
+      passthrough.push({
+        type: 'single',
+        index,
+        topic,
+      })
+      return
+    }
+
+    const existing = grouped.get(info.key) || {
+      type: 'group',
+      index,
+      key: info.key,
+      displayCondition: info.displayCondition,
+      universities: [],
+      topics: [],
+    }
+
+    existing.index = Math.min(existing.index, index)
+    existing.displayCondition = existing.displayCondition.length >= info.displayCondition.length
+      ? existing.displayCondition
+      : info.displayCondition
+    existing.universities.push(...info.universities)
+    existing.topics.push(topic)
+    grouped.set(info.key, existing)
+  })
+
+  const mergedEntries = [
+    ...passthrough,
+    ...Array.from(grouped.values()).map((entry) => {
+      const uniqueUniversities = [...new Set(entry.universities)]
+      if (uniqueUniversities.length < 2) {
+        return {
+          type: 'single',
+          index: entry.index,
+          topic: entry.topics[0],
+        }
+      }
+
+      const universityLabel = formatUniversityGroupNames(uniqueUniversities)
+      const displayCondition = entry.displayCondition
+      const nextTopic = {
+        ...entry.topics[0],
+        headline: buildGroupedUniversityHeadline(displayCondition),
+        content: `${universityLabel}는 ${displayCondition}`,
+        dataPoint: `${uniqueUniversities.length}개 대학 공통`,
+      }
+
+      return {
+        type: 'group',
+        index: entry.index,
+        topic: nextTopic,
+      }
+    }),
+  ]
+
+  return mergedEntries
+    .sort((a, b) => a.index - b.index)
+    .map((entry, index) => ({
+      ...entry.topic,
+      cardNumber: index + 1,
+    }))
+}
+
+function ensureArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
+function sanitizeInstagramContent(content, context = {}) {
+  if (!content) return content
+  const sanitizedCardTopics = Array.isArray(content.cardTopics)
+    ? content.cardTopics.map((topic) => ({
+        ...topic,
+        headline: stripMarkdownEmphasis(topic?.headline || ''),
+        content: stripMarkdownEmphasis(topic?.content || ''),
+        dataPoint: stripMarkdownEmphasis(topic?.dataPoint || ''),
+      }))
+    : []
+
+  const sanitizedContent = {
     ...content,
     title: stripMarkdownEmphasis(content.title || ''),
     body: stripMarkdownEmphasis(content.body || ''),
     caption: stripMarkdownEmphasis(content.caption || ''),
-    cardTopics: Array.isArray(content.cardTopics)
-      ? content.cardTopics.map((topic) => ({
-          ...topic,
-          headline: stripMarkdownEmphasis(topic?.headline || ''),
-          content: stripMarkdownEmphasis(topic?.content || ''),
-          dataPoint: stripMarkdownEmphasis(topic?.dataPoint || ''),
-        }))
-      : [],
+    cardTopics: sanitizedCardTopics,
+  }
+
+  if (!hasUniversityAdmissionsContext(context.summary, context.rawText, sanitizedContent)) {
+    return sanitizedContent
+  }
+
+  return {
+    ...sanitizedContent,
+    cardTopics: regroupUniversityInstagramCardTopics(sanitizedCardTopics),
   }
 }
 
@@ -313,6 +735,8 @@ function buildInstagramCaptionRules() {
 - The caption must cover every cardTopics item. If cardTopics has 6 cards, include a short related sentence or bullet for all 6 cards.
 - Do not summarize only the first 3~4 cards. Keep the same order as cardTopics so carousel readers can match caption lines to images.
 - When the caption would become too long, use concise numbered lines like "1. headline: key detail" rather than dropping later cards.
+- If cardTopics has 7 or more cards, write a short intro and then add one numbered line for every card in order.
+- If cardTopics has 10 or more cards, prioritize full card-by-card coverage over elegant paragraph flow. Every card must appear at least once.
 ## 인스타그램 캡션 규칙
 - caption은 cardTopics에서 다룬 핵심 이야기를 짧은 문단 중심으로 풀어 쓰세요.
 - 전체 분량은 350~600자(공백 포함) 수준으로 작성하세요. 600자를 넘기지 마세요.
@@ -454,9 +878,9 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
   }
 
   return {
-    blog: finalizeBlogContent(four?.blog || null),
+    blog: await finalizeBlogContent(four?.blog || null),
     newsletter: four?.newsletter || null,
-    instagram: sanitizeInstagramContent(four?.instagram || null),
+    instagram: sanitizeInstagramContent(four?.instagram || null, { summary, rawText }),
     shorts: sanitizeShortsContent(four?.shorts || null),
   }
 }
@@ -514,7 +938,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   for (const channel of channels) {
     output[channel] = parsed[channel] || null
   }
-  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram)
+  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram, { summary, rawText })
   if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   return output
 }
@@ -533,8 +957,8 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis, 
     }
   }
 
-  if (output.blog) output.blog = finalizeBlogContent(output.blog)
-  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram)
+  if (output.blog) output.blog = await finalizeBlogContent(output.blog)
+  if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram, { summary, rawText })
   if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
   return output
@@ -547,7 +971,11 @@ export async function generateBlogContent(summary, rawText, emphasis, options = 
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실을 추가하지 마세요.
 - 섹션은 3개 이상 구성하세요.
-- 블로그 본문에서는 markdown bold(**텍스트**)를 사용해도 됩니다.
+- 블로그 본문에서는 markdown bold(**텍스트**)만 사용해도 됩니다.
+- 블로그 본문에서는 취소선(~~text~~, --text--)과 italic(*text*, _text_)를 사용하지 마세요.
+- 일정/시험/원서접수처럼 날짜가 핵심인 문장은 \`수능: 11/15(목)\`처럼 일정 제목과 날짜 구간만 bold 처리하세요.
+- 중요한 판단 포인트가 있는 문장은 문장 전체가 아니라 \`논술\`, \`면접\`, \`최저학력기준\`처럼 핵심 키워드만 bold 처리하세요.
+- 문장이 길면 긴 구절 전체를 bold 처리하지 말고, 날짜와 핵심 키워드 위주로만 최소한으로 bold 처리하세요.
 ${buildBlogBodyLineBreakRules()}
 
 ${buildBlogTitleRules()}
@@ -557,7 +985,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 {"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' }))
+  return await finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' }))
 }
 
 export async function generateNewsletterContent(summary, rawText, emphasis, options = {}) {
@@ -597,6 +1025,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return sanitizeInstagramContent(
     parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] }),
+    { summary, rawText },
   )
 }
 

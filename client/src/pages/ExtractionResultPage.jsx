@@ -27,6 +27,7 @@ import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { getBlogUploadTags, normalizeBlogTags } from '../utils/blogTags'
+import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import {
   cleanCardText,
@@ -34,6 +35,7 @@ import {
   deriveBlogImageDescription,
   deriveInstagramDetailLines,
 } from '../utils/contentImageOverlay'
+import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -68,6 +70,10 @@ const stripResultCtaText = (value) => {
 
   return lines.join('\n').trim()
 }
+const stripBlogUnsupportedFormatting = (value = '') => String(value || '')
+  .replace(/~~([^~]+)~~/g, '$1')
+  .replace(/--([^-\n]+)--/g, '$1')
+  .trim()
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
@@ -83,15 +89,6 @@ const attachRenderedImageUrls = (images, urls) => ensureArray(images).map((image
     ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
     : image
 })
-
-const getRenderedImageUrls = (images, urls = []) => {
-  const imageList = ensureArray(images)
-  const size = Math.max(imageList.length, urls.length)
-  return Array.from({ length: size }, (_, index) => {
-    const image = imageList[index]
-    return urls[index] || image?.renderedImageUrl || image?.pngUrl || null
-  })
-}
 
 async function captureElementPng(el, label) {
   return withTimeout(
@@ -224,6 +221,31 @@ export default function ExtractionResultPage() {
     }
   }, [])
 
+  const mergeStoredUploadMeta = useCallback((channel, info = {}) => {
+    setResolvedState((prev) => {
+      const baseState = prev || location.state
+      if (!baseState) return prev
+
+      const currentUploadStatus = baseState.uploadStatus && typeof baseState.uploadStatus === 'object'
+        ? baseState.uploadStatus
+        : {}
+      const currentChannelStatus = currentUploadStatus[channel] && typeof currentUploadStatus[channel] === 'object'
+        ? currentUploadStatus[channel]
+        : {}
+
+      return {
+        ...baseState,
+        uploadStatus: {
+          ...currentUploadStatus,
+          [channel]: {
+            ...currentChannelStatus,
+            ...info,
+          },
+        },
+      }
+    })
+  }, [location.state])
+
   const handleUpload = async (channel, options = {}) => {
     setUploadStatus(p => ({ ...p, [channel]: 'loading' }))
     setUploadError(null)
@@ -231,29 +253,10 @@ export default function ExtractionResultPage() {
     if (channel === 'blog') {
       try {
         setBlogUploadResult(null)
-        // blogPngUrls가 없으면 먼저 캡처
-        let pngUrls = getRenderedImageUrls(blogImages, blogPngUrls)
-        if (!pngUrls.filter(Boolean).length) {
-          pngUrls = await convertBlogImagesToPng()
-          // convertBlogImagesToPng 대신 state set 없이 직접 캡처
-          if (!pngUrls.filter(Boolean).length) {
-            const refs = blogImagesRef.current
-            pngUrls = new Array(refs.length).fill(null)
-            for (let index = 0; index < refs.length; index++) {
-              const el = refs[index]
-              if (!el) continue
-              try {
-                pngUrls[index] = await captureElementPng(el, `Blog image capture ${index + 1}`)
-              } catch { pngUrls[index] = null }
-            }
-            const nextBlogImages = attachRenderedImageUrls(blogImages, pngUrls)
-            setBlogImages(nextBlogImages)
-            if (extractionId) {
-              updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
-                .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
-            }
-          }
-        }
+        const uploadImageUrls = await buildBlogUploadImageDataUrls({
+          blogImages,
+          sections: ensureArray(blogContent?.sections),
+        })
 
         const title = blogTitle || blogContent?.title || ''
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
@@ -293,13 +296,13 @@ export default function ExtractionResultPage() {
           formData.append('title', title)
           formData.append('content', content)
           formData.append('tags', JSON.stringify(tags))
-          formData.append('showBrowser', 'true')
+          formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
           if (scheduledAt) {
             formData.append('scheduledAt', scheduledAt)
           }
 
-          for (let i = 0; i < pngUrls.length; i++) {
-            const url = pngUrls[i]
+          for (let i = 0; i < uploadImageUrls.length; i++) {
+            const url = uploadImageUrls[i]
             if (!url) continue
             const res = await fetchWithTimeout(url, {}, BLOG_IMAGE_CAPTURE_TIMEOUT_MS, `Blog image fetch ${i + 1}`)
             const blob = await res.blob()
@@ -345,15 +348,18 @@ export default function ExtractionResultPage() {
         }
 
         if (data.success) {
+          const nextUploadMeta = {
+            nativeSchedule: Boolean(data.scheduled || scheduledAt),
+            scheduledAt: data.scheduledAt || scheduledAt || null,
+            status: 'uploaded',
+            uploadedAt: new Date().toISOString(),
+            uploadedUrl: data.url || null,
+          }
           setUploadStatus(p => ({ ...p, blog: 'done' }))
+          mergeStoredUploadMeta('blog', nextUploadMeta)
           if (extractionId) {
-            updateUploadStatus(extractionId, 'blog', {
-              nativeSchedule: Boolean(data.scheduled || scheduledAt),
-              scheduledAt: data.scheduledAt || scheduledAt || null,
-              status: 'uploaded',
-              uploadedAt: new Date().toISOString(),
-              uploadedUrl: data.url || null,
-            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+            updateUploadStatus(extractionId, 'blog', nextUploadMeta)
+              .catch(err => console.warn('[uploadStatus 저장 실패]', err))
           }
           setBlogUploadResult({
             endpoint: data.endpoint || BLOG_UPLOAD_ENDPOINT,
@@ -376,29 +382,8 @@ export default function ExtractionResultPage() {
 
     if (channel === 'instagram') {
       try {
-        // PNG가 아직 변환되지 않았으면 먼저 변환
-        let urls = getRenderedImageUrls(instagramImages, instaPngUrls).filter(Boolean)
-        if (!urls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
-          urls = (await convertInstaCardsToPng()).filter(Boolean)
-        }
-        if (!urls.length) {
-          // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한 번 직접 변환
-          const capturedUrls = await Promise.all((instaCardsRef.current || []).map(async (el, index) => {
-            if (!el) return null
-            try { return await captureElementPng(el, `Instagram image capture ${index + 1}`) } catch { return null }
-          }))
-          urls = capturedUrls.filter(Boolean)
-          const nextInstagramImages = attachRenderedImageUrls(instagramImages, capturedUrls)
-          setInstagramImages(nextInstagramImages)
-          if (extractionId) {
-            updateExtractionMedia(extractionId, { instagramImages: nextInstagramImages })
-              .catch(err => console.warn('[인스타그램 렌더링 이미지 저장 실패]', err))
-          }
-        }
-        if (!urls.length) {
-          const renderedContent = await buildInstagramScheduledUploadContent({ instagramContent, instagramImages })
-          urls = (renderedContent.imageUrls || []).filter(Boolean)
-        }
+        const renderedContent = await buildInstagramScheduledUploadContent({ instagramContent, instagramImages })
+        const urls = (renderedContent.imageUrls || []).filter(Boolean)
         if (!urls.length) throw new Error('인스타그램 카드 이미지가 없습니다. 먼저 인스타그램 탭을 열어주세요.')
         const formatted = formatInstagramRequest(instagramContent, urls)
         console.log('[ExtractionResultPage] 인스타그램 업로드 요청:', formatted)
@@ -416,13 +401,16 @@ export default function ExtractionResultPage() {
           'Instagram upload response parsing'
         )
         if (data.success) {
+          const nextUploadMeta = {
+            status: 'uploaded',
+            uploadedAt: new Date().toISOString(),
+            uploadedUrl: data.permalink || null,
+          }
           setUploadStatus(p => ({ ...p, instagram: 'done' }))
+          mergeStoredUploadMeta('instagram', nextUploadMeta)
           if (extractionId) {
-            updateUploadStatus(extractionId, 'instagram', {
-              status: 'uploaded',
-              uploadedAt: new Date().toISOString(),
-              uploadedUrl: data.permalink || null,
-            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+            updateUploadStatus(extractionId, 'instagram', nextUploadMeta)
+              .catch(err => console.warn('[uploadStatus 저장 실패]', err))
           }
         } else {
           setUploadStatus(p => ({ ...p, instagram: 'error' }))
@@ -464,14 +452,17 @@ export default function ExtractionResultPage() {
           setUploadStatus(p => ({ ...p, shorts: 'done' }))
           const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
           const resolvedScheduledAt = data.scheduledAt || scheduledAt || null
+          const nextUploadMeta = {
+            nativeSchedule: Boolean(data.scheduled || scheduledAt),
+            scheduledAt: resolvedScheduledAt,
+            status: 'uploaded',
+            uploadedAt: new Date().toISOString(),
+            uploadedUrl: ytUrl,
+          }
+          mergeStoredUploadMeta('shorts', nextUploadMeta)
           if (extractionId) {
-            updateUploadStatus(extractionId, 'shorts', {
-              nativeSchedule: Boolean(data.scheduled || scheduledAt),
-              scheduledAt: resolvedScheduledAt,
-              status: 'uploaded',
-              uploadedAt: new Date().toISOString(),
-              uploadedUrl: ytUrl,
-            }).catch(err => console.warn('[uploadStatus 저장 실패]', err))
+            updateUploadStatus(extractionId, 'shorts', nextUploadMeta)
+              .catch(err => console.warn('[uploadStatus 저장 실패]', err))
           }
           if (resolvedScheduledAt) {
             setScheduleInfo(p => ({ ...p, shorts: { scheduledAt: resolvedScheduledAt } }))
@@ -685,14 +676,14 @@ export default function ExtractionResultPage() {
     return ensureArray(sections).map((s, i) => {
       const headingText = String(s.heading || '').trim()
       const heading = headingText ? `## **${headingText}**\n` : ''
-      const content = s.content || ''
+      const content = stripBlogUnsupportedFormatting(s.content || '')
       const imageMarker = `[IMG:${i + 1}]\n`
       return `${heading}${imageMarker}${content}`
     }).join('\n\n')
   }, [])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
-    String(content || '')
+    stripBlogUnsupportedFormatting(content || '')
       .replace(/^\s*---+\s*$/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim()
@@ -709,7 +700,7 @@ export default function ExtractionResultPage() {
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
     if (!text) return ''
-    return text
+    return stripBlogUnsupportedFormatting(text)
       .replace(/\*{3,}([^*]+?)\*{3,}/g, '<strong>$1</strong>')  // ***text*** -> <strong>
       .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** -> <strong> (공백 포함)
       .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* -> <strong>
@@ -1589,6 +1580,11 @@ export default function ExtractionResultPage() {
   }
 
   const renderContent = { blog: renderBlog, newsletter: renderNewsletter, instagram: renderInstagram, shorts: renderShorts }
+  const activeUploadMeta = state?.uploadStatus?.[activeMenu] && typeof state.uploadStatus[activeMenu] === 'object'
+    ? state.uploadStatus[activeMenu]
+    : null
+  const activeUploadedUrl = activeUploadMeta?.uploadedUrl || (activeMenu === 'blog' ? blogUploadResult?.url || null : null)
+  const activeMenuLabel = menuItems.find(item => item.id === activeMenu)?.label || '결과물'
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -1691,6 +1687,24 @@ export default function ExtractionResultPage() {
           </div>
         )}
       </div>
+
+      {activeUploadedUrl && dataMap[activeMenu] && activeMenu !== 'newsletter' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text">{activeMenuLabel} 결과물을 확인할 수 있습니다.</p>
+            <p className="mt-1 text-xs text-text-muted break-all">{activeUploadedUrl}</p>
+          </div>
+          <a
+            href={activeUploadedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors shrink-0"
+          >
+            결과물 보기
+            <ExternalLink size={14} />
+          </a>
+        </div>
+      )}
 
       {activeMenu === 'blog' && blogUploadResult && (
         <div className="flex items-start gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">

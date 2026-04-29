@@ -8,6 +8,8 @@ import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
 import { getBlogUploadTags } from '../utils/blogTags.js'
+import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
+import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -129,15 +131,20 @@ export async function uploadToBlog(extractionId, options = {}) {
   formData.append('title', title)
   formData.append('content', normalizedContent)
   formData.append('tags', JSON.stringify(normalizedTags))
-  formData.append('showBrowser', 'true')
+  formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
   if (scheduledAt) {
     formData.append('scheduledAt', scheduledAt)
   }
 
   const images = ext.data?.blogImages || ext.blogImages || []
-  for (let i = 0; i < images.length; i += 1) {
-    const image = images[i]
-    const imageUrl = image?.renderedImageUrl || image?.pngUrl || image?.url || image?.imageUrl || image?.src
+  const sections = ext.data?.blogContent?.sections || ext.blogContent?.sections || []
+  const uploadImageUrls = await buildBlogUploadImageDataUrls({
+    blogImages: images,
+    sections,
+  })
+
+  for (let i = 0; i < uploadImageUrls.length; i += 1) {
+    const imageUrl = uploadImageUrls[i]
     if (!imageUrl) continue
 
     try {

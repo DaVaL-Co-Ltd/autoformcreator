@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Instagram, Upload, Loader2, CheckCircle, XCircle, X, Plus,
   Image as ImageIcon, AlertTriangle, Calendar, Clock, ArrowRight,
@@ -26,9 +26,7 @@ export default function InstagramScheduleTestPage() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [logs, setLogs] = useState([])
-  const [connection, setConnection] = useState({ connected: false, account: null })
-
-  useEffect(() => { setConnection(get('instagram')) }, [])
+  const [connection] = useState(() => get('instagram'))
 
   const today = new Date().toISOString().split('T')[0]
   const addLog = (msg) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`])

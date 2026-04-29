@@ -94,10 +94,18 @@ const cleanCardText = (text = '') => (
 const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
 const BLOG_HEADLINE_MAX_LENGTH = 28
 const BLOG_DESCRIPTION_MAX_LENGTH = 34
-
-const escapeRegExp = (value = '') => (
-  String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-)
+const WEAK_BLOG_KEYPHRASES = new Set([
+  '중요성',
+  '핵심내용',
+  '핵심',
+  '변화',
+  '활용',
+  '전망',
+  '필요성',
+  '효과',
+  '의미',
+  '개요',
+])
 
 const limitBlogOverlayText = (text = '', maxLength = BLOG_DESCRIPTION_MAX_LENGTH) => {
   const clean = trimCardTitleEnding(cleanCardText(text))
@@ -116,6 +124,44 @@ const limitBlogOverlayText = (text = '', maxLength = BLOG_DESCRIPTION_MAX_LENGTH
   return trimCardTitleEnding(limited || clean)
 }
 
+const normalizeBlogKeyword = (text = '') => (
+  trimCardTitleEnding(cleanCardText(text)).replace(/\s+/g, '').toLowerCase()
+)
+
+const deriveHeadingKeywordFallback = (heading = '') => {
+  const cleanHeading = trimCardTitleEnding(cleanCardText(heading))
+  if (!cleanHeading) return ''
+
+  let candidate = cleanHeading
+    .split(/[:\-–—,/]/)[0]
+    .replace(/(입니다|합니다|됩니다|있습니다|해야 합니다|할 수 있습니다|하는 방법)$/u, '')
+    .trim()
+
+  const tokens = candidate.split(/\s+/).filter(Boolean)
+  if (tokens.length > 3) {
+    candidate = tokens.slice(0, 3).join(' ')
+  }
+
+  return limitBlogOverlayText(candidate || cleanHeading, BLOG_HEADLINE_MAX_LENGTH)
+}
+
+const isWeakBlogKeyPhrase = (keyPhrase = '', heading = '') => {
+  const clean = trimCardTitleEnding(cleanCardText(keyPhrase))
+  if (!clean) return true
+  if (clean.length > 16) return true
+  if (clean.split(/\s+/).filter(Boolean).length > 4) return true
+  if (/[.!?]/.test(clean)) return true
+  if (/(입니다|합니다|됩니다|있습니다|할 수|하는 방법)$/u.test(clean)) return true
+
+  const normalized = normalizeBlogKeyword(clean)
+  if (WEAK_BLOG_KEYPHRASES.has(normalized)) return true
+
+  const normalizedHeading = normalizeBlogKeyword(heading)
+  if (normalizedHeading && normalized === normalizedHeading) return true
+
+  return false
+}
+
 const splitCardTokens = (text = '') => {
   const clean = cleanCardText(text)
   if (!clean) return []
@@ -125,31 +171,18 @@ const splitCardTokens = (text = '') => {
     .filter(Boolean)
 }
 
-const deriveHeadlineKeyword = (text = '') => {
-  const clean = trimCardTitleEnding(cleanCardText(text))
-    .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
-    .trim()
+const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
+  const source = isWeakBlogKeyPhrase(keyPhrase, heading)
+    ? deriveHeadingKeywordFallback(heading) || cleanCardText(keyPhrase)
+    : cleanCardText(keyPhrase) || deriveHeadingKeywordFallback(heading)
 
-  const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
-  if (particleMatch?.[1]) return trimCardTitleEnding(particleMatch[1])
-
-  const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-  if (dividerMatch && dividerMatch.length < clean.length) return trimCardTitleEnding(dividerMatch)
-
-  const words = clean.split(/\s+/).filter(Boolean)
-  if (words.length >= 2) return trimCardTitleEnding(words.slice(0, 2).join(' '))
-  return trimCardTitleEnding(clean)
+  return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }
 
-const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
+const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
   const cleanHeading = cleanCardText(heading)
-  const cleanHeadline = cleanCardText(headline)
-  const headingRemainder = cleanHeading
-    .replace(new RegExp(`^${escapeRegExp(cleanHeadline)}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
-    .trim()
-
-  if (headingRemainder && headingRemainder !== cleanHeading) {
-    return limitBlogOverlayText(headingRemainder, BLOG_DESCRIPTION_MAX_LENGTH)
+  if (cleanHeading) {
+    return limitBlogOverlayText(cleanHeading, BLOG_DESCRIPTION_MAX_LENGTH)
   }
 
   const contentPhrase = cleanCardText(fallbackContent || '')
@@ -158,20 +191,7 @@ const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = ''
     .filter(Boolean)
     .find(line => line.length <= BLOG_DESCRIPTION_MAX_LENGTH)
 
-  return limitBlogOverlayText(contentPhrase || cleanHeading, BLOG_DESCRIPTION_MAX_LENGTH)
-}
-
-const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
-  const source = cleanCardText(heading) || cleanCardText(keyPhrase)
-  return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
-}
-
-const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
-  const cleanKeyPhrase = cleanCardText(keyPhrase)
-  const headline = deriveBlogHeadline(keyPhrase, heading)
-  if (cleanKeyPhrase && cleanKeyPhrase !== headline) return limitBlogOverlayText(cleanKeyPhrase, BLOG_DESCRIPTION_MAX_LENGTH)
-
-  return deriveDescriptionCopy(heading, headline, fallbackContent)
+  return limitBlogOverlayText(contentPhrase || cleanCardText(keyPhrase), BLOG_DESCRIPTION_MAX_LENGTH)
 }
 
 const splitHeading = (text = '', maxLineLength = 10) => {

@@ -206,29 +206,29 @@ function isScheduledPublishStateConfirmed(scheduleState, schedule) {
   return Boolean(scheduleState.scheduleReady && hasCompleteScheduleFields)
 }
 
-// SmartEditor auto-format이 취소선/이탤릭/볼드 등으로 변환하는 마커들을 제거
+// SmartEditor auto-format??취소???�탤�?볼드 ?�으�?변?�하??마커?�을 ?�거
 function sanitizeForTyping(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소선
-    .replace(/--([^-\n]+)--/g, '$1')  // 일부 에디터 취소선
+    .replace(/~~([^~]+)~~/g, '$1')   // 취소??
+    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*\s][^*]*[^*\s])\*/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
     .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/~/g, '')                // 잔여 단일 ~ 제거 (auto-format 트리거)
+    .replace(/~/g, '')                // ?�여 ?�일 ~ ?�거 (auto-format ?�리�?
 }
 
-// 본문(typeMultilineWithFormatting) 입력 전용. **bold** 마커는 parseBoldInlineSegments 가 처리하므로 보존하고
-// 그 외에 SmartEditor 가 입력 중 자동 변환하는 마커(취소선/이탤릭/언더스코어 등)만 제거한다.
+// 본문(typeMultilineWithFormatting) ?�력 ?�용. **bold** 마커??parseBoldInlineSegments 가 처리?��?�?보존?�고
+// �??�에 SmartEditor 가 ?�력 �??�동 변?�하??마커(취소???�탤�??�더?�코????�??�거?�다.
 function sanitizeForFormattingTyping(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소선
-    .replace(/--([^-\n]+)--/g, '$1')  // 일부 에디터 취소선
-    .replace(/__([^_]+)__/g, '$1')   // 언더스코어 변형
-    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // 이탤릭(언더스코어)
-    .replace(/`([^`]+)`/g, '$1')     // 인라인 코드
-    .replace(/~/g, '')                // 잔여 단일 ~ 제거 (auto-format 트리거)
+    .replace(/~~([^~]+)~~/g, '$1')   // 취소??
+    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
+    .replace(/__([^_]+)__/g, '$1')   // ?�더?�코??변??
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // ?�탤�??�더?�코??
+    .replace(/`([^`]+)`/g, '$1')     // ?�라??코드
+    .replace(/~/g, '')                // ?�여 ?�일 ~ ?�거 (auto-format ?�리�?
 }
 
 function typeMultiline(page, text) {
@@ -269,8 +269,8 @@ function parseBoldInlineSegments(text) {
 }
 
 async function toggleBoldFormatting(page) {
-  // releaseFormattingModifiers 는 typeMultilineWithFormatting 진입 시 1회만 호출 → 매 토글마다 4개의 keyup
-  // 이벤트를 발생시켜 SmartEditor 툴바를 매번 재렌더링시키던 비용을 제거한다.
+  // releaseFormattingModifiers ??typeMultilineWithFormatting 진입 ??1?�만 ?�출 ??�??��?마다 4개의 keyup
+  // ?�벤?��? 발생?�켜 SmartEditor ?�바�?매번 ?�렌?�링?�키??비용???�거?�다.
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyB')
   await page.keyboard.up('Control')
@@ -286,13 +286,15 @@ function getFormattingScopes(page) {
 async function findBoldButtonState(scope) {
   return scope.evaluate(() => {
     const candidates = [
-      'button[aria-label*="굵게"]',
-      '[role="button"][aria-label*="굵게"]',
       'button[aria-label*="bold" i]',
       '[role="button"][aria-label*="bold" i]',
+      'button[title*="bold" i]',
+      '[role="button"][title*="bold" i]',
       '[data-click-area*="bold"]',
       '[data-name="bold"]',
       '[data-command="bold"]',
+      '[data-tool="bold"]',
+      '[data-testid*="bold"]',
       'button.se-toolbar-item-bold',
       '.se-toolbar-item-bold button',
     ]
@@ -306,12 +308,18 @@ async function findBoldButtonState(scope) {
     }
 
     const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('굵게')) return 100
-      if (text.includes('bold')) return 90
-      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
-      if (normalize(element.className).includes('bold')) return 60
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('bold')) return 100
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 90
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 80
+      if (normalize(element.className).includes('bold')) return 70
       return 0
     }
 
@@ -325,38 +333,42 @@ async function findBoldButtonState(scope) {
 
     const ariaPressed = normalize(button.getAttribute('aria-pressed'))
     const ariaChecked = normalize(button.getAttribute('aria-checked'))
+    const dataActive = normalize(button.getAttribute('data-active'))
+    const dataSelected = normalize(button.getAttribute('data-selected'))
     const classText = normalize(button.className)
     const parentClassText = normalize(button.parentElement?.className)
     const active = ariaPressed === 'true' ||
       ariaChecked === 'true' ||
+      dataActive === 'true' ||
+      dataSelected === 'true' ||
       classText.includes('active') ||
       classText.includes('selected') ||
       classText.includes('on') ||
+      classText.includes('is-active') ||
+      classText.includes('is-selected') ||
       parentClassText.includes('active') ||
       parentClassText.includes('selected') ||
-      parentClassText.includes('on')
+      parentClassText.includes('on') ||
+      parentClassText.includes('is-active') ||
+      parentClassText.includes('is-selected')
 
     return {
       active,
-      selectorText: button.getAttribute('aria-label') || button.textContent || '',
+      selectorText: button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '',
     }
   })
 }
 
-// SmartEditor 의 소제목/제목 스타일 버튼을 시도. 클릭 성공 여부를 반환하고, 실패하면 호출자가 우회한다.
-// SmartEditor 2 의 단락 스타일은 통상 툴바 드롭다운 내 "소제목 1/2/3" 또는 "제목" 버튼이며,
-// aria-label/data 속성/클래스 명이 환경마다 다를 수 있어 후보 셀렉터를 다중 시도한다.
+// SmartEditor ???�제�??�목 ?��???버튼???�도. ?�릭 ?�공 ?��?�?반환?�고, ?�패?�면 ?�출?��? ?�회?�다.
+// SmartEditor 2 ???�락 ?��??��? ?�상 ?�바 ?�롭?�운 ??"?�제�?1/2/3" ?�는 "?�목" 버튼?�며,
+// aria-label/data ?�성/?�래??명이 ?�경마다 ?��? ???�어 ?�보 ?�?�터�??�중 ?�도?�다.
 async function clickSubheadingButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
-      'button[aria-label*="소제목"]',
-      'button[aria-label*="제목 1"]',
-      'button[aria-label*="제목 2"]',
-      'button[aria-label*="제목 3"]',
-      'button[aria-label*="Heading"]',
-      'button[aria-label*="Subtitle"]',
-      '[role="button"][aria-label*="소제목"]',
-      '[role="button"][aria-label*="제목"]',
+      'button[aria-label*="Heading" i]',
+      'button[aria-label*="Subtitle" i]',
+      '[role="button"][aria-label*="Heading" i]',
+      '[role="button"][aria-label*="Subtitle" i]',
       '[data-name="header1"]',
       '[data-name="header2"]',
       '[data-name="header3"]',
@@ -382,23 +394,27 @@ async function clickSubheadingButton(scope) {
     }
 
     const score = (element) => {
-      const text = normalize(element.getAttribute('aria-label') || element.textContent)
-      if (text.includes('소제목')) return 100
-      if (text.includes('제목 2')) return 95
-      if (text.includes('제목 1')) return 90
-      if (text.includes('제목 3')) return 85
-      if (text.includes('subtitle')) return 80
-      if (text.includes('heading')) return 75
-      if (normalize(element.getAttribute('data-name') || '').includes('header')) return 70
-      if (normalize(element.getAttribute('data-click-area') || '').includes('header')) return 65
-      if (normalize(element.className).includes('headline') || normalize(element.className).includes('subtitle')) return 60
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-click-area'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('subtitle')) return 100
+      if (text.includes('heading')) return 95
+      if (text.includes('header2')) return 90
+      if (text.includes('header1')) return 85
+      if (text.includes('header3')) return 80
+      if (text.includes('header')) return 75
+      if (normalize(element.className).includes('headline') || normalize(element.className).includes('subtitle')) return 70
       return 0
     }
 
     const button = candidates
       .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
       .filter((element) => element instanceof HTMLElement && isVisible(element))
-      .sort((a, b) => score(b) - score(a))
+      .sort((left, right) => score(right) - score(left))
       .find((element) => score(element) > 0)
 
     if (!button) return false
@@ -407,15 +423,15 @@ async function clickSubheadingButton(scope) {
   })
 }
 
-// 호출 측에서 토글 상태를 추적해 setSubheadingFormatting(page, true/false, currentState) 식으로 사용.
-// 버튼이 없으면 currentState 를 그대로 반환해 다음 호출도 wraparound 으로 자연스럽게 무력화된다.
+// ?�출 측에???��? ?�태�?추적??setSubheadingFormatting(page, true/false, currentState) ?�으�??�용.
+// 버튼???�으�?currentState �?그�?�?반환???�음 ?�출??wraparound ?�로 ?�연?�럽�?무력?�된??
 let subheadingButtonAvailable = null
 async function setSubheadingFormatting(page, enabled, currentState) {
   if (currentState === enabled) return currentState
-  if (subheadingButtonAvailable === false) return currentState  // 이전에 시도했고 부재 확인됨
+  if (subheadingButtonAvailable === false) return currentState  // ?�전???�도?�고 부???�인??
 
-  // releaseFormattingModifiers 는 typeMultilineWithFormatting 진입 시 1회만 호출 → 매 토글마다
-  // 불필요한 keyup 이벤트로 SmartEditor 툴바가 재렌더링되던 비용을 제거한다.
+  // releaseFormattingModifiers ??typeMultilineWithFormatting 진입 ??1?�만 ?�출 ??�??��?마다
+  // 불필?�한 keyup ?�벤?�로 SmartEditor ?�바가 ?�렌?�링?�던 비용???�거?�다.
   const scopes = getFormattingScopes(page)
   let clicked = false
   for (const scope of scopes) {
@@ -430,7 +446,7 @@ async function setSubheadingFormatting(page, enabled, currentState) {
   if (!clicked) {
     if (subheadingButtonAvailable === null) {
       subheadingButtonAvailable = false
-      console.warn('[Naver Upload] Subheading toolbar button not found — sections will use bold-only formatting (no enlarged size).')
+      console.warn('[Naver Upload] Subheading toolbar button not found ??sections will use bold-only formatting (no enlarged size).')
     }
     return currentState
   }
@@ -443,13 +459,15 @@ async function setSubheadingFormatting(page, enabled, currentState) {
 async function clickBoldButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
-      'button[aria-label*="굵게"]',
-      '[role="button"][aria-label*="굵게"]',
       'button[aria-label*="bold" i]',
       '[role="button"][aria-label*="bold" i]',
+      'button[title*="bold" i]',
+      '[role="button"][title*="bold" i]',
       '[data-click-area*="bold"]',
       '[data-name="bold"]',
       '[data-command="bold"]',
+      '[data-tool="bold"]',
+      '[data-testid*="bold"]',
       'button.se-toolbar-item-bold',
       '.se-toolbar-item-bold button',
     ]
@@ -463,12 +481,18 @@ async function clickBoldButton(scope) {
     }
 
     const score = (element) => {
-      const text = normalize(element.textContent || element.getAttribute('aria-label'))
-      if (text.includes('굵게')) return 100
-      if (text.includes('bold')) return 90
-      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 80
-      if (normalize(element.getAttribute('data-name')).includes('bold')) return 70
-      if (normalize(element.className).includes('bold')) return 60
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('bold')) return 100
+      if (normalize(element.getAttribute('data-click-area')).includes('bold')) return 90
+      if (normalize(element.getAttribute('data-name')).includes('bold')) return 80
+      if (normalize(element.className).includes('bold')) return 70
       return 0
     }
 
@@ -492,33 +516,206 @@ async function releaseFormattingModifiers(page) {
   }
 }
 
-async function setBoldFormatting(page, enabled, currentState) {
-  if (currentState === enabled) return currentState
-  await toggleBoldFormatting(page)
-  return enabled
+async function recoverFormattingContext(page) {
+  try {
+    const targets = getEditorTargets(page)
+    await dismissEditorPopups(page, targets)
+    await focusField(page, targets, BODY_SELECTORS, 'body')
+    await sleep(120)
+  } catch {}
 }
 
-// `## ` 로 시작하는 라인은 클라이언트가 섹션 제목임을 표시한 것 — SmartEditor 의 소제목 스타일을 토글한다.
+async function setBoldFormatting(page, enabled, currentState) {
+  const scopes = getFormattingScopes(page)
+  const readBoldState = async () => {
+    for (const scope of scopes) {
+      try {
+        const state = await findBoldButtonState(scope)
+        if (state && typeof state.active === 'boolean') {
+          return state.active
+        }
+      } catch {}
+    }
+    return null
+  }
+
+  let observedState = await readBoldState()
+  if (observedState === null) {
+    await recoverFormattingContext(page)
+    observedState = await readBoldState()
+  }
+  if (observedState === enabled) return enabled
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await toggleBoldFormatting(page)
+    const nextState = await readBoldState()
+    if (nextState === enabled) {
+      return enabled
+    }
+    if (nextState === null) {
+      for (const scope of scopes) {
+        try {
+          if (await clickBoldButton(scope)) {
+            await sleep(80)
+            const clickedState = await readBoldState()
+            if (clickedState === enabled) {
+              return enabled
+            }
+            break
+          }
+        } catch {}
+      }
+      await recoverFormattingContext(page)
+      await sleep(80)
+    }
+  }
+
+  return observedState === null ? enabled : observedState
+}
+
+async function clickFontSizeButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="글???�기"]',
+      '[role="button"][aria-label*="글???�기"]',
+      'button[aria-label*="font size" i]',
+      '[role="button"][aria-label*="font size" i]',
+      '[data-name="fontSize"]',
+      '[data-name="fontsize"]',
+      '[data-command="fontSize"]',
+      '[data-click-area*="font"]',
+      'button.se-toolbar-item-font-size',
+      '.se-toolbar-item-font-size button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('글???�기')) return 100
+      if (text.includes('font size')) return 95
+      if (normalize(element.getAttribute('data-name')).includes('fontsize')) return 85
+      if (normalize(element.getAttribute('data-click-area')).includes('font')) return 75
+      if (normalize(element.className).includes('font')) return 65
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
+async function clickFontSizeOption(scope, sizeLabel) {
+  return scope.evaluate((targetSize) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const target = normalize(targetSize)
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const matchesTarget = (element) => {
+      const values = [
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('data-value'),
+        element.getAttribute('value'),
+      ].map(normalize)
+
+      return values.some((value) => value === target || value === `${target}px` || value.startsWith(`${target}px`) || value.includes(` ${target}`))
+    }
+
+    const option = Array.from(document.querySelectorAll('button, [role="button"], [role="option"], li, [data-value], [value]'))
+      .filter((element) => element instanceof HTMLElement && isVisible(element) && matchesTarget(element))[0]
+
+    if (!option) return false
+    option.click()
+    return true
+  }, sizeLabel)
+}
+
+let fontSizeControlAvailable = null
+async function setFontSizeFormatting(page, sizeLabel, currentState) {
+  if (currentState === sizeLabel) return currentState
+  if (fontSizeControlAvailable === false) return currentState
+
+  const scopes = getFormattingScopes(page)
+  let applied = false
+
+  for (const scope of scopes) {
+    try {
+      if (!(await clickFontSizeButton(scope))) continue
+      await sleep(80)
+      if (await clickFontSizeOption(scope, sizeLabel)) {
+        applied = true
+        break
+      }
+    } catch {}
+  }
+
+  if (!applied) {
+    if (fontSizeControlAvailable === null) {
+      fontSizeControlAvailable = false
+      console.warn('[Naver Upload] Font size control not found ??headings will keep the editor default size.')
+    }
+    return currentState
+  }
+
+  fontSizeControlAvailable = true
+  await sleep(80)
+  return sizeLabel
+}
+
+// `## ` �??�작?�는 ?�인?� ?�라?�언?��? ?�션 ?�목?�을 ?�시??�???SmartEditor ???�제�??��??�을 ?��??�다.
 const SUBHEADING_PREFIX = /^##\s+/
+const SUBHEADING_FONT_SIZE = '24'
+const BODY_FONT_SIZE = '16'
 
 async function typeMultilineWithFormatting(page, text) {
-  // **bold** 외 자동 포맷 트리거 마커(취소선 등)를 제거해 SmartEditor 가 타이핑 중 취소선을 토글하는 것을 방지한다.
+  // **bold** ???�동 ?�맷 ?�리�?마커(취소????�??�거??SmartEditor 가 ?�?�핑 �?취소?�을 ?��??�는 것을 방�??�다.
   const lines = sanitizeForFormattingTyping(text).split(/\r?\n/)
-  // 잔여 modifier 상태가 있다면 1회만 정리. 이후 토글마다 keyup 이벤트를 반복 발생시키지 않는다.
+  // ?�여 modifier ?�태가 ?�다�?1?�만 ?�리. ?�후 ?��?마다 keyup ?�벤?��? 반복 발생?�키지 ?�는??
   await releaseFormattingModifiers(page)
+  await recoverFormattingContext(page)
   let boldEnabled = false
   let subheadingEnabled = false
+  let fontSize = null
+  boldEnabled = await setBoldFormatting(page, false, boldEnabled)
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     let line = lines[lineIndex]
     const isSubheading = SUBHEADING_PREFIX.test(line)
     if (isSubheading) {
-      // `## ` 마커는 어떤 경우에도 본문에 노출되지 않도록 제거한다 (소제목 토글 성공 여부와 무관).
+      // `## ` 마커???�떤 경우?�도 본문???�출?��? ?�도�??�거?�다 (?�제�??��? ?�공 ?��??� 무�?).
       line = line.replace(SUBHEADING_PREFIX, '')
       subheadingEnabled = await setSubheadingFormatting(page, true, subheadingEnabled)
+      fontSize = await setFontSizeFormatting(page, SUBHEADING_FONT_SIZE, fontSize)
     } else if (subheadingEnabled) {
-      // 일반 본문 줄로 돌아왔으면 소제목 모드 해제
+      // ?�반 본문 줄로 ?�아?�으�??�제�?모드 ?�제
       subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
+      fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
     }
 
     const inlineSegments = parseBoldInlineSegments(line)
@@ -537,13 +734,23 @@ async function typeMultilineWithFormatting(page, text) {
 
     if (lineIndex < lines.length - 1) {
       boldEnabled = await setBoldFormatting(page, false, boldEnabled)
+      if (isSubheading) {
+        subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
+        fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
+      }
       await page.keyboard.press('Enter')
+      if (isSubheading) {
+        await recoverFormattingContext(page)
+      }
     }
   }
 
   await setBoldFormatting(page, false, boldEnabled)
   if (subheadingEnabled) {
     await setSubheadingFormatting(page, false, subheadingEnabled)
+  }
+  if (fontSize) {
+    await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
   }
 }
 
@@ -2923,3 +3130,4 @@ module.exports = {
   hasSavedSession,
   uploadToNaver,
 }
+

@@ -1,24 +1,21 @@
 ﻿import {
   cleanCardText as sharedCleanCardText,
   deriveInstagramDetailLines as sharedDeriveInstagramDetailLines,
-  wrapCardTextLines,
 } from './contentImageOverlay'
+import { buildInstagramUploadImageUrls } from './uploadImageComposite'
 
 function ensureArray(value) {
   return Array.isArray(value) ? value : []
 }
 
-function normalizeInstagramCardStyle(value = '') {
-  if (value === 'center-card' || value === 'center-focus') return 'center-card'
-  return 'background-text'
-}
+const INSTAGRAM_CAPTION_MAX_LENGTH = 2200
+const CARD_CAPTION_ICONS = ['📌', '📊', '💡', '✅', '🔎', '🧭', '✨', '📍', '📝', '🚀']
+const INSTAGRAM_CAPTION_LIST_THRESHOLD = 7
+const INSTAGRAM_CAPTION_FORCE_ALL_THRESHOLD = 10
 
 function deriveInstagramDetailLines(card) {
   return sharedDeriveInstagramDetailLines(card)
 }
-
-const INSTAGRAM_CAPTION_MAX_LENGTH = 2200
-const CARD_CAPTION_ICONS = ['📌', '📊', '💡', '✅', '🔎', '🧭', '✨', '📍', '📝', '🚀']
 
 function getCardSource(source = {}) {
   const instagramContent = source?.instagramContent || source?.content || source || {}
@@ -34,7 +31,7 @@ function getCardSource(source = {}) {
 
 function extractImageUrl(image) {
   if (typeof image === 'string') return image
-  return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
+  return image?.imageUrl || image?.url || image?.renderedImageUrl || image?.pngUrl || null
 }
 
 function truncateText(value = '', maxLength = 64) {
@@ -82,15 +79,72 @@ function isCardCoveredByCaption(caption = '', card = {}, index = 0) {
   return candidates.some((value) => lowerCaption.includes(value))
 }
 
-function buildCardCaptionLine(card = {}, index = 0) {
+function buildCardCaptionLine(card = {}, index = 0, options = {}) {
   const { cardNumber, headline, detail } = getCardCaptionParts(card, index)
-  const icon = CARD_CAPTION_ICONS[index % CARD_CAPTION_ICONS.length]
-  const title = truncateText(headline, 26)
-  const body = truncateText(detail, 58)
+  const {
+    titleMax = 26,
+    bodyMax = 58,
+    includeIcon = true,
+  } = options
+  const icon = includeIcon ? `${CARD_CAPTION_ICONS[index % CARD_CAPTION_ICONS.length]} ` : ''
+  const title = truncateText(headline, titleMax)
+  const body = truncateText(detail, bodyMax)
 
-  if (title && body && title !== body) return `${icon} ${cardNumber}. ${title}: ${body}`
-  if (title || body) return `${icon} ${cardNumber}. ${title || body}`
+  if (title && body && title !== body) return `${icon}${cardNumber}. ${title}: ${body}`
+  if (title || body) return `${icon}${cardNumber}. ${title || body}`
   return ''
+}
+
+function buildInstagramCaptionIntro(baseCaption = '', maxLength = 420) {
+  if (maxLength <= 0) return ''
+  const paragraphs = String(baseCaption || '')
+    .split(/\n{2,}|\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const intro = paragraphs.slice(0, 2).join('\n')
+  return intro.length <= maxLength ? intro : `${intro.slice(0, maxLength - 1).trim()}…`
+}
+
+function buildFullCardCaption(instagramContent = {}, cards = []) {
+  const baseCaption = String(instagramContent?.caption || instagramContent?.body || instagramContent?.title || '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .trim()
+  const heading = cards.length >= INSTAGRAM_CAPTION_FORCE_ALL_THRESHOLD ? '카드별 핵심 전체' : '카드별 핵심'
+
+  const profiles = cards.length >= INSTAGRAM_CAPTION_FORCE_ALL_THRESHOLD
+    ? [
+        { introMax: 280, titleMax: 18, bodyMax: 28, includeIcon: true },
+        { introMax: 180, titleMax: 16, bodyMax: 22, includeIcon: false },
+        { introMax: 100, titleMax: 14, bodyMax: 16, includeIcon: false },
+        { introMax: 0, titleMax: 12, bodyMax: 10, includeIcon: false },
+      ]
+    : [
+        { introMax: 420, titleMax: 24, bodyMax: 42, includeIcon: true },
+        { introMax: 280, titleMax: 20, bodyMax: 30, includeIcon: true },
+        { introMax: 180, titleMax: 18, bodyMax: 22, includeIcon: false },
+        { introMax: 0, titleMax: 14, bodyMax: 14, includeIcon: false },
+      ]
+
+  for (const profile of profiles) {
+    const intro = buildInstagramCaptionIntro(baseCaption, profile.introMax)
+    const lines = cards
+      .map((card, index) => buildCardCaptionLine(card, index, profile))
+      .filter(Boolean)
+    const cardBlock = [heading, ...lines].join('\n')
+    const separator = intro ? '\n\n' : ''
+    const nextCaption = `${intro}${separator}${cardBlock}`.trim()
+    if (nextCaption.length <= INSTAGRAM_CAPTION_MAX_LENGTH) return nextCaption
+  }
+
+  const minimalLines = cards.map((card, index) => {
+    const { cardNumber, headline, detail } = getCardCaptionParts(card, index)
+    const text = truncateText(headline || detail, 10)
+    return `${cardNumber}. ${text}`
+  })
+
+  return [heading, ...minimalLines].join('\n').slice(0, INSTAGRAM_CAPTION_MAX_LENGTH).trim()
 }
 
 export function buildInstagramCaption(instagramContent = {}) {
@@ -100,6 +154,10 @@ export function buildInstagramCaption(instagramContent = {}) {
     .replace(/\n[ \t]+/g, '\n')
     .trim()
   if (!cards.length) return baseCaption.slice(0, INSTAGRAM_CAPTION_MAX_LENGTH)
+
+  if (cards.length >= INSTAGRAM_CAPTION_LIST_THRESHOLD) {
+    return buildFullCardCaption(instagramContent, cards)
+  }
 
   const missingLines = cards
     .map((card, index) => ({ card, index }))
@@ -114,198 +172,6 @@ export function buildInstagramCaption(instagramContent = {}) {
   const nextCaption = `${baseCaption}${separator}${cardBlock}`.trim()
 
   return nextCaption.slice(0, INSTAGRAM_CAPTION_MAX_LENGTH).trim()
-}
-
-function pickCardImageUrl(rawImages, card, index) {
-  const cardNumber = Number(card?.cardNumber || card?.card_number) || index + 1
-  const matched = rawImages.find((image, imageIndex) => {
-    const imageCardNumber = Number(image?.cardNumber || image?.card_number) || imageIndex + 1
-    return imageCardNumber === cardNumber
-  })
-
-  return extractImageUrl(matched) || extractImageUrl(rawImages[index]) || extractImageUrl(rawImages[0]) || null
-}
-
-function wrapText(ctx, text, maxWidth) {
-  return wrapCardTextLines(text, (line) => ctx.measureText(line).width, maxWidth)
-}
-
-function drawRoundedRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath()
-  ctx.moveTo(x + radius, y)
-  ctx.lineTo(x + width - radius, y)
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius)
-  ctx.lineTo(x + width, y + height - radius)
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height)
-  ctx.lineTo(x + radius, y + height)
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius)
-  ctx.lineTo(x, y + radius)
-  ctx.quadraticCurveTo(x, y, x + radius, y)
-  ctx.closePath()
-}
-
-async function loadImageElement(url) {
-  if (!url) return null
-
-  try {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`)
-    const blob = await response.blob()
-    const objectUrl = URL.createObjectURL(blob)
-
-    try {
-      const image = await new Promise((resolve, reject) => {
-        const nextImage = new Image()
-        nextImage.onload = () => resolve(nextImage)
-        nextImage.onerror = reject
-        nextImage.src = objectUrl
-      })
-      return image
-    } finally {
-      URL.revokeObjectURL(objectUrl)
-    }
-  } catch (error) {
-    console.warn('[scheduledPayloads] Failed to load instagram image:', error)
-    return null
-  }
-}
-
-function drawCoverImage(ctx, image, size) {
-  if (!image) {
-    const gradient = ctx.createLinearGradient(0, 0, size, size)
-    gradient.addColorStop(0, '#f9a8d4')
-    gradient.addColorStop(0.5, '#fdf2f8')
-    gradient.addColorStop(1, '#fed7aa')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, size, size)
-    return
-  }
-
-  const ratio = Math.max(size / image.width, size / image.height)
-  const width = image.width * ratio
-  const height = image.height * ratio
-  const x = (size - width) / 2
-  const y = (size - height) / 2
-  ctx.drawImage(image, x, y, width, height)
-}
-
-function drawCenterCardOverlay(ctx, size, cardNumber, title, detailLines) {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.14)'
-  ctx.fillRect(0, 0, size, size)
-
-  const panelWidth = size * 0.7
-  const panelHeight = size * 0.46
-  const panelX = (size - panelWidth) / 2
-  const panelY = (size - panelHeight) / 2
-
-  drawRoundedRect(ctx, panelX, panelY, panelWidth, panelHeight, 36)
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.86)'
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.76)'
-  ctx.lineWidth = 2
-  ctx.stroke()
-
-  const badgeWidth = 180
-  const badgeHeight = 46
-  drawRoundedRect(ctx, panelX + (panelWidth - badgeWidth) / 2, panelY + 36, badgeWidth, badgeHeight, 23)
-  ctx.fillStyle = 'rgba(99, 102, 241, 0.12)'
-  ctx.fill()
-
-  ctx.fillStyle = '#4338ca'
-  ctx.font = '800 22px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(`CARD ${String(cardNumber).padStart(2, '0')}`, size / 2, panelY + 59)
-
-  ctx.fillStyle = '#1f2937'
-  ctx.font = '900 64px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  const titleLines = wrapText(ctx, title, panelWidth - 120)
-  const titleStartY = panelY + 140
-  titleLines.forEach((line, index) => {
-    ctx.fillText(line, size / 2, titleStartY + (index * 78))
-  })
-
-  ctx.fillStyle = '#4b5563'
-  ctx.font = '600 34px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  const detailStartY = titleStartY + (titleLines.length * 78) + 30
-  detailLines.forEach((line, index) => {
-    const wrapped = wrapText(ctx, line, panelWidth - 140)
-    wrapped.forEach((wrappedLine, lineIndex) => {
-      ctx.fillText(wrappedLine, size / 2, detailStartY + (index * 58) + (lineIndex * 40))
-    })
-  })
-}
-
-function drawBottomCardOverlay(ctx, size, cardNumber, title, detailLines) {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)'
-  ctx.fillRect(0, 0, size, size)
-
-  const badgeWidth = 88
-  const badgeHeight = 48
-  const badgeX = size - badgeWidth - 72
-  const badgeY = 72
-  drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 24)
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.64)'
-  ctx.fill()
-
-  ctx.fillStyle = '#ffffff'
-  ctx.font = '700 30px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(String(cardNumber), badgeX + (badgeWidth / 2), badgeY + (badgeHeight / 2))
-
-  const panelWidth = size - 140
-  const panelHeight = size * 0.34
-  const panelX = 70
-  const panelY = size - panelHeight - 70
-
-  drawRoundedRect(ctx, panelX, panelY, panelWidth, panelHeight, 30)
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.88)'
-  ctx.fill()
-
-  ctx.fillStyle = '#1f2937'
-  ctx.font = '900 58px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  ctx.textAlign = 'left'
-  const titleLines = wrapText(ctx, title, panelWidth - 100)
-  const textX = panelX + 50
-  const titleStartY = panelY + 76
-  titleLines.forEach((line, index) => {
-    ctx.fillText(line, textX, titleStartY + (index * 70))
-  })
-
-  ctx.fillStyle = '#4b5563'
-  ctx.font = '600 32px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  let nextY = titleStartY + (titleLines.length * 70) + 18
-  detailLines.forEach((line) => {
-    const wrapped = wrapText(ctx, line, panelWidth - 100)
-    wrapped.forEach((wrappedLine) => {
-      ctx.fillText(wrappedLine, textX, nextY)
-      nextY += 40
-    })
-    nextY += 10
-  })
-}
-
-async function renderInstagramCardDataUrl({ imageUrl, card, cardIndex, cardStyle }) {
-  const size = 1080
-  const title = sharedCleanCardText(card?.title || card?.heading || card?.headline || `?몄뒪? 移대뱶 ${cardIndex + 1}`)
-  const detailLines = deriveInstagramDetailLines(card)
-  const image = await loadImageElement(imageUrl)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
-  const ctx = canvas.getContext('2d')
-
-  drawCoverImage(ctx, image, size)
-
-  if (cardStyle === 'center-card') {
-    drawCenterCardOverlay(ctx, size, card?.cardNumber || cardIndex + 1, title, detailLines)
-  } else {
-    drawBottomCardOverlay(ctx, size, card?.cardNumber || cardIndex + 1, title, detailLines)
-  }
-
-  return canvas.toDataURL('image/png')
 }
 
 export function buildInstagramScheduledContent(source = {}) {
@@ -332,34 +198,17 @@ export function buildInstagramScheduledContent(source = {}) {
 
 export async function buildInstagramScheduledUploadContent(source = {}) {
   const baseContent = buildInstagramScheduledContent(source)
-  const { instagramContent, cards, renderedUrls, rawImages } = getCardSource(source)
+  const { instagramContent, cards, rawImages } = getCardSource(source)
 
-  if (renderedUrls.length > 0 || cards.length === 0 || rawImages.length === 0 || typeof document === 'undefined') {
+  if (cards.length === 0 || rawImages.length === 0 || typeof document === 'undefined') {
     return baseContent
   }
 
-  const cardStyle = normalizeInstagramCardStyle(instagramContent?.cardStyle)
-  const renderedCards = []
+  const imageUrls = await buildInstagramUploadImageUrls({
+    instagramContent,
+    instagramImages: rawImages,
+  })
 
-  for (let index = 0; index < cards.length; index += 1) {
-    const card = cards[index]
-    const imageUrl = pickCardImageUrl(rawImages, card, index)
-
-    if (!imageUrl) {
-      renderedCards.push(null)
-      continue
-    }
-
-    try {
-      const renderedUrl = await renderInstagramCardDataUrl({ imageUrl, card, cardIndex: index, cardStyle })
-      renderedCards.push(renderedUrl)
-    } catch (error) {
-      console.warn(`[scheduledPayloads] Failed to render instagram card ${index + 1}:`, error)
-      renderedCards.push(imageUrl)
-    }
-  }
-
-  const imageUrls = renderedCards.filter(Boolean)
   return {
     ...baseContent,
     imageUrls: imageUrls.length > 0 ? imageUrls : baseContent.imageUrls,

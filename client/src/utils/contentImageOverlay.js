@@ -20,6 +20,18 @@ export const IMAGE_TEXT_WRAP_STYLE = {
 const BLOG_HEADLINE_MAX_LENGTH = 28
 const BLOG_DESCRIPTION_MAX_LENGTH = 34
 const VALUE_TOKEN_PATTERN = /(?:[$]\s?\d|\d[\d,]*(?:\.\d+)?\s?%)/
+const WEAK_BLOG_KEYPHRASES = new Set([
+  '중요성',
+  '핵심내용',
+  '핵심',
+  '변화',
+  '활용',
+  '전망',
+  '필요성',
+  '효과',
+  '의미',
+  '개요',
+])
 
 const trimCardTitleEnding = (value = '') => (
   asText(value).replace(/[\s,.:;!?/\\]+$/g, '').trim()
@@ -44,6 +56,44 @@ const limitBlogOverlayText = (value = '', maxLength = BLOG_DESCRIPTION_MAX_LENGT
   }
 
   return trimCardTitleEnding(limited || clean)
+}
+
+const normalizeBlogKeyword = (value = '') => (
+  trimCardTitleEnding(cleanCardText(value)).replace(/\s+/g, '').toLowerCase()
+)
+
+const deriveHeadingKeywordFallback = (heading = '') => {
+  const cleanHeading = trimCardTitleEnding(cleanCardText(heading))
+  if (!cleanHeading) return ''
+
+  let candidate = cleanHeading
+    .split(/[:\-–—,/]/)[0]
+    .replace(/(입니다|합니다|됩니다|있습니다|해야 합니다|할 수 있습니다|하는 방법)$/u, '')
+    .trim()
+
+  const tokens = candidate.split(/\s+/).filter(Boolean)
+  if (tokens.length > 3) {
+    candidate = tokens.slice(0, 3).join(' ')
+  }
+
+  return limitBlogOverlayText(candidate || cleanHeading, BLOG_HEADLINE_MAX_LENGTH)
+}
+
+const isWeakBlogKeyPhrase = (keyPhrase = '', heading = '') => {
+  const clean = trimCardTitleEnding(cleanCardText(keyPhrase))
+  if (!clean) return true
+  if (clean.length > 16) return true
+  if (clean.split(/\s+/).filter(Boolean).length > 4) return true
+  if (/[.!?]/.test(clean)) return true
+  if (/(입니다|합니다|됩니다|있습니다|할 수|하는 방법)$/u.test(clean)) return true
+
+  const normalized = normalizeBlogKeyword(clean)
+  if (WEAK_BLOG_KEYPHRASES.has(normalized)) return true
+
+  const normalizedHeading = normalizeBlogKeyword(heading)
+  if (normalizedHeading && normalized === normalizedHeading) return true
+
+  return false
 }
 
 const getHeadingRemainder = (heading = '', headline = '') => {
@@ -177,21 +227,20 @@ export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
 }
 
 export const deriveBlogHeadline = (keyPhrase, heading) => {
-  const source = cleanCardText(heading) || cleanCardText(keyPhrase)
+  const source = isWeakBlogKeyPhrase(keyPhrase, heading)
+    ? deriveHeadingKeywordFallback(heading) || cleanCardText(keyPhrase)
+    : cleanCardText(keyPhrase) || deriveHeadingKeywordFallback(heading)
+
   return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }
 
 export const deriveBlogImageDescription = (keyPhrase, heading, content) => {
-  const headline = deriveBlogHeadline(keyPhrase, heading)
-  const primary = trimCardTitleEnding(cleanCardText(keyPhrase))
-  const secondary = getHeadingRemainder(heading, headline)
-  const body = pickRepresentativeContentPhrase(content)
+  const subtitle = cleanCardText(heading)
+    || getHeadingRemainder(heading, deriveBlogHeadline(keyPhrase, heading))
+    || cleanCardText(keyPhrase)
+    || pickRepresentativeContentPhrase(content)
 
-  if (primary && primary !== headline) {
-    return limitBlogOverlayText(primary, BLOG_DESCRIPTION_MAX_LENGTH)
-  }
-
-  return limitBlogOverlayText(secondary || body, BLOG_DESCRIPTION_MAX_LENGTH)
+  return limitBlogOverlayText(subtitle, BLOG_DESCRIPTION_MAX_LENGTH)
 }
 
 export const deriveInstagramDetailLines = (card = {}) => {
