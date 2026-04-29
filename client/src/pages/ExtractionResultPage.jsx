@@ -33,9 +33,14 @@ import {
   cleanCardText,
   deriveBlogHeadline,
   deriveBlogImageDescription,
-  deriveInstagramDetailLines,
 } from '../utils/contentImageOverlay'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
+import {
+  buildInstagramDisplayCards,
+  getInstagramCardNumber,
+  getInstagramOverlayLines,
+  getInstagramOverlayTitle,
+} from '../utils/instagramCarousel'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -313,6 +318,7 @@ export default function ExtractionResultPage() {
           try {
             startResponse = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
               method: 'POST',
+              headers: BLOG_UPLOAD_HEADERS,
               body: formData,
             }, BLOG_UPLOAD_START_TIMEOUT_MS, 'Desktop helper upload start')
           } catch (error) {
@@ -526,7 +532,7 @@ export default function ExtractionResultPage() {
         }
       } else {
         // 인스타그램: 숨겨진 컨테이너에 모든 카드가 마운트되어 있으므로 슬라이드 이동 없이 순서대로 캡처
-        const cards = instagramContent?.cards || instagramContent?.cardTopics || []
+        const cards = buildInstagramDisplayCards(instagramContent)
         for (let idx = 0; idx < cards.length; idx++) {
           const el = instaCardsRef.current[idx]
           if (!el) continue
@@ -619,7 +625,7 @@ export default function ExtractionResultPage() {
 
   // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
-    const cards = instagramContent?.cards || instagramContent?.cardTopics || []
+    const cards = buildInstagramDisplayCards(instagramContent)
     if (cards.length === 0) return []
     const urls = []
     for (let i = 0; i < cards.length; i++) {
@@ -1118,23 +1124,31 @@ export default function ExtractionResultPage() {
   }
 
   const renderInstagram = () => {
-    const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
+    const cards = buildInstagramDisplayCards(instagramContent)
     const current = cards[instaSlide]
-    const currentCardNumber = current?.cardNumber || current?.card_number || instaSlide + 1
+    const currentCardNumber = getInstagramCardNumber(current, instaSlide)
     const instagramCardStyle = instagramContent?.cardStyle || 'background-text'
-    const currentInstagramImage = ensureArray(instagramImages).find((image, index) => {
-      const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
-      return imageCardNumber === currentCardNumber
-    }) || ensureArray(instagramImages)[0]
+    const currentInstagramImage = current?.isCaptionCta
+      ? (ensureArray(instagramImages)[ensureArray(instagramImages).length - 1] || ensureArray(instagramImages)[0])
+      : (
+        ensureArray(instagramImages).find((image, index) => {
+          const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
+          return imageCardNumber === currentCardNumber
+        }) || ensureArray(instagramImages)[0]
+      )
     const currentCardPngUrl = currentInstagramImage?.renderedImageUrl || currentInstagramImage?.pngUrl || instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(buildInstagramCaption(instagramContent))
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
-      const cardNumber = card?.cardNumber || card?.card_number || cardIndex + 1
-      const cardImage = ensureArray(instagramImages).find((image, i) => {
-        const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
-        return imageCardNumber === cardNumber
-      }) || ensureArray(instagramImages)[0]
+      const cardNumber = getInstagramCardNumber(card, cardIndex)
+      const cardImage = card?.isCaptionCta
+        ? (ensureArray(instagramImages)[ensureArray(instagramImages).length - 1] || ensureArray(instagramImages)[0])
+        : (
+          ensureArray(instagramImages).find((image, i) => {
+            const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
+            return imageCardNumber === cardNumber
+          }) || ensureArray(instagramImages)[0]
+        )
       const renderedImageUrl = cardImage?.renderedImageUrl || cardImage?.pngUrl || instaPngUrls[cardIndex] || null
       if (renderedImageUrl && !attachRef) {
         return (
@@ -1147,10 +1161,8 @@ export default function ExtractionResultPage() {
         )
       }
       const imageUrl = cardImage?.imageUrl || cardImage?.url || null
-      const cardTitle = card?.title || card?.heading || card?.headline || `인스타 카드 ${cardNumber}`
-      const detailLines = deriveInstagramDetailLines(card)
-      const descriptionLines = detailLines.filter(Boolean)
-      const points = ensureArray(card?.points).map(stripResultCtaText).filter(Boolean)
+      const cardTitle = getInstagramOverlayTitle(card, cardIndex)
+      const descriptionLines = getInstagramOverlayLines(card)
       return (
         <InstagramImageArtwork
           innerRef={attachRef ? (el => { instaCardsRef.current[cardIndex] = el }) : undefined}
@@ -1159,7 +1171,6 @@ export default function ExtractionResultPage() {
           cardNumber={cardNumber}
           cardTitle={cardTitle}
           descriptionLines={descriptionLines}
-          points={points}
           kicker={card?.kicker}
           cardStyle={instagramCardStyle}
           mode="modal"

@@ -1,10 +1,16 @@
-import {
+﻿import {
   cleanCardText,
   deriveBlogHeadline,
   deriveBlogImageDescription,
-  deriveInstagramDetailLines,
   wrapCardTextLines,
 } from './contentImageOverlay'
+import {
+  buildInstagramDisplayCards,
+  getInstagramCardNumber,
+  getInstagramOverlayLines,
+  getInstagramOverlayTitle,
+  isInstagramCaptionCtaCard,
+} from './instagramCarousel'
 
 const FALLBACK_SIZE = 1536
 const BLOG_ACCENT_COLORS = ['#e57a00', '#2e7d32', '#1565c0', '#7b1fa2']
@@ -83,6 +89,151 @@ function wrapText(ctx, text, maxWidth) {
   return wrapCardTextLines(text, (line) => ctx.measureText(line).width, maxWidth)
 }
 
+function buildWrappedParagraphs(ctx, lines, maxWidth) {
+  return (Array.isArray(lines) ? lines : [])
+    .map((line) => wrapText(ctx, line, maxWidth))
+    .filter((wrapped) => wrapped.length > 0)
+}
+
+function getParagraphLineCount(paragraphs) {
+  return paragraphs.reduce((total, paragraph) => total + paragraph.length, 0)
+}
+
+function measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth) {
+  const titleMaxWidth = panelWidth - size * 0.09
+  const topPadding = size * 0.07
+  const bottomPadding = size * 0.06
+  const titleBodyGap = size * 0.015
+  const paragraphGap = Math.round(size * 0.006)
+
+  ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
+  const titleLines = wrapText(ctx, title, titleMaxWidth)
+  const titleLineHeight = Math.round(titleFontSize * 1.18)
+
+  ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
+  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, titleMaxWidth)
+  const bodyLineHeight = Math.round(bodyFontSize * 1.28)
+  const detailLineCount = getParagraphLineCount(detailParagraphs)
+  const detailGapCount = detailParagraphs.length > 0 ? detailParagraphs.length - 1 : 0
+  const detailHeight = detailLineCount > 0
+    ? (detailLineCount * bodyLineHeight) + (detailGapCount * paragraphGap)
+    : 0
+
+  const requiredHeight =
+    topPadding +
+    (titleLines.length * titleLineHeight) +
+    (detailHeight > 0 ? titleBodyGap + detailHeight : 0) +
+    bottomPadding
+
+  return {
+    titleLines,
+    titleLineHeight,
+    detailParagraphs,
+    bodyLineHeight,
+    requiredHeight,
+    titleMaxWidth,
+    topPadding,
+    titleBodyGap,
+    paragraphGap,
+  }
+}
+
+function fitInstagramBottomOverlay(ctx, size, title, detailLines, panelWidth) {
+  const minTitleFontSize = Math.max(26, Math.round(size * 0.038))
+  const minBodyFontSize = Math.max(16, Math.round(size * 0.022))
+  const basePanelHeight = size * 0.34
+  const maxPanelHeight = size * 0.54
+  let titleFontSize = Math.max(32, Math.round(size * 0.047))
+  let bodyFontSize = Math.max(18, Math.round(size * 0.026))
+  let layout = measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
+
+  while (
+    layout.requiredHeight > maxPanelHeight &&
+    (titleFontSize > minTitleFontSize || bodyFontSize > minBodyFontSize)
+  ) {
+    titleFontSize = Math.max(minTitleFontSize, titleFontSize - Math.max(1, Math.round(size * 0.003)))
+    bodyFontSize = Math.max(minBodyFontSize, bodyFontSize - Math.max(1, Math.round(size * 0.0025)))
+    layout = measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
+  }
+
+  return {
+    ...layout,
+    panelHeight: Math.max(basePanelHeight, Math.min(layout.requiredHeight, maxPanelHeight)),
+    titleFontSize,
+    bodyFontSize,
+  }
+}
+
+function measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth) {
+  const contentWidth = panelWidth - size * 0.1
+  const bodyWidth = panelWidth - size * 0.12
+  const badgeHeight = size * 0.043
+  const badgeOffsetTop = size * 0.033
+  const titleTopGap = size * 0.034
+  const bodyTopGap = size * 0.02
+  const paragraphGap = Math.round(size * 0.008)
+  const bottomPadding = size * 0.05
+
+  ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
+  const titleLines = wrapText(ctx, title, contentWidth)
+  const titleLineHeight = Math.round(titleFontSize * 1.22)
+
+  ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
+  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, bodyWidth)
+  const bodyLineHeight = Math.round(bodyFontSize * 1.25)
+  const detailLineCount = getParagraphLineCount(detailParagraphs)
+  const detailGapCount = detailParagraphs.length > 0 ? detailParagraphs.length - 1 : 0
+  const detailHeight = detailLineCount > 0
+    ? (detailLineCount * bodyLineHeight) + (detailGapCount * paragraphGap)
+    : 0
+
+  const titleStartOffset = badgeOffsetTop + badgeHeight + titleTopGap
+  const requiredHeight =
+    titleStartOffset +
+    (titleLines.length * titleLineHeight) +
+    (detailHeight > 0 ? bodyTopGap + detailHeight : 0) +
+    bottomPadding
+
+  return {
+    titleLines,
+    titleLineHeight,
+    detailParagraphs,
+    bodyLineHeight,
+    requiredHeight,
+    titleStartOffset,
+    bodyTopGap,
+    badgeOffsetTop,
+    badgeHeight,
+    paragraphGap,
+  }
+}
+
+function fitInstagramCenterOverlay(ctx, size, title, detailLines, panelWidth) {
+  const minTitleFontSize = Math.max(28, Math.round(size * 0.04))
+  const minBodyFontSize = Math.max(16, Math.round(size * 0.022))
+  const basePanelHeight = size * 0.46
+  const maxPanelHeight = size * 0.66
+  let titleFontSize = Math.max(34, Math.round(size * 0.052))
+  let bodyFontSize = Math.max(18, Math.round(size * 0.028))
+  let layout = measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
+
+  while (
+    layout.requiredHeight > maxPanelHeight &&
+    (titleFontSize > minTitleFontSize || bodyFontSize > minBodyFontSize)
+  ) {
+    titleFontSize = Math.max(minTitleFontSize, titleFontSize - Math.max(1, Math.round(size * 0.0035)))
+    bodyFontSize = Math.max(minBodyFontSize, bodyFontSize - Math.max(1, Math.round(size * 0.0025)))
+    layout = measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
+  }
+
+  return {
+    ...layout,
+    panelHeight: Math.max(basePanelHeight, Math.min(layout.requiredHeight, maxPanelHeight)),
+    titleFontSize,
+    bodyFontSize,
+  }
+}
+
 function normalizeInstagramLayout(value = '') {
   if (value === 'center-card' || value === 'center-focus') return 'center-card'
   if (value && typeof value === 'object') {
@@ -104,7 +255,11 @@ function findBlogImageSource(images, section, index) {
 
 function findInstagramImageSource(images, card, index) {
   const list = Array.isArray(images) ? images : []
-  const cardNumber = Number(card?.cardNumber || card?.card_number) || index + 1
+  if (isInstagramCaptionCtaCard(card)) {
+    return list[list.length - 1] || list[0] || null
+  }
+
+  const cardNumber = getInstagramCardNumber(card, index)
   return list.find((image, imageIndex) => {
     const imageCardNumber = Number(image?.cardNumber || image?.card_number) || imageIndex + 1
     return imageCardNumber === cardNumber
@@ -183,41 +338,40 @@ function drawInstagramBottomOverlay(ctx, width, height, cardNumber, title, detai
   ctx.fillText(String(cardNumber), badgeX + (badgeWidth / 2), badgeY + (badgeHeight / 2))
 
   const panelWidth = width - size * 0.13
-  const panelHeight = size * 0.34
+  const fittedLayout = fitInstagramBottomOverlay(ctx, size, title, detailLines, panelWidth)
+  const panelHeight = fittedLayout.panelHeight
   const panelX = (width - panelWidth) / 2
   const panelY = height - panelHeight - size * 0.065
   drawRoundedRect(ctx, panelX, panelY, panelWidth, panelHeight, size * 0.028)
   ctx.fillStyle = 'rgba(255, 255, 255, 0.90)'
   ctx.fill()
 
-  const titleFontSize = Math.max(32, Math.round(size * 0.047))
-  const bodyFontSize = Math.max(18, Math.round(size * 0.026))
+  const titleFontSize = fittedLayout.titleFontSize
+  const bodyFontSize = fittedLayout.bodyFontSize
   const textX = panelX + size * 0.046
-  const titleMaxWidth = panelWidth - size * 0.09
-
   ctx.fillStyle = '#1f2937'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'top'
   ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const titleLines = wrapText(ctx, title, titleMaxWidth)
-  const titleLineHeight = Math.round(titleFontSize * 1.18)
-  let nextY = panelY + size * 0.07
-  titleLines.forEach((line) => {
+  let nextY = panelY + fittedLayout.topPadding
+  fittedLayout.titleLines.forEach((line) => {
     ctx.fillText(line, textX, nextY)
-    nextY += titleLineHeight
+    nextY += fittedLayout.titleLineHeight
   })
 
   ctx.fillStyle = '#4b5563'
   ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const bodyLineHeight = Math.round(bodyFontSize * 1.28)
-  nextY += size * 0.015
-  detailLines.forEach((line) => {
-    const wrappedLines = wrapText(ctx, line, titleMaxWidth)
+  if (fittedLayout.detailParagraphs.length > 0) {
+    nextY += fittedLayout.titleBodyGap
+  }
+  fittedLayout.detailParagraphs.forEach((wrappedLines, paragraphIndex) => {
     wrappedLines.forEach((wrappedLine) => {
       ctx.fillText(wrappedLine, textX, nextY)
-      nextY += bodyLineHeight
+      nextY += fittedLayout.bodyLineHeight
     })
-    nextY += Math.round(size * 0.006)
+    if (paragraphIndex < fittedLayout.detailParagraphs.length - 1) {
+      nextY += fittedLayout.paragraphGap
+    }
   })
 }
 
@@ -227,7 +381,8 @@ function drawInstagramCenterOverlay(ctx, width, height, cardNumber, title, detai
   ctx.fillRect(0, 0, width, height)
 
   const panelWidth = size * 0.7
-  const panelHeight = size * 0.46
+  const fittedLayout = fitInstagramCenterOverlay(ctx, size, title, detailLines, panelWidth)
+  const panelHeight = fittedLayout.panelHeight
   const panelX = (width - panelWidth) / 2
   const panelY = (height - panelHeight) / 2
 
@@ -239,9 +394,9 @@ function drawInstagramCenterOverlay(ctx, width, height, cardNumber, title, detai
   ctx.stroke()
 
   const badgeWidth = size * 0.17
-  const badgeHeight = size * 0.043
+  const badgeHeight = fittedLayout.badgeHeight
   const badgeX = panelX + (panelWidth - badgeWidth) / 2
-  const badgeY = panelY + size * 0.033
+  const badgeY = panelY + fittedLayout.badgeOffsetTop
   drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, badgeHeight / 2)
   ctx.fillStyle = 'rgba(99, 102, 241, 0.12)'
   ctx.fill()
@@ -254,25 +409,26 @@ function drawInstagramCenterOverlay(ctx, width, height, cardNumber, title, detai
   ctx.fillText(`CARD ${String(cardNumber).padStart(2, '0')}`, width / 2, badgeY + (badgeHeight / 2))
 
   ctx.fillStyle = '#1f2937'
-  const titleFontSize = Math.max(34, Math.round(size * 0.052))
+  const titleFontSize = fittedLayout.titleFontSize
   ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const titleLines = wrapText(ctx, title, panelWidth - size * 0.1)
-  const titleLineHeight = Math.round(titleFontSize * 1.22)
-  const titleStartY = panelY + size * 0.11
-  renderCenteredText(ctx, titleLines, width / 2, titleStartY, titleLineHeight)
+  const titleStartY = panelY + fittedLayout.titleStartOffset
+  renderCenteredText(ctx, fittedLayout.titleLines, width / 2, titleStartY, fittedLayout.titleLineHeight)
 
   ctx.fillStyle = '#4b5563'
-  const bodyFontSize = Math.max(18, Math.round(size * 0.028))
+  const bodyFontSize = fittedLayout.bodyFontSize
   ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const bodyLineHeight = Math.round(bodyFontSize * 1.25)
-  let nextY = titleStartY + (titleLines.length * titleLineHeight) + size * 0.02
-  detailLines.forEach((line) => {
-    const wrappedLines = wrapText(ctx, line, panelWidth - size * 0.12)
+  let nextY = titleStartY + (fittedLayout.titleLines.length * fittedLayout.titleLineHeight)
+  if (fittedLayout.detailParagraphs.length > 0) {
+    nextY += fittedLayout.bodyTopGap
+  }
+  fittedLayout.detailParagraphs.forEach((wrappedLines, paragraphIndex) => {
     wrappedLines.forEach((wrappedLine) => {
       ctx.fillText(wrappedLine, width / 2, nextY)
-      nextY += bodyLineHeight
+      nextY += fittedLayout.bodyLineHeight
     })
-    nextY += Math.round(size * 0.008)
+    if (paragraphIndex < fittedLayout.detailParagraphs.length - 1) {
+      nextY += fittedLayout.paragraphGap
+    }
   })
 }
 
@@ -294,7 +450,6 @@ export async function renderBlogUploadImageDataUrl({
   drawCoverImage(ctx, image, width, height)
 
   if (variant === 'plain') {
-    // Keep blog uploads aligned with the circle overlay variant currently used in the UI.
     drawBlogCircleOverlay(ctx, width, height, headline, description, accentColor)
   } else {
     drawBlogCircleOverlay(ctx, width, height, headline, description, accentColor)
@@ -359,12 +514,12 @@ export async function renderInstagramUploadImageDataUrl({
 
   drawCoverImage(ctx, image, width, height)
 
-  const title = cleanCardText(card?.title || card?.heading || card?.headline || `인스타 카드 ${cardIndex + 1}`)
-  const detailLines = deriveInstagramDetailLines(card).filter(Boolean)
+  const title = getInstagramOverlayTitle(card, cardIndex)
+  const detailLines = getInstagramOverlayLines(card)
   const layout = normalizeInstagramLayout(cardStyle)
-  const cardNumber = card?.cardNumber || card?.card_number || cardIndex + 1
+  const cardNumber = getInstagramCardNumber(card, cardIndex)
 
-  if (layout === 'center-card') {
+  if (layout === 'center-card' || isInstagramCaptionCtaCard(card)) {
     drawInstagramCenterOverlay(ctx, width, height, cardNumber, title, detailLines)
   } else {
     drawInstagramBottomOverlay(ctx, width, height, cardNumber, title, detailLines)
@@ -377,9 +532,7 @@ export async function buildInstagramUploadImageUrls({
   instagramContent = {},
   instagramImages = [],
 }) {
-  const cards = Array.isArray(instagramContent?.cards || instagramContent?.cardTopics)
-    ? (instagramContent.cards || instagramContent.cardTopics)
-    : []
+  const cards = buildInstagramDisplayCards(instagramContent)
 
   if (!cards.length) {
     return (Array.isArray(instagramImages) ? instagramImages : []).map((image) => getImageUrl(image)).filter(Boolean)

@@ -17,6 +17,12 @@ import { generateBlogImages, generateInstagramImages } from '../services/cardIma
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+import {
+  buildInstagramDisplayCards,
+  getInstagramCardNumber,
+  getInstagramOverlayLines,
+  getInstagramOverlayTitle,
+} from '../utils/instagramCarousel'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
@@ -617,9 +623,11 @@ export default function ExtractionPage() {
   }
 
   const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
-    const source = isWeakBlogKeyPhrase(keyPhrase, heading)
-      ? deriveHeadingKeywordFallback(heading) || cleanCardText(keyPhrase)
-      : cleanCardText(keyPhrase) || deriveHeadingKeywordFallback(heading)
+    const preferredKeyPhrase = cleanCardText(keyPhrase)
+    const source = preferredKeyPhrase
+      || (isWeakBlogKeyPhrase(keyPhrase, heading)
+        ? deriveHeadingKeywordFallback(heading)
+        : deriveHeadingKeywordFallback(heading))
 
     return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
   }
@@ -637,31 +645,6 @@ export default function ExtractionPage() {
       .find(line => line.length <= BLOG_DESCRIPTION_MAX_LENGTH)
 
     return limitBlogOverlayText(contentPhrase || cleanCardText(keyPhrase), BLOG_DESCRIPTION_MAX_LENGTH)
-  }
-
-  const deriveInstagramDetailLines = (card) => {
-    const lines = []
-    const contentText = cleanCardText(card?.content || '')
-    const dataPointText = cleanCardText(card?.dataPoint || '')
-
-    const contentSentences = contentText
-      .split(/(?<=[.!?。！？])\s+|\n+/)
-      .map(sentence => sentence.trim())
-      .filter(Boolean)
-
-    for (const sentence of contentSentences) {
-      lines.push(trimCardTitleEnding(cleanCardText(sentence)))
-    }
-
-    if (dataPointText) {
-      lines.push(trimCardTitleEnding(dataPointText))
-    }
-
-    if (lines.length === 0 && contentText) {
-      lines.push(trimCardTitleEnding(contentText))
-    }
-
-    return lines.filter(Boolean)
   }
 
   // 에러 발생 시 팝업 표시
@@ -760,22 +743,28 @@ export default function ExtractionPage() {
     ))
   }
 
-  const renderInstagramPreviewCard = (image, index) => {
-    const cardNumber = Number(image?.cardNumber) || index + 1
-    const cards = Array.isArray(instagramContent?.cardTopics) ? instagramContent.cardTopics : []
-    const matchedCard = cards.find(card => Number(card?.cardNumber) === cardNumber) || cards[index] || null
-    const imageUrl = image?.imageUrl || null
-    const headline = trimCardTitleEnding(cleanCardText(matchedCard?.headline || `카드 ${cardNumber}`))
-    const detailLines = deriveInstagramDetailLines(matchedCard)
-    // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드가 너무 비어 보이지 않도록 한다.
-    const descriptionLines = detailLines.filter(Boolean)
+  const renderInstagramPreviewCard = (card, index) => {
+    const cards = buildInstagramDisplayCards(instagramContent)
+    const cardNumber = getInstagramCardNumber(card, index)
+    const imagePool = Array.isArray(instagramImages) ? instagramImages : []
+    const matchedImage = card?.isCaptionCta
+      ? (imagePool[imagePool.length - 1] || imagePool[0] || null)
+      : (
+        imagePool.find((image, imageIndex) => {
+          const imageCardNumber = Number(image?.cardNumber || image?.card_number) || imageIndex + 1
+          return imageCardNumber === cardNumber
+        }) || imagePool[index] || imagePool[0] || null
+      )
+    const imageUrl = matchedImage?.imageUrl || matchedImage?.url || null
+    const headline = getInstagramOverlayTitle(card, index)
+    const descriptionLines = getInstagramOverlayLines(card)
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
 
     if (!imageUrl) return null
 
     return (
       <button
-        key={`insta-preview-${cardNumber}-${index}`}
+        key={`insta-preview-${cardNumber}-${cards.length}-${index}`}
         type="button"
         onClick={() => setPreviewImage({
           renderType: 'instagram-card',
@@ -2915,9 +2904,8 @@ ${parsedText}
                   </div>
                   {hasImages && (
                     <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                      {instagramImages
-                        .filter(i => i.imageUrl)
-                        .map((img, i) => renderInstagramPreviewCard(img, i))
+                      {buildInstagramDisplayCards(instagramContent)
+                        .map((card, i) => renderInstagramPreviewCard(card, i))
                         .filter(Boolean)}
                     </div>
                   )}
