@@ -33,7 +33,6 @@ registerOptionalFont('TmoneyRoundWind-Regular.woff', 'TmoneyRoundWind')
 registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
 registerOptionalFont('A2z-Bold.woff2', 'A2z')
 
-// Supabase ?대씪?댁뼵??(?쒕쾭 ?꾩슜)
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
 const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
   ? createSupabaseClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
@@ -43,14 +42,13 @@ const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_R
 
 const app = express()
 
-// CORS: ALLOWED_ORIGINS ?섍꼍蹂???덉쑝硫??쒗븳, ?놁쑝硫??꾩껜 ?덉슜 (媛쒕컻??
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || null
 app.use(cors({
   origin: allowedOrigins || true,
   credentials: true,
 }))
 
-// JSON body for most routes (LlamaParse upload ?쒖쇅)
+// JSON body for most routes except large multipart uploads.
 app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path === '/api/output/upload') return next()
@@ -58,8 +56,8 @@ app.use((req, res, next) => {
   express.json({ limit: '150mb' })(req, res, next)
 })
 
-// API ?쒗겕由?寃利?誘몃뱾?⑥뼱 (/api/* ?붾뱶?ъ씤??蹂댄샇)
-// ?덉쇅: /health, /api/youtube/oauth/callback (Google??由щ뵒?됲듃?섎뒗 怨듦컻 ?붾뱶?ъ씤??
+// API secret middleware for protected /api routes.
+// Public OAuth callback routes stay open so external providers can redirect back.
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api/')) return next()
   if (req.path === '/api/youtube/oauth/callback') return next()
@@ -67,7 +65,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/youtube/auth-status') return next()
   if (req.path === '/api/instagram/oauth/callback') return next()
   const expected = process.env.API_SECRET
-  if (!expected) return next() // dev ?몄쓽: 誘몄꽕?????듦낵
+  if (!expected) return next() // Allow local development when no secret is configured.
   const provided = req.headers['x-app-secret']
   if (provided !== expected) {
     console.log(`[AUTH FAIL] path=${req.path} provided=${provided?.slice(0, 20)} expected=${expected?.slice(0, 20)}`)
@@ -233,7 +231,7 @@ app.get('/api/heygen/video/status/:videoId', async (req, res) => {
   }
 })
 
-// ===== HeyGen ?꾨━???꾨컮? 紐⑸줉 =====
+// ===== HeyGen preset avatar list =====
 app.get('/api/heygen/preset-avatars', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -255,7 +253,7 @@ app.get('/api/heygen/preset-avatars', async (req, res) => {
   }
 })
 
-// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ’ ?뺤씤?? =====
+// ===== HeyGen public avatar list =====
 app.get('/api/heygen/public-avatars', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -291,7 +289,7 @@ app.get('/api/heygen/public-avatars', async (req, res) => {
   }
 })
 
-// ===== HeyGen 而ㅼ뒪? ?꾨컮? 紐⑸줉 (?щ? ?뺤씤?? =====
+// ===== HeyGen merged avatar list =====
 app.get('/api/heygen/avatar-list', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -309,7 +307,7 @@ app.get('/api/heygen/avatar-list', async (req, res) => {
   }
 })
 
-// ===== HeyGen ?꾨컮? ?곹깭 ?뺤씤 (avatars 紐⑸줉?먯꽌 議고쉶) =====
+// ===== HeyGen avatar status lookup =====
 app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -331,7 +329,7 @@ app.get('/api/heygen/avatar-status/:groupId', async (req, res) => {
   }
 })
 
-// ===== HeyGen ?뚯뒪?몄슜: ?깃났???대?吏 吏곸젒 ?낅줈??=====
+// ===== HeyGen test upload for generated avatar images =====
 app.post('/api/heygen/upload-test-avatar', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -434,7 +432,7 @@ app.post('/api/background/generate', async (req, res) => {
   }
 })
 
-// ===== ??댄? 諛곌꼍 ?대?吏 ?앹꽦 (Canvas, ?쇱そ ?곷떒 ??댄?) =====
+// ===== Generate title overlay backgrounds with Canvas =====
 app.post('/api/title-bg/generate', async (req, res) => {
   const { scenes } = req.body
   if (!scenes?.length) return res.status(400).json({ error: 'Missing scenes' })
@@ -461,7 +459,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
     const canvas = createCanvas(W, H)
     const ctx = canvas.getContext('2d')
 
-    // ?щ챸 諛곌꼍 (?꾨컮? ?꾩뿉 ?ㅻ쾭?덉씠)
+    // Keep the background transparent so it can overlay the avatar scene.
     ctx.clearRect(0, 0, W, H)
 
     const design = titleDesigns[(scene.sceneNumber - 1) % titleDesigns.length]
@@ -475,7 +473,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
     const lineHeight = fontSize * 1.5
     const maxWidth = W - x * 2
 
-    // ?띿뒪?몃? ?щ윭 以꾨줈 遺꾪븷 (?뱀닔臾몄옄, 怨듬갚 湲곗?)
+    // Split long text across multiple lines while preserving natural break points.
     ctx.font = `${fontSize}px Pretendard`
     ctx.textAlign = 'left'
     const lines = []
@@ -486,7 +484,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
       let cut = remaining.length
       for (let i = remaining.length - 1; i >= 1; i--) {
         if (ctx.measureText(remaining.slice(0, i)).width <= maxWidth) {
-          // ?뱀닔臾몄옄??怨듬갚?먯꽌 ?먮Ⅴ湲?
+          // Prefer whitespace or punctuation as a safer wrap boundary.
           let bestCut = i
           for (let j = i; j >= Math.floor(i * 0.5); j--) {
             if (/[\s,.:!?쨌\-]/.test(remaining[j])) { bestCut = j + 1; break }
@@ -602,7 +600,7 @@ app.post('/api/infographic/generate', async (req, res) => {
     ctx.beginPath(); ctx.arc(600, 200, 45, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
 
-    // ?쒕ぉ
+    // Draw title text.
     ctx.font = '52px Pretendard'
     ctx.fillStyle = theme.text
     ctx.textAlign = 'center'
@@ -666,7 +664,7 @@ function escapeXml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-// ===== ?명룷洹몃옒???대?吏 ??HeyGen ?낅줈????URL 諛섑솚 =====
+// ===== Upload infographic images to HeyGen and return the asset URL =====
 app.post('/api/infographic/upload-to-heygen', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
@@ -688,8 +686,8 @@ app.post('/api/infographic/upload-to-heygen', async (req, res) => {
   }
 })
 
-// ===== ?먮쭑 踰덉씤 (FFmpeg) =====
-// ?섎젅?댁뀡??理쒕? maxLines以??⑥쐞濡?遺꾪븷
+// ===== Subtitle burn-in with FFmpeg =====
+// Split narration into readable subtitle lines.
 function splitNarration(text, maxCharsPerLine = 18) {
   const chunks = []
   let remaining = text.trim()
@@ -698,7 +696,7 @@ function splitNarration(text, maxCharsPerLine = 18) {
       chunks.push(remaining)
       break
     }
-    // ?먯뿰?ㅻ윭???딄?: 留덉묠?? ?쇳몴, 怨듬갚 湲곗?
+    // Prefer punctuation or spaces for natural wrapping.
     let cut = -1
     for (let i = Math.min(maxCharsPerLine, remaining.length) - 1; i >= Math.floor(maxCharsPerLine * 0.5); i--) {
       if (/[.!??귨펽,\s]/.test(remaining[i])) { cut = i + 1; break }
@@ -710,7 +708,7 @@ function splitNarration(text, maxCharsPerLine = 18) {
   return chunks
 }
 
-// ?ㅽ??쇰퀎 FFmpeg force_style 留ㅽ븨 (9:16 ?좏뒠釉??쇱툩 湲곗?)
+// Subtitle style mapping for 9:16 vertical videos.
 const subtitleFontConfigs = {
   default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 20, bold: 0, italic: 0, spacing: 0 },
   bold: { fontName: 'A2z', fontSize: 10.8, marginV: 20, bold: -1, italic: 0, spacing: 0.2 },
@@ -742,7 +740,7 @@ function getForceStyle(style, fontKey = 'default') {
   return styles[style] || styles.classic
 }
 
-// ??댄? ?ㅻ쾭?덉씠 ?대?吏 ?앹꽦 (Canvas, ?щ챸 諛곌꼍)
+// Generate a transparent title overlay image with Canvas.
 function generateTitleOverlay(text, design, palette, outputPath) {
   const W = 1080, H = 1920
   const canvas = createCanvas(W, H)
@@ -821,7 +819,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 app.post('/api/subtitle/burn', async (req, res) => {
   const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles } = req.body
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
-  // animatedTitles: [{ sceneNumber, localPath }] ??WebM ?뚰뙆 ?곸긽 ?ㅻ쾭?덉씠
+  // animatedTitles: [{ sceneNumber, localPath }] optional WebM title overlays.
   const animatedTitleMap = {}
   if (Array.isArray(animatedTitles)) {
     animatedTitles.forEach(t => { if (t.sceneNumber && t.localPath && fs.existsSync(t.localPath)) animatedTitleMap[t.sceneNumber] = t.localPath })
@@ -844,13 +842,13 @@ app.post('/api/subtitle/burn', async (req, res) => {
   ]
 
   try {
-    // 1) HeyGen ?곸긽 ?ㅼ슫濡쒕뱶
+    // 1) Download the raw HeyGen video.
     const videoRes = await fetch(videoUrl)
-    if (!videoRes.ok) throw new Error(`?곸긽 ?ㅼ슫濡쒕뱶 ?ㅽ뙣: ${videoRes.status}`)
+    if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
     const buffer = Buffer.from(await videoRes.arrayBuffer())
     fs.writeFileSync(inputPath, buffer)
 
-    // 2) ?곸긽 湲몄씠 ?뺤씤
+    // 2) Measure the final video duration.
     const duration = await new Promise((resolve) => {
       execFile(ffmpegPath, ['-i', inputPath], { timeout: 10000 }, (err, stdout, stderr) => {
         const match = (stderr || '').match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
@@ -862,7 +860,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     })
 
-    // 3) SRT ?앹꽦 ??湲곕낯 2以? 珥?3以꾩씠硫?3以??좎?, 4以??댁긽?대㈃ 2以꾩뵫 遺꾪븷
+    // 3) Build SRT blocks, usually 2 lines per block and 3 when it fits cleanly.
     const maxCharsPerLine = 16
     let srtContent = ''
     let srtIdx = 1
@@ -872,7 +870,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     for (const scene of scenes) {
       const sceneDur = (scene.narration.length / totalChars) * duration
       const lines = splitNarration(scene.narration, maxCharsPerLine)
-      // 釉붾줉 遺꾪븷: 2以?湲곕낯, 3以꾩? 洹몃?濡??좎?, 4以??댁긽? 2以꾩뵫
+      // Group lines into subtitle blocks while keeping them readable.
       const blocks = []
       const linesPerBlock = lines.length === 3 ? 3 : 2
       for (let j = 0; j < lines.length; j += linesPerBlock) {
@@ -901,7 +899,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
 
     fs.writeFileSync(srtPath, srtContent, 'utf8')
 
-    // 4) ??댄? ?ㅻ쾭?덉씠 ?앹꽦 (avatar_keyword ?? ??animatedTitles ?덉쑝硫?WebM, ?놁쑝硫?PNG
+    // 4) Build title overlays. Use WebM when provided, otherwise generate PNG overlays.
     const titleOverlays = []
     let titleTime = 0
     for (const scene of scenes) {
@@ -921,18 +919,18 @@ app.post('/api/subtitle/burn', async (req, res) => {
       titleTime += sceneDur
     }
 
-    // 5) FFmpeg濡??먮쭑 + ??댄? ?ㅻ쾭?덉씠 踰덉씤
+    // 5) Burn subtitles and title overlays into the final video.
     const srtPathEscaped = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:')
     const fontsDirEscaped = path.join(__dirname, 'fonts').replace(/\\/g, '/').replace(/:/g, '\\:')
     const resolvedFont = getSubtitleFontConfig(subtitleFont || 'default')
     const forceStyle = getForceStyle(subtitleStyle || 'classic', subtitleFont || 'default')
 
-    // FFmpeg ?꾪꽣 援ъ꽦: ?먮쭑 + ??댄? ?ㅻ쾭?덉씠 (?좊땲硫붿씠??WebM? itsoffset?쇰줈 ??대컢 留욎땄)
+    // Compose FFmpeg filters for subtitles plus title overlays.
     let filterComplex = ''
     const inputs = ['-i', inputPath]
     titleOverlays.forEach((t) => {
       if (t.animated) {
-        // WebM ?뚰뙆 ?곸긽: itsoffset?쇰줈 ???쒖옉 ?쒓컙??留욎텛怨? ??湲몄씠留뚰겮 諛섎났
+        // WebM overlays are offset to the scene start and loop for the scene duration.
         inputs.push('-itsoffset', t.start.toFixed(3), '-stream_loop', '-1', '-i', t.path)
       } else {
         inputs.push('-i', t.path)
@@ -940,7 +938,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     })
 
     if (titleOverlays.length > 0) {
-      // overlay 泥댁씤: [0]???먮쭑 ????댄? ?쒖감 ?ㅻ쾭?덉씠
+      // Overlay chain: base video -> subtitles -> title overlays.
       let chain = `[0:v]subtitles='${srtPathEscaped}':fontsdir='${fontsDirEscaped}':force_style='${forceStyle}'[sub]`
       let prevLabel = 'sub'
       titleOverlays.forEach((t, i) => {
@@ -954,12 +952,12 @@ app.post('/api/subtitle/burn', async (req, res) => {
       await new Promise((resolve, reject) => {
         const args = [...inputs, '-filter_complex', filterComplex, '-map', '[out]', '-map', '0:a', '-c:a', 'copy', '-y', outputPath]
         execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-          if (err) reject(new Error(`FFmpeg ?ㅻ쪟: ${err.message}\n${(stderr || '').slice(-500)}`))
+          if (err) reject(new Error(`FFmpeg 오류: ${err.message}\n${(stderr || '').slice(-500)}`))
           else resolve()
         })
       })
     } else {
-      // ??댄? ?놁쑝硫??먮쭑留?
+      // If there is no title overlay, burn subtitles only.
       await new Promise((resolve, reject) => {
         const args = [
           '-i', inputPath,
@@ -968,13 +966,13 @@ app.post('/api/subtitle/burn', async (req, res) => {
           '-y', outputPath,
         ]
         execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-          if (err) reject(new Error(`FFmpeg ?ㅻ쪟: ${err.message}\n${(stderr || '').slice(-500)}`))
+          if (err) reject(new Error(`FFmpeg 오류: ${err.message}\n${(stderr || '').slice(-500)}`))
           else resolve()
         })
       })
     }
 
-    // ??댄? ?꾩떆 ?뚯씪 ?뺣━ (PNG留???젣, ?좊땲硫붿씠??WebM? 蹂댁〈)
+    // Clean up generated PNG overlays. Keep provided WebM overlays intact.
     titleOverlays.forEach(t => { if (t.cleanup) { try { fs.unlinkSync(t.path) } catch {} } })
 
     // 5) ?묐떟
@@ -988,7 +986,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       resolvedFont: resolvedFont.fontName,
     })
 
-    // ?먮낯 ?뚯씪 ?뺣━ (吏????젣)
+    // Clean up temporary input files immediately.
     setTimeout(() => { try { fs.unlinkSync(inputPath) } catch {} }, 60000)
   } catch (err) {
     try { fs.unlinkSync(inputPath) } catch {}
@@ -997,7 +995,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
   }
 })
 
-// ===== Remotion ?쒕쾭?ъ씠???뚮뜑留?=====
+// ===== Remotion render endpoint =====
 let remotionBundleUrl = null
 let remotionBundleMtime = 0
 
@@ -1030,27 +1028,27 @@ app.post('/api/remotion/render', async (req, res) => {
     const { bundle } = await import('@remotion/bundler')
     const { renderMedia, selectComposition } = await import('@remotion/renderer')
 
-    // 踰덈뱾 罹먯떛 + ?뚯뒪 蹂寃????먮룞 ?щ쾲?ㅻ쭅
+    // Cache the bundle and rebuild only when the source files change.
     const sourceMtime = getRemotionSourceMtime()
     if (!remotionBundleUrl || sourceMtime > remotionBundleMtime) {
-      console.log(`[Remotion] ${remotionBundleUrl ? '?뚯뒪 蹂寃?媛먯?, ?щ쾲?ㅻ쭅' : '踰덈뱾留??쒖옉'}...`)
+      console.log(`[Remotion] ${remotionBundleUrl ? '소스 변경 감지, 번들 재생성' : '번들 생성 시작'}...`)
       const entryPoint = path.join(__dirname, '..', 'client', 'src', 'remotion', 'index.jsx')
       remotionBundleUrl = await bundle({
         entryPoint,
-        onProgress: (p) => { if (p % 20 === 0) console.log(`[Remotion] 踰덈뱾 吏꾪뻾: ${p}%`) },
+        onProgress: (p) => { if (p % 20 === 0) console.log(`[Remotion] 번들 진행: ${p}%`) },
       })
       remotionBundleMtime = sourceMtime
-      console.log('[Remotion] 踰덈뱾 ?꾨즺:', remotionBundleUrl)
+      console.log('[Remotion] 번들 완료:', remotionBundleUrl)
     }
 
-    // 而댄룷吏???좏깮
+    // Select the requested composition.
     const composition = await selectComposition({
       serveUrl: remotionBundleUrl,
       id: compositionId,
       inputProps: props || {},
     })
 
-    // durationInFrames / fps ?ㅻ쾭?쇱씠??
+    // Override duration and fps when provided by the caller.
     composition.durationInFrames = durationInFrames
     composition.fps = fps
 
@@ -1059,7 +1057,7 @@ app.post('/api/remotion/render', async (req, res) => {
     const codec = transparent ? 'vp8' : 'h264'
     const outputPath = path.join(outputDir2, `remotion_${compositionId}_${ts}.${ext}`)
 
-    console.log(`[Remotion] ?뚮뜑 ?쒖옉: ${compositionId} (${durationInFrames}f, ${fps}fps, ${codec}${transparent ? ', transparent' : ''})`)
+    console.log(`[Remotion] 렌더 시작: ${compositionId} (${durationInFrames}f, ${fps}fps, ${codec}${transparent ? ', transparent' : ''})`)
     await renderMedia({
       composition,
       serveUrl: remotionBundleUrl,
@@ -1069,19 +1067,19 @@ app.post('/api/remotion/render', async (req, res) => {
       imageFormat: transparent ? 'png' : 'jpeg',
       pixelFormat: transparent ? 'yuva420p' : 'yuv420p',
     })
-    console.log(`[Remotion] ?뚮뜑 ?꾨즺: ${outputPath}`)
+    console.log(`[Remotion] 렌더 완료: ${outputPath}`)
 
     const size = fs.statSync(outputPath).size
     res.json({ url: `/output/remotion_${compositionId}_${ts}.${ext}`, filePath: outputPath, size })
   } catch (err) {
-    console.error('[Remotion] ?뚮뜑 ?먮윭:', err)
-    // 踰덈뱾 ?먮윭 ??罹먯떆 珥덇린??
+    console.error('[Remotion] 렌더 오류:', err)
+    // Reset the bundle cache when rendering fails.
     if (err.message?.includes('bundle')) remotionBundleUrl = null
     res.status(500).json({ error: err.message })
   }
 })
 
-// Remotion ?뚮뜑留?寃곌낵 MP4 ??HeyGen ?낅줈??
+// Upload a rendered MP4 to HeyGen as a video asset.
 app.post('/api/remotion/upload-to-heygen', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   const { localPath } = req.body
@@ -1128,7 +1126,7 @@ app.post('/api/output/upload', (req, res) => {
     res.status(status).json({ error: msg })
   }
 
-  // 60珥???꾩븘??(Imagen ?대?吏 ?⑸웾 ?鍮?
+  // Use a 60-second timeout because image payloads can be large.
   const timeout = setTimeout(() => fail(408, 'Upload timeout (60s)'), 60000)
 
   req.on('data', chunk => {
@@ -1372,23 +1370,23 @@ async function resolveInstagramPublishResult(mediaId, accessToken) {
   }
 }
 
-// ?대?吏 ?낅줈??(?⑥씪 ?먮뒗 罹먮윭?)
+// Legacy Instagram image upload path for single images and carousels.
 async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
     throw new Error('Instagram environment variables are missing: INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID')
   }
-  if (!imageUrls.length) throw new Error('?대?吏 URL???놁뒿?덈떎')
+  if (!imageUrls.length) throw new Error('이미지 URL이 없습니다.')
 
   const urls = imageUrls.filter(Boolean).slice(0, 10)
   if (urls.length === 1) {
-    // ?⑥씪 ?대?吏
+    // Single image upload.
     const createRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_url: urls[0], caption, access_token: IG_ACCESS_TOKEN }),
     })
     const created = await createRes.json()
-    if (!createRes.ok || !created.id) throw new Error(`而⑦뀒?대꼫 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(created)}`)
+    if (!createRes.ok || !created.id) throw new Error(`컨테이너 생성 실패: ${JSON.stringify(created)}`)
     await waitForMediaReadyLegacy([created.id])
 
     const pub = await publishInstagramMediaWithRetry({
@@ -1408,7 +1406,7 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
     return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
   }
 
-  // 罹먮윭? (?щ윭 ?대?吏)
+  // Carousel upload.
   const childIds = []
   for (const url of urls) {
     const r = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
@@ -1417,11 +1415,11 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
       body: JSON.stringify({ image_url: url, is_carousel_item: true, access_token: IG_ACCESS_TOKEN }),
     })
     const d = await r.json()
-    if (!r.ok || !d.id) throw new Error(`罹먮윭? ?먯떇 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(d)}`)
+    if (!r.ok || !d.id) throw new Error(`캐러셀 자식 생성 실패: ${JSON.stringify(d)}`)
     childIds.push(d.id)
   }
 
-  // ?먯떇 誘몃뵒?대뱾??FINISHED ???뚭퉴吏 ?湲?
+  // Wait for child media to reach FINISHED.
   await waitForMediaReadyLegacy(childIds)
 
   const carouselRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`, {
@@ -1435,9 +1433,9 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
     }),
   })
   const carousel = await carouselRes.json()
-  if (!carouselRes.ok || !carousel.id) throw new Error(`罹먮윭? 而⑦뀒?대꼫 ?앹꽦 ?ㅽ뙣: ${JSON.stringify(carousel)}`)
+  if (!carouselRes.ok || !carousel.id) throw new Error(`캐러셀 컨테이너 생성 실패: ${JSON.stringify(carousel)}`)
 
-  // 罹먮윭? 而⑦뀒?대꼫??FINISHED ???뚭퉴吏 ?湲?
+  // Wait for the carousel container to reach FINISHED.
   await waitForMediaReadyLegacy([carousel.id])
 
   const pub = await publishInstagramMediaWithRetry({
@@ -1457,7 +1455,7 @@ async function publishInstagramPostLegacy({ imageUrls = [], caption = '' }) {
   return resolveInstagramPublishResult(pub.id, IG_ACCESS_TOKEN)
 }
 
-// 誘몃뵒??而⑦뀒?대꼫媛 寃뚯떆 以鍮꾨맆 ?뚭퉴吏 ?湲?(理쒕? 60珥?
+// Wait until Instagram media containers are ready to publish.
 async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
   const interval = 2000
   const start = Date.now()
@@ -1467,19 +1465,19 @@ async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
       const d = await r.json()
       if (d.status_code === 'FINISHED') break
       if (d.status_code === 'ERROR' || d.status_code === 'EXPIRED') {
-        throw new Error(`誘몃뵒??泥섎━ ?ㅽ뙣 (${id}): ${d.status_code}`)
+        throw new Error(`미디어 처리 실패 (${id}): ${d.status_code}`)
       }
       await new Promise(res => setTimeout(res, interval))
     }
   }
 }
 
-// base64 data URL??Supabase Storage???낅줈????怨듦컻 URL 諛섑솚
+// Upload a base64 data URL to Supabase Storage and return a public URL.
 async function uploadDataUrlToStorage(dataUrl, filename) {
   if (!supabaseAdmin) throw new Error('Supabase is not configured')
-  if (!dataUrl?.startsWith('data:')) return dataUrl // ?대? URL?대㈃ 洹몃?濡?
+  if (!dataUrl?.startsWith('data:')) return dataUrl
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) throw new Error('?섎せ??data URL')
+  if (!match) throw new Error('잘못된 data URL입니다.')
   const [, mime, b64] = match
   const buf = Buffer.from(b64, 'base64')
   const ext = mime.split('/')[1] || 'png'
@@ -1488,7 +1486,7 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
     contentType: mime,
     upsert: false,
   })
-  if (error) throw new Error(`?ㅽ넗由ъ? ?낅줈???ㅽ뙣: ${error.message}`)
+  if (error) throw new Error(`스토리지 업로드 실패: ${error.message}`)
   const { data: pub } = supabaseAdmin.storage.from('extraction-images').getPublicUrl(path)
   return pub?.publicUrl
 }
@@ -1496,7 +1494,7 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
 async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
   const auth = getInstagramAuthMaterial()
   if (!auth?.accessToken || !auth?.businessId) {
-    throw new Error('Instagram ?몄쬆 ?뺣낫媛 ?놁뒿?덈떎. ?ㅼ젙?먯꽌 ?ㅼ떆 ?곌껐??二쇱꽭??')
+    throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
   }
   if (!imageUrls.length) {
     throw new Error('Instagram image URL is missing')
@@ -1575,12 +1573,12 @@ async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000
 app.post('/api/naver/publish', async (req, res) => {
   try {
     const { title, content, tags } = req.body
-    if (!title || !content) return res.status(400).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: 'title, content ?꾩닔' })
+    if (!title || !content) return res.status(400).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: 'title, content 필수' })
     const { uploadToNaverBlog } = await import('./services/naver-blog.js')
     const result = await uploadToNaverBlog({ title, content, tags: tags || [] })
     res.json({ success: true, source: 'server-api', endpoint: '/api/naver/publish', url: result.url })
   } catch (err) {
-    console.error('[Naver Blog] ?낅줈???ㅽ뙣:', err.message)
+    console.error('[Naver Blog] 업로드 실패:', err.message)
     res.status(500).json({ success: false, source: 'server-api', endpoint: '/api/naver/publish', error: err.message })
   }
 })
@@ -1588,7 +1586,7 @@ app.post('/api/naver/publish', async (req, res) => {
 app.post('/api/instagram/publish', async (req, res) => {
   try {
     const { imageUrls = [], caption } = req.body
-    // data URL?대㈃ Supabase???낅줈????怨듦컻 URL濡?蹂??
+    // Convert data URLs into publicly reachable Supabase Storage URLs.
     const publicUrls = []
     for (const url of imageUrls) {
       if (typeof url === 'string' && url.startsWith('data:')) {
@@ -1600,7 +1598,7 @@ app.post('/api/instagram/publish', async (req, res) => {
     const result = await publishInstagramPostV2({ imageUrls: publicUrls, caption })
     res.json({ success: true, ...result, uploadedUrls: publicUrls })
   } catch (err) {
-    console.error('[Instagram] ?낅줈???ㅽ뙣:', err.message)
+    console.error('[Instagram] 업로드 실패:', err.message)
     res.status(500).json({ success: false, error: err.message })
   }
 })
@@ -1687,10 +1685,10 @@ app.post('/api/instagram/schedule-test', async (req, res) => {
   }
 })
 
-// ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
+// ===== YouTube Data API v3 (OAuth 2.0 + upload) =====
 const { google } = require('googleapis')
 
-// ?섍꼍蹂???곗꽑, ?놁쑝硫?client_secret.json ?뚯씪 ?대갚 (媛쒕컻 ?몄쓽)
+// Prefer environment variables, then fall back to client_secret.json for local development.
 const ytCredentials = (() => {
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     return {
@@ -1708,7 +1706,7 @@ const YOUTUBE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhos
 let ytOAuth2Client = null
 let ytTokens = null
 
-// ?좏겙 ??μ냼: Supabase ?곗꽑, ?놁쑝硫??뚯씪 ?대갚
+// Store OAuth tokens in Supabase when available, otherwise use a local file.
 const ytTokenPath = path.join(__dirname, '.youtube_tokens.json')
 
 async function loadYtTokens() {
@@ -1716,7 +1714,7 @@ async function loadYtTokens() {
     try {
       const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', 'default').maybeSingle()
       if (!error && data?.tokens) return data.tokens
-    } catch (err) { console.warn('[YouTube] Supabase ?좏겙 濡쒕뱶 ?ㅽ뙣:', err.message) }
+    } catch (err) { console.warn('[YouTube] Supabase 토큰 로드 실패:', err.message) }
   }
   try {
     if (fs.existsSync(ytTokenPath)) return JSON.parse(fs.readFileSync(ytTokenPath, 'utf-8'))
@@ -1732,9 +1730,9 @@ async function saveYtTokens(tokens) {
         tokens,
         updated_at: new Date().toISOString(),
       })
-      if (error) console.warn('[YouTube] Supabase ?좏겙 ????ㅽ뙣:', error.message)
+      if (error) console.warn('[YouTube] Supabase 토큰 저장 실패:', error.message)
       else return
-    } catch (err) { console.warn('[YouTube] Supabase ?좏겙 ????ㅻ쪟:', err.message) }
+    } catch (err) { console.warn('[YouTube] Supabase 토큰 저장 오류:', err.message) }
   }
   try { fs.writeFileSync(ytTokenPath, JSON.stringify(tokens, null, 2)) } catch {}
 }
@@ -1760,7 +1758,7 @@ async function clearYtTokens() {
   try { fs.unlinkSync(ytTokenPath) } catch {}
 }
 
-// ?쒕쾭 ?쒖옉 ???좏겙 濡쒕뱶 (鍮꾨룞湲?
+// Load saved tokens asynchronously when the server starts.
 loadYtTokens().then(t => { if (t) ytTokens = t })
 
 function getYtOAuth2Client() {
@@ -1883,7 +1881,7 @@ async function validateInstagramSessionV2() {
   }
 }
 
-// OAuth ?몄쬆 URL ?앹꽦
+// Build the OAuth consent URL.
 loadInstagramTokens().then((tokens) => {
   if (tokens) {
     instagramTokens = tokens
@@ -1974,13 +1972,13 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
   const { code, error, state } = req.query
 
   if (error) {
-    return res.status(400).send(`<html><body><h2>Instagram ?몄쬆 嫄곕?</h2><p>${error}</p></body></html>`)
+    return res.status(400).send(`<html><body><h2>Instagram 인증 거부</h2><p>${error}</p></body></html>`)
   }
   if (!code) {
     return res.status(400).send('Missing code')
   }
   if (instagramOAuthState && state !== instagramOAuthState) {
-    return res.status(400).send('<html><body><h2>Instagram ?몄쬆 ?ㅽ뙣</h2><p>state mismatch</p></body></html>')
+    return res.status(400).send('<html><body><h2>Instagram 인증 실패</h2><p>state mismatch</p></body></html>')
   }
 
   instagramOAuthState = null
@@ -2028,10 +2026,10 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
       updatedAt: new Date().toISOString(),
     })
 
-    res.send('<html><body><h2>Instagram ?몄쬆 ?꾨즺!</h2><p>??李쎌쓣 ?リ퀬 ?뚯븘媛?몄슂.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+    res.send('<html><body><h2>Instagram 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
     console.error('[Instagram OAuth] callback failed:', err.message)
-    res.status(500).send(`<html><body><h2>Instagram ?몄쬆 ?ㅽ뙣</h2><p>${err.message}</p></body></html>`)
+    res.status(500).send(`<html><body><h2>Instagram 인증 실패</h2><p>${err.message}</p></body></html>`)
   }
 })
 
@@ -2051,27 +2049,25 @@ app.get('/api/youtube/auth-url', (req, res) => {
   res.json({ url })
 })
 
-// OAuth 肄쒕갚
 app.get('/api/youtube/oauth/callback', async (req, res) => {
   const { code, error } = req.query
   console.log('[YouTube OAuth callback]', { hasCode: !!code, error })
-  if (error) return res.status(400).send(`<html><body><h2>?몄쬆 嫄곕???/h2><p>${error}</p></body></html>`)
+  if (error) return res.status(400).send(`<html><body><h2>인증 거부</h2><p>${error}</p></body></html>`)
   if (!code) return res.status(400).send('Missing code')
   try {
     const client = getYtOAuth2Client()
     const { tokens } = await client.getToken(code)
-    console.log('[YouTube OAuth] ?좏겙 ?띾뱷 ?깃났, scopes:', tokens.scope)
+    console.log('[YouTube OAuth] 토큰 획득 성공, scopes:', tokens.scope)
     client.setCredentials(tokens)
     await persistYtTokens(tokens)
-    console.log('[YouTube OAuth] ?좏겙 ????꾨즺')
-    res.send('<html><body><h2>YouTube ?몄쬆 ?꾨즺!</h2><p>??李쎌쓣 ?リ퀬 ?뚯븘媛?몄슂.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
+    console.log('[YouTube OAuth] 토큰 저장 완료')
+    res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
-    console.error('[YouTube OAuth] ?좏겙 ?띾뱷 ?ㅽ뙣:', err.message)
-    res.status(500).send(`<html><body><h2>?몄쬆 ?ㅽ뙣</h2><p>${err.message}</p></body></html>`)
+    console.error('[YouTube OAuth] 토큰 획득 실패:', err.message)
+    res.status(500).send(`<html><body><h2>인증 실패</h2><p>${err.message}</p></body></html>`)
   }
 })
 
-// ?몄쬆 ?곹깭 ?뺤씤
 app.get('/api/youtube/auth-status', async (_req, res) => {
   try {
     const status = await validateYouTubeSession()
@@ -2086,7 +2082,6 @@ app.get('/api/youtube/auth-status', async (_req, res) => {
   }
 })
 
-// ?몄쬆 ?댁젣
 app.post('/api/youtube/logout', async (req, res) => {
   ytTokens = null
   await clearYtTokens()
@@ -2094,9 +2089,8 @@ app.post('/api/youtube/logout', async (req, res) => {
   res.json({ success: true })
 })
 
-// ?ㅼ젣 ?낅줈??
 app.post('/api/youtube/upload', async (req, res) => {
-  // ?됰㈃ 援ъ“ ?먮뒗 { snippet, status, videoUrl } 援ъ“ 紐⑤몢 吏??
+  // Support both flat payloads and { snippet, status, videoUrl } payloads.
   const body = req.body || {}
   const snippet = body.snippet || {}
   const status = body.status || {}
@@ -2108,34 +2102,34 @@ app.post('/api/youtube/upload', async (req, res) => {
   const requestedPublishAt = body.scheduledAt || status.publishAt || null
   const videoUrl = body.videoUrl
 
-  if (!ytTokens) return res.status(401).json({ error: 'YouTube ?몄쬆???꾩슂?⑸땲?? 癒쇱? Google 怨꾩젙???곌껐?섏꽭??' })
-  if (!videoUrl) return res.status(400).json({ error: 'videoUrl???꾩슂?⑸땲??' })
+  if (!ytTokens) return res.status(401).json({ error: 'YouTube 인증이 필요합니다. 먼저 Google 계정을 연결해 주세요.' })
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl이 필요합니다.' })
 
   const publishAt = requestedPublishAt ? new Date(requestedPublishAt) : null
   if (publishAt && Number.isNaN(publishAt.getTime())) {
-    return res.status(400).json({ error: '?덉빟 諛쒗뻾 ?쒓컙? ISO 8601 ?뺤떇???꾩슂?⑸땲??' })
+    return res.status(400).json({ error: '예약 발행 시간은 ISO 8601 형식이 필요합니다.' })
   }
 
   const client = getYtOAuth2Client()
   const youtube = google.youtube({ version: 'v3', auth: client })
 
   try {
-    // ?곸긽 ?ㅼ슫濡쒕뱶 (濡쒖뺄 寃쎈줈 ?먮뒗 URL)
+    // Download the video from a local output path or a remote URL.
     let videoBuffer
     const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
     if (localPath && fs.existsSync(localPath)) {
       videoBuffer = fs.readFileSync(localPath)
     } else {
       const videoRes = await fetch(videoUrl)
-      if (!videoRes.ok) throw new Error(`?곸긽 ?ㅼ슫濡쒕뱶 ?ㅽ뙣: ${videoRes.status}`)
+      if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
       videoBuffer = Buffer.from(await videoRes.arrayBuffer())
     }
 
-    // ?꾩떆 ?뚯씪濡????(?ㅽ듃由??꾩슂)
+    // Write a temporary file because the YouTube upload API needs a stream.
     const tmpPath = path.join(__dirname, '..', 'output', `yt_upload_${Date.now()}.mp4`)
     fs.writeFileSync(tmpPath, videoBuffer)
 
-    console.log('[YouTube] ?낅줈???쒖옉:', { title, tags, size: videoBuffer.length })
+    console.log('[YouTube] 업로드 시작:', { title, tags, size: videoBuffer.length })
 
     const response = await youtube.videos.insert({
       part: ['snippet', 'status'],
@@ -2157,11 +2151,11 @@ app.post('/api/youtube/upload', async (req, res) => {
       },
     })
 
-    // ?꾩떆 ?뚯씪 ??젣
+    // Remove the temporary upload file shortly after the request finishes.
     setTimeout(() => { try { fs.unlinkSync(tmpPath) } catch {} }, 5000)
 
     const videoId = response.data.id
-    console.log('[YouTube] ?낅줈???꾨즺:', videoId)
+    console.log('[YouTube] 업로드 완료:', videoId)
 
     res.json({
       success: true,
@@ -2172,7 +2166,7 @@ app.post('/api/youtube/upload', async (req, res) => {
       snippet: response.data.snippet,
     })
   } catch (err) {
-    console.error('[YouTube] ?낅줈???ㅽ뙣 ?꾩껜:', JSON.stringify({
+    console.error('[YouTube] 업로드 실패 전체:', JSON.stringify({
       code: err.code,
       message: err.message,
       status: err.status,
@@ -2186,7 +2180,7 @@ app.post('/api/youtube/upload', async (req, res) => {
 })
 
 // ======================================================================
-// ?덉빟 ?낅줈??(Scheduled Uploads) ??Supabase 湲곕컲
+// Scheduled uploads backed by Supabase
 // ======================================================================
 
 const API_SECRET = process.env.API_SECRET || ''
@@ -2199,13 +2193,12 @@ function requireApiSecret(req, res, next) {
   next()
 }
 
-// ?덉빟 ?앹꽦
 app.post('/api/scheduled/create', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
     const { platform, extractionId, content, scheduledAt, scheduledId } = req.body
     if (!platform || !extractionId || !scheduledAt) {
-      return res.status(400).json({ error: 'platform, extractionId, scheduledAt ?꾩닔' })
+      return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
     }
 
     if (scheduledId) {
@@ -2226,7 +2219,7 @@ app.post('/api/scheduled/create', async (req, res) => {
       return res.json(data)
     }
 
-    // 以묐났 諛⑹?: ?숈씪 extraction_id + platform??pending ?덉빟???덉쑝硫?update
+    // If the same extraction/platform already has a pending reservation, update it instead.
     const { data: existingList } = await supabaseAdmin
       .from('scheduled_uploads')
       .select('*')
@@ -2237,7 +2230,7 @@ app.post('/api/scheduled/create', async (req, res) => {
 
     if (existingList && existingList.length > 0) {
       const first = existingList[0]
-      // 以묐났???섎㉧吏 pending ?뺣━
+      // Remove duplicate pending rows and keep the newest one.
       if (existingList.length > 1) {
         const extraIds = existingList.slice(1).map(r => r.id)
         await supabaseAdmin.from('scheduled_uploads').delete().in('id', extraIds)
@@ -2273,7 +2266,7 @@ app.post('/api/scheduled/create', async (req, res) => {
   }
 })
 
-// ?덉빟 紐⑸줉
+// Scheduled upload list
 app.get('/api/scheduled/list', async (req, res) => {
   if (!supabaseAdmin) return res.json([])
   try {
@@ -2285,14 +2278,14 @@ app.get('/api/scheduled/list', async (req, res) => {
     res.json(data)
   } catch (err) {
     if (err?.code === '42P01') {
-      console.warn('[scheduled/list] scheduled_uploads ?뚯씠釉붿씠 ?놁뼱 鍮?紐⑸줉?쇰줈 泥섎━?⑸땲??')
+      console.warn('[scheduled/list] scheduled_uploads 테이블이 없어 빈 목록으로 처리합니다.')
       return res.json([])
     }
     res.status(500).json({ error: err.message })
   }
 })
 
-// ?덉빟 ??젣
+// Delete a scheduled upload row
 app.delete('/api/scheduled/:id', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
@@ -2307,7 +2300,7 @@ app.delete('/api/scheduled/:id', async (req, res) => {
   }
 })
 
-// ?덉빟 ?섏젙
+// Update a scheduled upload row
 app.patch('/api/scheduled/:id', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
@@ -2329,12 +2322,12 @@ app.patch('/api/scheduled/:id', async (req, res) => {
   }
 })
 
-// GitHub Actions ?몄텧 ???덉빟???낅줈???ㅽ뻾 (湲濡쒕쾶 x-app-secret 誘몃뱾?⑥뼱濡??몄쬆)
+// Called by GitHub Actions to execute due scheduled uploads.
 app.post('/api/scheduled/run', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
 
   try {
-    // ?ㅽ뻾 ?쒓컖 ?꾨떖??pending ??ぉ 議고쉶
+    // Find pending rows whose scheduled time has already passed.
     const nowIso = new Date().toISOString()
     const { data: dueItems, error: fetchErr } = await supabaseAdmin
       .from('scheduled_uploads')
@@ -2348,7 +2341,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
     const results = []
     for (const item of (dueItems || [])) {
-      // ?낅줈??以묒쑝濡??쒖떆
+      // Mark the row as actively uploading.
       await supabaseAdmin
         .from('scheduled_uploads')
         .update({ status: 'uploading', attempts: (item.attempts || 0) + 1 })
@@ -2357,8 +2350,6 @@ app.post('/api/scheduled/run', async (req, res) => {
       try {
         let uploadResult = null
 
-        // ?뚮옯?쇰퀎 ?낅줈???ㅽ뻾
-        // ?덉빟 ?ㅽ뻾 寃쎈줈???몄뒪?洹몃옩留??좎??섍퀬, 釉붾줈洹??좏뒠釉??덇굅??遺꾧린??鍮꾪솢?깊솕?쒕떎.
         // 예약 실행 경로는 인스타그램만 유지한다.
         // 레거시 YouTube/블로그 예약 실행 경로는 제거됨
         if (item.platform === 'instagram') {
@@ -2366,7 +2357,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           let imageUrls = c.imageUrls || []
           let caption = c.caption || ''
 
-          // content???대?吏 ?놁쑝硫?extraction?먯꽌 議고쉶
+          // If the row content is missing images, reload them from the extraction row.
           if (!imageUrls.length && item.extraction_id) {
             const { data: ext } = await supabaseAdmin
               .from('extractions')
@@ -2401,7 +2392,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           throw new Error(`지원하지 않는 플랫폼: ${item.platform}`)
         }
 
-        // 성공 처리
+        // Mark the scheduled upload as completed.
         const uploadedAtIso = new Date().toISOString()
         await supabaseAdmin
           .from('scheduled_uploads')
@@ -2413,7 +2404,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           })
           .eq('id', item.id)
 
-        // extractions.upload_status ?먮룄 ?낅줈???꾨즺 諛섏쁺 (肄섑뀗痢?愿由ъ뿉???쒖떆??
+        // Reflect the completion in extractions.upload_status for the content list UI.
         if (item.extraction_id) {
           try {
             const { data: extRow } = await supabaseAdmin
@@ -2434,7 +2425,7 @@ app.post('/api/scheduled/run', async (req, res) => {
               .update({ upload_status: newStatus })
               .eq('id', item.extraction_id)
           } catch (e) {
-            console.warn('[extractions.upload_status ?낅뜲?댄듃 ?ㅽ뙣]', e.message)
+            console.warn('[extractions.upload_status 업데이트 실패]', e.message)
           }
         }
 

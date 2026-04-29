@@ -227,9 +227,11 @@ export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
 }
 
 export const deriveBlogHeadline = (keyPhrase, heading) => {
-  const source = isWeakBlogKeyPhrase(keyPhrase, heading)
-    ? deriveHeadingKeywordFallback(heading) || cleanCardText(keyPhrase)
-    : cleanCardText(keyPhrase) || deriveHeadingKeywordFallback(heading)
+  const preferredKeyPhrase = cleanCardText(keyPhrase)
+  const source = preferredKeyPhrase
+    || (isWeakBlogKeyPhrase(keyPhrase, heading)
+      ? deriveHeadingKeywordFallback(heading)
+      : deriveHeadingKeywordFallback(heading))
 
   return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }

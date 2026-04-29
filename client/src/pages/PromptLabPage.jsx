@@ -172,9 +172,11 @@ const splitCardTokens = (text = '') => {
 }
 
 const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
-  const source = isWeakBlogKeyPhrase(keyPhrase, heading)
-    ? deriveHeadingKeywordFallback(heading) || cleanCardText(keyPhrase)
-    : cleanCardText(keyPhrase) || deriveHeadingKeywordFallback(heading)
+  const preferredKeyPhrase = cleanCardText(keyPhrase)
+  const source = preferredKeyPhrase
+    || (isWeakBlogKeyPhrase(keyPhrase, heading)
+      ? deriveHeadingKeywordFallback(heading)
+      : deriveHeadingKeywordFallback(heading))
 
   return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }
@@ -386,7 +388,7 @@ function renderInstagramOverlayPreview(image, preview) {
 
   return (
     <div className="relative aspect-square overflow-hidden rounded-xl border border-border shadow-sm bg-white">
-      <img src={image.imageUrl} alt={`?몄뒪? ${cardNumber}`} className="absolute inset-0 h-full w-full object-cover" />
+      <img src={image.imageUrl} alt={`인스타 ${cardNumber}`} className="absolute inset-0 h-full w-full object-cover" />
       <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/18'}`} />
 
       {isCenterCard ? (
@@ -447,12 +449,12 @@ function renderImageResultCard(title, image, preview) {
             </div>
           )}
           <div className="space-y-1">
-            <p className="text-xs font-medium text-text-muted">?대?吏 ?ㅻ뵫</p>
-            <p className="text-sm font-medium text-text">{image.heading || '?놁쓬'}</p>
+            <p className="text-xs font-medium text-text-muted">이미지 헤딩</p>
+            <p className="text-sm font-medium text-text">{image.heading || '없음'}</p>
           </div>
         </div>
       ) : (
-        <p className="text-sm text-text-muted">?대?吏 寃곌낵媛 ?놁뒿?덈떎.</p>
+        <p className="text-sm text-text-muted">이미지 결과가 없습니다.</p>
       )}
     </div>
   )

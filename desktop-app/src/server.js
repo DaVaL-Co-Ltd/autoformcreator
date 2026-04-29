@@ -141,12 +141,6 @@ const upload = multer({
 
 function helperClientGuard(req, res, next) {
   const origin = req.get('origin')
-  const clientHeader = req.get(UPLOAD_CLIENT_HEADER)
-
-  if (clientHeader && clientHeader !== 'web-client') {
-    res.status(403).json({ success: false, error: 'Only the AutoForm web client can access uploads.' })
-    return
-  }
 
   if (origin && !isAllowedOrigin(origin)) {
     res.status(403).json({ success: false, error: 'Origin is not allowed.' })
