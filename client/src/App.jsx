@@ -9,6 +9,7 @@ import ShortsViewerPage from './pages/ShortsViewerPage'
 import SubtitlePreviewPage from './pages/SubtitlePreviewPage'
 import TitlePreviewPage from './pages/TitlePreviewPage'
 import InstagramUploadTestPage from './pages/InstagramUploadTestPage'
+import InstagramScheduleTestPage from './pages/InstagramScheduleTestPage'
 import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
@@ -49,6 +50,7 @@ function AppLayout() {
           <Route path="/subtitle-preview" element={<SubtitlePreviewPage />} />
           <Route path="/title-preview" element={<TitlePreviewPage />} />
           <Route path="/instagram/upload-test" element={<InstagramUploadTestPage />} />
+          <Route path="/instagram/schedule-test" element={<InstagramScheduleTestPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
