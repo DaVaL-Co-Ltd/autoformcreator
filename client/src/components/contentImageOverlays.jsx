@@ -6,6 +6,55 @@ const cardShadow = {
   boxShadow: '0 18px 45px rgba(15, 23, 42, 0.16)',
 }
 
+const renderBalancedLines = (text, maxLineLength) => {
+  const words = String(text || '').split(/\s+/).filter(Boolean)
+  if (!words.length) return null
+
+  const lines = []
+  let current = ''
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word
+    if (next.length > maxLineLength && current) {
+      lines.push(current)
+      current = word
+    } else {
+      current = next
+    }
+  }
+  if (current) lines.push(current)
+
+  return lines.map((line, index) => (
+    <span key={`${line}-${index}`} className="block">
+      {line}
+    </span>
+  ))
+}
+
+const renderCardHeading = (text, fontSize) => {
+  const clean = String(text || '').replace(/[\s,.:;!?/\\]+$/g, '').trim()
+  if (!clean) return null
+
+  const size = Math.min(Math.max(fontSize, 5), 28)
+  return (
+    <p
+      className="font-black text-gray-800 leading-tight"
+      style={{
+        fontSize: `${size}px`,
+        wordBreak: 'keep-all',
+        overflowWrap: 'break-word',
+      }}
+    >
+      {renderBalancedLines(clean, Math.max(4, Math.floor(180 / size)))}
+    </p>
+  )
+}
+
+const normalizeCardLayout = (style) => {
+  if (style === 'center-card' || style === 'center-focus') return 'center-card'
+  if (style && typeof style === 'object') return style.layout || style.cardStyle || 'background-text'
+  return 'background-text'
+}
+
 function ImageLayer({ src, alt }) {
   if (!src) {
     return (
@@ -35,34 +84,62 @@ export function BlogImageArtwork({
   description,
   accentColor = '#6366f1',
   showTextOverlay = true,
+  variant = 'circle',
+  mode = 'result',
   containerClassName = '',
 }) {
+  const isThumb = mode === 'thumb'
+  const isPlain = variant === 'plain'
+  const baseClassName = isThumb
+    ? 'relative h-full w-full overflow-hidden bg-surface-light'
+    : 'relative aspect-square overflow-hidden bg-surface-light'
+
   return (
     <div
       ref={innerRef}
-      className={`relative aspect-[16/9] overflow-hidden bg-slate-100 ${containerClassName}`}
-      style={cardShadow}
+      className={`${baseClassName} ${containerClassName}`}
+      style={!isThumb ? cardShadow : undefined}
     >
       <ImageLayer src={src} alt={alt} />
-      {showTextOverlay && (
-        <div className="absolute inset-0 flex items-end bg-gradient-to-t from-slate-950/72 via-slate-950/18 to-transparent p-6">
-          <div className="max-w-[82%]">
-            <div
-              className="mb-3 h-1.5 w-14 rounded-full"
-              style={{ backgroundColor: accentColor }}
-            />
-            {headline && (
-              <h4 className="text-2xl font-black leading-tight text-white drop-shadow-sm">
-                {headline}
-              </h4>
-            )}
-            {description && (
-              <p className="mt-2 text-sm font-semibold leading-6 text-white/88">
-                {description}
-              </p>
-            )}
+      {showTextOverlay && isPlain && (
+        <>
+          <div className={`absolute inset-0 bg-gradient-to-t ${isThumb ? 'from-black/28 via-transparent to-transparent' : 'from-black/34 via-black/10 to-transparent'}`} />
+          <div className={`absolute inset-x-0 bottom-0 ${isThumb ? 'p-2' : 'p-5'}`}>
+            <div className={`${isThumb ? 'rounded-xl px-2.5 py-2' : 'rounded-[24px] px-5 py-4'} bg-white/92 border border-white/85 shadow-sm`}>
+              {renderCardHeading(headline, isThumb ? 7 : 22)}
+              {description && (
+                <p
+                  className={`${isThumb ? 'mt-1 text-[5px] leading-tight' : 'mt-2 text-[13px] leading-relaxed'} font-semibold text-gray-600`}
+                  style={IMAGE_TEXT_WRAP_STYLE}
+                >
+                  {renderBalancedLines(description, isThumb ? 18 : 22)}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        </>
+      )}
+      {showTextOverlay && !isPlain && (
+        <>
+          <div className={`absolute inset-0 ${isThumb ? 'bg-black/8' : 'bg-black/10'}`} />
+          <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-2' : 'p-6'}`}>
+            <div className={`${isThumb ? 'w-[72%] px-2 py-2 shadow' : 'w-[52%] max-w-[320px] px-5 py-5 shadow-xl'} aspect-square rounded-full bg-white/[0.94] flex flex-col items-center justify-center text-center`}>
+              {renderCardHeading(headline, isThumb ? 7 : 24)}
+              <div
+                className={`${isThumb ? 'w-4 h-0.5 mt-1 mb-1' : 'w-12 h-1 mt-3 mb-3'} rounded-full`}
+                style={{ background: accentColor }}
+              />
+              {description && (
+                <p
+                  className={`${isThumb ? 'text-[5px] leading-tight' : 'text-[13px] leading-relaxed'} text-gray-600 font-semibold`}
+                  style={IMAGE_TEXT_WRAP_STYLE}
+                >
+                  {renderBalancedLines(description, isThumb ? 14 : 14)}
+                </p>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
@@ -75,74 +152,76 @@ export function InstagramImageArtwork({
   cardNumber,
   cardTitle,
   descriptionLines = [],
-  points = [],
   kicker,
-  cardStyle = {},
+  cardStyle = 'background-text',
+  mode = 'result',
+  containerClassName = '',
 }) {
-  const accentColor = cardStyle.accentColor || '#ec4899'
-  const backgroundColor = cardStyle.backgroundColor || '#fff7fb'
-  const textColor = cardStyle.textColor || '#111827'
-  const visiblePoints = points.filter(Boolean)
+  const layout = normalizeCardLayout(cardStyle)
+  const isCenterCard = layout === 'center-card'
+  const isThumb = mode === 'thumb'
   const visibleDescriptions = descriptionLines.filter(Boolean)
 
   return (
     <div
       ref={innerRef}
-      className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/70"
-      style={{ ...cardShadow, backgroundColor }}
+      className={`${isThumb ? 'relative h-full w-full' : 'relative aspect-square w-full'} overflow-hidden bg-surface-light ${containerClassName}`}
+      style={!isThumb ? cardShadow : undefined}
     >
       <ImageLayer src={imageUrl} alt={alt} />
-      <div className="absolute inset-0 bg-white/72 backdrop-blur-[1px]" />
-      <div className="absolute inset-0 flex flex-col justify-between p-7">
-        <div className="flex items-center justify-between gap-3">
-          <span
-            className="rounded-full px-3 py-1 text-xs font-black uppercase tracking-wide text-white"
-            style={{ backgroundColor: accentColor }}
-          >
-            {String(cardNumber || '').padStart(2, '0')}
-          </span>
-          {kicker && (
-            <span
-              className="text-right text-xs font-bold leading-tight"
-              style={{ color: accentColor, ...IMAGE_TEXT_WRAP_STYLE }}
-            >
-              {kicker}
-            </span>
-          )}
+      <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/10'}`} />
+      {isCenterCard ? (
+        <div className={`absolute inset-0 ${isThumb ? 'p-2' : 'p-[7%]'} flex items-center justify-center`}>
+          <div className={`${isThumb ? 'w-[78%] rounded-[18px] px-3 py-3' : 'w-[70%] rounded-[30px] px-[7%] py-[8%]'} bg-white/82 backdrop-blur-sm border border-white/70 shadow-sm text-center`}>
+            <div className={`inline-flex items-center rounded-full bg-primary/10 text-primary-dark ${isThumb ? 'px-2 py-0.5 mb-2 text-[9px] font-bold' : 'px-3 py-1 mb-4 text-xs font-extrabold tracking-[0.18em]'}`}>
+              CARD {cardNumber}
+            </div>
+            <p className={`${isThumb ? 'text-[9px]' : 'text-[clamp(16px,2.2vw,24px)]'} font-black text-gray-800 leading-tight`}>
+              {cardTitle}
+            </p>
+            {visibleDescriptions.length > 0 && (
+              <div className={`${isThumb ? 'mt-1.5 space-y-1' : 'mt-3 space-y-1.5'}`}>
+                {visibleDescriptions.map((line, index) => (
+                  <p
+                    key={`${line}-${index}`}
+                    className={`${isThumb ? 'text-[6px]' : 'text-[clamp(10px,1.2vw,13px)]'} font-semibold text-gray-600 leading-tight`}
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-
-        <div>
-          <h4
-            className="text-3xl font-black leading-tight"
-            style={{ color: textColor, ...IMAGE_TEXT_WRAP_STYLE }}
-          >
-            {cardTitle}
-          </h4>
-          {visibleDescriptions.length > 0 && (
-            <div className="mt-4 space-y-1.5">
-              {visibleDescriptions.map((line, index) => (
-                <p key={`${line}-${index}`} className="text-sm font-semibold leading-6 text-slate-700">
-                  {line}
-                </p>
-              ))}
+      ) : (
+        <div className={`absolute inset-0 ${isThumb ? 'p-2' : 'p-[7%]'} flex flex-col justify-between`}>
+          <div className={`self-start rounded-full bg-black/65 text-white font-bold ${isThumb ? 'px-1.5 py-0.5 text-[10px]' : 'px-3 py-1.5 text-[clamp(11px,1.2vw,14px)]'}`}>
+            {cardNumber}
+          </div>
+          {kicker && (
+            <div className={`${isThumb ? 'text-[6px]' : 'text-[clamp(10px,1.1vw,12px)]'} self-end rounded-full bg-white/80 px-2 py-1 font-bold text-gray-700`}>
+              {kicker}
             </div>
           )}
-        </div>
-
-        {visiblePoints.length > 0 && (
-          <div className="space-y-2">
-            {visiblePoints.map((point, index) => (
-              <div key={`${point}-${index}`} className="flex items-start gap-2 rounded-xl bg-white/72 px-3 py-2">
-                <span
-                  className="mt-1 h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: accentColor }}
-                />
-                <span className="text-sm font-bold leading-5 text-slate-800">{point}</span>
+          <div className={`${isThumb ? 'rounded-lg px-2 py-1.5' : 'rounded-[24px] px-[5%] py-[4.5%]'} bg-white/88 shadow-sm`}>
+            <p className={`${isThumb ? 'text-[8px]' : 'text-[clamp(15px,2vw,22px)]'} font-black text-gray-800 leading-tight`}>
+              {cardTitle}
+            </p>
+            {visibleDescriptions.length > 0 && (
+              <div className={`${isThumb ? 'mt-1 space-y-1' : 'mt-2 space-y-1.5'}`}>
+                {visibleDescriptions.map((line, index) => (
+                  <p
+                    key={`${line}-${index}`}
+                    className={`${isThumb ? 'text-[6px]' : 'text-[clamp(10px,1.1vw,12px)]'} font-semibold text-gray-600 leading-tight`}
+                  >
+                    {line}
+                  </p>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

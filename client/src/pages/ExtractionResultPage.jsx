@@ -33,7 +33,6 @@ import {
   deriveBlogHeadline,
   deriveBlogImageDescription,
   deriveInstagramDetailLines,
-  normalizeInstagramCardStyle,
 } from '../utils/contentImageOverlay'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -1055,9 +1054,16 @@ export default function ExtractionResultPage() {
               </div>
             )}
           </div>
-        <div className="p-6 sm:p-8 space-y-10">
+          <div className="p-6 sm:p-8 space-y-10">
             {(() => {
               const blogImageList = ensureArray(blogImages)
+              const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
+              const accentPalette = {
+                'bg-[#FFF3E0]': '#e57a00',
+                'bg-[#E8F5E9]': '#2e7d32',
+                'bg-[#E3F2FD]': '#1565c0',
+                'bg-[#F3E5F5]': '#7b1fa2',
+              }
 
               return ensureArray(blogContent?.sections).map((section, index) => {
                 const image =
@@ -1070,6 +1076,7 @@ export default function ExtractionResultPage() {
                 const headingText = cleanCardText(section?.heading || '')
                 const headline = deriveBlogHeadline(keyPhrase, headingText)
                 const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
+                const accentColor = accentPalette[bgColors[index % bgColors.length]] || '#6366f1'
 
                 if (!imageUrl && !renderedImageUrl) {
                   blogImagesRef.current[index] = null
@@ -1094,9 +1101,10 @@ export default function ExtractionResultPage() {
                           alt={section.heading || `블로그 이미지 ${index + 1}`}
                           headline={headline}
                           description={description}
-                          accentColor="#6366f1"
+                          accentColor={accentColor}
                           showTextOverlay={showBlogImageTextOverlay}
-                          mode="result"
+                          variant="circle"
+                          mode="modal"
                           containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
                         />
                       )}
@@ -1122,7 +1130,7 @@ export default function ExtractionResultPage() {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
     const current = cards[instaSlide]
     const currentCardNumber = current?.cardNumber || current?.card_number || instaSlide + 1
-    const instagramCardStyle = normalizeInstagramCardStyle(instagramContent?.cardStyle)
+    const instagramCardStyle = instagramContent?.cardStyle || 'background-text'
     const currentInstagramImage = ensureArray(instagramImages).find((image, index) => {
       const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
       return imageCardNumber === currentCardNumber
@@ -1163,7 +1171,8 @@ export default function ExtractionResultPage() {
           points={points}
           kicker={card?.kicker}
           cardStyle={instagramCardStyle}
-          mode="result"
+          mode="modal"
+          containerClassName="rounded-[28px]"
         />
       )
     }

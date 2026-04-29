@@ -14,6 +14,7 @@ import {
   generateInstagramContent, generateShortsScript
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
+import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 
@@ -569,123 +570,9 @@ export default function ExtractionPage() {
     return trimCardTitleEnding(limited || clean)
   }
 
-  const splitCardTokens = (text = '') => {
-    const clean = cleanCardText(text)
-    if (!clean) return []
-    return clean
-      .split(/(\s+|,+|:+|\/+|\\+)/)
-      .map(token => token.trim())
-      .filter(Boolean)
-  }
-
-  const splitHeading = (text) => {
-    const clean = trimCardTitleEnding(cleanCardText(text || ''))
-    if (!clean) return ['']
-
-    const maxLineLength = clean.length <= 14 ? 18 : 14
-    if (clean.length <= maxLineLength) return [clean]
-
-    const tokens = splitCardTokens(clean)
-    if (tokens.length <= 1) return [clean]
-
-    let line1 = ''
-    let splitIndex = -1
-    for (let i = 0; i < tokens.length; i++) {
-      const next = line1 ? `${line1} ${tokens[i]}` : tokens[i]
-      if (next.length > maxLineLength) break
-      line1 = next
-      splitIndex = i
-    }
-
-    if (splitIndex <= -1 || splitIndex >= tokens.length - 1) return [clean]
-
-    const line2 = tokens.slice(splitIndex + 1).join(' ')
-    return line2 ? [line1, line2] : [clean]
-  }
-
-  // 단어/특수문자 단위로 분리한 뒤 minimax 분할로 각 줄 길이가 비슷해지도록 균형을 맞춘다.
-  // 마지막 줄에 단어 한 개만 남는 경우 앞 줄 단어를 함께 끌어내려 자연스럽게 채운다.
-  const balanceLines = (text, maxLineLength) => {
-    const clean = trimCardTitleEnding(cleanCardText(text || ''))
-    if (!clean) return []
-    if (clean.length <= maxLineLength) return [clean]
-    const tokens = splitCardTokens(clean)
-    if (tokens.length <= 1) return [clean]
-
-    const partition = (toks, maxLen) => {
-      const lines = []
-      let line = ''
-      for (const t of toks) {
-        const next = line ? `${line} ${t}` : t
-        if (next.length > maxLen && line) { lines.push(line); line = t }
-        else line = next
-      }
-      if (line) lines.push(line)
-      return lines
-    }
-
-    const greedy = partition(tokens, maxLineLength)
-    const lineCount = greedy.length
-    if (lineCount <= 1) return greedy
-
-    let lo = Math.max(...tokens.map(t => t.length))
-    let hi = clean.length
-    while (lo < hi) {
-      const mid = Math.floor((lo + hi) / 2)
-      if (partition(tokens, mid).length <= lineCount) hi = mid
-      else lo = mid + 1
-    }
-    return partition(tokens, lo)
-  }
-
-  const renderBalancedLines = (text, maxLineLength) => {
-    const lines = balanceLines(text, maxLineLength)
-    if (lines.length === 0) return null
-    return lines.map((line, idx) => (
-      <span key={idx}>
-        {idx > 0 && <br />}
-        {line}
-      </span>
-    ))
-  }
-
-  const renderCardHeading = (text, fontSize) => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-    const lines = splitHeading(clean)
-    return (
-      <p
-        className="font-black text-gray-800 leading-snug"
-        style={{ fontSize, letterSpacing: '-0.35px', wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-      >
-        {lines.map((line, li) => (
-          <span key={li}>
-            {li > 0 && <br />}
-            {line}
-          </span>
-        ))}
-      </p>
-    )
-  }
-
   const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
     const source = cleanCardText(heading) || cleanCardText(keyPhrase)
     return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
-  }
-
-  const deriveHeadlineKeyword = (text = '') => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-      .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
-      .trim()
-
-    const particleMatch = clean.match(/^(.+?)(은|는|이|가|을|를|도)\s+/)
-    if (particleMatch?.[1]) return trimCardTitleEnding(particleMatch[1])
-
-    const dividerMatch = clean.split(/\s+(?:이제|정리|핵심|전략|방법|가이드|포인트|트렌드)\b/)[0]?.trim()
-    if (dividerMatch && dividerMatch.length < clean.length) return trimCardTitleEnding(dividerMatch)
-
-    const words = clean.split(/\s+/).filter(Boolean)
-    if (words.length >= 2) return trimCardTitleEnding(words.slice(0, 2).join(' '))
-    return trimCardTitleEnding(clean)
   }
 
   const deriveDescriptionCopy = (heading = '', headline = '', fallbackContent = '') => {
@@ -762,90 +649,6 @@ export default function ExtractionPage() {
     if (step <= 5) clearStepErrors('shorts')
   }
 
-  const renderBlogTextOverlay = ({
-    variant = 'circle',
-    headline,
-    description,
-    accentColor,
-    mode = 'thumb',
-  }) => {
-    if (variant === 'plain') {
-      return mode === 'modal' ? (
-        <>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/34 via-black/10 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-5">
-            <div className="rounded-[24px] bg-white/92 border border-white/85 shadow-lg px-5 py-4">
-              {renderCardHeading(headline, 22)}
-              {description && (
-                <p
-                  className="mt-2 text-[13px] font-semibold text-gray-600 leading-relaxed"
-                  style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                >
-                  {renderBalancedLines(description, 22)}
-                </p>
-              )}
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/28 via-transparent to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 p-2">
-            <div className="rounded-xl bg-white/92 border border-white/85 shadow-sm px-2.5 py-2">
-              {renderCardHeading(headline, 7)}
-              {description && (
-                <p
-                  className="mt-1 text-[5px] font-semibold text-gray-600 leading-tight"
-                  style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-                >
-                  {renderBalancedLines(description, 18)}
-                </p>
-              )}
-            </div>
-          </div>
-        </>
-      )
-    }
-
-    return mode === 'modal' ? (
-      <>
-        <div className="absolute inset-0 bg-black/10" />
-        <div className="absolute inset-0 flex items-center justify-center p-6">
-          <div className="w-[52%] max-w-[320px] aspect-square rounded-full bg-white/[0.94] shadow-xl flex flex-col items-center justify-center text-center px-5 py-5">
-            {renderCardHeading(headline, 24)}
-            <div className="w-12 h-1 rounded-full mt-3 mb-3" style={{ background: accentColor }} />
-            {description && (
-              <p
-                className="text-[13px] text-gray-600 font-semibold leading-relaxed"
-                style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-              >
-                {renderBalancedLines(description, 14)}
-              </p>
-            )}
-          </div>
-        </div>
-      </>
-    ) : (
-      <>
-        <div className="absolute inset-0 bg-black/8" />
-        <div className="absolute inset-0 flex items-center justify-center p-2">
-          <div className="w-[72%] aspect-square rounded-full bg-white/[0.94] shadow flex flex-col items-center justify-center text-center px-2 py-2">
-            {renderCardHeading(headline, 7)}
-            <div className="w-4 h-0.5 rounded-full mt-1 mb-1" style={{ background: accentColor }} />
-            {description && (
-              <p
-                className="text-[5px] text-gray-600 font-semibold leading-tight"
-                style={{ wordBreak: 'keep-all', overflowWrap: 'break-word' }}
-              >
-                {renderBalancedLines(description, 14)}
-              </p>
-            )}
-          </div>
-        </div>
-      </>
-    )
-  }
-
   const renderBlogPreviewCards = (section, index) => {
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
     const matchedImage =
@@ -905,19 +708,17 @@ export default function ExtractionPage() {
             )
           }}
         >
-          {bgImageUrl ? (
-            <img src={bgImageUrl} alt={section?.heading || `블로그 이미지 ${index + 1}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
-          ) : (
-            <div className={`w-full h-full absolute inset-0 ${fallbackBg}`} />
-          )}
-
-          {showBlogTextOverlay && renderBlogTextOverlay({
-            variant: variant.key,
-            headline,
-            description,
-            accentColor,
-            mode: 'thumb',
-          })}
+          <BlogImageArtwork
+            src={bgImageUrl}
+            alt={section?.heading || `블로그 이미지 ${index + 1}`}
+            variant={variant.key}
+            headline={headline}
+            description={description}
+            accentColor={accentColor}
+            showTextOverlay={showBlogTextOverlay}
+            mode="thumb"
+            containerClassName="rounded-md"
+          />
         </button>
       </div>
     ))
@@ -933,60 +734,8 @@ export default function ExtractionPage() {
     // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드가 너무 비어 보이지 않도록 한다.
     const descriptionLines = detailLines.filter(Boolean)
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
-    const isCenterCard = cardStyle === 'center-card'
 
     if (!imageUrl) return null
-
-    const renderInstagramPreviewOverlay = (mode = 'thumb') => {
-      const isModal = mode === 'modal'
-      if (isCenterCard) {
-        return (
-          <div className={`absolute inset-0 ${isModal ? 'p-[7%]' : 'p-2'} flex items-center justify-center`}>
-            <div className={`${isModal ? 'w-[70%] rounded-[30px] px-[7%] py-[8%]' : 'w-[78%] rounded-[18px] px-3 py-3'} bg-white/82 backdrop-blur-sm border border-white/70 shadow-sm text-center`}>
-              <div className={`inline-flex items-center rounded-full bg-primary/10 text-primary-dark ${isModal ? 'px-3 py-1 mb-4 text-xs font-extrabold tracking-[0.18em]' : 'px-2 py-0.5 mb-2 text-[9px] font-bold'}`}>
-                CARD {cardNumber}
-              </div>
-              <p className={`${isModal ? 'text-[clamp(16px,2.2vw,24px)]' : 'text-[9px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
-              {descriptionLines.length > 0 && (
-                <div className={`${isModal ? 'mt-3 space-y-1.5' : 'mt-1.5 space-y-1'}`}>
-                  {descriptionLines.map((line, idx) => (
-                    <p
-                      key={idx}
-                      className={`${isModal ? 'text-[clamp(10px,1.2vw,13px)]' : 'text-[6px]'} font-semibold text-gray-600 leading-tight`}
-                    >
-                      {line}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )
-      }
-
-      return (
-        <div className={`absolute inset-0 ${isModal ? 'p-[7%]' : 'p-2'} flex flex-col justify-between`}>
-          <div className={`self-start rounded-full bg-black/65 text-white font-bold ${isModal ? 'px-3 py-1.5 text-[clamp(11px,1.2vw,14px)]' : 'px-1.5 py-0.5 text-[10px]'}`}>
-            {cardNumber}
-          </div>
-          <div className={`${isModal ? 'rounded-[24px] px-[5%] py-[4.5%]' : 'rounded-lg px-2 py-1.5'} bg-white/88 shadow-sm`}>
-            <p className={`${isModal ? 'text-[clamp(15px,2vw,22px)]' : 'text-[8px]'} font-black text-gray-800 leading-tight`}>{headline}</p>
-            {descriptionLines.length > 0 && (
-              <div className={`${isModal ? 'mt-2 space-y-1.5' : 'mt-1 space-y-1'}`}>
-                {descriptionLines.map((line, idx) => (
-                  <p
-                    key={idx}
-                    className={`${isModal ? 'text-[clamp(10px,1.1vw,12px)]' : 'text-[6px]'} font-semibold text-gray-600 leading-tight`}
-                  >
-                    {line}
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )
-    }
 
     return (
       <button
@@ -1003,9 +752,15 @@ export default function ExtractionPage() {
         })}
         className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all text-left"
       >
-        <img src={imageUrl} alt={`인스타 ${cardNumber}`} className="w-full h-full object-cover absolute inset-0" loading="lazy" />
-        <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/10'}`} />
-        {renderInstagramPreviewOverlay('thumb')}
+        <InstagramImageArtwork
+          imageUrl={imageUrl}
+          alt={`인스타 ${cardNumber}`}
+          cardNumber={cardNumber}
+          cardTitle={headline}
+          descriptionLines={descriptionLines}
+          cardStyle={cardStyle}
+          mode="thumb"
+        />
       </button>
     )
   }
@@ -2115,60 +1870,27 @@ ${parsedText}
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
           <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
             {previewImage.renderType === 'blog-card' ? (
-              <div
-                className="relative w-[min(78vw,640px)] aspect-square rounded-[28px] overflow-hidden shadow-2xl bg-surface-light"
-                style={{ fontFamily: "'Pretendard', sans-serif" }}
-              >
-                <img src={previewImage.src} alt={previewImage.title} className="w-full h-full object-cover absolute inset-0" />
-                {renderBlogTextOverlay({
-                  variant: previewImage.variant,
-                  headline: previewImage.headline,
-                  description: previewImage.description,
-                  accentColor: previewImage.accentColor,
-                  mode: 'modal',
-                })}
-              </div>
+              <BlogImageArtwork
+                src={previewImage.src}
+                alt={previewImage.title}
+                variant={previewImage.variant}
+                headline={previewImage.headline}
+                description={previewImage.description}
+                accentColor={previewImage.accentColor}
+                mode="modal"
+                containerClassName="w-[min(78vw,640px)] rounded-[28px] shadow-2xl"
+              />
             ) : previewImage.renderType === 'instagram-card' ? (
-              <div
-                className="relative w-[min(78vw,640px)] aspect-square rounded-[28px] overflow-hidden shadow-2xl bg-surface-light"
-                style={{ fontFamily: "'Pretendard', sans-serif" }}
-              >
-                <img src={previewImage.src} alt={previewImage.title} className="w-full h-full object-cover absolute inset-0" />
-                <div className={`absolute inset-0 ${previewImage.cardStyle === 'center-card' ? 'bg-black/14' : 'bg-black/10'}`} />
-                {previewImage.cardStyle === 'center-card' ? (
-                  <div className="absolute inset-0 p-[7%] flex items-center justify-center">
-                    <div className="w-[70%] rounded-[30px] bg-white/82 backdrop-blur-sm border border-white/70 px-[7%] py-[8%] shadow-sm text-center">
-                      <div className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-extrabold tracking-[0.18em] text-primary-dark mb-4">
-                        CARD {previewImage.cardNumber}
-                      </div>
-                      <p className="text-[clamp(16px,2.2vw,24px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
-                      {Array.isArray(previewImage.descriptionLines) && previewImage.descriptionLines.length > 0 && (
-                        <div className="mt-3 space-y-1.5">
-                          {previewImage.descriptionLines.map((line, idx) => (
-                            <p key={idx} className="text-[clamp(10px,1.2vw,13px)] font-semibold text-gray-600 leading-tight">{line}</p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 p-[7%] flex flex-col justify-between">
-                    <div className="self-start rounded-full bg-black/65 px-3 py-1.5 text-[clamp(11px,1.2vw,14px)] font-bold text-white">
-                      {previewImage.cardNumber}
-                    </div>
-                    <div className="rounded-[24px] bg-white/88 px-[5%] py-[4.5%] shadow-sm">
-                      <p className="text-[clamp(15px,2vw,22px)] font-black text-gray-800 leading-tight">{previewImage.headline}</p>
-                      {Array.isArray(previewImage.descriptionLines) && previewImage.descriptionLines.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                          {previewImage.descriptionLines.map((line, idx) => (
-                            <p key={idx} className="text-[clamp(10px,1.1vw,12px)] font-semibold text-gray-600 leading-tight">{line}</p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <InstagramImageArtwork
+                imageUrl={previewImage.src}
+                alt={previewImage.title}
+                cardNumber={previewImage.cardNumber}
+                cardTitle={previewImage.headline}
+                descriptionLines={previewImage.descriptionLines}
+                cardStyle={previewImage.cardStyle}
+                mode="modal"
+                containerClassName="w-[min(78vw,640px)] rounded-[28px] shadow-2xl"
+              />
             ) : (
               <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
             )}
