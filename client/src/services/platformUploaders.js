@@ -1,4 +1,4 @@
-import { getExtractionById } from './storage'
+﻿import { getExtractionById } from './storage'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
@@ -10,6 +10,7 @@ import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads
 import { getBlogUploadTags } from '../utils/blogTags.js'
 import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
+import { sanitizeBlogBodyForUpload } from '../utils/blogBodySanitizer.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -23,6 +24,7 @@ const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
 const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000
+const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const apiHeaders = (extra = {}) => ({
   'Content-Type': 'application/json',
@@ -31,25 +33,7 @@ const apiHeaders = (extra = {}) => ({
 })
 
 function stripMarkdown(md) {
-  return (md || '')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/^#{1,6}\s+/gm, '')
-    // 취소선 마커 제거 (네이버 에디터 auto-format 방지)
-    .replace(/~~([^~]+)~~/g, '$1')
-    .replace(/--([^-\n]+)--/g, '$1')
-    // 굵게/이탤릭/언더스코어 마커 제거
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*\s][^*]*[^*\s])\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
-    // 링크/인라인코드/인용/리스트
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^>\s+/gm, '')
-    .replace(/^[-*]\s+/gm, '')
-    // 잔여 단일 마커 제거 (안전망)
-    .replace(/~/g, '')
-    .trim()
+  return sanitizeBlogBodyForUpload(md)
 }
 
 async function buildDesktopHelperRequestError(error) {
@@ -167,6 +151,7 @@ export async function uploadToBlog(extractionId, options = {}) {
     `${UPLOAD_BLOG_SERVER}/api/upload`,
     {
       method: 'POST',
+      headers: BLOG_UPLOAD_HEADERS,
       body: formData,
     },
     BLOG_UPLOAD_START_TIMEOUT_MS,

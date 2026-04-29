@@ -1,4 +1,4 @@
-import { chromium } from 'playwright'
+﻿import { chromium } from 'playwright'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -23,6 +23,10 @@ const TITLE_TEXT = '\uC81C\uBAA9'
 const BODY_TEXT = '\uBCF8\uBB38'
 const PUBLISH_TEXT = '\uBC1C\uD589'
 const TAG_TEXT = '\uD0DC\uADF8'
+const CATEGORY_TEXT = '\uCE74\uD14C\uACE0\uB9AC'
+const VISIBILITY_TEXT = '\uACF5\uAC1C \uC124\uC815'
+const SCHEDULE_TEXT = '\uBC1C\uD589 \uC2DC\uAC04'
+const FONT_SIZE_TEXT = '\uAE00\uC790 \uD06C\uAE30'
 
 const TITLE_SELECTORS = [
   '.se-section-documentTitle .se-text-paragraph',
@@ -84,16 +88,18 @@ function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-// SmartEditor가 ?�력 �?auto-format?�로 변?�하??마커???�거 (취소????방�?)
-// ?? 볼드 처리??parseBoldInlineSegments가 별도�?처리?��?�?** ???�기???�거 ????
+// SmartEditor媛 ?占쎈젰 占?auto-format?占쎈줈 蹂?占쏀븯??留덉빱???占쎄굅 (痍⑥냼????諛⑼옙?)
+// ?? 蹂쇰뱶 泥섎━??parseBoldInlineSegments媛 蹂꾨룄占?泥섎━?占쏙옙?占?** ???占쎄린???占쎄굅 ????
 function stripAutoFormatMarkers(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소??마커
-    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
-    .replace(/__([^_]+)__/g, '$1')   // 굵게/밑줄 (?�더?�코??변??
-    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // ?�탤�?변??
-    .replace(/`([^`]+)`/g, '$1')      // ?�라??코드
-    .replace(/~/g, '')                // ?�여 ?�일 ~ (auto-format ?�리�?
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/--([^\n-]+)--/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/(^|[^\*])\*([^*\s][^*]*[^*\s])\*(?!\*)/g, '$1$2')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/~/g, '')
 }
 
 function typeMultiline(page, text) {
@@ -402,9 +408,10 @@ async function clickSubheadingButton(scope) {
 
 async function clickFontSizeButton(scope) {
   return scope.evaluate(() => {
+    const koreanFontSizeText = '\uAE00\uC790 \uD06C\uAE30'.toLowerCase()
     const candidates = [
-      'button[aria-label*="글???�기"]',
-      '[role="button"][aria-label*="글???�기"]',
+      `button[aria-label*="${FONT_SIZE_TEXT}"]`,
+      `[role="button"][aria-label*="${FONT_SIZE_TEXT}"]`,
       'button[aria-label*="font size" i]',
       '[role="button"][aria-label*="font size" i]',
       '[data-name="fontSize"]',
@@ -432,7 +439,7 @@ async function clickFontSizeButton(scope) {
         element.getAttribute('data-command'),
         element.getAttribute('data-tool'),
       ].filter(Boolean).join(' '))
-      if (text.includes('글???�기')) return 100
+      if (text.includes(koreanFontSizeText)) return 100
       if (text.includes('font size')) return 95
       if (normalize(element.getAttribute('data-name')).includes('fontsize')) return 85
       if (normalize(element.getAttribute('data-click-area')).includes('font')) return 75
@@ -549,8 +556,8 @@ const SUBHEADING_FONT_SIZE = '24'
 const BODY_FONT_SIZE = '16'
 
 async function typeMultilineWithFormatting(page, text) {
-  // 볼드 마커(**)??parseBoldInlineSegments가 처리?��?�?보존
-  // �???~~, __, _, --, ` ??auto-format ?�리�?마커�??�거
+  // 蹂쇰뱶 留덉빱(**)??parseBoldInlineSegments媛 泥섎━?占쏙옙?占?蹂댁〈
+  // 占???~~, __, _, --, ` ??auto-format ?占쎈━占?留덉빱占??占쎄굅
   const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
   await recoverFormattingContext(page)
   let boldEnabled = false
@@ -936,7 +943,9 @@ async function clickPublishButtonByDom(scope, which = 'first') {
         .filter(isVisible)
         .find((element) => {
           const text = normalize(element.textContent)
-          return text.includes('카테고리') && text.includes('공개 ?�정') && text.includes('발행 ?�간')
+          return text.includes(CATEGORY_TEXT.toLowerCase()) &&
+            text.includes(VISIBILITY_TEXT.toLowerCase()) &&
+            text.includes(SCHEDULE_TEXT.toLowerCase())
         })
 
       if (panelRoot) {
@@ -1375,4 +1384,15 @@ export async function uploadToNaverBlog({ title, content, tags = [] }) {
     await browser.close()
   }
 }
+
+
+
+
+
+
+
+
+
+
+
 

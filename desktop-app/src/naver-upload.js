@@ -1,4 +1,4 @@
-const fs = require('fs')
+﻿const fs = require('fs')
 const path = require('path')
 const { applyPlaywrightEnvironment, getPlaywrightDiagnostics } = require('./playwright-runtime')
 const { clearSessionState, getSessionPath, hasUsableSessionState, loadSessionState } = require('./session-state')
@@ -31,6 +31,7 @@ const MYBOX_TEXT = 'MYBOX'
 const CATEGORY_TEXT = '\uCE74\uD14C\uACE0\uB9AC'
 const VISIBILITY_TEXT = '\uACF5\uAC1C'
 const SCHEDULE_TEXT = '\uBC1C\uD589 \uC2DC\uAC04'
+const FONT_SIZE_TEXT = '\uAE00\uC790 \uD06C\uAE30'
 const RESERVE_TEXT = '\uC608\uC57D'
 const RESERVED_POSTS_TEXT = '\uC608\uC57D \uBC1C\uD589 \uAE00'
 const INVALID_SCHEDULE_TIME_TEXT = '\uD604\uC7AC \uC2DC\uAC04 \uC774\uD6C4\uB85C \uC124\uC815\uD574\uC8FC\uC138\uC694.'
@@ -206,29 +207,32 @@ function isScheduledPublishStateConfirmed(scheduleState, schedule) {
   return Boolean(scheduleState.scheduleReady && hasCompleteScheduleFields)
 }
 
-// SmartEditor auto-format??취소???�탤�?볼드 ?�으�?변?�하??마커?�을 ?�거
+// SmartEditor auto-format??痍⑥냼???占쏀깶占?蹂쇰뱶 ?占쎌쑝占?蹂?占쏀븯??留덉빱?占쎌쓣 ?占쎄굅
 function sanitizeForTyping(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소??
-    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/--([^\n-]+)--/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*\s][^*]*[^*\s])\*/g, '$1')
     .replace(/__([^_]+)__/g, '$1')
     .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/~/g, '')                // ?�여 ?�일 ~ ?�거 (auto-format ?�리�?
+    .replace(/~/g, '')
 }
 
-// 본문(typeMultilineWithFormatting) ?�력 ?�용. **bold** 마커??parseBoldInlineSegments 가 처리?��?�?보존?�고
-// �??�에 SmartEditor 가 ?�력 �??�동 변?�하??마커(취소???�탤�??�더?�코????�??�거?�다.
+// 蹂몃Ц(typeMultilineWithFormatting) ?占쎈젰 ?占쎌슜. **bold** 留덉빱??parseBoldInlineSegments 媛 泥섎━?占쏙옙?占?蹂댁〈?占쎄퀬
+// 占??占쎌뿉 SmartEditor 媛 ?占쎈젰 占??占쎈룞 蹂?占쏀븯??留덉빱(痍⑥냼???占쏀깶占??占쎈뜑?占쎌퐫????占??占쎄굅?占쎈떎.
 function sanitizeForFormattingTyping(raw) {
   return String(raw || '')
-    .replace(/~~([^~]+)~~/g, '$1')   // 취소??
-    .replace(/--([^-\n]+)--/g, '$1')  // ?��? ?�디??취소??
-    .replace(/__([^_]+)__/g, '$1')   // ?�더?�코??변??
-    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1') // ?�탤�??�더?�코??
-    .replace(/`([^`]+)`/g, '$1')     // ?�라??코드
-    .replace(/~/g, '')                // ?�여 ?�일 ~ ?�거 (auto-format ?�리�?
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/--([^\n-]+)--/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/(^|[^\*])\*([^*\s][^*]*[^*\s])\*(?!\*)/g, '$1$2')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/~/g, '')
 }
 
 function typeMultiline(page, text) {
@@ -269,8 +273,8 @@ function parseBoldInlineSegments(text) {
 }
 
 async function toggleBoldFormatting(page) {
-  // releaseFormattingModifiers ??typeMultilineWithFormatting 진입 ??1?�만 ?�출 ??�??��?마다 4개의 keyup
-  // ?�벤?��? 발생?�켜 SmartEditor ?�바�?매번 ?�렌?�링?�키??비용???�거?�다.
+  // releaseFormattingModifiers ??typeMultilineWithFormatting 吏꾩엯 ??1?占쎈쭔 ?占쎌텧 ??占??占쏙옙?留덈떎 4媛쒖쓽 keyup
+  // ?占쎈깽?占쏙옙? 諛쒖깮?占쎌폒 SmartEditor ?占쎈컮占?留ㅻ쾲 ?占쎈젋?占쎈쭅?占쏀궎??鍮꾩슜???占쎄굅?占쎈떎.
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyB')
   await page.keyboard.up('Control')
@@ -359,9 +363,9 @@ async function findBoldButtonState(scope) {
   })
 }
 
-// SmartEditor ???�제�??�목 ?��???버튼???�도. ?�릭 ?�공 ?��?�?반환?�고, ?�패?�면 ?�출?��? ?�회?�다.
-// SmartEditor 2 ???�락 ?��??��? ?�상 ?�바 ?�롭?�운 ??"?�제�?1/2/3" ?�는 "?�목" 버튼?�며,
-// aria-label/data ?�성/?�래??명이 ?�경마다 ?��? ???�어 ?�보 ?�?�터�??�중 ?�도?�다.
+// SmartEditor ???占쎌젣占??占쎈ぉ ?占쏙옙???踰꾪듉???占쎈룄. ?占쎈┃ ?占쎄났 ?占쏙옙?占?諛섑솚?占쎄퀬, ?占쏀뙣?占쎈㈃ ?占쎌텧?占쏙옙? ?占쏀쉶?占쎈떎.
+// SmartEditor 2 ???占쎈씫 ?占쏙옙??占쏙옙? ?占쎌긽 ?占쎈컮 ?占쎈∼?占쎌슫 ??"?占쎌젣占?1/2/3" ?占쎈뒗 "?占쎈ぉ" 踰꾪듉?占쎈ŉ,
+// aria-label/data ?占쎌꽦/?占쎈옒??紐낆씠 ?占쎄꼍留덈떎 ?占쏙옙? ???占쎌뼱 ?占쎈낫 ?占?占쏀꽣占??占쎌쨷 ?占쎈룄?占쎈떎.
 async function clickSubheadingButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
@@ -423,15 +427,15 @@ async function clickSubheadingButton(scope) {
   })
 }
 
-// ?�출 측에???��? ?�태�?추적??setSubheadingFormatting(page, true/false, currentState) ?�으�??�용.
-// 버튼???�으�?currentState �?그�?�?반환???�음 ?�출??wraparound ?�로 ?�연?�럽�?무력?�된??
+// ?占쎌텧 痢≪뿉???占쏙옙? ?占쏀깭占?異붿쟻??setSubheadingFormatting(page, true/false, currentState) ?占쎌쑝占??占쎌슜.
+// 踰꾪듉???占쎌쑝占?currentState 占?洹몌옙?占?諛섑솚???占쎌쓬 ?占쎌텧??wraparound ?占쎈줈 ?占쎌뿰?占쎈읇占?臾대젰?占쎈맂??
 let subheadingButtonAvailable = null
 async function setSubheadingFormatting(page, enabled, currentState) {
   if (currentState === enabled) return currentState
-  if (subheadingButtonAvailable === false) return currentState  // ?�전???�도?�고 부???�인??
+  if (subheadingButtonAvailable === false) return currentState  // ?占쎌쟾???占쎈룄?占쎄퀬 遺???占쎌씤??
 
-  // releaseFormattingModifiers ??typeMultilineWithFormatting 진입 ??1?�만 ?�출 ??�??��?마다
-  // 불필?�한 keyup ?�벤?�로 SmartEditor ?�바가 ?�렌?�링?�던 비용???�거?�다.
+  // releaseFormattingModifiers ??typeMultilineWithFormatting 吏꾩엯 ??1?占쎈쭔 ?占쎌텧 ??占??占쏙옙?留덈떎
+  // 遺덊븘?占쏀븳 keyup ?占쎈깽?占쎈줈 SmartEditor ?占쎈컮媛 ?占쎈젋?占쎈쭅?占쎈뜕 鍮꾩슜???占쎄굅?占쎈떎.
   const scopes = getFormattingScopes(page)
   let clicked = false
   for (const scope of scopes) {
@@ -575,9 +579,10 @@ async function setBoldFormatting(page, enabled, currentState) {
 
 async function clickFontSizeButton(scope) {
   return scope.evaluate(() => {
+    const koreanFontSizeText = '\uAE00\uC790 \uD06C\uAE30'.toLowerCase()
     const candidates = [
-      'button[aria-label*="글???�기"]',
-      '[role="button"][aria-label*="글???�기"]',
+      `button[aria-label*="${FONT_SIZE_TEXT}"]`,
+      `[role="button"][aria-label*="${FONT_SIZE_TEXT}"]`,
       'button[aria-label*="font size" i]',
       '[role="button"][aria-label*="font size" i]',
       '[data-name="fontSize"]',
@@ -605,7 +610,7 @@ async function clickFontSizeButton(scope) {
         element.getAttribute('data-command'),
         element.getAttribute('data-tool'),
       ].filter(Boolean).join(' '))
-      if (text.includes('글???�기')) return 100
+      if (text.includes(koreanFontSizeText)) return 100
       if (text.includes('font size')) return 95
       if (normalize(element.getAttribute('data-name')).includes('fontsize')) return 85
       if (normalize(element.getAttribute('data-click-area')).includes('font')) return 75
@@ -688,15 +693,15 @@ async function setFontSizeFormatting(page, sizeLabel, currentState) {
   return sizeLabel
 }
 
-// `## ` �??�작?�는 ?�인?� ?�라?�언?��? ?�션 ?�목?�을 ?�시??�???SmartEditor ???�제�??��??�을 ?��??�다.
+// `## ` 占??占쎌옉?占쎈뒗 ?占쎌씤?占??占쎈씪?占쎌뼵?占쏙옙? ?占쎌뀡 ?占쎈ぉ?占쎌쓣 ?占쎌떆??占???SmartEditor ???占쎌젣占??占쏙옙??占쎌쓣 ?占쏙옙??占쎈떎.
 const SUBHEADING_PREFIX = /^##\s+/
 const SUBHEADING_FONT_SIZE = '24'
 const BODY_FONT_SIZE = '16'
 
 async function typeMultilineWithFormatting(page, text) {
-  // **bold** ???�동 ?�맷 ?�리�?마커(취소????�??�거??SmartEditor 가 ?�?�핑 �?취소?�을 ?��??�는 것을 방�??�다.
+  // **bold** ???占쎈룞 ?占쎈㎎ ?占쎈━占?留덉빱(痍⑥냼????占??占쎄굅??SmartEditor 媛 ?占?占쏀븨 占?痍⑥냼?占쎌쓣 ?占쏙옙??占쎈뒗 寃껋쓣 諛⑼옙??占쎈떎.
   const lines = sanitizeForFormattingTyping(text).split(/\r?\n/)
-  // ?�여 modifier ?�태가 ?�다�?1?�만 ?�리. ?�후 ?��?마다 keyup ?�벤?��? 반복 발생?�키지 ?�는??
+  // ?占쎌뿬 modifier ?占쏀깭媛 ?占쎈떎占?1?占쎈쭔 ?占쎈━. ?占쏀썑 ?占쏙옙?留덈떎 keyup ?占쎈깽?占쏙옙? 諛섎났 諛쒖깮?占쏀궎吏 ?占쎈뒗??
   await releaseFormattingModifiers(page)
   await recoverFormattingContext(page)
   let boldEnabled = false
@@ -708,12 +713,12 @@ async function typeMultilineWithFormatting(page, text) {
     let line = lines[lineIndex]
     const isSubheading = SUBHEADING_PREFIX.test(line)
     if (isSubheading) {
-      // `## ` 마커???�떤 경우?�도 본문???�출?��? ?�도�??�거?�다 (?�제�??��? ?�공 ?��??� 무�?).
+      // `## ` 留덉빱???占쎈뼡 寃쎌슦?占쎈룄 蹂몃Ц???占쎌텧?占쏙옙? ?占쎈룄占??占쎄굅?占쎈떎 (?占쎌젣占??占쏙옙? ?占쎄났 ?占쏙옙??占?臾댐옙?).
       line = line.replace(SUBHEADING_PREFIX, '')
       subheadingEnabled = await setSubheadingFormatting(page, true, subheadingEnabled)
       fontSize = await setFontSizeFormatting(page, SUBHEADING_FONT_SIZE, fontSize)
     } else if (subheadingEnabled) {
-      // ?�반 본문 줄로 ?�아?�으�??�제�?모드 ?�제
+      // ?占쎈컲 蹂몃Ц 以꾨줈 ?占쎌븘?占쎌쑝占??占쎌젣占?紐⑤뱶 ?占쎌젣
       subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
       fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
     }
@@ -3130,4 +3135,15 @@ module.exports = {
   hasSavedSession,
   uploadToNaver,
 }
+
+
+
+
+
+
+
+
+
+
+
 

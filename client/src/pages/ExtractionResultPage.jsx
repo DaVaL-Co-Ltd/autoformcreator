@@ -34,6 +34,10 @@ import {
   deriveBlogHeadline,
   deriveBlogImageDescription,
 } from '../utils/contentImageOverlay'
+import {
+  sanitizeBlogBodyForDisplay,
+  sanitizeBlogBodyForUpload,
+} from '../utils/blogBodySanitizer'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
 import {
   buildInstagramDisplayCards,
@@ -75,10 +79,6 @@ const stripResultCtaText = (value) => {
 
   return lines.join('\n').trim()
 }
-const stripBlogUnsupportedFormatting = (value = '') => String(value || '')
-  .replace(/~~([^~]+)~~/g, '$1')
-  .replace(/--([^-\n]+)--/g, '$1')
-  .trim()
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
@@ -682,17 +682,14 @@ export default function ExtractionResultPage() {
     return ensureArray(sections).map((s, i) => {
       const headingText = String(s.heading || '').trim()
       const heading = headingText ? `## **${headingText}**\n` : ''
-      const content = stripBlogUnsupportedFormatting(s.content || '')
+      const content = sanitizeBlogBodyForDisplay(s.content || '')
       const imageMarker = `[IMG:${i + 1}]\n`
       return `${heading}${imageMarker}${content}`
     }).join('\n\n')
   }, [])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
-    stripBlogUnsupportedFormatting(content || '')
-      .replace(/^\s*---+\s*$/gm, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim()
+    sanitizeBlogBodyForUpload(content || '')
   ), [])
 
   // blogTitle / blogBody 초기화 (blogContent 로드 시)
@@ -706,7 +703,7 @@ export default function ExtractionResultPage() {
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
     if (!text) return ''
-    return stripBlogUnsupportedFormatting(text)
+    return sanitizeBlogBodyForDisplay(text)
       .replace(/\*{3,}([^*]+?)\*{3,}/g, '<strong>$1</strong>')  // ***text*** -> <strong>
       .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** -> <strong> (공백 포함)
       .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* -> <strong>
@@ -1110,7 +1107,7 @@ export default function ExtractionResultPage() {
 
                   <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                      {normalizeMd(stripResultCtaText(section.content || ''))}
+                      {normalizeMd(stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || '')))}
                     </ReactMarkdown>
                   </div>
                 </section>
