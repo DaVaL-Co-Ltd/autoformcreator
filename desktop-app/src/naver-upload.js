@@ -60,6 +60,18 @@ const BODY_SELECTORS = [
   '.content_input',
 ]
 
+const TAG_INPUT_SELECTORS = [
+  `input[placeholder*="${TAG_TEXT}"]`,
+  `textarea[placeholder*="${TAG_TEXT}"]`,
+  `input[aria-label*="${TAG_TEXT}"]`,
+  `textarea[aria-label*="${TAG_TEXT}"]`,
+  `[contenteditable="true"][aria-label*="${TAG_TEXT}"]`,
+  `[contenteditable="true"][data-placeholder*="${TAG_TEXT}"]`,
+  `[class*="tag"] input`,
+  `[class*="tag"] textarea`,
+  `[class*="tag"] [contenteditable="true"]`,
+]
+
 const PUBLISH_SELECTORS = [
   '[data-click-area="tpb.publish"]',
   `button:has-text("${PUBLISH_TEXT}")`,
@@ -2545,33 +2557,128 @@ async function clickFinalPublishButton(page, targets, { scheduledAt = null } = {
   )
 }
 
+function normalizeUploadTags(tags) {
+  const seen = new Set()
+  const output = []
+
+  for (const value of Array.isArray(tags) ? tags : []) {
+    const tag = String(value || '')
+      .replace(/^#+/, '')
+      .replace(/[^\p{L}\p{N}_-]+/gu, '')
+      .trim()
+    if (!tag || tag.length < 2) continue
+
+    const key = tag.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    output.push(tag)
+    if (output.length >= 10) break
+  }
+
+  return output
+}
+
+async function focusTagInputByDom(scope) {
+  return scope.evaluate((tagText) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!element) return false
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== 'hidden' &&
+        style.display !== 'none' &&
+        Number(style.opacity || '1') > 0
+    }
+    const describe = (element) => normalize([
+      element.getAttribute?.('placeholder'),
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('data-placeholder'),
+      element.getAttribute?.('title'),
+      element.className,
+      element.closest?.('[class*="tag"], [class*="Tag"]')?.textContent,
+      element.parentElement?.textContent,
+    ].filter(Boolean).join(' '))
+    const focusElement = (element, selector) => {
+      element.scrollIntoView?.({ block: 'center', inline: 'center' })
+      element.click?.()
+      element.focus?.()
+      return { focused: document.activeElement === element || element.matches(':focus'), selector }
+    }
+
+    const editables = Array.from(document.querySelectorAll('input, textarea, [contenteditable="true"]'))
+      .filter(isVisible)
+    const direct = editables.find((element) => describe(element).includes(tagText))
+    if (direct) return focusElement(direct, 'tag-editable')
+
+    const tagLabels = Array.from(document.querySelectorAll('button, label, div, span, p'))
+      .filter(isVisible)
+      .filter((element) => normalize(element.textContent).includes(tagText))
+      .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+
+    for (const label of tagLabels) {
+      label.click?.()
+      const labelRect = label.getBoundingClientRect()
+      const nearby = editables
+        .map((element) => ({ element, rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => Math.abs(rect.top - labelRect.top) < 180 || rect.top > labelRect.top)
+        .sort((a, b) => Math.abs(a.rect.top - labelRect.top) - Math.abs(b.rect.top - labelRect.top))[0]?.element
+      if (nearby) return focusElement(nearby, 'near-tag-label')
+    }
+
+    return { focused: false, selector: null }
+  }, TAG_TEXT)
+}
+
 async function fillTags(page, targets, tags) {
-  if (!Array.isArray(tags) || tags.length === 0) {
+  const normalizedTags = normalizeUploadTags(tags)
+  if (normalizedTags.length === 0) {
     return
   }
 
   for (const target of targets) {
+    for (const selector of TAG_INPUT_SELECTORS) {
+      try {
+        const tagInput = target.scope.locator(selector).first()
+        await withPopupRecovery(
+          page,
+          targets,
+          () => tagInput.click({ timeout: 3000 }),
+          `tag input via ${target.label} -> ${selector}`
+        )
+
+        for (const tag of normalizedTags) {
+          await page.keyboard.type(tag, { delay: 25 })
+          await page.keyboard.press('Enter')
+          await sleep(180)
+        }
+
+        console.log(`[Naver Upload] Filled tags via ${target.label} -> ${selector}: ${normalizedTags.join(', ')}`)
+        return
+      } catch {}
+    }
+
     try {
-      const tagInput = target.scope.locator(`input[placeholder*="${TAG_TEXT}"]`).first()
-      await withPopupRecovery(
-        page,
-        targets,
-        () => tagInput.click({ timeout: 3000 }),
-        `tag input via ${target.label}`
-      )
+      const result = await focusTagInputByDom(target.scope)
+      if (result?.focused) {
+        for (const tag of normalizedTags) {
+          await page.keyboard.type(tag, { delay: 25 })
+          await page.keyboard.press('Enter')
+          await sleep(180)
+        }
 
-      for (const tag of tags.slice(0, 10)) {
-        await page.keyboard.type(String(tag), { delay: 25 })
-        await page.keyboard.press('Enter')
-        await sleep(150)
+        console.log(
+          `[Naver Upload] Filled tags via ${target.label} -> dom ${result.selector || ''}: ${normalizedTags.join(', ')}`
+        )
+        return
       }
-
-      console.log(`[Naver Upload] Filled tags via ${target.label}`)
-      return
-    } catch {}
+    } catch (error) {
+      console.warn(`[Naver Upload] DOM tag focus failed via ${target.label}: ${error.message}`)
+    }
   }
 
-  console.warn('[Naver Upload] Failed to set tags. Continuing without tags.')
+  console.warn(`[Naver Upload] Failed to set tags. tags=${normalizedTags.join(', ')}`)
 }
 
 async function uploadToNaver({ title, content, tags = [], photoPaths = [], headless = true, scheduledAt = null }) {

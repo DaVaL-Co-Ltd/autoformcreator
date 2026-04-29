@@ -56,3 +56,20 @@ export function normalizeBlogTags(blog = {}, maxTags = 10) {
 
   return tags.slice(0, maxTags)
 }
+
+export function normalizeExplicitBlogTags(blog = {}, maxTags = 10) {
+  const tags = []
+  const seen = new Set()
+  const explicitTags = ensureArray(blog?.tags || blog?.hashtags)
+
+  for (const tag of explicitTags) {
+    addTag(tags, seen, tag)
+  }
+
+  return tags.slice(0, maxTags)
+}
+
+export function getBlogUploadTags(blog = {}, maxTags = 10) {
+  const explicitTags = normalizeExplicitBlogTags(blog, maxTags)
+  return explicitTags.length > 0 ? explicitTags : normalizeBlogTags(blog, maxTags)
+}

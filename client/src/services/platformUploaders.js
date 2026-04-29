@@ -7,7 +7,7 @@ import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
-import { normalizeBlogTags } from '../utils/blogTags.js'
+import { getBlogUploadTags } from '../utils/blogTags.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -91,7 +91,7 @@ export async function uploadToBlog(extractionId, options = {}) {
   }
 
   const normalizedContent = stripMarkdown(rawContent)
-  const normalizedTags = normalizeBlogTags(blog)
+  const normalizedTags = getBlogUploadTags(blog)
   const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.blog?.scheduledAt || null
 
   if (USE_REMOTE_BLOG_PUBLISH) {

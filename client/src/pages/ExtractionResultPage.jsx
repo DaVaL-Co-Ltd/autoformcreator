@@ -26,7 +26,7 @@ import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelper
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
-import { normalizeBlogTags } from '../utils/blogTags'
+import { getBlogUploadTags, normalizeBlogTags } from '../utils/blogTags'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import {
   cleanCardText,
@@ -258,7 +258,7 @@ export default function ExtractionResultPage() {
 
         const title = blogTitle || blogContent?.title || ''
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
-        const tags = normalizeBlogTags(blogContent)
+        const tags = getBlogUploadTags(blogContent)
         const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
 
         let data
