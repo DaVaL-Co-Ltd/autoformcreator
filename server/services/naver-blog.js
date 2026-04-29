@@ -280,6 +280,153 @@ async function clickBoldButton(scope) {
   })
 }
 
+async function findStrikethroughButtonState(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="strike" i]',
+      'button[aria-label*="strikethrough" i]',
+      'button[aria-label*="line through" i]',
+      'button[aria-label*="취소선"]',
+      '[role="button"][aria-label*="strike" i]',
+      '[role="button"][aria-label*="strikethrough" i]',
+      '[role="button"][aria-label*="line through" i]',
+      '[role="button"][aria-label*="취소선"]',
+      '[data-click-area*="strike"]',
+      '[data-click-area*="line-through"]',
+      '[data-name="strikeThrough"]',
+      '[data-name="strikethrough"]',
+      '[data-command="strikeThrough"]',
+      '[data-command="strikethrough"]',
+      '[data-tool="strikeThrough"]',
+      '[data-tool="strikethrough"]',
+      '[data-testid*="strike"]',
+      'button.se-toolbar-item-strikethrough',
+      '.se-toolbar-item-strikethrough button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('strikethrough')) return 100
+      if (text.includes('line through')) return 95
+      if (text.includes('strike through')) return 95
+      if (text.includes('strike')) return 90
+      if (text.includes('취소선')) return 90
+      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 85
+      if (normalize(element.className).includes('strike')) return 75
+      return 0
+    }
+
+    const nodes = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+
+    const button = nodes.find((element) => score(element) > 0)
+    if (!button) return null
+
+    const ariaPressed = normalize(button.getAttribute('aria-pressed'))
+    const ariaChecked = normalize(button.getAttribute('aria-checked'))
+    const dataActive = normalize(button.getAttribute('data-active'))
+    const dataSelected = normalize(button.getAttribute('data-selected'))
+    const classText = normalize(button.className)
+    const parentClassText = normalize(button.parentElement?.className)
+    const active = ariaPressed === 'true' ||
+      ariaChecked === 'true' ||
+      dataActive === 'true' ||
+      dataSelected === 'true' ||
+      classText.includes('active') ||
+      classText.includes('selected') ||
+      classText.includes('on') ||
+      classText.includes('is-active') ||
+      classText.includes('is-selected') ||
+      parentClassText.includes('active') ||
+      parentClassText.includes('selected') ||
+      parentClassText.includes('on') ||
+      parentClassText.includes('is-active') ||
+      parentClassText.includes('is-selected')
+
+    return { active }
+  })
+}
+
+async function clickStrikethroughButton(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      'button[aria-label*="strike" i]',
+      'button[aria-label*="strikethrough" i]',
+      'button[aria-label*="line through" i]',
+      'button[aria-label*="취소선"]',
+      '[role="button"][aria-label*="strike" i]',
+      '[role="button"][aria-label*="strikethrough" i]',
+      '[role="button"][aria-label*="line through" i]',
+      '[role="button"][aria-label*="취소선"]',
+      '[data-click-area*="strike"]',
+      '[data-click-area*="line-through"]',
+      '[data-name="strikeThrough"]',
+      '[data-name="strikethrough"]',
+      '[data-command="strikeThrough"]',
+      '[data-command="strikethrough"]',
+      '[data-tool="strikeThrough"]',
+      '[data-tool="strikethrough"]',
+      '[data-testid*="strike"]',
+      'button.se-toolbar-item-strikethrough',
+      '.se-toolbar-item-strikethrough button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('strikethrough')) return 100
+      if (text.includes('line through')) return 95
+      if (text.includes('strike through')) return 95
+      if (text.includes('strike')) return 90
+      if (text.includes('취소선')) return 90
+      if (normalize(element.getAttribute('data-click-area')).includes('strike')) return 85
+      if (normalize(element.className).includes('strike')) return 75
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  })
+}
+
 async function releaseFormattingModifiers(page) {
   for (const key of ['Shift', 'Control', 'Alt', 'Meta']) {
     try {
@@ -295,6 +442,47 @@ async function recoverFormattingContext(page) {
     await focusField(page, targets, BODY_SELECTORS, 'body')
     await sleep(120)
   } catch {}
+}
+
+async function setStrikethroughFormatting(page, enabled, currentState) {
+  const scopes = getFormattingScopes(page)
+  const readStrikethroughState = async () => {
+    for (const scope of scopes) {
+      try {
+        const state = await findStrikethroughButtonState(scope)
+        if (state && typeof state.active === 'boolean') {
+          return state.active
+        }
+      } catch {}
+    }
+    return null
+  }
+
+  let observedState = await readStrikethroughState()
+  if (observedState === null) {
+    await recoverFormattingContext(page)
+    observedState = await readStrikethroughState()
+  }
+  if (observedState === enabled) return enabled
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (const scope of scopes) {
+      try {
+        if (await clickStrikethroughButton(scope)) {
+          await sleep(80)
+          const nextState = await readStrikethroughState()
+          if (nextState === enabled) {
+            return enabled
+          }
+          break
+        }
+      } catch {}
+    }
+    await recoverFormattingContext(page)
+    await sleep(80)
+  }
+
+  return observedState === null ? currentState : observedState
 }
 
 async function setBoldFormatting(page, enabled, currentState) {
@@ -411,15 +599,26 @@ async function clickFontSizeButton(scope) {
     const koreanFontSizeText = '\uAE00\uC790 \uD06C\uAE30'.toLowerCase()
     const candidates = [
       `button[aria-label*="${FONT_SIZE_TEXT}"]`,
+      `button[title*="${FONT_SIZE_TEXT}"]`,
+      `[title*="${FONT_SIZE_TEXT}"]`,
       `[role="button"][aria-label*="${FONT_SIZE_TEXT}"]`,
       'button[aria-label*="font size" i]',
       '[role="button"][aria-label*="font size" i]',
+      'button[title*="font size" i]',
+      '[role="button"][title*="font size" i]',
       '[data-name="fontSize"]',
       '[data-name="fontsize"]',
       '[data-command="fontSize"]',
+      '[data-command="fontsize"]',
+      '[data-tool="fontSize"]',
+      '[data-tool="fontsize"]',
       '[data-click-area*="font"]',
+      '[data-click-area*="size"]',
+      '[data-click-area*="font-size"]',
       'button.se-toolbar-item-font-size',
       '.se-toolbar-item-font-size button',
+      '[class*="font-size"] button',
+      '[class*="fontSize"] button',
     ]
 
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -438,11 +637,14 @@ async function clickFontSizeButton(scope) {
         element.getAttribute('data-name'),
         element.getAttribute('data-command'),
         element.getAttribute('data-tool'),
+        element.getAttribute('data-click-area'),
       ].filter(Boolean).join(' '))
       if (text.includes(koreanFontSizeText)) return 100
       if (text.includes('font size')) return 95
+      if (text.includes('fontsize')) return 92
       if (normalize(element.getAttribute('data-name')).includes('fontsize')) return 85
       if (normalize(element.getAttribute('data-click-area')).includes('font')) return 75
+      if (normalize(element.getAttribute('data-click-area')).includes('size')) return 72
       if (normalize(element.className).includes('font')) return 65
       return 0
     }
@@ -474,15 +676,33 @@ async function clickFontSizeOption(scope, sizeLabel) {
       const values = [
         element.textContent,
         element.getAttribute('aria-label'),
+        element.getAttribute('title'),
         element.getAttribute('data-value'),
+        element.getAttribute('data-size'),
         element.getAttribute('value'),
       ].map(normalize)
 
-      return values.some((value) => value === target || value === `${target}px` || value.startsWith(`${target}px`) || value.includes(` ${target}`))
+      return values.some((value) =>
+        value === target ||
+        value === `${target}px` ||
+        value === `${target} px` ||
+        value.startsWith(`${target}px`) ||
+        value.startsWith(`${target} px`) ||
+        value.includes(` ${target}`) ||
+        value.includes(`${target}px`) ||
+        value.includes(`${target} px`)
+      )
     }
 
-    const option = Array.from(document.querySelectorAll('button, [role="button"], [role="option"], li, [data-value], [value]'))
-      .filter((element) => element instanceof HTMLElement && isVisible(element) && matchesTarget(element))[0]
+    const option = Array.from(document.querySelectorAll('button, [role="button"], [role="option"], li, [data-value], [data-size], [value], [class*="font"]'))
+      .filter((element) => element instanceof HTMLElement && isVisible(element) && matchesTarget(element))
+      .sort((left, right) => {
+        const leftText = normalize(left.textContent)
+        const rightText = normalize(right.textContent)
+        const leftExact = leftText === target || leftText === `${target}px` || leftText === `${target} px`
+        const rightExact = rightText === target || rightText === `${target}px` || rightText === `${target} px`
+        return Number(rightExact) - Number(leftExact)
+      })[0]
 
     if (!option) return false
     option.click()
@@ -561,8 +781,10 @@ async function typeMultilineWithFormatting(page, text) {
   const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
   await recoverFormattingContext(page)
   let boldEnabled = false
+  let strikethroughEnabled = false
   let subheadingEnabled = false
   let fontSize = null
+  strikethroughEnabled = await setStrikethroughFormatting(page, false, strikethroughEnabled)
   boldEnabled = await setBoldFormatting(page, false, boldEnabled)
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -592,6 +814,7 @@ async function typeMultilineWithFormatting(page, text) {
     }
 
     if (lineIndex < lines.length - 1) {
+      strikethroughEnabled = await setStrikethroughFormatting(page, false, strikethroughEnabled)
       boldEnabled = await setBoldFormatting(page, false, boldEnabled)
       if (isSubheading) {
         subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
@@ -604,6 +827,7 @@ async function typeMultilineWithFormatting(page, text) {
     }
   }
 
+  await setStrikethroughFormatting(page, false, strikethroughEnabled)
   await setBoldFormatting(page, false, boldEnabled)
   if (subheadingEnabled) {
     await setSubheadingFormatting(page, false, subheadingEnabled)

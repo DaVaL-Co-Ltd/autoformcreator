@@ -1,5 +1,13 @@
-﻿export function stripBlogAutoFormatMarkers(raw = '') {
+function stripBlogRawHtmlFormatting(raw = '') {
   return String(raw || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:p|div|section|article|li|ul|ol|blockquote|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<\/?(?:del|s|strike|em|i|u|ins|mark|small|sub|sup)[^>]*>/gi, '')
+    .replace(/<\/?[^>]+>/g, '')
+}
+
+export function stripBlogAutoFormatMarkers(raw = '') {
+  return stripBlogRawHtmlFormatting(raw)
     .replace(/~~([^~]+)~~/g, '$1')
     .replace(/--([^-\n]+)--/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -11,7 +19,9 @@
 }
 
 export function sanitizeBlogBodyForDisplay(raw = '') {
-  return stripBlogAutoFormatMarkers(raw).trim()
+  return stripBlogAutoFormatMarkers(raw)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 export function sanitizeBlogBodyForUpload(raw = '') {
@@ -20,4 +30,3 @@ export function sanitizeBlogBodyForUpload(raw = '') {
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
-

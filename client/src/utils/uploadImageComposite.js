@@ -100,9 +100,9 @@ function getParagraphLineCount(paragraphs) {
 }
 
 function measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth) {
-  const titleMaxWidth = panelWidth - size * 0.09
-  const topPadding = size * 0.07
-  const bottomPadding = size * 0.06
+  const titleMaxWidth = panelWidth - size * 0.075
+  const topPadding = size * 0.075
+  const bottomPadding = size * 0.07
   const titleBodyGap = size * 0.015
   const paragraphGap = Math.round(size * 0.006)
 
@@ -141,8 +141,8 @@ function measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontS
 function fitInstagramBottomOverlay(ctx, size, title, detailLines, panelWidth) {
   const minTitleFontSize = Math.max(26, Math.round(size * 0.038))
   const minBodyFontSize = Math.max(16, Math.round(size * 0.022))
-  const basePanelHeight = size * 0.34
-  const maxPanelHeight = size * 0.54
+  const basePanelHeight = size * 0.38
+  const maxPanelHeight = size * 0.6
   let titleFontSize = Math.max(32, Math.round(size * 0.047))
   let bodyFontSize = Math.max(18, Math.round(size * 0.026))
   let layout = measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
@@ -211,8 +211,8 @@ function measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontS
 function fitInstagramCenterOverlay(ctx, size, title, detailLines, panelWidth) {
   const minTitleFontSize = Math.max(28, Math.round(size * 0.04))
   const minBodyFontSize = Math.max(16, Math.round(size * 0.022))
-  const basePanelHeight = size * 0.46
-  const maxPanelHeight = size * 0.66
+  const basePanelHeight = size * 0.52
+  const maxPanelHeight = size * 0.74
   let titleFontSize = Math.max(34, Math.round(size * 0.052))
   let bodyFontSize = Math.max(18, Math.round(size * 0.028))
   let layout = measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontSize, bodyFontSize, panelWidth)
@@ -380,7 +380,7 @@ function drawInstagramCenterOverlay(ctx, width, height, cardNumber, title, detai
   ctx.fillStyle = 'rgba(0, 0, 0, 0.14)'
   ctx.fillRect(0, 0, width, height)
 
-  const panelWidth = size * 0.7
+  const panelWidth = size * 0.78
   const fittedLayout = fitInstagramCenterOverlay(ctx, size, title, detailLines, panelWidth)
   const panelHeight = fittedLayout.panelHeight
   const panelX = (width - panelWidth) / 2

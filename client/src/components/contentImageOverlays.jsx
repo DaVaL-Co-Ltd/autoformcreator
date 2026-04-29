@@ -172,7 +172,7 @@ export function InstagramImageArtwork({
       <div className={`absolute inset-0 ${isCenterCard ? 'bg-black/14' : 'bg-black/10'}`} />
       {isCenterCard ? (
         <div className={`absolute inset-0 ${isThumb ? 'p-2' : 'p-[7%]'} flex items-center justify-center`}>
-          <div className={`${isThumb ? 'w-[78%] rounded-[18px] px-3 py-3' : 'w-[70%] rounded-[30px] px-[7%] py-[8%]'} bg-white/82 backdrop-blur-sm border border-white/70 shadow-sm text-center`}>
+          <div className={`${isThumb ? 'w-[84%] rounded-[18px] px-3 py-3.5' : 'w-[78%] rounded-[30px] px-[7.5%] py-[8.5%]'} bg-white/82 backdrop-blur-sm border border-white/70 shadow-sm text-center`}>
             <div className={`inline-flex items-center rounded-full bg-primary/10 text-primary-dark ${isThumb ? 'px-2 py-0.5 mb-2 text-[9px] font-bold' : 'px-3 py-1 mb-4 text-xs font-extrabold tracking-[0.18em]'}`}>
               CARD {cardNumber}
             </div>
@@ -203,7 +203,7 @@ export function InstagramImageArtwork({
               {kicker}
             </div>
           )}
-          <div className={`${isThumb ? 'rounded-lg px-2 py-1.5' : 'rounded-[24px] px-[5%] py-[4.5%]'} bg-white/88 shadow-sm`}>
+          <div className={`${isThumb ? 'rounded-lg px-2.5 py-2' : 'rounded-[24px] px-[5.5%] py-[5.2%]'} bg-white/88 shadow-sm`}>
             <p className={`${isThumb ? 'text-[8px]' : 'text-[clamp(15px,2vw,22px)]'} font-black text-gray-800 leading-tight`}>
               {cardTitle}
             </p>
