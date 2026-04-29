@@ -665,6 +665,101 @@ async function clickFontSizeButton(scope) {
   })
 }
 
+async function findFontSizeState(scope) {
+  return scope.evaluate(() => {
+    const candidates = [
+      `button[aria-label*="${FONT_SIZE_TEXT}"]`,
+      `button[title*="${FONT_SIZE_TEXT}"]`,
+      `[title*="${FONT_SIZE_TEXT}"]`,
+      `[role="button"][aria-label*="${FONT_SIZE_TEXT}"]`,
+      'button[aria-label*="font size" i]',
+      '[role="button"][aria-label*="font size" i]',
+      'button[title*="font size" i]',
+      '[role="button"][title*="font size" i]',
+      '[data-name="fontSize"]',
+      '[data-name="fontsize"]',
+      '[data-command="fontSize"]',
+      '[data-command="fontsize"]',
+      '[data-tool="fontSize"]',
+      '[data-tool="fontsize"]',
+      '[data-click-area*="font"]',
+      '[data-click-area*="size"]',
+      '[data-click-area*="font-size"]',
+      'button.se-toolbar-item-font-size',
+      '.se-toolbar-item-font-size button',
+      '[class*="font-size"] button',
+      '[class*="fontSize"] button',
+    ]
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+    }
+
+    const extract = (value) => {
+      const normalized = normalize(value)
+      const match = normalized.match(/\b(\d{1,2})(?:\s*px)?\b/)
+      return match ? match[1] : null
+    }
+
+    const score = (element) => {
+      const text = normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-name'),
+        element.getAttribute('data-command'),
+        element.getAttribute('data-tool'),
+        element.getAttribute('data-click-area'),
+      ].filter(Boolean).join(' '))
+      if (text.includes('font size')) return 100
+      if (text.includes('fontsize')) return 95
+      if (text.includes(normalize(FONT_SIZE_TEXT))) return 92
+      if (normalize(element.className).includes('font')) return 70
+      return 0
+    }
+
+    const button = candidates
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return null
+
+    const values = [
+      button.textContent,
+      button.getAttribute('aria-label'),
+      button.getAttribute('title'),
+      button.getAttribute('data-value'),
+      button.getAttribute('data-size'),
+      button.getAttribute('value'),
+      button.getAttribute('data-current-size'),
+      button.getAttribute('data-current-value'),
+    ]
+
+    for (const value of values) {
+      const size = extract(value)
+      if (size) return size
+    }
+
+    const descendants = Array.from(button.querySelectorAll('*'))
+    for (const node of descendants) {
+      const size = extract(node.textContent)
+      if (size) return size
+    }
+
+    const selectedOption = Array.from(document.querySelectorAll('[aria-selected="true"], [data-selected="true"], [aria-checked="true"], .active, .selected'))
+      .find((element) => isVisible(element) && extract(element.textContent || element.getAttribute('title') || element.getAttribute('aria-label')))
+
+    if (!selectedOption) return null
+    return extract(selectedOption.textContent || selectedOption.getAttribute('title') || selectedOption.getAttribute('aria-label'))
+  })
+}
+
 async function clickFontSizeOption(scope, sizeLabel) {
   return scope.evaluate((targetSize) => {
     const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -750,19 +845,53 @@ async function setFontSizeFormatting(page, sizeLabel, currentState) {
   if (fontSizeControlAvailable === false) return currentState
 
   const scopes = getFormattingScopes(page)
-  let applied = false
-  for (const scope of scopes) {
-    try {
-      if (!(await clickFontSizeButton(scope))) continue
-      await sleep(80)
-      if (await clickFontSizeOption(scope, sizeLabel)) {
-        applied = true
-        break
-      }
-    } catch {}
+  const readFontSizeState = async () => {
+    for (const scope of scopes) {
+      try {
+        const state = await findFontSizeState(scope)
+        if (state) return state
+      } catch {}
+    }
+    return null
   }
 
-  if (!applied) {
+  let observedState = await readFontSizeState()
+  if (observedState === sizeLabel) return sizeLabel
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let clicked = false
+    for (const scope of scopes) {
+      try {
+        if (!(await clickFontSizeButton(scope))) continue
+        await sleep(80)
+        if (await clickFontSizeOption(scope, sizeLabel)) {
+          clicked = true
+          break
+        }
+      } catch {}
+    }
+
+    if (!clicked) {
+      break
+    }
+
+    await sleep(120)
+    observedState = await readFontSizeState()
+    if (observedState === sizeLabel) {
+      fontSizeControlAvailable = true
+      return sizeLabel
+    }
+
+    await recoverFormattingContext(page)
+    await sleep(120)
+    observedState = await readFontSizeState()
+    if (observedState === sizeLabel) {
+      fontSizeControlAvailable = true
+      return sizeLabel
+    }
+  }
+
+  if (observedState !== sizeLabel) {
     if (fontSizeControlAvailable === null) {
       fontSizeControlAvailable = false
       console.warn('[Naver Blog] Font size control not found ??headings will keep the editor default size.')
@@ -771,7 +900,6 @@ async function setFontSizeFormatting(page, sizeLabel, currentState) {
   }
 
   fontSizeControlAvailable = true
-  await sleep(80)
   return sizeLabel
 }
 
