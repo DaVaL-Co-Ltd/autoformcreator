@@ -6,6 +6,7 @@ import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
+import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -271,12 +272,15 @@ export async function uploadToInstagram(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
-  const images = ((ext.data?.instagramImages || ext.instagramImages) || [])
-    .map((image) => image?.url || image?.imageUrl)
-    .filter(Boolean)
-  if (!images.length) throw new Error('인스타그램 이미지가 없습니다')
-
   const igContent = ext.data?.instagramContent || ext.instagramContent || {}
+  const renderedContent = await buildInstagramScheduledUploadContent({
+    instagramContent: igContent,
+    instagramImages: ext.data?.instagramImages || ext.instagramImages || [],
+    instaPngUrls: ext.data?.instaPngUrls || ext.instaPngUrls || [],
+  })
+  const images = (renderedContent.imageUrls || []).filter(Boolean)
+  if (!images.length) throw new Error('인스타그램 카드 이미지가 없습니다')
+
   const hashtags = (igContent.hashtags || [])
     .map((tag) => (String(tag).startsWith('#') ? tag : `#${tag}`))
     .join(' ')

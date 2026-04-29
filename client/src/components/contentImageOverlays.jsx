@@ -1,3 +1,5 @@
+import { IMAGE_TEXT_WRAP_STYLE } from '../utils/contentImageOverlay'
+
 const fallbackGradient = 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 55%, #fdf2f8 100%)'
 
 const cardShadow = {
@@ -80,8 +82,8 @@ export function InstagramImageArtwork({
   const accentColor = cardStyle.accentColor || '#ec4899'
   const backgroundColor = cardStyle.backgroundColor || '#fff7fb'
   const textColor = cardStyle.textColor || '#111827'
-  const visiblePoints = points.filter(Boolean).slice(0, 3)
-  const visibleDescriptions = descriptionLines.filter(Boolean).slice(0, 3)
+  const visiblePoints = points.filter(Boolean)
+  const visibleDescriptions = descriptionLines.filter(Boolean)
 
   return (
     <div
@@ -100,7 +102,10 @@ export function InstagramImageArtwork({
             {String(cardNumber || '').padStart(2, '0')}
           </span>
           {kicker && (
-            <span className="truncate text-xs font-bold" style={{ color: accentColor }}>
+            <span
+              className="text-right text-xs font-bold leading-tight"
+              style={{ color: accentColor, ...IMAGE_TEXT_WRAP_STYLE }}
+            >
               {kicker}
             </span>
           )}
@@ -109,7 +114,7 @@ export function InstagramImageArtwork({
         <div>
           <h4
             className="text-3xl font-black leading-tight"
-            style={{ color: textColor, wordBreak: 'keep-all', overflowWrap: 'break-word' }}
+            style={{ color: textColor, ...IMAGE_TEXT_WRAP_STYLE }}
           >
             {cardTitle}
           </h4>

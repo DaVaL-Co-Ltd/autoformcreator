@@ -102,22 +102,6 @@ const splitCardTokens = (text = '') => {
     .filter(Boolean)
 }
 
-const truncateCardText = (text, maxLength = 34) => {
-  const clean = trimCardTitleEnding(cleanCardText(text))
-  if (clean.length <= maxLength) return clean
-  const words = splitCardTokens(clean)
-  if (words.length <= 1) return `${clean.slice(0, maxLength).trim()}…`
-
-  let truncated = ''
-  for (const word of words) {
-    const next = truncated ? `${truncated} ${word}` : word
-    if (next.length > maxLength) break
-    truncated = next
-  }
-
-  return `${(truncated || clean.slice(0, maxLength)).trim()}…`
-}
-
 const deriveHeadlineKeyword = (text = '') => {
   const clean = trimCardTitleEnding(cleanCardText(text))
     .replace(/\b(입니다|합니다|였습니다|됩니다|되었어요|있습니다|없습니다)\b/g, '')
@@ -312,11 +296,8 @@ function renderBlogOverlayPreview(image, preview) {
 
   const headingText = cleanCardText(preview.heading || '')
   const keyPhrase = cleanCardText(preview.keyPhrase || '')
-  const headline = truncateCardText(deriveHeadlineKeyword(keyPhrase || headingText), 12)
-  const description = truncateCardText(
-    deriveDescriptionCopy(headingText, headline, preview.content || ''),
-    34
-  )
+  const headline = deriveHeadlineKeyword(keyPhrase || headingText)
+  const description = deriveDescriptionCopy(headingText, headline, preview.content || '')
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-white">
@@ -339,8 +320,8 @@ function renderInstagramOverlayPreview(image, preview) {
   const cardStyle = normalizeInstagramCardStyle(preview.cardStyle)
   const isCenterCard = cardStyle === 'center-card'
   const cardNumber = preview.cardNumber || 1
-  const headline = truncateCardText(preview.headline || `移대뱶 ${cardNumber}`, 16)
-  const description = truncateCardText(preview.dataPoint || preview.content || '', 24)
+  const headline = trimCardTitleEnding(cleanCardText(preview.headline || `카드 ${cardNumber}`))
+  const description = trimCardTitleEnding(cleanCardText(preview.dataPoint || preview.content || ''))
 
   return (
     <div className="relative aspect-square overflow-hidden rounded-xl border border-border shadow-sm bg-white">

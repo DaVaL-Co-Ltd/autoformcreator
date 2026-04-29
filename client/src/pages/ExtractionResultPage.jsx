@@ -33,7 +33,6 @@ import {
   deriveBlogImageDescription,
   deriveInstagramDetailLines,
   normalizeInstagramCardStyle,
-  truncateCardText,
 } from '../utils/contentImageOverlay'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -360,19 +359,18 @@ export default function ExtractionResultPage() {
       try {
         // PNG가 아직 변환되지 않았으면 먼저 변환
         let urls = instaPngUrls.filter(Boolean)
-        if (!urls.length && instagramContent?.cards?.length) {
-          await convertInstaCardsToPng()
-          // state 업데이트는 비동기이므로 잠시 대기
-          await new Promise(r => setTimeout(r, 200))
-          urls = (instaCardsRef.current || []).filter(Boolean).length
-            ? instaPngUrls.filter(Boolean)
-            : []
+        if (!urls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
+          urls = (await convertInstaCardsToPng()).filter(Boolean)
         }
         if (!urls.length) {
           // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한 번 직접 변환
           urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async (el, index) => {
             try { return await captureElementPng(el, `Instagram image capture ${index + 1}`) } catch { return null }
           }))).filter(Boolean)
+        }
+        if (!urls.length) {
+          const renderedContent = await buildInstagramScheduledUploadContent({ instagramContent, instagramImages })
+          urls = (renderedContent.imageUrls || []).filter(Boolean)
         }
         if (!urls.length) throw new Error('인스타그램 카드 이미지가 없습니다. 먼저 인스타그램 탭을 열어주세요.')
         const formatted = formatInstagramRequest(instagramContent, urls)
@@ -597,7 +595,7 @@ export default function ExtractionResultPage() {
   // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
     const cards = instagramContent?.cards || instagramContent?.cardTopics || []
-    if (cards.length === 0) return
+    if (cards.length === 0) return []
     const urls = []
     for (let i = 0; i < cards.length; i++) {
       const el = instaCardsRef.current[i]
@@ -608,6 +606,7 @@ export default function ExtractionResultPage() {
       } catch { urls.push(null) }
     }
     setInstaPngUrls(urls)
+    return urls
   }, [instagramContent])
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
@@ -668,6 +667,7 @@ export default function ExtractionResultPage() {
       .replace(/\*\*\s*([^*]+?)\s*\*\*/g, '<strong>$1</strong>') // **text** -> <strong> (공백 포함)
       .replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '<strong>$1</strong>')  // *text* -> <strong>
       .replace(/\*{2,}/g, '')  // 남은 고아 ** 제거
+      .replace(/(?<!\n)\n(?!\n)/g, '<br />\n')
   }
 
   // 결과 저장: ExtractionPage에서 navigateToResults 시 1회만 실행
@@ -998,10 +998,7 @@ export default function ExtractionResultPage() {
                 const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
                 const headingText = cleanCardText(section?.heading || '')
                 const headline = deriveBlogHeadline(keyPhrase || headingText)
-                const description = truncateCardText(
-                  deriveBlogImageDescription(keyPhrase, headingText, section?.content || ''),
-                  34
-                )
+                const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
 
                 if (!imageUrl) {
                   blogImagesRef.current[index] = null

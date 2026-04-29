@@ -34,6 +34,22 @@ ${parsedText}`
   return parseJSON(result, { isValid: true, issues: [], correctedText: parsedText, confidence: 0.8 })
 }
 
+function buildUniversityListSummaryInstruction() {
+  return `
+## 대학 리스트 요약 규칙
+- 원문에 여러 대학명과 각 대학별 조건, 일정, 전형, 반영 기준, 준비 사항이 나열되어 있으면 한 대학만 반복해서 요약하지 마세요.
+- 가나다순 또는 문서 첫머리에 나온 대학 하나에 치우치지 말고, 원문에 실제로 등장하는 여러 대학을 대표적으로 골라 비교형으로 요약하세요.
+- 대학 리스트가 길면 전체를 모두 나열하지 말고, 인지도와 중요도가 높은 상위권/주요 대학 몇 곳을 다양하게 선택하세요. 단, 원문에 없는 대학은 절대 추가하지 마세요.
+- 선택할 때는 건국대, 성균관대, 서울대처럼 서로 다른 대학의 조건 차이가 드러나도록 고르세요. 같은 대학 정보만 keyData, insights, summary에 반복하지 마세요.
+- 대표 대학 몇 곳만 예시로 정리하는 경우, 문장 끝에 "등"을 자연스럽게 붙여 원문에 다른 대학도 더 있음을 드러내세요.
+- rawDataPoints에는 선택한 여러 대학의 원문 근거 문장을 각각 포함하세요.
+
+예시:
+원문에 "2027 입시에서 건국대는 학생부 반영 비율이 높고, 성균관대는 수능 최저 기준을 확인해야 하며, 서울대는 전공 연계 활동과 면접 대비가 중요하다"처럼 여러 대학 조건이 나오면,
+"2027 입시에서는 건국대는 학생부 반영 비율, 성균관대는 수능 최저 기준, 서울대는 전공 연계 활동과 면접 대비가 핵심 변수로 정리되는 등 대학별 확인 포인트가 다르게 나타납니다."처럼 여러 대학을 함께 보여주세요.
+`
+}
+
 export async function summarizeContent(verifiedText, options = {}) {
   const styleMap = {
     data: '데이터와 수치 중심으로 분석적으로 요약하세요.',
@@ -49,6 +65,7 @@ export async function summarizeContent(verifiedText, options = {}) {
   const prompt = `당신은 콘텐츠 분석 전문가입니다. 아래 텍스트의 핵심 내용을 정확하게 요약해주세요.${styleInstruction}${keywordsInstruction}${extraInstruction}
 
 중요: 원본 데이터의 숫자, 통계, 팩트를 절대 변경하지 마세요. 모든 데이터는 원문 그대로 인용해야 합니다.
+${buildUniversityListSummaryInstruction()}
 
 다음을 포함해주세요:
 1. 문서 제목/주제

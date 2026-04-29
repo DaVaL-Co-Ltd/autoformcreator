@@ -72,12 +72,45 @@ function ensureBlogSectionBold(section = {}) {
   }
 }
 
+export function normalizeBlogSectionLineBreaks(content = '') {
+  return String(content || '')
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph
+      .replace(
+        /(^|\n|[.!?。！？]\s+)([^.!?。！？\n:：]{2,28}[:：])\s*(?=\S)/g,
+        (_, prefix, label) => {
+          const before = prefix && !prefix.endsWith('\n') ? `${prefix.trimEnd()}\n` : prefix
+          return `${before}${label}\n`
+        },
+      )
+      .replace(
+        /([.!?。！？])\s+(?=(먼저|다음으로|또한|반면|예를 들어|구체적으로|특히|한편|이와 함께|마지막으로))/g,
+        '$1\n',
+      )
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n[ \t]+/g, '\n')
+      .trim())
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function ensureBlogSectionLineBreaks(section = {}) {
+  const content = String(section?.content || '')
+  if (!content.trim()) return section
+
+  return {
+    ...section,
+    content: normalizeBlogSectionLineBreaks(content),
+  }
+}
+
 function finalizeBlogContent(content) {
   if (!content) return content
   return {
     ...content,
     sections: Array.isArray(content.sections)
-      ? content.sections.map(ensureBlogSectionBold)
+      ? content.sections.map(ensureBlogSectionLineBreaks).map(ensureBlogSectionBold)
       : [],
   }
 }
@@ -168,6 +201,43 @@ function buildBlogTitleRules() {
 `
 }
 
+function buildBlogBodyLineBreakRules() {
+  return `
+## 블로그 본문 줄바꿈 규칙
+- sections[].content 안에서는 큰 섹션을 새로 만들 정도는 아니지만 내용 단위가 바뀌는 지점에 줄바꿈을 넣으세요.
+- 일정, 기간, 대상, 장소, 준비물, 신청 방법, 핵심 변화처럼 라벨과 값이 이어지는 내용은 "라벨:" 다음 줄에 실제 내용을 쓰세요.
+  예: "수능 일정:\\n11/11 (목)"
+- 한 문단 안에서 "먼저", "다음으로", "또한", "반면", "예를 들어", "구체적으로", "특히", "마지막으로"처럼 설명 흐름이 바뀌면 해당 문장 앞에서 줄바꿈하세요.
+- 완전히 다른 큰 주제는 기존처럼 별도 section으로 나누고, 같은 section 안의 세부 내용 변화만 줄바꿈으로 정리하세요.
+`
+}
+
+function buildInstagramCardRules() {
+  return `
+## 인스타그램 카드뉴스 규칙
+- cardTopics는 이미지 카드로 강조할 만큼 중요한 핵심 내용만 선별하세요.
+- 단순 보조 설명, 반복 문장, 맥락상 덜 중요한 데이터는 카드로 만들지 마세요.
+- 카드 개수는 중요한 내용 수에 맞추되 최소 6개 이상으로 구성하세요. 중요한 내용이 6개보다 적으면 덜 중요한 새 주제를 추가하지 말고, 가장 중요한 주제를 세부 포인트로 나누어 6개를 채우세요.
+- 10개 상한에 맞추려고 중요한 내용을 버리지 마세요. 중요한 포인트가 10개를 넘으면 모두 카드로 만드세요.
+- cardTopics는 중요도와 독자가 이해해야 하는 흐름 순서대로 정렬하세요.
+- 각 카드는 하나의 핵심 메시지만 담고, headline/content/dataPoint를 짧고 명확하게 작성하세요.
+`
+}
+
+function buildInstagramCaptionRules() {
+  return `
+## 인스타그램 캡션 규칙
+- caption은 cardTopics에서 다룬 핵심 이야기를 짧은 문단 중심으로 풀어 쓰세요.
+- 전체 분량은 350~600자(공백 포함) 수준으로 작성하세요. 600자를 넘기지 마세요.
+- 문단은 3~5개로 나누고, 각 문단은 1~2문장으로 간결하게 작성하세요.
+- 각 문단 첫머리에 내용과 어울리는 이모지 아이콘을 1개씩 넣어 가독성을 높이세요. 예: 📌, ✅, 💡, 🔎, 🎯, ✨
+- 이모지는 과하게 반복하지 말고, 같은 이모지를 연속 문단에서 반복하지 마세요.
+- 글머리 기호나 단순 번호 나열 대신 자연스러운 짧은 문단 흐름으로 작성하세요.
+- 첫 문단은 시선을 끄는 도입(훅), 마지막 문단은 짧은 마무리 또는 행동 유도로 구성하세요.
+- caption에는 해시태그(#)를 포함하지 마세요. 해시태그는 hashtags 필드에만 작성하세요.
+`
+}
+
 function buildBasePrompt(summary, rawText, emphasis, options) {
   return `
 ## 입력 데이터
@@ -194,11 +264,8 @@ ${buildBlogTitleRules()}
 
 ## 인스타그램 규칙
 - body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- 카드 주제는 6~10개로 구성하세요.
-- cardTopics는 카드 이미지 생성에 사용되므로 headline/content/dataPoint를 짧고 명확하게 작성하세요.
-- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요. 전체 분량은 600~1200자(공백 포함) 수준으로, 블로그 본문보다 짧지만 한 호흡에 읽기 좋게 작성하세요.
-- caption 첫 문단은 시선을 끄는 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요.
-- caption에는 해시태그(#)를 포함하지 마세요. 해시태그는 hashtags 필드에만 작성하세요.
+${buildInstagramCardRules()}
+${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
@@ -213,6 +280,7 @@ ${buildBlogTitleRules()}
 ## 블로그 규칙
 - 섹션은 3개 이상 구성하세요.
 - sections[].content는 충분한 길이의 본문으로 작성하세요.
+${buildBlogBodyLineBreakRules()}
 
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
@@ -332,8 +400,8 @@ async function retryNonLongform(channels, summary, rawText, emphasis, options = 
 
 ## 인스타그램 규칙
 - body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요. 전체 분량은 600~1200자(공백 포함) 수준으로 작성하세요.
-- caption 첫 문단은 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요. 해시태그(#)는 caption에 포함하지 말고 hashtags 필드에만 작성하세요.
+${buildInstagramCardRules()}
+${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
@@ -392,6 +460,7 @@ export async function generateBlogContent(summary, rawText, emphasis, options = 
 - 없는 사실을 추가하지 마세요.
 - 섹션은 3개 이상 구성하세요.
 - 블로그 본문에서는 markdown bold(**텍스트**)를 사용해도 됩니다.
+${buildBlogBodyLineBreakRules()}
 
 ${buildBlogTitleRules()}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
@@ -427,19 +496,15 @@ export async function generateInstagramContent(summary, rawText, emphasis, optio
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실을 추가하지 마세요.
 - body, caption, cardTopics에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- cardTopics는 6~10개로 구성하세요.
-- 각 카드 문구는 짧고 명확하게 작성하세요.
+${buildInstagramCardRules()}
 
 ## caption 작성 규칙
-- caption은 cardTopics에서 다룬 핵심 이야기를 줄글(흐르는 문장) 형태의 본문으로 풀어 쓰세요. 카드 순서를 따라 각 카드 1개당 2~3문장 정도로 자연스럽게 이어 쓰고, 글머리 기호나 단순 번호 나열은 쓰지 마세요.
-- 전체 분량은 600~1200자(공백 포함) 수준으로 작성하세요. 블로그 본문보다는 짧지만 한 호흡에 읽기 좋도록 충분히 풍부하게 쓰세요.
-- 첫 문단은 시선을 끄는 도입(훅), 마지막 문단은 짧은 마무리로 구성하고 문단 사이에는 빈 줄을 넣으세요.
-- 해시태그(#)는 caption에 포함하지 마세요. 해시태그는 hashtags 필드에만 작성하세요.
+${buildInstagramCaptionRules()}
 
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션 본문(줄글, 600~1200자)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
+{"title":"게시물 제목","body":"게시물 본문","caption":"이모지로 시작하는 짧은 문단형 인스타그램 캡션 본문(350~600자)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
   return sanitizeInstagramContent(

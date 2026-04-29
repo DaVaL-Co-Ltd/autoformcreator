@@ -11,15 +11,117 @@ export const cleanCardText = (value) => asText(value)
   .replace(/\s+/g, ' ')
   .trim()
 
-export const truncateCardText = (value, maxLength = 40) => {
-  const text = cleanCardText(value)
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`
+export const IMAGE_TEXT_WRAP_STYLE = {
+  wordBreak: 'keep-all',
+  overflowWrap: 'break-word',
+  textWrap: 'balance',
+}
+
+const splitOversizedWord = (word, measureTextWidth, maxWidth) => {
+  if (measureTextWidth(word) <= maxWidth) return [word]
+
+  const chunks = []
+  let chunk = ''
+
+  for (const char of word) {
+    const nextChunk = chunk + char
+    if (measureTextWidth(nextChunk) <= maxWidth || !chunk) {
+      chunk = nextChunk
+      continue
+    }
+
+    chunks.push(chunk)
+    chunk = char
+  }
+
+  if (chunk) chunks.push(chunk)
+  return chunks
+}
+
+const getLineWidth = (words, start, end, measureTextWidth) => (
+  measureTextWidth(words.slice(start, end).join(' '))
+)
+
+const findBalancedLines = (words, lineCount, measureTextWidth, maxWidth) => {
+  const totalWidth = measureTextWidth(words.join(' '))
+  const idealWidth = totalWidth / lineCount
+  const memo = new Map()
+
+  const solve = (start, remainingLines) => {
+    const key = `${start}:${remainingLines}`
+    if (memo.has(key)) return memo.get(key)
+
+    const wordsLeft = words.length - start
+    if (remainingLines === 1) {
+      const width = getLineWidth(words, start, words.length, measureTextWidth)
+      const result = width <= maxWidth
+        ? { score: Math.abs(width - idealWidth), lines: [words.slice(start).join(' ')] }
+        : null
+      memo.set(key, result)
+      return result
+    }
+
+    if (wordsLeft < remainingLines) {
+      memo.set(key, null)
+      return null
+    }
+
+    let best = null
+    const maxEnd = words.length - remainingLines + 1
+
+    for (let end = start + 1; end <= maxEnd; end += 1) {
+      const width = getLineWidth(words, start, end, measureTextWidth)
+      if (width > maxWidth) break
+
+      const rest = solve(end, remainingLines - 1)
+      if (!rest) continue
+
+      const score = Math.abs(width - idealWidth) + rest.score
+      if (!best || score < best.score) {
+        best = {
+          score,
+          lines: [words.slice(start, end).join(' '), ...rest.lines],
+        }
+      }
+    }
+
+    memo.set(key, best)
+    return best
+  }
+
+  return solve(0, lineCount)?.lines || null
+}
+
+export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
+  const words = cleanCardText(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .flatMap((word) => splitOversizedWord(word, measureTextWidth, maxWidth))
+
+  if (!words.length) return []
+
+  const lines = []
+  let currentLine = ''
+
+  for (const word of words) {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word
+    if (measureTextWidth(nextLine) <= maxWidth || !currentLine) {
+      currentLine = nextLine
+      continue
+    }
+
+    lines.push(currentLine)
+    currentLine = word
+  }
+
+  if (currentLine) lines.push(currentLine)
+
+  return findBalancedLines(words, lines.length, measureTextWidth, maxWidth) || lines
 }
 
 export const deriveBlogHeadline = (keyPhrase, heading) => {
   const source = cleanCardText(keyPhrase) || cleanCardText(heading)
-  return truncateCardText(source, 24)
+  return source
 }
 
 export const deriveBlogImageDescription = (keyPhrase, heading, content) => {
@@ -41,14 +143,13 @@ export const deriveInstagramDetailLines = (card = {}) => {
     card.description,
     card.body,
     card.content,
+    card.dataPoint,
     card.text,
   ]
 
   return candidates
-    .flatMap((value) => cleanCardText(value).split(/(?:\n| {2,})/))
-    .map((line) => truncateCardText(line, 36))
+    .flatMap((value) => cleanCardText(value).split(/(?<=[.!?。！？])\s+|\n+| {2,}/))
     .filter(Boolean)
-    .slice(0, 3)
 }
 
 export const normalizeInstagramCardStyle = (style = {}) => {

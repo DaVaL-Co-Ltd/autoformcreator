@@ -646,40 +646,7 @@ export default function ExtractionPage() {
 
   const deriveBlogHeadline = (text = '') => {
     const base = trimCardTitleEnding(deriveHeadlineKeyword(text))
-    if (!base) return ''
-    if (base.length <= 16) return base
-
-    const tokens = splitCardTokens(base)
-    if (tokens.length > 1) {
-      let compact = ''
-      for (const token of tokens.slice(0, 3)) {
-        const next = compact ? `${compact} ${token}` : token
-        if (next.length > 16) break
-        compact = next
-      }
-      if (compact) return trimCardTitleEnding(compact)
-      return trimCardTitleEnding(tokens[0] || '')
-    }
-
-    return trimCardTitleEnding(base.slice(0, 16))
-  }
-
-  const truncateCardText = (text, maxLength = 34) => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-    if (clean.length <= maxLength) return clean
-    const words = splitCardTokens(clean)
-    if (words.length <= 1) {
-      return `${clean.slice(0, maxLength).trim()}…`
-    }
-
-    let truncated = ''
-    for (const word of words) {
-      const next = truncated ? `${truncated} ${word}` : word
-      if (next.length > maxLength) break
-      truncated = next
-    }
-
-    return `${(truncated || clean.slice(0, maxLength)).trim()}…`
+    return base
   }
 
   const deriveHeadlineKeyword = (text = '') => {
@@ -736,19 +703,18 @@ export default function ExtractionPage() {
       .filter(Boolean)
 
     for (const sentence of contentSentences) {
-      if (lines.length >= 3) break
-      lines.push(truncateCardText(sentence, 34))
+      lines.push(trimCardTitleEnding(cleanCardText(sentence)))
     }
 
-    if (dataPointText && lines.length < 3) {
-      lines.push(truncateCardText(dataPointText, 30))
+    if (dataPointText) {
+      lines.push(trimCardTitleEnding(dataPointText))
     }
 
     if (lines.length === 0 && contentText) {
-      lines.push(truncateCardText(contentText, 34))
+      lines.push(trimCardTitleEnding(contentText))
     }
 
-    return lines.slice(0, 3)
+    return lines.filter(Boolean)
   }
 
   // 에러 발생 시 팝업 표시
@@ -875,10 +841,7 @@ export default function ExtractionPage() {
     const heading = cleanCardText(section?.heading || '')
     const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
     const headline = deriveBlogHeadline(keyPhrase || heading)
-    const description = truncateCardText(
-      deriveBlogImageDescription(keyPhrase, heading, section?.content || ''),
-      34
-    )
+    const description = deriveBlogImageDescription(keyPhrase, heading, section?.content || '')
     const showBlogTextOverlay = promptSettings.media.blogTextOverlay !== 'without-text'
 
     if (!bgImageUrl) return []
@@ -941,7 +904,7 @@ export default function ExtractionPage() {
     const cards = Array.isArray(instagramContent?.cardTopics) ? instagramContent.cardTopics : []
     const matchedCard = cards.find(card => Number(card?.cardNumber) === cardNumber) || cards[index] || null
     const imageUrl = image?.imageUrl || null
-    const headline = truncateCardText(matchedCard?.headline || `카드 ${cardNumber}`, 16)
+    const headline = trimCardTitleEnding(cleanCardText(matchedCard?.headline || `카드 ${cardNumber}`))
     const detailLines = deriveInstagramDetailLines(matchedCard)
     // 설명(content)과 요약(dataPoint)을 한 텍스트 블록으로 합쳐 카드가 너무 비어 보이지 않도록 한다.
     const descriptionLines = detailLines.filter(Boolean)

@@ -1,3 +1,9 @@
+﻿import {
+  cleanCardText as sharedCleanCardText,
+  deriveInstagramDetailLines as sharedDeriveInstagramDetailLines,
+  wrapCardTextLines,
+} from './contentImageOverlay'
+
 function ensureArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -7,57 +13,8 @@ function normalizeInstagramCardStyle(value = '') {
   return 'background-text'
 }
 
-function cleanCardText(text = '') {
-  return String(text)
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[#>*_~`-]/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-function truncateCardText(text, maxLength = 40) {
-  const clean = cleanCardText(text)
-  if (clean.length <= maxLength) return clean
-
-  const words = clean.split(/\s+/).filter(Boolean)
-  if (words.length <= 1) return `${clean.slice(0, maxLength).trim()}...`
-
-  let truncated = ''
-  for (const word of words) {
-    const next = truncated ? `${truncated} ${word}` : word
-    if (next.length > maxLength) break
-    truncated = next
-  }
-
-  return `${(truncated || clean.slice(0, maxLength)).trim()}...`
-}
-
 function deriveInstagramDetailLines(card) {
-  const lines = []
-  const contentText = cleanCardText(card?.content || '')
-  const dataPointText = cleanCardText(card?.dataPoint || '')
-
-  const contentSentences = contentText
-    .split(/(?<=[.!?。！？])\s+|\n+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean)
-
-  for (const sentence of contentSentences) {
-    if (lines.length >= 3) break
-    lines.push(truncateCardText(sentence, 40))
-  }
-
-  if (dataPointText && lines.length < 3) {
-    lines.push(truncateCardText(dataPointText, 34))
-  }
-
-  if (lines.length === 0 && contentText) {
-    lines.push(truncateCardText(contentText, 40))
-  }
-
-  return lines.slice(0, 3)
+  return sharedDeriveInstagramDetailLines(card)
 }
 
 function getCardSource(source = {}) {
@@ -85,25 +42,7 @@ function pickCardImageUrl(rawImages, card, index) {
 }
 
 function wrapText(ctx, text, maxWidth) {
-  const words = cleanCardText(text).split(/\s+/).filter(Boolean)
-  if (!words.length) return []
-
-  const lines = []
-  let currentLine = ''
-
-  for (const word of words) {
-    const nextLine = currentLine ? `${currentLine} ${word}` : word
-    if (ctx.measureText(nextLine).width <= maxWidth || !currentLine) {
-      currentLine = nextLine
-      continue
-    }
-
-    lines.push(currentLine)
-    currentLine = word
-  }
-
-  if (currentLine) lines.push(currentLine)
-  return lines
+  return wrapCardTextLines(text, (line) => ctx.measureText(line).width, maxWidth)
 }
 
 function drawRoundedRect(ctx, x, y, width, height, radius) {
@@ -195,7 +134,7 @@ function drawCenterCardOverlay(ctx, size, cardNumber, title, detailLines) {
 
   ctx.fillStyle = '#1f2937'
   ctx.font = '900 64px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
-  const titleLines = wrapText(ctx, title, panelWidth - 120).slice(0, 3)
+  const titleLines = wrapText(ctx, title, panelWidth - 120)
   const titleStartY = panelY + 140
   titleLines.forEach((line, index) => {
     ctx.fillText(line, size / 2, titleStartY + (index * 78))
@@ -204,8 +143,8 @@ function drawCenterCardOverlay(ctx, size, cardNumber, title, detailLines) {
   ctx.fillStyle = '#4b5563'
   ctx.font = '600 34px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
   const detailStartY = titleStartY + (titleLines.length * 78) + 30
-  detailLines.slice(0, 3).forEach((line, index) => {
-    const wrapped = wrapText(ctx, line, panelWidth - 140).slice(0, 2)
+  detailLines.forEach((line, index) => {
+    const wrapped = wrapText(ctx, line, panelWidth - 140)
     wrapped.forEach((wrappedLine, lineIndex) => {
       ctx.fillText(wrappedLine, size / 2, detailStartY + (index * 58) + (lineIndex * 40))
     })
@@ -242,7 +181,7 @@ function drawBottomCardOverlay(ctx, size, cardNumber, title, detailLines) {
   ctx.fillStyle = '#1f2937'
   ctx.font = '900 58px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
   ctx.textAlign = 'left'
-  const titleLines = wrapText(ctx, title, panelWidth - 100).slice(0, 2)
+  const titleLines = wrapText(ctx, title, panelWidth - 100)
   const textX = panelX + 50
   const titleStartY = panelY + 76
   titleLines.forEach((line, index) => {
@@ -252,8 +191,8 @@ function drawBottomCardOverlay(ctx, size, cardNumber, title, detailLines) {
   ctx.fillStyle = '#4b5563'
   ctx.font = '600 32px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif'
   let nextY = titleStartY + (titleLines.length * 70) + 18
-  detailLines.slice(0, 3).forEach((line) => {
-    const wrapped = wrapText(ctx, line, panelWidth - 100).slice(0, 2)
+  detailLines.forEach((line) => {
+    const wrapped = wrapText(ctx, line, panelWidth - 100)
     wrapped.forEach((wrappedLine) => {
       ctx.fillText(wrappedLine, textX, nextY)
       nextY += 40
@@ -264,7 +203,7 @@ function drawBottomCardOverlay(ctx, size, cardNumber, title, detailLines) {
 
 async function renderInstagramCardDataUrl({ imageUrl, card, cardIndex, cardStyle }) {
   const size = 1080
-  const title = truncateCardText(card?.title || card?.heading || card?.headline || `인스타 카드 ${cardIndex + 1}`, 28)
+  const title = sharedCleanCardText(card?.title || card?.heading || card?.headline || `?몄뒪? 移대뱶 ${cardIndex + 1}`)
   const detailLines = deriveInstagramDetailLines(card)
   const image = await loadImageElement(imageUrl)
 
