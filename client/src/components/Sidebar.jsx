@@ -1,11 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Sparkles, Settings, LogOut, X, ChevronRight, Beaker, LayoutTemplate } from 'lucide-react'
+import { Sparkles, Settings, LogOut, X, ChevronRight, Beaker } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 const navItems = [
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출', description: 'AI 자동 생성' },
   { to: '/prompt-lab', icon: Beaker, label: '프롬프트 테스트', description: '결과 비교 실험실' },
-  { to: '/design-test', icon: LayoutTemplate, label: '시안 테스트', description: '이미지 레이아웃 비교' },
   { to: '/settings', icon: Settings, label: '설정', description: '플랫폼 연동 관리' },
 ]
 

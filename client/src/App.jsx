@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
@@ -10,17 +10,12 @@ import ExtractionPage from './pages/ExtractionPage'
 import ExtractionResultPage from './pages/ExtractionResultPage'
 import SettingsPage from './pages/SettingsPage'
 import ShortsViewerPage from './pages/ShortsViewerPage'
-import ShortsTestPage from './pages/ShortsTestPage'
-import ShortsTest2Page from './pages/ShortsTest2Page'
 import SubtitlePreviewPage from './pages/SubtitlePreviewPage'
 import TitlePreviewPage from './pages/TitlePreviewPage'
-import InstagramUploadTestPage from './pages/InstagramUploadTestPage'
-import InstagramScheduleTestPage from './pages/InstagramScheduleTestPage'
 import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
 import PromptLabPage from './pages/PromptLabPage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
-import DesignTestPage from './pages/DesignTestPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
 import { DESKTOP_HELPER } from './constants/desktopHelper.js'
@@ -57,16 +52,11 @@ function AppLayout() {
           <Route path="/contents" element={<ContentPage />} />
           <Route path="/contents/view" element={<ExtractionResultPage />} />
           <Route path="/prompt-lab" element={<PromptLabPage />} />
-          <Route path="/design-test" element={<DesignTestPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />
-          <Route path="/shorts/test" element={<ShortsTestPage />} />
-          <Route path="/shorts/test2" element={<ShortsTest2Page />} />
           <Route path="/subtitle-preview" element={<SubtitlePreviewPage />} />
           <Route path="/title-preview" element={<TitlePreviewPage />} />
-          <Route path="/instagram/upload-test" element={<InstagramUploadTestPage />} />
-          <Route path="/instagram/schedule-test" element={<InstagramScheduleTestPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -108,10 +98,8 @@ function DesktopHelperInstallPrompt() {
             블로그 업로드용 설치 파일이 필요합니다
           </h3>
           <p className="text-sm text-text-muted leading-6">
-            네이버 블로그 업로드 기능을 사용하려면 클라이언트 PC에
-            {' '}
-            {DESKTOP_HELPER.title}
-            {' '}
+            네이버 블로그 업로드 기능을 사용하려면 클라이언트 PC에{' '}
+            {DESKTOP_HELPER.title}{' '}
             앱을 먼저 설치해야 합니다.
             설정 화면으로 이동해서 설치 파일을 내려받으시겠습니까?
           </p>

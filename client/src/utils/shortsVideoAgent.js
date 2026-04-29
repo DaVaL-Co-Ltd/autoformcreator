@@ -1,7 +1,7 @@
-export const SHORTS_SUBTITLE_FONT_OPTIONS = [
+﻿export const SHORTS_SUBTITLE_FONT_OPTIONS = [
   { value: 'default', label: '기본', promptLabel: 'clean modern sans-serif' },
   { value: 'bold', label: '볼드', promptLabel: 'bold display-style Korean font' },
-  { value: 'dongle', label: '둥근체', promptLabel: 'rounded friendly Korean font' },
+  { value: 'dongle', label: '동글체', promptLabel: 'rounded friendly Korean font' },
   { value: 'handwriting', label: '손글씨', promptLabel: 'handwritten Korean font' },
   { value: 'gothic', label: '고딕', promptLabel: 'sharp gothic Korean font' },
 ]
@@ -100,12 +100,14 @@ function isAnimalOrCharacterAvatar(avatar) {
     '말',
     '사슴',
     '코끼리',
-    '소',
+    '얼룩말',
+    '기린',
+    '젖소',
     '돼지',
     '양',
     '염소',
     '공룡',
-    '용',
+    '드래곤',
     '부엉이',
     '쥐',
     '다람쥐',
@@ -121,8 +123,8 @@ function countDataSignals(text) {
   if (!source.trim()) return 0
 
   const numericMatches = source.match(/\d+(?:[.,]\d+)?/g) || []
-  const metricMatches = source.match(/[%％]|배|명|개|건|억|만|천|위|점|년|월|시간|분|초|kpi|roi|cagr|yoy|mom|qoq/gi) || []
-  const comparisonMatches = source.match(/대비|증가|감소|상승|하락|비교|전년|올해|작년|랭킹|순위|퍼센트|비율|격차/g) || []
+  const metricMatches = source.match(/%|조|억|명|개|건|만|천|억원|달러|시간|분|초|kpi|roi|cagr|yoy|mom|qoq/gi) || []
+  const comparisonMatches = source.match(/대비|증가|감소|확대|하락|비교|전년|비해|올해|예상|순위|퍼센트|비율|격차/g) || []
 
   return numericMatches.length + metricMatches.length + comparisonMatches.length
 }
