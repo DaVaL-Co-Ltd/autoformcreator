@@ -11,7 +11,7 @@ import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { saveExtraction, getExtractionById, updateUploadStatus } from '../services/storage'
+import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
@@ -26,6 +26,7 @@ import { extractDesktopHelperStatus, formatDesktopHelperStatus, getDesktopHelper
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
+import { normalizeBlogTags } from '../utils/blogTags'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import {
   cleanCardText,
@@ -40,11 +41,6 @@ const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
 
 const ensureArray = (value) => Array.isArray(value) ? value : []
-const ensureTagArray = (value) => {
-  if (Array.isArray(value)) return value
-  if (typeof value === 'string') return value.split(/\s+/).filter(Boolean)
-  return []
-}
 const escapeHtml = (value = '') => String(value)
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -81,6 +77,22 @@ const BLOG_UPLOAD_REQUEST_TIMEOUT_MS = 120000
 const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
 const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
+
+const attachRenderedImageUrls = (images, urls) => ensureArray(images).map((image, index) => {
+  const renderedImageUrl = urls[index] || image?.renderedImageUrl || image?.pngUrl || null
+  return renderedImageUrl
+    ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
+    : image
+})
+
+const getRenderedImageUrls = (images, urls = []) => {
+  const imageList = ensureArray(images)
+  const size = Math.max(imageList.length, urls.length)
+  return Array.from({ length: size }, (_, index) => {
+    const image = imageList[index]
+    return urls[index] || image?.renderedImageUrl || image?.pngUrl || null
+  })
+}
 
 async function captureElementPng(el, label) {
   return withTimeout(
@@ -221,23 +233,32 @@ export default function ExtractionResultPage() {
       try {
         setBlogUploadResult(null)
         // blogPngUrls가 없으면 먼저 캡처
-        let pngUrls = blogPngUrls
-        if (!pngUrls.length) {
-          await convertBlogImagesToPng()
+        let pngUrls = getRenderedImageUrls(blogImages, blogPngUrls)
+        if (!pngUrls.filter(Boolean).length) {
+          pngUrls = await convertBlogImagesToPng()
           // convertBlogImagesToPng 대신 state set 없이 직접 캡처
-          const refs = blogImagesRef.current.filter(Boolean)
-          pngUrls = []
-          for (const el of refs) {
-            try {
-              const url = await captureElementPng(el, `Blog image capture ${pngUrls.length + 1}`)
-              pngUrls.push(url)
-            } catch { pngUrls.push(null) }
+          if (!pngUrls.filter(Boolean).length) {
+            const refs = blogImagesRef.current
+            pngUrls = new Array(refs.length).fill(null)
+            for (let index = 0; index < refs.length; index++) {
+              const el = refs[index]
+              if (!el) continue
+              try {
+                pngUrls[index] = await captureElementPng(el, `Blog image capture ${index + 1}`)
+              } catch { pngUrls[index] = null }
+            }
+            const nextBlogImages = attachRenderedImageUrls(blogImages, pngUrls)
+            setBlogImages(nextBlogImages)
+            if (extractionId) {
+              updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
+                .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
+            }
           }
         }
 
         const title = blogTitle || blogContent?.title || ''
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
-        const tags = ensureTagArray(blogContent?.tags).map(t => t.replace(/^#/, ''))
+        const tags = normalizeBlogTags(blogContent)
         const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
 
         let data
@@ -358,15 +379,23 @@ export default function ExtractionResultPage() {
     if (channel === 'instagram') {
       try {
         // PNG가 아직 변환되지 않았으면 먼저 변환
-        let urls = instaPngUrls.filter(Boolean)
+        let urls = getRenderedImageUrls(instagramImages, instaPngUrls).filter(Boolean)
         if (!urls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
           urls = (await convertInstaCardsToPng()).filter(Boolean)
         }
         if (!urls.length) {
           // PNG 변환 결과를 state에서 가져올 수 없으면 다시 한 번 직접 변환
-          urls = (await Promise.all((instaCardsRef.current || []).filter(Boolean).map(async (el, index) => {
+          const capturedUrls = await Promise.all((instaCardsRef.current || []).map(async (el, index) => {
+            if (!el) return null
             try { return await captureElementPng(el, `Instagram image capture ${index + 1}`) } catch { return null }
-          }))).filter(Boolean)
+          }))
+          urls = capturedUrls.filter(Boolean)
+          const nextInstagramImages = attachRenderedImageUrls(instagramImages, capturedUrls)
+          setInstagramImages(nextInstagramImages)
+          if (extractionId) {
+            updateExtractionMedia(extractionId, { instagramImages: nextInstagramImages })
+              .catch(err => console.warn('[인스타그램 렌더링 이미지 저장 실패]', err))
+          }
         }
         if (!urls.length) {
           const renderedContent = await buildInstagramScheduledUploadContent({ instagramContent, instagramImages })
@@ -577,7 +606,7 @@ export default function ExtractionResultPage() {
   // 블로그 이미지 HTML -> PNG 변환
   const convertBlogImagesToPng = useCallback(async () => {
     const refs = blogImagesRef.current
-    if (!refs.some(Boolean)) return
+    if (!refs.some(Boolean)) return []
     const urls = new Array(refs.length).fill(null)
     for (let index = 0; index < refs.length; index++) {
       const el = refs[index]
@@ -590,7 +619,14 @@ export default function ExtractionResultPage() {
       }
     }
     setBlogPngUrls(urls)
-  }, [])
+    const nextBlogImages = attachRenderedImageUrls(blogImages, urls)
+    setBlogImages(nextBlogImages)
+    if (extractionId) {
+      updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
+        .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
+    }
+    return urls
+  }, [blogImages, extractionId])
 
   // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
@@ -606,8 +642,14 @@ export default function ExtractionResultPage() {
       } catch { urls.push(null) }
     }
     setInstaPngUrls(urls)
+    const nextInstagramImages = attachRenderedImageUrls(instagramImages, urls)
+    setInstagramImages(nextInstagramImages)
+    if (extractionId) {
+      updateExtractionMedia(extractionId, { instagramImages: nextInstagramImages })
+        .catch(err => console.warn('[인스타그램 렌더링 이미지 저장 실패]', err))
+    }
     return urls
-  }, [instagramContent])
+  }, [extractionId, instagramContent, instagramImages])
   // 블로그 이미지 PNG 변환 트리거
   useEffect(() => {
     if (activeMenu === 'blog' && blogContent && blogPngUrls.length === 0) {
@@ -617,12 +659,19 @@ export default function ExtractionResultPage() {
     }
   }, [activeMenu, blogContent, blogPngUrls.length, convertBlogImagesToPng])
 
+  useEffect(() => {
+    if (!extractionId || !blogPngUrls.some(Boolean)) return
+    const nextBlogImages = attachRenderedImageUrls(blogImages, blogPngUrls)
+    updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
+      .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
+  }, [blogImages, blogPngUrls, extractionId])
+
   // 네이버 블로그 업로드 서버 상태 확인
   const checkBlogServer = useCallback(() => {
     setBlogServerStatus('checking')
     // 블로그 탭일 때만 상태 체크
     if (activeMenu !== 'blog' || USE_REMOTE_BLOG_PUBLISH) { setBlogServerStatus('offline'); return }
-    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000), targetAddressSpace: 'local' })
+    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000), targetAddressSpace: 'loopback' })
       .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
       .catch(() => setBlogServerStatus('offline'))
   }, [activeMenu])
@@ -741,6 +790,13 @@ export default function ExtractionResultPage() {
       return () => clearTimeout(timer)
     }
   }, [activeMenu, instagramContent, instaPngUrls.length, convertInstaCardsToPng])
+
+  useEffect(() => {
+    if (!extractionId || !instaPngUrls.some(Boolean)) return
+    const nextInstagramImages = attachRenderedImageUrls(instagramImages, instaPngUrls)
+    updateExtractionMedia(extractionId, { instagramImages: nextInstagramImages })
+      .catch(err => console.warn('[인스타그램 렌더링 이미지 저장 실패]', err))
+  }, [instagramImages, instaPngUrls, extractionId])
 
   useEffect(() => {
     const nextDataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
@@ -924,11 +980,14 @@ export default function ExtractionResultPage() {
     }
   }
 
-  const renderBlog = () => (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div />
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+  const renderBlog = () => {
+    const blogTags = normalizeBlogTags(blogContent)
+
+    return (
+      <div className="max-w-5xl mx-auto space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div />
+          <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             type="button"
             onClick={() => (
@@ -976,15 +1035,27 @@ export default function ExtractionResultPage() {
             {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             이미지 저장
           </button>
+          </div>
         </div>
-      </div>
 
-      <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
-        <div className="p-6 sm:p-8 border-b border-border">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
-            {blogContent?.title}
-          </h1>
-        </div>
+        <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+          <div className="p-6 sm:p-8 border-b border-border">
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
+              {blogContent?.title}
+            </h1>
+            {blogTags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {blogTags.map((tag, index) => (
+                  <span
+                    key={`${tag}-${index}`}
+                    className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         <div className="p-6 sm:p-8 space-y-10">
             {(() => {
               const blogImageList = ensureArray(blogImages)
@@ -995,12 +1066,13 @@ export default function ExtractionResultPage() {
                   blogImageList[index] ||
                   null
                 const imageUrl = image?.imageUrl || null
+                const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || blogPngUrls[index] || null
                 const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
                 const headingText = cleanCardText(section?.heading || '')
                 const headline = deriveBlogHeadline(keyPhrase || headingText)
                 const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
 
-                if (!imageUrl) {
+                if (!imageUrl && !renderedImageUrl) {
                   blogImagesRef.current[index] = null
                 }
 
@@ -1008,11 +1080,11 @@ export default function ExtractionResultPage() {
                 <section key={index} className="space-y-5">
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
 
-                  {imageUrl && (
+                  {(imageUrl || renderedImageUrl) && (
                     <div className="mb-4">
-                      {blogPngUrls[index] ? (
+                      {renderedImageUrl ? (
                         <img
-                          src={blogPngUrls[index]}
+                          src={renderedImageUrl}
                           alt={section.heading || `블로그 이미지 ${index + 1}`}
                           className="w-full max-w-xl rounded-xl shadow-sm"
                         />
@@ -1043,8 +1115,9 @@ export default function ExtractionResultPage() {
           })()}
         </div>
       </article>
-    </div>
-  )
+      </div>
+    )
+  }
 
   const renderInstagram = () => {
     const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
@@ -1055,7 +1128,7 @@ export default function ExtractionResultPage() {
       const imageCardNumber = image?.cardNumber || image?.card_number || index + 1
       return imageCardNumber === currentCardNumber
     }) || ensureArray(instagramImages)[0]
-    const currentCardPngUrl = instaPngUrls[instaSlide] || null
+    const currentCardPngUrl = currentInstagramImage?.renderedImageUrl || currentInstagramImage?.pngUrl || instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
@@ -1064,6 +1137,17 @@ export default function ExtractionResultPage() {
         const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
         return imageCardNumber === cardNumber
       }) || ensureArray(instagramImages)[0]
+      const renderedImageUrl = cardImage?.renderedImageUrl || cardImage?.pngUrl || instaPngUrls[cardIndex] || null
+      if (renderedImageUrl && !attachRef) {
+        return (
+          <img
+            src={renderedImageUrl}
+            alt={cardImage?.heading || card?.title || card?.heading || `인스타 카드 ${cardNumber}`}
+            className="block w-full h-auto"
+            loading="lazy"
+          />
+        )
+      }
       const imageUrl = cardImage?.imageUrl || cardImage?.url || null
       const cardTitle = card?.title || card?.heading || card?.headline || `인스타 카드 ${cardNumber}`
       const detailLines = deriveInstagramDetailLines(card)

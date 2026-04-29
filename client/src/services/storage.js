@@ -41,17 +41,36 @@ async function uploadImageArray(images, prefix) {
   const results = []
   for (const img of images) {
     if (!img) { results.push(img); continue }
-    const key = img.imageUrl ? 'imageUrl' : (img.url ? 'url' : null)
-    if (!key) { results.push(img); continue }
+    const keys = ['imageUrl', 'url', 'renderedImageUrl', 'pngUrl'].filter(key => img[key])
+    if (!keys.length) { results.push(img); continue }
     try {
-      const uploaded = await uploadIfDataUrl(img[key], BUCKETS.IMAGES, prefix)
-      results.push({ ...img, [key]: uploaded })
+      const uploadedImage = { ...img }
+      const uploadedByValue = new Map()
+      for (const key of keys) {
+        const originalValue = uploadedImage[key]
+        if (uploadedByValue.has(originalValue)) {
+          uploadedImage[key] = uploadedByValue.get(originalValue)
+          continue
+        }
+
+        const uploadedValue = await uploadIfDataUrl(originalValue, BUCKETS.IMAGES, prefix)
+        uploadedByValue.set(originalValue, uploadedValue)
+        uploadedImage[key] = uploadedValue
+      }
+      results.push(uploadedImage)
     } catch (err) {
       console.warn('[이미지 업로드 실패]', err.message)
       results.push(img)
     }
   }
   return results
+}
+
+function extractImageStoragePaths(images) {
+  return (images || [])
+    .flatMap(img => [img?.imageUrl, img?.url, img?.renderedImageUrl, img?.pngUrl])
+    .map(url => extractStoragePath(url, BUCKETS.IMAGES))
+    .filter(Boolean)
 }
 
 function buildChannels(data) {
@@ -159,6 +178,33 @@ export async function saveExtraction(data) {
     throw error
   }
   return inserted.id
+}
+
+export async function updateExtractionMedia(id, media = {}) {
+  if (!id) throw new Error('extraction id is required')
+
+  const row = {}
+  if (Array.isArray(media.blogImages)) {
+    row.blog_images = await uploadImageArray(media.blogImages, 'blog')
+  }
+  if (Array.isArray(media.instagramImages)) {
+    row.instagram_images = await uploadImageArray(media.instagramImages, 'insta')
+  }
+
+  if (Object.keys(row).length === 0) return null
+
+  const { data, error } = await supabase
+    .from('extractions')
+    .update(row)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) {
+    console.error('[Supabase updateExtractionMedia] 실패:', error)
+    throw error
+  }
+  return rowToItem(data)
 }
 
 // 기존 호환: 전체 목록 (작은 limit)
@@ -285,11 +331,11 @@ export async function deleteExtractionChannel(id, channel) {
 
   // 채널에 해당하는 Storage 파일만 삭제
   if (channel === 'blog' && data.blog_images) {
-    const paths = (data.blog_images || []).map(img => extractStoragePath(img?.imageUrl || img?.url, BUCKETS.IMAGES)).filter(Boolean)
+    const paths = extractImageStoragePaths(data.blog_images)
     if (paths.length) await supabase.storage.from(BUCKETS.IMAGES).remove(paths).catch(() => {})
   }
   if (channel === 'instagram' && data.instagram_images) {
-    const paths = (data.instagram_images || []).map(img => extractStoragePath(img?.imageUrl || img?.url, BUCKETS.IMAGES)).filter(Boolean)
+    const paths = extractImageStoragePaths(data.instagram_images)
     if (paths.length) await supabase.storage.from(BUCKETS.IMAGES).remove(paths).catch(() => {})
   }
   if (channel === 'shorts' && data.shorts_video) {

@@ -20,15 +20,18 @@ function deriveInstagramDetailLines(card) {
 function getCardSource(source = {}) {
   const instagramContent = source?.instagramContent || source?.content || source || {}
   const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
-  const renderedUrls = ensureArray(source?.instaPngUrls || source?.renderedImageUrls).filter(Boolean)
   const rawImages = ensureArray(source?.instagramImages || source?.imageUrls)
+  const renderedUrls = [
+    ...ensureArray(source?.instaPngUrls || source?.renderedImageUrls),
+    ...rawImages.map((image) => image?.renderedImageUrl || image?.pngUrl),
+  ].filter(Boolean)
 
   return { instagramContent, cards, renderedUrls, rawImages }
 }
 
 function extractImageUrl(image) {
   if (typeof image === 'string') return image
-  return image?.imageUrl || image?.url || null
+  return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
 }
 
 function pickCardImageUrl(rawImages, card, index) {

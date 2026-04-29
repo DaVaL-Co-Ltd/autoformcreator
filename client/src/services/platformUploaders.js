@@ -7,6 +7,7 @@ import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
+import { normalizeBlogTags } from '../utils/blogTags.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -91,7 +92,7 @@ export async function uploadToBlog(extractionId, options = {}) {
   }
 
   const normalizedContent = stripMarkdown(rawContent)
-  const normalizedTags = (blog.tags || blog.hashtags || []).map((tag) => String(tag).replace(/^#/, ''))
+  const normalizedTags = normalizeBlogTags(blog)
   const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.blog?.scheduledAt || null
 
   if (USE_REMOTE_BLOG_PUBLISH) {
@@ -137,7 +138,7 @@ export async function uploadToBlog(extractionId, options = {}) {
   const images = ext.data?.blogImages || ext.blogImages || []
   for (let i = 0; i < images.length; i += 1) {
     const image = images[i]
-    const imageUrl = image?.url || image?.src
+    const imageUrl = image?.renderedImageUrl || image?.pngUrl || image?.url || image?.imageUrl || image?.src
     if (!imageUrl) continue
 
     try {

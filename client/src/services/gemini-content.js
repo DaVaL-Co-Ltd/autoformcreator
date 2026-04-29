@@ -1,4 +1,5 @@
 import { callGeminiWithFallback, parseJSON } from './gemini-core'
+import { normalizeBlogTags } from '../utils/blogTags'
 
 function stripMarkdownEmphasis(text = '') {
   return String(text || '')
@@ -107,11 +108,15 @@ function ensureBlogSectionLineBreaks(section = {}) {
 
 function finalizeBlogContent(content) {
   if (!content) return content
-  return {
+  const nextContent = {
     ...content,
     sections: Array.isArray(content.sections)
       ? content.sections.map(ensureBlogSectionLineBreaks).map(ensureBlogSectionBold)
       : [],
+  }
+  return {
+    ...nextContent,
+    tags: normalizeBlogTags(nextContent),
   }
 }
 

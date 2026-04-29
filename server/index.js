@@ -2374,7 +2374,9 @@ app.post('/api/scheduled/run', async (req, res) => {
               .eq('id', item.extraction_id)
               .maybeSingle()
             const igImgs = ext?.instagram_images || []
-            imageUrls = igImgs.map(img => img?.url || img?.imageUrl).filter(Boolean)
+            imageUrls = igImgs
+              .map(img => img?.renderedImageUrl || img?.pngUrl || img?.url || img?.imageUrl)
+              .filter(Boolean)
             const igContent = ext?.instagram_content
             if (!caption && igContent) {
               const hashtags = (igContent.hashtags || []).map(t => String(t).startsWith('#') ? t : `#${t}`).join(' ')
