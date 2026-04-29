@@ -7,7 +7,9 @@
       "WebFetch(domain:docs.heygen.com)",
       "WebFetch(domain:noonnu.cc)",
       "Read(//c/daval/upload_blog//**)",
-      "Read(//c/daval/upload_blog/**)"
+      "Read(//c/daval/upload_blog/**)",
+      "WebFetch(domain:developers.facebook.com)",
+      "WebSearch"
     ]
   }
 }

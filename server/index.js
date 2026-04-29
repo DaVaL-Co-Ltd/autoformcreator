@@ -1605,7 +1605,6 @@ app.post('/api/instagram/publish', async (req, res) => {
   }
 })
 
-// ===== YouTube Data API v3 (OAuth 2.0 + ?낅줈?? =====
 app.get('/api/instagram/auth-status', (_req, res) => {
   validateInstagramSession()
     .then((status) => res.json(status))
@@ -1623,6 +1622,72 @@ app.get('/api/instagram/auth-status', (_req, res) => {
     })
 })
 
+// Instagram 예약 게시 테스트 (scheduled_publish_time 파라미터 검증용)
+app.post('/api/instagram/schedule-test', async (req, res) => {
+  try {
+    if (!IG_ACCESS_TOKEN || !IG_BUSINESS_ID) {
+      throw new Error('Instagram 환경변수(INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_BUSINESS_ID) 미설정')
+    }
+
+    const { imageUrl, caption, scheduledPublishTime } = req.body
+    if (!imageUrl) throw new Error('imageUrl이 필요합니다')
+
+    // Step 1: 컨테이너 생성 (URL params 방식 — Graph API 권장)
+    const createParams = new URLSearchParams()
+    createParams.set('image_url', imageUrl)
+    createParams.set('caption', caption || '')
+    createParams.set('access_token', IG_ACCESS_TOKEN)
+    if (scheduledPublishTime) {
+      createParams.set('scheduled_publish_time', String(scheduledPublishTime))
+    }
+
+    const createUrl = `${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media`
+    console.log('[Instagram Schedule] Step 1 - 컨테이너 생성:', createUrl, { image_url: imageUrl, scheduled_publish_time: scheduledPublishTime || '(없음)' })
+
+    const createRes = await fetch(createUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: createParams.toString(),
+    })
+    const created = await createRes.json()
+    console.log('[Instagram Schedule] Step 1 응답:', created)
+
+    if (!created.id) {
+      throw new Error(`컨테이너 생성 실패: ${created.error?.message || JSON.stringify(created)}`)
+    }
+
+    // Step 2: 게시 확정
+    const pubParams = new URLSearchParams()
+    pubParams.set('creation_id', created.id)
+    pubParams.set('access_token', IG_ACCESS_TOKEN)
+
+    console.log('[Instagram Schedule] Step 2 - 게시 확정, creation_id:', created.id)
+    const pubRes = await fetch(`${IG_GRAPH_BASE}/${IG_BUSINESS_ID}/media_publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: pubParams.toString(),
+    })
+    const pub = await pubRes.json()
+    console.log('[Instagram Schedule] Step 2 응답:', pub)
+
+    if (!pub.id) {
+      throw new Error(`게시 확정 실패: ${pub.error?.message || JSON.stringify(pub)}`)
+    }
+
+    res.json({
+      success: true,
+      containerId: created.id,
+      mediaId: pub.id,
+      scheduled: !!scheduledPublishTime,
+      scheduledTime: scheduledPublishTime ? new Date(scheduledPublishTime * 1000).toISOString() : null,
+    })
+  } catch (err) {
+    console.error('[Instagram Schedule] 실패:', err.message)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ===== YouTube Data API v3 (OAuth 2.0 + 업로드) =====
 const { google } = require('googleapis')
 
 // ?섍꼍蹂???곗꽑, ?놁쑝硫?client_secret.json ?뚯씪 ?대갚 (媛쒕컻 ?몄쓽)
