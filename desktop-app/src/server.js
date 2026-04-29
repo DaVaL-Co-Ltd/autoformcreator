@@ -143,7 +143,7 @@ function helperClientGuard(req, res, next) {
   const origin = req.get('origin')
   const clientHeader = req.get(UPLOAD_CLIENT_HEADER)
 
-  if (clientHeader !== 'web-client') {
+  if (clientHeader && clientHeader !== 'web-client') {
     res.status(403).json({ success: false, error: 'Only the AutoForm web client can access uploads.' })
     return
   }

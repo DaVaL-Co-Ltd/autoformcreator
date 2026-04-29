@@ -17,6 +17,9 @@ function deriveInstagramDetailLines(card) {
   return sharedDeriveInstagramDetailLines(card)
 }
 
+const INSTAGRAM_CAPTION_MAX_LENGTH = 2200
+const CARD_CAPTION_ICONS = ['📌', '📊', '💡', '✅', '🔎', '🧭', '✨', '📍', '📝', '🚀']
+
 function getCardSource(source = {}) {
   const instagramContent = source?.instagramContent || source?.content || source || {}
   const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
@@ -32,6 +35,85 @@ function getCardSource(source = {}) {
 function extractImageUrl(image) {
   if (typeof image === 'string') return image
   return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
+}
+
+function truncateText(value = '', maxLength = 64) {
+  const text = sharedCleanCardText(value)
+  if (text.length <= maxLength) return text
+
+  const words = text.split(/\s+/).filter(Boolean)
+  let output = ''
+  for (const word of words) {
+    const next = output ? `${output} ${word}` : word
+    if (next.length > maxLength && output) break
+    output = next
+    if (next.length >= maxLength) break
+  }
+
+  return output || text.slice(0, maxLength)
+}
+
+function getCardCaptionParts(card = {}, index = 0) {
+  const cardNumber = Number(card?.cardNumber || card?.card_number) || index + 1
+  const headline = sharedCleanCardText(card?.title || card?.heading || card?.headline || `카드 ${cardNumber}`)
+  const detailLines = deriveInstagramDetailLines(card)
+  const detail = sharedCleanCardText(card?.dataPoint || detailLines[0] || card?.content || card?.subtitle || '')
+  return {
+    cardNumber,
+    headline,
+    detail,
+  }
+}
+
+function isCardCoveredByCaption(caption = '', card = {}, index = 0) {
+  const lowerCaption = sharedCleanCardText(caption).toLowerCase()
+  if (!lowerCaption) return false
+
+  const { headline, detail } = getCardCaptionParts(card, index)
+  const candidates = [
+    headline,
+    detail,
+    card?.dataPoint,
+    card?.content,
+  ]
+    .map((value) => sharedCleanCardText(value).toLowerCase())
+    .filter((value) => value.length >= 3)
+
+  return candidates.some((value) => lowerCaption.includes(value))
+}
+
+function buildCardCaptionLine(card = {}, index = 0) {
+  const { cardNumber, headline, detail } = getCardCaptionParts(card, index)
+  const icon = CARD_CAPTION_ICONS[index % CARD_CAPTION_ICONS.length]
+  const title = truncateText(headline, 26)
+  const body = truncateText(detail, 58)
+
+  if (title && body && title !== body) return `${icon} ${cardNumber}. ${title}: ${body}`
+  if (title || body) return `${icon} ${cardNumber}. ${title || body}`
+  return ''
+}
+
+export function buildInstagramCaption(instagramContent = {}) {
+  const cards = ensureArray(instagramContent?.cards || instagramContent?.cardTopics)
+  const baseCaption = String(instagramContent?.caption || instagramContent?.body || instagramContent?.title || '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .trim()
+  if (!cards.length) return baseCaption.slice(0, INSTAGRAM_CAPTION_MAX_LENGTH)
+
+  const missingLines = cards
+    .map((card, index) => ({ card, index }))
+    .filter(({ card, index }) => !isCardCoveredByCaption(baseCaption, card, index))
+    .map(({ card, index }) => buildCardCaptionLine(card, index))
+    .filter(Boolean)
+
+  if (!missingLines.length) return baseCaption.slice(0, INSTAGRAM_CAPTION_MAX_LENGTH)
+
+  const cardBlock = ['카드별 핵심', ...missingLines].join('\n')
+  const separator = baseCaption ? '\n\n' : ''
+  const nextCaption = `${baseCaption}${separator}${cardBlock}`.trim()
+
+  return nextCaption.slice(0, INSTAGRAM_CAPTION_MAX_LENGTH).trim()
 }
 
 function pickCardImageUrl(rawImages, card, index) {
@@ -231,7 +313,7 @@ export function buildInstagramScheduledContent(source = {}) {
   const fallbackUrls = rawImages.map(extractImageUrl).filter(Boolean)
   const imageUrls = renderedUrls.length > 0 ? renderedUrls : fallbackUrls
 
-  const baseCaption = String(instagramContent?.caption || '').trim()
+  const baseCaption = buildInstagramCaption(instagramContent)
   const hashtagText = ensureArray(instagramContent?.hashtags)
     .map((tag) => String(tag).trim())
     .filter(Boolean)

@@ -1,4 +1,5 @@
 import { PLATFORM_LIMITS, truncate, stripExtraHashtags } from './platformValidator'
+import { buildInstagramCaption } from './scheduledPayloads'
 
 export function stripMarkdownEmphasis(text = '') {
   return String(text || '')
@@ -19,9 +20,7 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
   const limits = PLATFORM_LIMITS.instagram
   const normalizedImageUrls = imageUrls.filter(Boolean).slice(0, 10)
 
-  const rawCaption = stripMarkdownEmphasis(
-    instagramContent.caption || instagramContent.body || instagramContent.title || '',
-  )
+  const rawCaption = stripMarkdownEmphasis(buildInstagramCaption(instagramContent))
   const rawHashtags = instagramContent.hashtags || []
 
   const caption = truncate(rawCaption, limits.captionMax)

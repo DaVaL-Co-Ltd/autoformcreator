@@ -17,8 +17,65 @@ export const IMAGE_TEXT_WRAP_STYLE = {
   textWrap: 'balance',
 }
 
+const BLOG_HEADLINE_MAX_LENGTH = 28
+const BLOG_DESCRIPTION_MAX_LENGTH = 34
+const VALUE_TOKEN_PATTERN = /(?:[$]\s?\d|\d[\d,]*(?:\.\d+)?\s?%)/
+
+const trimCardTitleEnding = (value = '') => (
+  asText(value).replace(/[\s,.:;!?/\\]+$/g, '').trim()
+)
+
+const escapeRegExp = (value = '') => (
+  asText(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+)
+
+const limitBlogOverlayText = (value = '', maxLength = BLOG_DESCRIPTION_MAX_LENGTH) => {
+  const clean = trimCardTitleEnding(cleanCardText(value))
+  if (!clean || clean.length <= maxLength) return clean
+
+  const tokens = clean.split(/\s+/).filter(Boolean)
+  let limited = ''
+
+  for (const token of tokens) {
+    const next = limited ? `${limited} ${token}` : token
+    if (next.length > maxLength && limited) break
+    limited = next
+    if (next.length >= maxLength) break
+  }
+
+  return trimCardTitleEnding(limited || clean)
+}
+
+const getHeadingRemainder = (heading = '', headline = '') => {
+  const cleanHeading = trimCardTitleEnding(cleanCardText(heading))
+  const cleanHeadline = trimCardTitleEnding(cleanCardText(headline))
+  if (!cleanHeading || !cleanHeadline || cleanHeading === cleanHeadline) return ''
+
+  const remainder = cleanHeading
+    .replace(new RegExp(`^${escapeRegExp(cleanHeadline)}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
+    .trim()
+
+  return remainder && remainder !== cleanHeading ? trimCardTitleEnding(remainder) : ''
+}
+
+const pickRepresentativeContentPhrase = (content = '') => {
+  const clean = trimCardTitleEnding(cleanCardText(content))
+  if (!clean) return ''
+
+  const candidates = clean
+    .split(/(?<=[.!?。！？])\s+|\n+| {2,}/)
+    .map((line) => trimCardTitleEnding(line))
+    .filter(Boolean)
+
+  const source = candidates.find((line) => line.length <= BLOG_DESCRIPTION_MAX_LENGTH) || candidates[0] || clean
+  return limitBlogOverlayText(source, BLOG_DESCRIPTION_MAX_LENGTH)
+}
+
+const shouldPreserveValueToken = (word = '') => VALUE_TOKEN_PATTERN.test(word)
+
 const splitOversizedWord = (word, measureTextWidth, maxWidth) => {
   if (measureTextWidth(word) <= maxWidth) return [word]
+  if (shouldPreserveValueToken(word)) return [word]
 
   const chunks = []
   let chunk = ''
@@ -120,20 +177,21 @@ export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
 }
 
 export const deriveBlogHeadline = (keyPhrase, heading) => {
-  const source = cleanCardText(keyPhrase) || cleanCardText(heading)
-  return source
+  const source = cleanCardText(heading) || cleanCardText(keyPhrase)
+  return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }
 
 export const deriveBlogImageDescription = (keyPhrase, heading, content) => {
-  const primary = cleanCardText(keyPhrase)
-  const secondary = cleanCardText(heading)
-  const body = cleanCardText(content)
+  const headline = deriveBlogHeadline(keyPhrase, heading)
+  const primary = trimCardTitleEnding(cleanCardText(keyPhrase))
+  const secondary = getHeadingRemainder(heading, headline)
+  const body = pickRepresentativeContentPhrase(content)
 
-  if (primary && secondary && primary !== secondary) {
-    return `${primary} - ${secondary}`
+  if (primary && primary !== headline) {
+    return limitBlogOverlayText(primary, BLOG_DESCRIPTION_MAX_LENGTH)
   }
 
-  return primary || secondary || body
+  return limitBlogOverlayText(secondary || body, BLOG_DESCRIPTION_MAX_LENGTH)
 }
 
 export const deriveInstagramDetailLines = (card = {}) => {

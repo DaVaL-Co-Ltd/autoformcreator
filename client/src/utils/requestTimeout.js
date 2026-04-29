@@ -20,19 +20,30 @@ export async function withTimeout(task, timeoutMs, label) {
   }
 }
 
-// Chrome LNA(Local Network Access) 정책 호환: https origin 에서 127.0.0.1/localhost 같은 루프백 주소로
-// 보내는 요청은 fetch 옵션에 targetAddressSpace='local' 을 명시해야 차단되지 않는다.
-function isLoopbackTarget(input) {
+// Chrome LNA(Local Network Access) 정책 호환: https origin 에서 로컬 helper로 보내는
+// HTTP 요청은 실제 주소 공간에 맞는 targetAddressSpace 를 명시해야 한다.
+function getTargetAddressSpace(input) {
   try {
     const raw = typeof input === 'string'
       ? input
       : (input && typeof input.url === 'string' ? input.url : null)
-    if (!raw) return false
+    if (!raw) return null
     const url = new URL(raw, typeof window !== 'undefined' ? window.location.href : 'http://localhost/')
     const host = url.hostname.replace(/^\[|\]$/g, '')
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+      return 'loopback'
+    }
+    if (
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+      host.endsWith('.local')
+    ) {
+      return 'local'
+    }
+    return null
   } catch {
-    return false
+    return null
   }
 }
 
@@ -55,8 +66,9 @@ export async function fetchWithTimeout(input, init = {}, timeoutMs = 30000, labe
     ...init,
     signal: controller.signal,
   }
-  if (isLoopbackTarget(input) && !('targetAddressSpace' in finalInit)) {
-    finalInit.targetAddressSpace = 'local'
+  const targetAddressSpace = getTargetAddressSpace(input)
+  if (targetAddressSpace && !('targetAddressSpace' in finalInit)) {
+    finalInit.targetAddressSpace = targetAddressSpace
   }
 
   try {

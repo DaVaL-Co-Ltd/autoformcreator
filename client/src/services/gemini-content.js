@@ -73,7 +73,64 @@ function ensureBlogSectionBold(section = {}) {
   }
 }
 
+function normalizeInlineSpaces(text = '') {
+  return String(text || '')
+    .replace(/[ \t]*\n[ \t]*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function splitColonStatement(text = '') {
+  const match = String(text || '').match(/^(.{2,28}?)\s*[:\uff1a]\s*(.+)$/)
+  if (!match) return null
+
+  const label = match[1].trim()
+  const body = normalizeInlineSpaces(match[2])
+  if (!label || !body) return null
+
+  return { label, body }
+}
+
+function shouldBreakAfterColon(body = '') {
+  const items = String(body || '')
+    .split(/\s*[,\uff0c]\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  if (items.length < 3) return false
+  if (body.length <= 48 && items.every((item) => item.length <= 14)) return false
+  return true
+}
+
+function normalizeBlogParagraphLineBreaks(paragraph = '') {
+  const compact = normalizeInlineSpaces(paragraph)
+  if (!compact) return ''
+
+  const labeledLines = compact
+    .replace(
+      /([.!?\u3002\uff01\uff1f]|\ub2e4|\uc694|\uc8e0|\ud568|\uc74c|\ub428|\uc784)\s+(?=.{2,28}?\s*[:\uff1a])/g,
+      '$1\n',
+    )
+    .split('\n')
+    .map((line) => {
+      const colonStatement = splitColonStatement(line)
+      if (!colonStatement) return line
+
+      const { label, body } = colonStatement
+      return shouldBreakAfterColon(body) ? `${label}:\n${body}` : `${label}: ${body}`
+    })
+
+  return labeledLines.join('\n')
+}
+
 export function normalizeBlogSectionLineBreaks(content = '') {
+  return String(content || '')
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map(normalizeBlogParagraphLineBreaks)
+    .filter(Boolean)
+    .join('\n\n')
+  /*
   return String(content || '')
     .replace(/\r\n/g, '\n')
     .split(/\n{2,}/)
@@ -94,6 +151,7 @@ export function normalizeBlogSectionLineBreaks(content = '') {
       .trim())
     .filter(Boolean)
     .join('\n\n')
+  */
 }
 
 function ensureBlogSectionLineBreaks(section = {}) {
@@ -208,12 +266,33 @@ function buildBlogTitleRules() {
 
 function buildBlogBodyLineBreakRules() {
   return `
+## Blog body line break rules
+- Do not split one complete sentence across multiple lines. Keep one sentence on one line.
+- For "A: B" content, keep it on one line when B is one sentence.
+- For "A: B, C, D" content, keep it on one line if B/C/D are short. If the comma-separated items are long or explanatory, write "A:" and put the item text on the next line.
+
 ## 블로그 본문 줄바꿈 규칙
 - sections[].content 안에서는 큰 섹션을 새로 만들 정도는 아니지만 내용 단위가 바뀌는 지점에 줄바꿈을 넣으세요.
 - 일정, 기간, 대상, 장소, 준비물, 신청 방법, 핵심 변화처럼 라벨과 값이 이어지는 내용은 "라벨:" 다음 줄에 실제 내용을 쓰세요.
   예: "수능 일정:\\n11/11 (목)"
 - 한 문단 안에서 "먼저", "다음으로", "또한", "반면", "예를 들어", "구체적으로", "특히", "마지막으로"처럼 설명 흐름이 바뀌면 해당 문장 앞에서 줄바꿈하세요.
 - 완전히 다른 큰 주제는 기존처럼 별도 section으로 나누고, 같은 section 안의 세부 내용 변화만 줄바꿈으로 정리하세요.
+`
+}
+
+function buildUniversityListContentRules() {
+  return `
+## University list content rules
+- If the source or summary contains multiple universities with separate conditions, schedules, admissions tracks, evaluation standards, or preparation points, do not focus on only one university.
+- Mention several real universities from the source together in the newsletter and Instagram output.
+- Use comparison-style wording such as "A and B are ..., C and D are ..., while F is ..." so the reader can see differences across universities.
+- When selecting examples from a long university list, choose several recognizable or important universities from the source without inventing any university that is not present.
+- If only representative universities are shown, naturally add "등" to signal that the source contains more universities.
+- Apply this rule to newsletter keyPoints, newsletter body, newsletter dataHighlights, Instagram caption, and Instagram cardTopics.
+
+Example:
+If the source says Konkuk University, Sungkyunkwan University, Seoul National University, Korea University, and Yonsei University each have different admissions checks, write like:
+"건국대와 성균관대는 학생부와 수능 최저 확인이 중요하고, 서울대와 고려대는 면접과 전공 연계 활동을 함께 봐야 하며, 연세대는 전형별 제출 서류 차이를 확인해야 하는 등 대학별 준비 포인트가 다릅니다."
 `
 }
 
@@ -231,6 +310,9 @@ function buildInstagramCardRules() {
 
 function buildInstagramCaptionRules() {
   return `
+- The caption must cover every cardTopics item. If cardTopics has 6 cards, include a short related sentence or bullet for all 6 cards.
+- Do not summarize only the first 3~4 cards. Keep the same order as cardTopics so carousel readers can match caption lines to images.
+- When the caption would become too long, use concise numbered lines like "1. headline: key detail" rather than dropping later cards.
 ## 인스타그램 캡션 규칙
 - caption은 cardTopics에서 다룬 핵심 이야기를 짧은 문단 중심으로 풀어 쓰세요.
 - 전체 분량은 350~600자(공백 포함) 수준으로 작성하세요. 600자를 넘기지 마세요.
@@ -245,6 +327,7 @@ function buildInstagramCaptionRules() {
 
 function buildBasePrompt(summary, rawText, emphasis, options) {
   return `
+${buildUniversityListContentRules()}
 ## 입력 데이터
 ### 요약 데이터
 ${JSON.stringify(summary, null, 2)}

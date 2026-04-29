@@ -265,10 +265,6 @@ export default function SettingsPage() {
   }, [activeSection, searchParams])
 
   useEffect(() => {
-    void refreshPlatformStatuses()
-  }, [refreshPlatformStatuses])
-
-  useEffect(() => {
     let active = true
 
     ;(async () => {
@@ -303,7 +299,7 @@ export default function SettingsPage() {
   const platformCards = useMemo(() => buildPlatformCards(platformStatuses), [platformStatuses])
 
   useEffect(() => {
-    if (activeSection !== 'desktop-helper' && activeSection !== 'platforms') {
+    if (activeSection !== 'platforms') {
       return undefined
     }
 

@@ -545,6 +545,29 @@ export default function ExtractionPage() {
   )
 
   const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
+  const BLOG_HEADLINE_MAX_LENGTH = 28
+  const BLOG_DESCRIPTION_MAX_LENGTH = 34
+
+  const escapeRegExp = (value = '') => (
+    String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  )
+
+  const limitBlogOverlayText = (text = '', maxLength = BLOG_DESCRIPTION_MAX_LENGTH) => {
+    const clean = trimCardTitleEnding(cleanCardText(text))
+    if (!clean || clean.length <= maxLength) return clean
+
+    const tokens = clean.split(/\s+/).filter(Boolean)
+    let limited = ''
+
+    for (const token of tokens) {
+      const next = limited ? `${limited} ${token}` : token
+      if (next.length > maxLength && limited) break
+      limited = next
+      if (next.length >= maxLength) break
+    }
+
+    return trimCardTitleEnding(limited || clean)
+  }
 
   const splitCardTokens = (text = '') => {
     const clean = cleanCardText(text)
@@ -644,9 +667,9 @@ export default function ExtractionPage() {
     )
   }
 
-  const deriveBlogHeadline = (text = '') => {
-    const base = trimCardTitleEnding(deriveHeadlineKeyword(text))
-    return base
+  const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
+    const source = cleanCardText(heading) || cleanCardText(keyPhrase)
+    return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
   }
 
   const deriveHeadlineKeyword = (text = '') => {
@@ -669,27 +692,28 @@ export default function ExtractionPage() {
     const cleanHeading = cleanCardText(heading)
     const cleanHeadline = cleanCardText(headline)
     const headingRemainder = cleanHeading
-      .replace(new RegExp(`^${cleanHeadline}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
+      .replace(new RegExp(`^${escapeRegExp(cleanHeadline)}(은|는|이|가|을|를|와|과|도)?\\s*`), '')
       .trim()
 
-    if (headingRemainder) return headingRemainder
+    if (headingRemainder && headingRemainder !== cleanHeading) {
+      return limitBlogOverlayText(headingRemainder, BLOG_DESCRIPTION_MAX_LENGTH)
+    }
 
-    return cleanCardText(fallbackContent || '')
-      .split(/[.!?\n]/)
-      .map(line => line.trim())
-      .find(Boolean) || cleanHeading
+    const contentPhrase = cleanCardText(fallbackContent || '')
+      .split(/(?<=[.!?。！？])\s+|\n+| {2,}/)
+      .map(line => trimCardTitleEnding(line))
+      .filter(Boolean)
+      .find(line => line.length <= BLOG_DESCRIPTION_MAX_LENGTH)
+
+    return limitBlogOverlayText(contentPhrase || cleanHeading, BLOG_DESCRIPTION_MAX_LENGTH)
   }
 
   const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
     const cleanKeyPhrase = cleanCardText(keyPhrase)
-    if (cleanKeyPhrase) {
-      return cleanCardText(fallbackContent || '')
-        .split(/[.!?\n]/)
-        .map(line => line.trim())
-        .find(Boolean) || cleanKeyPhrase
-    }
+    const headline = deriveBlogHeadline(keyPhrase, heading)
+    if (cleanKeyPhrase && cleanKeyPhrase !== headline) return limitBlogOverlayText(cleanKeyPhrase, BLOG_DESCRIPTION_MAX_LENGTH)
 
-    return deriveDescriptionCopy(heading, deriveBlogHeadline(heading), fallbackContent)
+    return deriveDescriptionCopy(heading, headline, fallbackContent)
   }
 
   const deriveInstagramDetailLines = (card) => {
@@ -840,7 +864,7 @@ export default function ExtractionPage() {
     const accentColor = accentPalette[fallbackBg] || '#6366f1'
     const heading = cleanCardText(section?.heading || '')
     const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
-    const headline = deriveBlogHeadline(keyPhrase || heading)
+    const headline = deriveBlogHeadline(keyPhrase, heading)
     const description = deriveBlogImageDescription(keyPhrase, heading, section?.content || '')
     const showBlogTextOverlay = promptSettings.media.blogTextOverlay !== 'without-text'
 

@@ -14,7 +14,7 @@ import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
-import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
+import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 import {
   getAll as getPlatformConnections,
   loadAll as loadPlatformConnections,
@@ -310,7 +310,6 @@ export default function ExtractionResultPage() {
           let startResponse
           try {
             startResponse = await fetchWithTimeout(`${BLOG_UPLOAD_SERVER}/api/upload`, {
-              headers: BLOG_UPLOAD_HEADERS,
               method: 'POST',
               body: formData,
             }, BLOG_UPLOAD_START_TIMEOUT_MS, 'Desktop helper upload start')
@@ -1069,7 +1068,7 @@ export default function ExtractionResultPage() {
                 const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || blogPngUrls[index] || null
                 const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
                 const headingText = cleanCardText(section?.heading || '')
-                const headline = deriveBlogHeadline(keyPhrase || headingText)
+                const headline = deriveBlogHeadline(keyPhrase, headingText)
                 const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
 
                 if (!imageUrl && !renderedImageUrl) {
@@ -1130,7 +1129,7 @@ export default function ExtractionResultPage() {
     }) || ensureArray(instagramImages)[0]
     const currentCardPngUrl = currentInstagramImage?.renderedImageUrl || currentInstagramImage?.pngUrl || instaPngUrls[instaSlide] || null
     const hashtags = ensureArray(instagramContent?.hashtags)
-    const sanitizedCaption = stripResultCtaText(instagramContent?.caption || '')
+    const sanitizedCaption = stripResultCtaText(buildInstagramCaption(instagramContent))
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
       const cardNumber = card?.cardNumber || card?.card_number || cardIndex + 1
       const cardImage = ensureArray(instagramImages).find((image, i) => {

@@ -27,7 +27,6 @@ const apiHeaders = (extra = {}) => ({
   'x-app-secret': API_SECRET,
   ...extra,
 })
-const blogHeaders = { 'x-autoform-client': 'web-client' }
 
 function stripMarkdown(md) {
   return (md || '')
@@ -161,7 +160,6 @@ export async function uploadToBlog(extractionId, options = {}) {
     `${UPLOAD_BLOG_SERVER}/api/upload`,
     {
       method: 'POST',
-      headers: blogHeaders,
       body: formData,
     },
     BLOG_UPLOAD_START_TIMEOUT_MS,
@@ -285,7 +283,8 @@ export async function uploadToInstagram(extractionId) {
   const hashtags = (igContent.hashtags || [])
     .map((tag) => (String(tag).startsWith('#') ? tag : `#${tag}`))
     .join(' ')
-  const caption = `${stripMarkdownEmphasis(igContent.caption || igContent.body || igContent.title || '')}\n\n${hashtags}`.trim()
+  const captionBody = stripMarkdownEmphasis(renderedContent.caption || igContent.caption || igContent.body || igContent.title || '')
+  const caption = `${captionBody}\n\n${hashtags}`.trim()
 
   const res = await fetchWithTimeout(
     `${API_BASE}/api/instagram/publish`,
