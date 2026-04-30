@@ -7,7 +7,7 @@ import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
-import { getBlogUploadTags } from '../utils/blogTags.js'
+import { normalizeBlogTags } from '../utils/blogTags.js'
 import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
 import { sanitizeBlogBodyForUpload } from '../utils/blogBodySanitizer.js'
@@ -59,11 +59,12 @@ export async function uploadToBlog(extractionId, options = {}) {
 
   if (!rawContent && Array.isArray(blog.sections)) {
     rawContent = blog.sections
-      .map((section) => {
+      .map((section, index) => {
         const heading = section.heading ? `## ${section.heading}\n\n` : ''
         const keyPhrase = section.keyPhrase ? `${section.keyPhrase}\n\n` : ''
+        const imageMarker = `[IMG:${index + 1}]\n`
         const body = section.content || section.body || ''
-        return `${heading}${keyPhrase}${body}`
+        return `${heading}${imageMarker}${keyPhrase}${body}`
       })
       .join('\n\n')
   }
@@ -77,7 +78,7 @@ export async function uploadToBlog(extractionId, options = {}) {
   }
 
   const normalizedContent = stripMarkdown(rawContent)
-  const normalizedTags = getBlogUploadTags(blog)
+  const normalizedTags = normalizeBlogTags(blog)
   const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.blog?.scheduledAt || null
 
   if (USE_REMOTE_BLOG_PUBLISH) {

@@ -33,6 +33,12 @@ const VISIBILITY_TEXT = '\uACF5\uAC1C'
 const SCHEDULE_TEXT = '\uBC1C\uD589 \uC2DC\uAC04'
 const FONT_SIZE_TEXT = '\uAE00\uC790 \uD06C\uAE30'
 const RESERVE_TEXT = '\uC608\uC57D'
+const CONFIRM_TEXT = '\uD655\uC778'
+const REGISTER_TEXT = '\uB4F1\uB85D'
+const COMPLETE_TEXT = '\uC644\uB8CC'
+const PUBLISHED_DONE_TEXT = '\uBC1C\uD589\uB418\uC5C8\uC2B5\uB2C8\uB2E4'
+const REGISTERED_DONE_TEXT = '\uB4F1\uB85D\uB418\uC5C8\uC2B5\uB2C8\uB2E4'
+const RESERVED_DONE_TEXT = '\uC608\uC57D\uB418\uC5C8\uC2B5\uB2C8\uB2E4'
 const RESERVED_POSTS_TEXT = '\uC608\uC57D \uBC1C\uD589 \uAE00'
 const INVALID_SCHEDULE_TIME_TEXT = '\uD604\uC7AC \uC2DC\uAC04 \uC774\uD6C4\uB85C \uC124\uC815\uD574\uC8FC\uC138\uC694.'
 const SCHEDULE_READY_TEXT = '\uC124\uC815\uD55C \uC2DC\uAC04\uC73C\uB85C \uC608\uC57D \uBC1C\uD589\uB429\uB2C8\uB2E4.'
@@ -1411,8 +1417,7 @@ function normalizeScheduledPublishAt(scheduledAt) {
     throw new Error(`Invalid scheduledAt value: ${scheduledAt}`)
   }
 
-  const roundedDate = roundUpDateToMinuteStep(requestedDate) || requestedDate
-  const date = ensureMinimumScheduledDate(roundedDate)
+  const date = requestedDate
 
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
@@ -1487,6 +1492,31 @@ function findScheduledPostUrl(page) {
   )
 }
 
+async function hasPublishCompletionText(page, { scheduledAt = null } = {}) {
+  const completionTexts = [
+    PUBLISHED_DONE_TEXT,
+    REGISTERED_DONE_TEXT,
+    COMPLETE_TEXT,
+    scheduledAt ? RESERVED_DONE_TEXT : null,
+  ].filter(Boolean)
+
+  for (const frame of page.frames()) {
+    try {
+      const found = await frame.evaluate((texts) => {
+        const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+        const text = normalize(document.body?.textContent)
+        return texts.some((value) => text.includes(value))
+      }, completionTexts)
+
+      if (found) {
+        return true
+      }
+    } catch {}
+  }
+
+  return false
+}
+
 async function waitForPublishProgress(page, targets, { scheduledAt = null, timeout = 2500 } = {}) {
   const startedAt = Date.now()
 
@@ -1496,6 +1526,10 @@ async function waitForPublishProgress(page, targets, { scheduledAt = null, timeo
     }
 
     if (scheduledAt && findScheduledPostUrl(page)) {
+      return true
+    }
+
+    if (await hasPublishCompletionText(page, { scheduledAt })) {
       return true
     }
 
@@ -1526,6 +1560,10 @@ async function resolvePublishOutcome(page, targets, { scheduledAt, timeout = 600
       if (scheduledUrl) {
         return { mode: 'scheduled', scheduled: true, url: scheduledUrl }
       }
+    }
+
+    if (await hasPublishCompletionText(page, { scheduledAt })) {
+      return { mode: scheduledAt ? 'scheduled' : 'published', scheduled: Boolean(scheduledAt), url: page.url() }
     }
 
     await sleep(300)
@@ -2230,7 +2268,7 @@ async function configureScheduledPublish(page, targets, scheduledAt) {
       console.log(
         `[Naver Upload] Scheduled publish configured via ${lastScheduleState.label} date="${lastScheduleState.dateValue}" hour="${lastScheduleState.hourValue}" minute="${lastScheduleState.minuteValue}" panelVisible=${lastScheduleState.panelVisible} scheduleReady=${lastScheduleState.scheduleReady}`
       )
-      await dismissEditorPopups(page, scheduleTargets)
+      await sleep(300)
       return schedule
     }
 
@@ -2301,29 +2339,258 @@ async function clickToolbarPublishButton(page, targets) {
   return false
 }
 
-async function openPublishDialog(page, targets) {
-  const attempts = []
-
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    if (await clickToolbarPublishButton(page, targets)) {
-      console.log(`[Naver Upload] Publish dialog opened on attempt ${attempt}`)
-      return
+async function clickMainFramePublishButton(page, which = 'first', { scheduledAt = null } = {}) {
+  const iframe = page.frameLocator('iframe#mainFrame')
+  if (which === 'last') {
+    const mainFrame = page.frame({ name: 'mainFrame' }) || page.frames().find((frame) => /mainFrame/i.test(frame.name()))
+    if (!mainFrame) {
+      throw new Error(`[${RUNTIME_SOURCE}] mainFrame was not found for final publish click.`)
     }
 
-    await clickPublishButton(page, targets, 'first')
-    await sleep(1200)
+    const result = await mainFrame.evaluate(({ categoryText, publishText, reserveText, scheduleText, scheduledMode, visibilityText }) => {
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+      const isVisible = (element) => {
+        if (!(element instanceof Element)) return false
+        const style = window.getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        return style.display !== 'none' &&
+          style.visibility !== 'hidden' &&
+          style.pointerEvents !== 'none' &&
+          rect.width > 0 &&
+          rect.height > 0
+      }
+      const isEnabled = (element) => !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true'
+      const getLabel = (element) => normalize([
+        element.textContent,
+        element.getAttribute?.('aria-label'),
+        element.getAttribute?.('value'),
+        element.getAttribute?.('data-click-area'),
+        element.className,
+      ].filter(Boolean).join(' '))
 
-    if (await waitForPublishDialogVisible(targets, 1200)) {
-      console.log(`[Naver Upload] Publish dialog opened on attempt ${attempt}`)
-      return
+      const dialogRoots = Array.from(document.querySelectorAll([
+        '[data-group="popupLayer"]',
+        '[role="dialog"]',
+        '[class*="popup"]',
+        '[class*="Popup"]',
+        '[class*="layer"]',
+        '[class*="Layer"]',
+        'body *',
+      ].join(',')))
+        .filter((element) => element instanceof HTMLElement)
+        .filter(isVisible)
+        .filter((element) => {
+          const text = normalize(element.textContent)
+          return text.includes(categoryText) && text.includes(visibilityText) && text.includes(scheduleText)
+        })
+        .sort((left, right) => {
+          const leftRect = left.getBoundingClientRect()
+          const rightRect = right.getBoundingClientRect()
+          const leftArea = leftRect.width * leftRect.height
+          const rightArea = rightRect.width * rightRect.height
+          return rightArea - leftArea
+        })
+
+      const root = dialogRoots[0] || document
+      const rootRect = root instanceof Element ? root.getBoundingClientRect() : { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight }
+      const candidates = Array.from(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]'))
+        .filter((element) => element instanceof HTMLElement)
+        .filter(isVisible)
+        .filter(isEnabled)
+        .map((element) => {
+          const rect = element.getBoundingClientRect()
+          const label = getLabel(element)
+          const lower = label.toLowerCase()
+          const clickArea = normalize(element.getAttribute?.('data-click-area')).toLowerCase()
+          const isToolbarPublish = clickArea === 'tpb.publish'
+          const isToolbarScheduleToggle =
+            clickArea === 'tpb*t.schedule' ||
+            clickArea === 'schedulecl' ||
+            clickArea.includes('schedulecl') ||
+            lower.includes('reserve_btn')
+          const looksFinal =
+            label.includes(publishText) ||
+            (scheduledMode && label.includes(reserveText)) ||
+            lower.includes('confirm') ||
+            lower.includes('publish')
+          const bottomScore = rect.top >= rootRect.top + rootRect.height * 0.55 ? 40 : 0
+          const rightScore = rect.left >= rootRect.left + rootRect.width * 0.45 ? 30 : 0
+          const textScore = label.includes(publishText) ? 30 : 0
+          const reserveScore = scheduledMode && label.includes(reserveText) ? 25 : 0
+          const classScore = lower.includes('confirm') ? 25 : 0
+          const score = bottomScore + rightScore + textScore + reserveScore + classScore + rect.left / 1000 + rect.top / 1000
+
+          return { clickArea, element, isToolbarPublish, isToolbarScheduleToggle, label, rect, score, looksFinal }
+        })
+        .filter((candidate) => candidate.looksFinal)
+        .filter((candidate) => !candidate.isToolbarPublish && !candidate.isToolbarScheduleToggle)
+        .sort((left, right) => right.score - left.score)
+
+      const target = candidates[0]
+      if (!target) {
+        return null
+      }
+
+      target.element.scrollIntoView?.({ block: 'center', inline: 'center' })
+      target.element.focus()
+      target.element.click()
+      target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+
+      return {
+        clickArea: target.clickArea,
+        label: target.label,
+        score: Math.round(target.score),
+        top: Math.round(target.rect.top),
+      }
+    }, {
+      categoryText: CATEGORY_TEXT,
+      publishText: PUBLISH_TEXT,
+      reserveText: RESERVE_TEXT,
+      scheduleText: SCHEDULE_TEXT,
+      scheduledMode: Boolean(scheduledAt),
+      visibilityText: VISIBILITY_TEXT,
+    })
+
+    if (!result) {
+      throw new Error(`[${RUNTIME_SOURCE}] Final publish button was not found inside publish dialog.`)
     }
 
-    attempts.push(`attempt ${attempt}: dialog not visible`)
-    await dismissEditorPopups(page, targets)
-    await sleep(500)
+    console.log(
+      `[Naver Upload] Clicked mainFrame final publish button top=${result.top} score=${result.score} area="${result.clickArea}" label="${String(result.label || '').slice(0, 120)}"`
+    )
+    return result
   }
 
-  throw new Error(`[${RUNTIME_SOURCE}] Publish dialog did not open. ${attempts.join(' | ')}`)
+  const selector = which === 'last'
+    ? `.confirm_btn__Nevj2, button:has-text("${PUBLISH_TEXT}")`
+    : 'button[data-click-area="tpb.publish"]'
+  const button = iframe.locator(selector)[which]()
+  await button.click({ timeout: 5000 })
+  console.log(`[Naver Upload] Clicked mainFrame publish button (${which}) -> ${selector}`)
+  return { label: selector }
+}
+
+async function clickScheduledPublishConfirmation(page) {
+  const mainFrame = page.frame({ name: 'mainFrame' }) || page.frames().find((frame) => /mainFrame/i.test(frame.name()))
+  if (!mainFrame) {
+    return null
+  }
+
+  const result = await mainFrame.evaluate(({ categoryText, confirmText, publishText, registerText, reserveText, scheduleText }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        style.pointerEvents !== 'none' &&
+        rect.width > 0 &&
+        rect.height > 0
+    }
+    const isEnabled = (element) => !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true'
+    const getLabel = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('value'),
+      element.getAttribute?.('data-click-area'),
+      element.className,
+    ].filter(Boolean).join(' '))
+
+    const roots = Array.from(document.querySelectorAll([
+      '[data-group="popupLayer"]',
+      '[role="dialog"]',
+      '[class*="popup"]',
+      '[class*="Popup"]',
+      '[class*="layer"]',
+      '[class*="Layer"]',
+      'body *',
+    ].join(',')))
+      .filter((element) => element instanceof HTMLElement)
+      .filter(isVisible)
+      .filter((element) => {
+        const text = normalize(element.textContent)
+        if (!text.includes(reserveText)) return false
+        return !(text.includes(categoryText) && text.includes(scheduleText))
+      })
+      .sort((left, right) => {
+        const leftRect = left.getBoundingClientRect()
+        const rightRect = right.getBoundingClientRect()
+        return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height)
+      })
+
+    for (const root of roots) {
+      const rootRect = root.getBoundingClientRect()
+      const candidates = Array.from(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"]'))
+        .filter((element) => element instanceof HTMLElement)
+        .filter(isVisible)
+        .filter(isEnabled)
+        .map((element) => {
+          const rect = element.getBoundingClientRect()
+          const label = getLabel(element)
+          const lower = label.toLowerCase()
+          let score = 0
+
+          if (label === confirmText) score += 80
+          if (label.includes(confirmText)) score += 55
+          if (label.includes(publishText)) score += 45
+          if (label.includes(registerText)) score += 35
+          if (lower.includes('confirm') || lower.includes('submit')) score += 30
+          if (rect.left >= rootRect.left + rootRect.width * 0.45) score += 15
+          if (rect.top >= rootRect.top + rootRect.height * 0.45) score += 12
+
+          return { element, label, rect, score }
+        })
+        .filter((candidate) => candidate.score > 0)
+        .sort((left, right) => right.score - left.score || right.rect.left - left.rect.left)
+
+      const target = candidates[0]
+      if (!target) {
+        continue
+      }
+
+      target.element.scrollIntoView?.({ block: 'center', inline: 'center' })
+      target.element.focus()
+      target.element.click()
+      target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+
+      return {
+        label: target.label,
+        score: Math.round(target.score),
+        top: Math.round(target.rect.top),
+      }
+    }
+
+    return null
+  }, {
+    categoryText: CATEGORY_TEXT,
+    confirmText: CONFIRM_TEXT,
+    publishText: PUBLISH_TEXT,
+    registerText: REGISTER_TEXT,
+    reserveText: RESERVE_TEXT,
+    scheduleText: SCHEDULE_TEXT,
+  })
+
+  if (result) {
+    console.log(
+      `[Naver Upload] Clicked scheduled publish confirmation top=${result.top} score=${result.score} label="${String(result.label || '').slice(0, 120)}"`
+    )
+  }
+
+  return result
+}
+
+async function openPublishDialog(page, targets) {
+  await sleep(1500)
+  await clickMainFramePublishButton(page, 'first')
+  await sleep(1200)
+
+  if (await waitForPublishDialogVisible(targets, 2500)) {
+    console.log('[Naver Upload] Publish dialog opened via mainFrame simple click')
+    return
+  }
+
+  throw new Error(`[${RUNTIME_SOURCE}] Publish dialog did not open after mainFrame publish click.`)
 }
 
 function formatDebugFiles(debugArtifacts) {
@@ -3111,10 +3378,20 @@ async function clickPublishButton(page, targets, which = 'first') {
 async function clickFinalPublishButton(page, targets, { scheduledAt = null } = {}) {
   const attempts = scheduledAt ? 3 : 2
   let lastVisible = null
+  let lastFinalClick = null
+  let lastConfirmClick = null
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    await clickPublishButton(page, targets, 'last')
-    const progressed = await waitForPublishProgress(page, targets, { scheduledAt, timeout: scheduledAt ? 3500 : 2500 })
+    lastFinalClick = await clickMainFramePublishButton(page, 'last', { scheduledAt })
+    if (scheduledAt) {
+      await sleep(700)
+      lastConfirmClick = await clickScheduledPublishConfirmation(page)
+      if (!lastConfirmClick) {
+        await page.keyboard.press('Enter').catch(() => {})
+        console.warn('[Naver Upload] Scheduled publish confirmation button was not found. Sent Enter as fallback.')
+      }
+    }
+    const progressed = await waitForPublishProgress(page, targets, { scheduledAt, timeout: scheduledAt ? 8000 : 2500 })
     if (progressed) {
       return
     }
@@ -3123,12 +3400,15 @@ async function clickFinalPublishButton(page, targets, { scheduledAt = null } = {
     console.warn(
       `[Naver Upload] Final publish click attempt ${attempt}/${attempts} did not change publish state. dialogVisible=${lastVisible}`
     )
-    await dismissEditorPopups(page, targets)
-    await sleep(300)
+    if (!lastVisible) {
+      await dismissEditorPopups(page, targets)
+    }
+    await sleep(500)
   }
 
+  const visibleHints = await collectVisibleHints(page).catch(() => [])
   throw new Error(
-    `[${RUNTIME_SOURCE}] Final publish action did not progress after click attempts. dialogVisible=${lastVisible}`
+    `[${RUNTIME_SOURCE}] Final publish action did not progress after click attempts. dialogVisible=${lastVisible} lastFinalClick="${String(lastFinalClick?.label || '').slice(0, 120)}" lastFinalArea="${String(lastFinalClick?.clickArea || '')}" lastConfirmClick="${String(lastConfirmClick?.label || 'none').slice(0, 120)}" visibleHints="${visibleHints.join(' | ').slice(0, 240)}"`
   )
 }
 
@@ -3212,22 +3492,36 @@ async function fillTags(page, targets, tags) {
     return
   }
 
+  const waitForTagVisible = async (scope, tag) => {
+    try {
+      await scope.waitForFunction(
+        (value) => {
+          const normalize = (input) => String(input || '').replace(/\s+/g, ' ').trim()
+          const text = normalize(document.body?.textContent)
+          return text.includes(value)
+        },
+        tag,
+        { timeout: 1500 }
+      )
+    } catch {}
+  }
+
+  const typeTags = async (scope) => {
+    for (const tag of normalizedTags) {
+      await page.keyboard.type(tag, { delay: 25 })
+      await page.keyboard.press('Space')
+      await waitForTagVisible(scope, tag)
+      await sleep(350)
+    }
+  }
+
   for (const target of targets) {
     for (const selector of TAG_INPUT_SELECTORS) {
       try {
         const tagInput = target.scope.locator(selector).first()
-        await withPopupRecovery(
-          page,
-          targets,
-          () => tagInput.click({ timeout: 3000 }),
-          `tag input via ${target.label} -> ${selector}`
-        )
+        await tagInput.click({ timeout: 3000 })
 
-        for (const tag of normalizedTags) {
-          await page.keyboard.type(tag, { delay: 25 })
-          await page.keyboard.press('Enter')
-          await sleep(180)
-        }
+        await typeTags(target.scope)
 
         console.log(`[Naver Upload] Filled tags via ${target.label} -> ${selector}: ${normalizedTags.join(', ')}`)
         return
@@ -3237,11 +3531,7 @@ async function fillTags(page, targets, tags) {
     try {
       const result = await focusTagInputByDom(target.scope)
       if (result?.focused) {
-        for (const tag of normalizedTags) {
-          await page.keyboard.type(tag, { delay: 25 })
-          await page.keyboard.press('Enter')
-          await sleep(180)
-        }
+        await typeTags(target.scope)
 
         console.log(
           `[Naver Upload] Filled tags via ${target.label} -> dom ${result.selector || ''}: ${normalizedTags.join(', ')}`
@@ -3484,13 +3774,21 @@ module.exports = {
     activateReservePublishModeByDom,
     buildPublishConfirmationError,
     clickPhotoButtonByDom,
+    clickPublishButton,
+    clickFinalPublishButton,
     clickPublishButtonByDom,
+    configureScheduledPublish,
+    fillTags,
     findScheduledPostUrl,
+    getEditorTargets,
+    getPublishDialogTargets,
+    openPublishDialog,
     isScheduledPublishStateConfirmed,
     isPopupInterceptionError,
     isPublishedPostUrl,
     normalizeScheduledPublishAt,
     parseContentWithImageMarkers,
+    resolvePublishOutcome,
     withPopupRecovery,
   },
   getPlaywrightDiagnostics,

@@ -14,7 +14,7 @@ export default function Header() {
       <header className="h-14 sm:h-16 bg-white border-b border-border flex items-center justify-between px-4 sm:px-6 shrink-0">
         <div className="flex items-center gap-3 min-w-0 cursor-pointer" onClick={() => navigate('/')}>
           <img src="/logo.svg" alt="logo" className="w-7 h-7 shrink-0" />
-          <h2 className="text-base sm:text-lg font-bold text-text truncate">마이베스트</h2>
+          <h2 className="text-base sm:text-lg font-bold text-text truncate">마이버스</h2>
         </div>
         <nav className="flex items-center gap-1">
           <button
@@ -79,7 +79,7 @@ export default function Header() {
         >
           <div
             className="bg-white rounded-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="p-5 text-center">
               <div className="w-12 h-12 rounded-full bg-danger/10 flex items-center justify-center mx-auto mb-3">

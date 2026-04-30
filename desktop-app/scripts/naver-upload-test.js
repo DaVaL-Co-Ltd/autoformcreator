@@ -118,16 +118,16 @@ function testNormalizeScheduledPublishAtPreservesLateNightHour() {
   }
 }
 
-function testNormalizeScheduledPublishAtAdjustsTooSoonSchedule() {
+function testNormalizeScheduledPublishAtPreservesRequestedSchedule() {
   const originalNow = Date.now
   Date.now = () => new Date('2026-04-22T02:05:43.000Z').getTime()
 
   try {
     const schedule = __private.normalizeScheduledPublishAt('2026-04-22T02:10:00.000Z')
-    assert.equal(schedule.adjusted, true)
-    assert.equal(schedule.iso, '2026-04-22T02:20:00.000Z')
+    assert.equal(schedule.adjusted, false)
+    assert.equal(schedule.iso, '2026-04-22T02:10:00.000Z')
     assert.equal(schedule.hour24, '11')
-    assert.equal(schedule.minute, '20')
+    assert.equal(schedule.minute, '10')
   } finally {
     Date.now = originalNow
   }
@@ -500,7 +500,7 @@ async function main() {
   testParseContentWithImageMarkersKeepsOrder()
   testNormalizeScheduledPublishAt()
   testNormalizeScheduledPublishAtPreservesLateNightHour()
-  testNormalizeScheduledPublishAtAdjustsTooSoonSchedule()
+  testNormalizeScheduledPublishAtPreservesRequestedSchedule()
   testScheduledPublishStateConfirmationUsesDomValues()
   testScheduledPublishStateConfirmationAcceptsReadyBanner()
   testPublishConfirmationErrorIncludesDebugFiles()

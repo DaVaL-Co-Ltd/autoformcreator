@@ -3,7 +3,8 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const { app } = require('electron')
-const { uploadToNaver, hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
+const { hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
+const { uploadToNaverBlogV2 } = require('./naver-blog-rpa-v2')
 const { getUploadById, getUploadRuntimeState } = require('./upload-runtime')
 const { naverLogin } = require('./naver-login')
 const { clearSessionState, validateStoredNaverSession } = require('./session-state')
@@ -281,7 +282,7 @@ function createApp() {
       const tags = parseTags(req.body.tags)
       const headless = showBrowser !== 'true'
 
-      const uploadPromise = uploadToNaver({
+      const uploadPromise = uploadToNaverBlogV2({
         content,
         headless,
         photoPaths,

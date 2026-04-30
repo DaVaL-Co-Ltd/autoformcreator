@@ -73,7 +73,7 @@ function normalize(row) {
     id: row.id,
     platform: row.platform,
     extractionId: row.extraction_id,
-    content: row.content || {},
+    content: row.content || (row.content_title ? { title: row.content_title } : {}),
     scheduledAt: row.scheduled_at,
     status: row.status,
     uploadedUrl: row.uploaded_url,

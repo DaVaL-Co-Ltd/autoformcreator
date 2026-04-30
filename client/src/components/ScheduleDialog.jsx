@@ -38,7 +38,7 @@ function roundUpToMinuteStep(input, step = MINUTE_STEP) {
 }
 
 function toLocalDatetimeValue(date) {
-  const d = roundUpToMinuteStep(date)
+  const d = date instanceof Date ? new Date(date) : new Date(date)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
@@ -66,8 +66,7 @@ function getMinimumScheduleDate(platform) {
 function getDefaultScheduleDate(initialDatetime, platform = 'blog') {
   if (initialDatetime) {
     const initialDate = new Date(initialDatetime)
-    const minimumDate = getMinimumScheduleDate(platform)
-    return initialDate < minimumDate ? minimumDate : initialDate
+    return Number.isNaN(initialDate.getTime()) ? getMinimumScheduleDate(platform) : initialDate
   }
 
   return new Date(Date.now() + 60 * 60 * 1000)
@@ -79,10 +78,7 @@ function normalizeScheduledAtForPlatform(platform, datetimeValue) {
     return toOffsetIsoString(getMinimumScheduleDate(platform))
   }
 
-  const rounded = roundUpToMinuteStep(requested)
-  const minimum = getMinimumScheduleDate(platform)
-  const effective = rounded < minimum ? minimum : rounded
-  return toOffsetIsoString(effective)
+  return toOffsetIsoString(requested)
 }
 
 function ScheduleDialogBody({
@@ -128,11 +124,11 @@ function ScheduleDialogBody({
 
   const parts = (() => {
     if (datetime && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(datetime)) {
-      const rounded = roundUpToMinuteStep(datetime)
+      const selected = new Date(datetime)
       return {
-        date: toLocalDatetimeValue(rounded).slice(0, 10),
-        hour: String(rounded.getHours()).padStart(2, '0'),
-        minute: String(rounded.getMinutes()).padStart(2, '0'),
+        date: toLocalDatetimeValue(selected).slice(0, 10),
+        hour: String(selected.getHours()).padStart(2, '0'),
+        minute: String(selected.getMinutes()).padStart(2, '0'),
       }
     }
 
