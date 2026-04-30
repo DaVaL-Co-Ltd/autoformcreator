@@ -10,18 +10,49 @@ const renderBalancedLines = (text, maxLineLength) => {
   const words = String(text || '').split(/\s+/).filter(Boolean)
   if (!words.length) return null
 
-  const lines = []
-  let current = ''
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word
-    if (next.length > maxLineLength && current) {
-      lines.push(current)
-      current = word
-    } else {
-      current = next
+  const textLength = (start, end) => words.slice(start, end).join(' ').length
+  const findBestLines = (lineCount) => {
+    if (words.length < lineCount) return null
+
+    const totalLength = words.join(' ').length
+    const idealLength = totalLength / lineCount
+    let best = null
+
+    const solve = (start, remainingLines, lines, score) => {
+      const wordsLeft = words.length - start
+      if (wordsLeft < remainingLines) return
+
+      if (remainingLines === 1) {
+        const length = textLength(start, words.length)
+        if (length > maxLineLength) return
+
+        const candidate = {
+          lines: [...lines, words.slice(start).join(' ')],
+          score: score + Math.abs(length - idealLength),
+        }
+        if (!best || candidate.score < best.score) best = candidate
+        return
+      }
+
+      const maxEnd = words.length - remainingLines + 1
+      for (let end = start + 1; end <= maxEnd; end += 1) {
+        const length = textLength(start, end)
+        if (length > maxLineLength) break
+
+        solve(
+          end,
+          remainingLines - 1,
+          [...lines, words.slice(start, end).join(' ')],
+          score + Math.abs(length - idealLength),
+        )
+      }
     }
+
+    solve(0, lineCount, [], 0)
+    return best?.lines || null
   }
-  if (current) lines.push(current)
+
+  const lines = findBestLines(1) || findBestLines(2) || findBestLines(3) || words
 
   return lines.map((line, index) => (
     <span key={`${line}-${index}`} className="block">

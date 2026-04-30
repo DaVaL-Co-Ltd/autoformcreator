@@ -307,6 +307,11 @@ const normalizeInstagramCardStyle = (value) => {
   return 'background-text'
 }
 
+const getGeneratedImageUrl = (image) => {
+  if (typeof image === 'string') return image
+  return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
+}
+
 function getMockBlogImages(style = 'pastel', textOverlay = 'with-text') {
   const src = BLOG_IMAGE_STYLE_EXAMPLES[style]?.src || BLOG_IMAGE_STYLE_EXAMPLES.pastel.src
   if (textOverlay === 'without-text') {
@@ -755,7 +760,7 @@ export default function ExtractionPage() {
           return imageCardNumber === cardNumber
         }) || imagePool[index] || imagePool[0] || null
       )
-    const imageUrl = matchedImage?.imageUrl || matchedImage?.url || null
+    const imageUrl = getGeneratedImageUrl(matchedImage)
     const headline = getInstagramOverlayTitle(card, index)
     const descriptionLines = getInstagramOverlayLines(card)
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
@@ -2876,7 +2881,7 @@ ${parsedText}
               const failed = stepErrors.media?.some(e => e.channel === '인스타 카드')
               const isLoading = mediaItemLoading['인스타 카드']
               const ok = instagramImages?.length > 0
-              const hasImages = instagramImages?.some(i => i.imageUrl)
+              const hasImages = instagramImages?.some(getGeneratedImageUrl)
               return (
                 <div className={`rounded-lg p-3 border ${
                   isLoading ? 'bg-primary/5 border-primary/20' :

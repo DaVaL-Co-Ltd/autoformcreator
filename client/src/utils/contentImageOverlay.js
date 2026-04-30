@@ -199,6 +199,18 @@ const findBalancedLines = (words, lineCount, measureTextWidth, maxWidth) => {
   return solve(0, lineCount)?.lines || null
 }
 
+const findPreferredBalancedLines = (words, fallbackLineCount, measureTextWidth, maxWidth) => {
+  if (measureTextWidth(words.join(' ')) <= maxWidth) return [words.join(' ')]
+
+  const twoLineResult = findBalancedLines(words, 2, measureTextWidth, maxWidth)
+  if (twoLineResult) return twoLineResult
+
+  const threeLineResult = findBalancedLines(words, 3, measureTextWidth, maxWidth)
+  if (threeLineResult) return threeLineResult
+
+  return findBalancedLines(words, fallbackLineCount, measureTextWidth, maxWidth)
+}
+
 export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
   const words = cleanCardText(value)
     .split(/\s+/)
@@ -223,7 +235,7 @@ export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
 
   if (currentLine) lines.push(currentLine)
 
-  return findBalancedLines(words, lines.length, measureTextWidth, maxWidth) || lines
+  return findPreferredBalancedLines(words, lines.length, measureTextWidth, maxWidth) || lines
 }
 
 export const deriveBlogHeadline = (keyPhrase, heading) => {
