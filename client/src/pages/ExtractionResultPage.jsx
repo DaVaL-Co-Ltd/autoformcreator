@@ -258,15 +258,21 @@ export default function ExtractionResultPage() {
     if (channel === 'blog') {
       try {
         setBlogUploadResult(null)
+        const capturedBlogImageUrls = await convertBlogImagesToPng()
+        const blogImagesForUpload = capturedBlogImageUrls.some(Boolean)
+          ? attachRenderedImageUrls(blogImages, capturedBlogImageUrls)
+          : blogImages
         const uploadImageUrls = await buildBlogUploadImageDataUrls({
-          blogImages,
+          blogImages: blogImagesForUpload,
           sections: ensureArray(blogContent?.sections),
         })
 
         const title = blogTitle || blogContent?.title || ''
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
         const tags = normalizeBlogTags(blogContent)
-        const scheduledAt = options.scheduledAtOverride || scheduleInfo.blog?.scheduledAt || null
+        const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
+          ? options.scheduledAtOverride
+          : null
 
         let data
         let responseStatus = 0

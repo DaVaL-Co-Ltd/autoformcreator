@@ -211,11 +211,12 @@ const findPreferredBalancedLines = (words, fallbackLineCount, measureTextWidth, 
   return findBalancedLines(words, fallbackLineCount, measureTextWidth, maxWidth)
 }
 
-export const wrapCardTextLines = (value, measureTextWidth, maxWidth) => {
+export const wrapCardTextLines = (value, measureTextWidth, maxWidth, options = {}) => {
+  const { splitLongWords = true } = options
   const words = cleanCardText(value)
     .split(/\s+/)
     .filter(Boolean)
-    .flatMap((word) => splitOversizedWord(word, measureTextWidth, maxWidth))
+    .flatMap((word) => splitLongWords ? splitOversizedWord(word, measureTextWidth, maxWidth) : word)
 
   if (!words.length) return []
 

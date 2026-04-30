@@ -79,7 +79,9 @@ export async function uploadToBlog(extractionId, options = {}) {
 
   const normalizedContent = stripMarkdown(rawContent)
   const normalizedTags = normalizeBlogTags(blog)
-  const scheduledAt = options.scheduledAtOverride || ext.uploadStatus?.blog?.scheduledAt || null
+  const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
+    ? options.scheduledAtOverride
+    : null
 
   if (USE_REMOTE_BLOG_PUBLISH) {
     const remoteRes = await fetchWithTimeout(

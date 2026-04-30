@@ -85,13 +85,13 @@ function drawCoverImage(ctx, image, width, height) {
   ctx.drawImage(image, x, y, drawWidth, drawHeight)
 }
 
-function wrapText(ctx, text, maxWidth) {
-  return wrapCardTextLines(text, (line) => ctx.measureText(line).width, maxWidth)
+function wrapText(ctx, text, maxWidth, options) {
+  return wrapCardTextLines(text, (line) => ctx.measureText(line).width, maxWidth, options)
 }
 
-function buildWrappedParagraphs(ctx, lines, maxWidth) {
+function buildWrappedParagraphs(ctx, lines, maxWidth, options) {
   return (Array.isArray(lines) ? lines : [])
-    .map((line) => wrapText(ctx, line, maxWidth))
+    .map((line) => wrapText(ctx, line, maxWidth, options))
     .filter((wrapped) => wrapped.length > 0)
 }
 
@@ -107,11 +107,11 @@ function measureInstagramBottomOverlay(ctx, size, title, detailLines, titleFontS
   const paragraphGap = Math.round(size * 0.006)
 
   ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const titleLines = wrapText(ctx, title, titleMaxWidth)
+  const titleLines = wrapText(ctx, title, titleMaxWidth, { splitLongWords: false })
   const titleLineHeight = Math.round(titleFontSize * 1.18)
 
   ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, titleMaxWidth)
+  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, titleMaxWidth, { splitLongWords: false })
   const bodyLineHeight = Math.round(bodyFontSize * 1.28)
   const detailLineCount = getParagraphLineCount(detailParagraphs)
   const detailGapCount = detailParagraphs.length > 0 ? detailParagraphs.length - 1 : 0
@@ -175,11 +175,11 @@ function measureInstagramCenterOverlay(ctx, size, title, detailLines, titleFontS
   const bottomPadding = size * 0.05
 
   ctx.font = `900 ${titleFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const titleLines = wrapText(ctx, title, contentWidth)
+  const titleLines = wrapText(ctx, title, contentWidth, { splitLongWords: false })
   const titleLineHeight = Math.round(titleFontSize * 1.22)
 
   ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, bodyWidth)
+  const detailParagraphs = buildWrappedParagraphs(ctx, detailLines, bodyWidth, { splitLongWords: false })
   const bodyLineHeight = Math.round(bodyFontSize * 1.25)
   const detailLineCount = getParagraphLineCount(detailParagraphs)
   const detailGapCount = detailParagraphs.length > 0 ? detailParagraphs.length - 1 : 0
@@ -246,6 +246,11 @@ function getImageUrl(image) {
   if (!image) return null
   if (typeof image === 'string') return image
   return image.imageUrl || image.url || image.renderedImageUrl || image.pngUrl || null
+}
+
+function getRenderedImageUrl(image) {
+  if (!image || typeof image === 'string') return null
+  return image.renderedImageUrl || image.pngUrl || null
 }
 
 function findBlogImageSource(images, section, index) {
@@ -468,6 +473,12 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
   for (let index = 0; index < sections.length; index += 1) {
     const section = sections[index] || {}
     const image = findBlogImageSource(blogImages, section, index)
+    const renderedUrl = getRenderedImageUrl(image)
+    if (renderedUrl) {
+      uploads.push(renderedUrl)
+      continue
+    }
+
     const sourceUrl = getImageUrl(image)
     if (!sourceUrl) {
       uploads.push(null)

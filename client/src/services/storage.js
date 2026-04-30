@@ -1,6 +1,6 @@
 import { supabase, BUCKETS } from './supabase'
 
-const EXTRACTION_LIST_COLUMNS = 'id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status, is_demo'
+const EXTRACTION_LIST_COLUMNS = 'id, created_at, file_name, summary, blog_content, newsletter_content, instagram_content, shorts_script, upload_status'
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
 // ===== Helpers =====
@@ -107,7 +107,6 @@ function rowToItem(row) {
     channels: buildChannels(data),
     data,
     uploadStatus: row.upload_status || {},
-    isDemo: !!row.is_demo,
   }
 }
 
@@ -164,7 +163,6 @@ export async function saveExtraction(data) {
     shorts_video: shortsVideo || null,
     upload_status: rest.uploadStatus || {},
     parsed_text: parsedText || null,
-    is_demo: !!rest.isDemo,
   }
 
   const { data: inserted, error } = await supabase

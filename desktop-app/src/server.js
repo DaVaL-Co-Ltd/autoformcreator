@@ -90,7 +90,7 @@ async function helperSessionReady(uploadRuntime) {
     return false
   }
 
-  if (/log in again|session is missing|session could not be loaded|session expired/i.test(lastError)) {
+  if (/log in again|session is missing|session could not be loaded|session expired|로그인.*필요|로그인을 다시|세션.*없/i.test(lastError)) {
     return false
   }
 
@@ -278,7 +278,11 @@ function createApp() {
         return
       }
 
-      const { content, scheduledAt, showBrowser, title } = req.body
+      const { content, showBrowser, title } = req.body
+      const scheduledAt = req.body.scheduledAt &&
+        !['null', 'undefined', ''].includes(String(req.body.scheduledAt).trim().toLowerCase())
+        ? req.body.scheduledAt
+        : null
       const tags = parseTags(req.body.tags)
       const headless = showBrowser !== 'true'
 

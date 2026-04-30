@@ -11,14 +11,10 @@ function stripMarkdownEmphasis(text = '') {
 }
 
 function stripUnsupportedBlogFormatting(text = '') {
-  return String(text || '')
+  return stripMarkdownEmphasis(text)
     .replace(/~~([^~]+)~~/g, '$1')
     .replace(/--([^-\n]+)--/g, '$1')
     .trim()
-}
-
-function escapeRegExp(text = '') {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 const BLOG_BOLD_TOKEN_STOPWORDS = new Set([
@@ -273,15 +269,8 @@ function strengthenBlogKeyPhrase(section = {}) {
   }
 }
 
-function applyRegexBold(content = '', regex) {
-  return String(content || '').replace(regex, (match, ...args) => {
-    const source = args[args.length - 1]
-    const offset = args[args.length - 2]
-    const before = String(source).slice(Math.max(0, offset - 2), offset)
-    const after = String(source).slice(offset + match.length, offset + match.length + 2)
-    if (before === '**' && after === '**') return match
-    return `**${match.trim()}**`
-  })
+function applyRegexBold(content = '') {
+  return String(content || '')
 }
 
 function applyBlogScheduleAndDateBold(content = '') {
@@ -302,16 +291,8 @@ function applyBlogScheduleAndDateBold(content = '') {
   return nextContent
 }
 
-function applySingleBold(content = '', candidate = '') {
-  const cleanCandidate = trimBlogBoldCandidate(candidate)
-  if (!cleanCandidate) return content
-  if (String(content).includes(`**${cleanCandidate}**`)) return content
-
-  const escapedCandidate = escapeRegExp(cleanCandidate)
-  const regex = new RegExp(`(^|[\\s("'])(${escapedCandidate})(?=($|[\\s,.:;!?)'"]))`)
-  if (!regex.test(content)) return content
-
-  return content.replace(regex, (_, prefix, match) => `${prefix}**${match}**`)
+function applySingleBold(content = '') {
+  return content
 }
 
 function ensureBlogSectionBold(section = {}) {
@@ -819,6 +800,7 @@ ${buildInstagramCaptionRules()}
 ## 블로그 규칙
 - 섹션은 3개 이상 구성하세요.
 - sections[].content는 충분한 길이의 본문으로 작성하세요.
+- sections[].content에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 ${buildBlogBodyLineBreakRules()}
 
 ${buildBasePrompt(summary, rawText, emphasis, options)}
@@ -946,6 +928,8 @@ ${buildInstagramCaptionRules()}
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 
 ${buildBlogTitleRules()}
+## 블로그 규칙
+- sections[].content에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
@@ -998,11 +982,9 @@ export async function generateBlogContent(summary, rawText, emphasis, options = 
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실은 추가하지 마세요.
 - 섹션은 3개 이상 구성하세요.
-- 블로그 본문에서는 markdown bold(**텍스트**)만 사용해도 됩니다.
-- 블로그 본문에서는 취소선(~~text~~, --text--)과 italic(*text*, _text_)을 사용하지 마세요.
-- 일정/시험/원서접수처럼 날짜가 핵심인 문장은 \`수능: 11/15(목)\`처럼 일정 제목과 날짜 구간만 bold 처리하세요.
-- 중요한 판단 포인트가 있는 문장은 문장 전체가 아니라 \`논술\`, \`면접\`, \`최저학력기준\`처럼 핵심 키워드만 bold 처리하세요.
-- 문장이 길면 전체를 bold 처리하지 말고, 날짜와 핵심 키워드만 최소한으로 bold 처리하세요.
+- 블로그 본문에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 블로그 본문에서는 취소선(~~text~~, --text--)과 italic(*text*, _text_)도 사용하지 마세요.
+- 날짜, 일정, 핵심 키워드도 굵게 표시하지 말고 일반 텍스트로 작성하세요.
 ${buildBlogBodyLineBreakRules()}
 
 ${buildBlogTitleRules()}

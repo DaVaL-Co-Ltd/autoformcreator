@@ -129,6 +129,10 @@ function isNaverLoginUrl(url = '') {
   return /^https:\/\/nid\.naver\.com\/nidlogin\.login/i.test(String(url))
 }
 
+function hasNaverLoginMarker(text = '') {
+  return /nidlogin\.login|nid\.naver\.com\/nidlogin|id="log\.login"|name="id"|name="pw"/i.test(String(text || ''))
+}
+
 async function validateStoredNaverSession({ bypassCache = false } = {}) {
   if (!hasUsableSessionState()) {
     lastSessionValidation = { checkedAt: Date.now(), result: false }
@@ -163,7 +167,17 @@ async function validateStoredNaverSession({ bypassCache = false } = {}) {
 
     const redirectedTo = response.headers.get('location') || ''
     const finalUrl = response.url || ''
-    const isValid = !isNaverLoginUrl(redirectedTo) && !isNaverLoginUrl(finalUrl) && response.status < 400
+    let bodyText = ''
+    const contentType = response.headers.get('content-type') || ''
+    if (/text\/html|application\/xhtml/i.test(contentType)) {
+      bodyText = await response.text().catch(() => '')
+    }
+
+    const isValid =
+      !isNaverLoginUrl(redirectedTo) &&
+      !isNaverLoginUrl(finalUrl) &&
+      !hasNaverLoginMarker(bodyText) &&
+      response.status < 400
 
     lastSessionValidation = { checkedAt: Date.now(), result: isValid }
     return isValid
@@ -176,6 +190,7 @@ async function validateStoredNaverSession({ bypassCache = false } = {}) {
 module.exports = {
   clearSessionState,
   getSessionPath,
+  hasNaverLoginMarker,
   hasUsableSessionState,
   loadSessionState,
   saveSessionState,

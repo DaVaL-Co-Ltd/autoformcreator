@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, ToggleLeft, ToggleRight, Download,
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
   Mail
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -68,142 +68,6 @@ const aiServiceInfo = {
   llamaparse: { name: 'LlamaParse', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
   gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
   flux: { name: 'Flux', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
-}
-
-// 데모 모드용 목업 데이터
-const MOCK_DELAY = 800
-
-const mockParsedText = `[데모 모드] 2026년 디지털 교육 전환 트렌드 보고서
-
-1. 교육 현장 도입 현황
-- 초중고 디지털 학습 플랫폼 도입률: 78.4%
-- 대학 및 평생교육기관 LMS 활용률: 83.1%
-- AI 기반 학습 지원 도구 도입 학교 비율: 46.7%
-
-2. 학습 성과 변화
-- 개인화 학습 적용 시 과제 완수율: +26.8%
-- 실시간 피드백 제공 시 학습 지속률: +18.5%
-- AI 튜터 활용 수업 만족도: 91.2점
-
-3. 주요 운영 방식
-- 실시간 수업과 비동기 학습 병행: 64.3%
-- 마이크로러닝 콘텐츠 운영: 58.9%
-- 교사 지원형 자동 채점 및 피드백: 42.6%
-
-4. 핵심 트렌드
-- AI 기반 맞춤형 학습 경로 추천 확대
-- 짧고 반복 가능한 마이크로러닝 콘텐츠 증가
-- 교사 행정 업무를 줄이는 자동 피드백 도구 확산
-- 온오프라인 혼합형 수업 운영 모델 정착`
-
-const mockVerification = {
-  isValid: true,
-  confidence: 0.95,
-  issues: [],
-  correctedText: null,
-}
-
-const mockSummary = {
-  title: '2026년 디지털 교육 전환 트렌드 요약',
-  summary: '디지털 교육 전환은 이미 선택이 아니라 기본 운영 방식이 되었고, 개인화 학습과 AI 기반 수업 지원이 교육 성과를 끌어올리는 핵심 축으로 자리 잡고 있습니다.',
-  keyData: [
-    { label: '디지털 학습 도입률', value: '78.4%', context: '초중고 기준' },
-    { label: 'LMS 활용률', value: '83.1%', context: '대학 및 평생교육기관' },
-    { label: '과제 완수율 상승', value: '+26.8%', context: '개인화 학습 적용 시' },
-    { label: '수업 만족도', value: '91.2점', context: 'AI 튜터 활용 수업' },
-  ],
-  insights: [
-    '개인화 학습 도입이 학습 완수율을 끌어올리며 교육 성과 개선에 직접 연결되고 있습니다.',
-    'LMS와 마이크로러닝 조합이 온오프라인 혼합형 수업의 기본 모델로 자리 잡고 있습니다.',
-    '교사 지원형 자동 피드백 도구가 행정 부담을 줄이고 수업 집중도를 높이고 있습니다.',
-  ],
-  keywords: ['디지털 교육', '에듀테크', 'AI 튜터', '개인화 학습', '마이크로러닝'],
-}
-
-const mockBlogContent = {
-  title: '[데모] 2026 디지털 교육 트렌드: 개인화 학습이 바꾸는 수업 현장',
-  metaDescription: '디지털 교육 전환, LMS 활용, AI 튜터, 마이크로러닝이 만드는 2026 교육 현장 변화',
-  sections: [
-    {
-      heading: '디지털 학습은 이제 기본 운영 방식입니다',
-      content: '초중고 디지털 학습 플랫폼 도입률은 78.4%, 대학 및 평생교육기관 LMS 활용률은 83.1%까지 올라가며 디지털 학습이 교육 현장의 기본 운영 방식으로 자리 잡고 있습니다.',
-      imagePrompt: 'modern digital education classroom with tablets and large display',
-    },
-    {
-      heading: '개인화 학습과 AI 튜터가 성과를 끌어올립니다',
-      content: '개인화 학습을 적용한 수업에서는 과제 완수율이 26.8% 상승했고, 실시간 피드백을 제공한 경우 학습 지속률도 18.5% 높아졌습니다. AI 튜터를 활용한 수업 만족도는 91.2점으로 나타났습니다.',
-      imagePrompt: 'AI tutor supporting personalized learning for students',
-    },
-  ],
-  tags: ['디지털교육', '에듀테크', 'AI튜터'],
-  summary: '디지털 교육 전환과 개인화 학습이 2026년 교육 현장의 핵심 변화로 자리 잡고 있습니다.',
-}
-
-const mockInstagramContent = {
-  title: '[데모] 디지털 교육 핵심 인사이트',
-  body: '2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 전환되고 있습니다.\n\n초중고 디지털 학습 플랫폼 도입률은 **78.4%**, 대학 및 평생교육기관 LMS 활용률은 **83.1%**까지 확대됐습니다.\n\n개인화 학습 적용 시 과제 완수율은 **26.8%**, 실시간 피드백을 제공하면 학습 지속률은 **18.5%** 상승합니다.',
-  caption: '📚 2026 디지털 교육 핵심 인사이트\n✅ 디지털 학습 도입률 78.4%\n✅ LMS 활용률 83.1%\n✅ 개인화 학습 적용 시 과제 완수율 +26.8%\n✅ AI 튜터 수업 만족도 91.2점',
-  hashtags: ['#디지털교육', '#에듀테크', '#AI튜터', '#개인화학습', '#교육트렌드'],
-  cardTopics: [
-    { cardNumber: 1, headline: '디지털 학습 도입', content: '초중고 교육 현장 도입률', dataPoint: '78.4%' },
-    { cardNumber: 2, headline: 'LMS 활용 확대', content: '대학 및 평생교육기관 기준', dataPoint: '83.1%' },
-    { cardNumber: 3, headline: '과제 완수율 상승', content: '개인화 학습 적용 효과', dataPoint: '+26.8%' },
-    { cardNumber: 4, headline: '학습 지속률 상승', content: '실시간 피드백 제공 효과', dataPoint: '+18.5%' },
-    { cardNumber: 5, headline: 'AI 튜터 만족도', content: '학생 체감 만족도', dataPoint: '91.2점' },
-    { cardNumber: 6, headline: '핵심 운영 방식', content: '짧고 반복 가능한 학습 구조', dataPoint: '마이크로러닝' },
-  ],
-}
-
-const mockNewsletterContent = {
-  subject: '[데모] 주간 교육 브리핑 - 디지털 학습 도입률 78.4%',
-  preheader: '개인화 학습과 AI 튜터가 바꾸는 2026 교육 현장',
-  greeting: '안녕하세요, 교육 트렌드 구독자 여러분!',
-  headline: '2026 디지털 교육 전환, 무엇이 달라졌을까요?',
-  keyPoints: ['디지털 학습 도입률 78.4%', 'LMS 활용률 83.1%', '개인화 학습 시 과제 완수율 +26.8%'],
-  body: '2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 재편되고 있습니다.\n\n초중고의 디지털 학습 플랫폼 도입률은 78.4%, 대학 및 평생교육기관의 LMS 활용률은 83.1%까지 확대됐습니다.\n\n특히 개인화 학습과 AI 튜터를 활용한 수업은 학습 성과와 만족도를 동시에 높이며, 교육 운영의 표준 모델로 자리 잡고 있습니다.',
-  dataHighlights: [
-    { label: '디지털 학습 도입률', value: '78.4%' },
-    { label: 'LMS 활용률', value: '83.1%' },
-    { label: '과제 완수율 상승', value: '+26.8%' },
-    { label: 'AI 튜터 만족도', value: '91.2점' },
-  ],
-  cta: { text: '교육 인사이트 확인', description: '이번 주 핵심 데이터를 한눈에 정리했습니다.' },
-  closingNote: '다음 브리핑에서도 교육 현장의 실질적인 변화와 인사이트를 전해드리겠습니다.',
-}
-
-const mockShortsScript = {
-  title: '[데모] 디지털 교육 핵심 트렌드',
-  duration: '30',
-  hook: '요즘 교육 현장에서 가장 빠르게 바뀌는 건 무엇일까요?',
-  scenes: [
-    { sceneNumber: 1, duration: '8', narration: '안녕하세요. 오늘은 2026년 디지털 교육 전환의 핵심 흐름을 빠르게 정리해보겠습니다.', visualDescription: 'digital education intro scene', textOverlay: '2026 디지털 교육' },
-    { sceneNumber: 2, duration: '8', narration: '초중고 디지털 학습 플랫폼 도입률은 78.4퍼센트, 대학과 평생교육기관의 LMS 활용률은 83.1퍼센트까지 확대됐습니다.', visualDescription: 'students using digital learning platform', textOverlay: '도입률 78.4%' },
-    { sceneNumber: 3, duration: '8', narration: '개인화 학습을 적용하면 과제 완수율이 26.8퍼센트 상승하고, 실시간 피드백은 학습 지속률을 18.5퍼센트 높입니다.', visualDescription: 'personalized learning analytics', textOverlay: '완수율 +26.8%' },
-    { sceneNumber: 4, duration: '6', narration: 'AI 튜터와 마이크로러닝이 교육 현장의 기본 포맷이 되고 있습니다. 지금은 디지털 교육 운영 전략이 경쟁력입니다.', visualDescription: 'AI tutor in modern classroom', textOverlay: 'AI 튜터 & 마이크로러닝' },
-  ],
-  cta: '디지털 교육 전략을 점검하고 수업 운영 방식을 다시 설계해보세요.',
-  thumbnailPrompt: 'digital education trend analysis thumbnail',
-  uploadTitle: '[디지털 교육 리포트] 2026 교육 현장은 어떻게 바뀌고 있을까?',
-  uploadDescription: `2026년 교육 현장은 디지털 학습과 개인화 학습 중심으로 빠르게 전환되고 있습니다.
-
-핵심은 디지털 학습 플랫폼, LMS, AI 튜터, 마이크로러닝의 조합입니다.
-
-📊 핵심 수치
-• 디지털 학습 도입률: 78.4%
-• LMS 활용률: 83.1%
-• 개인화 학습 적용 시 과제 완수율: +26.8%
-• AI 튜터 수업 만족도: 91.2점
-
-교육 운영 효율과 학습 성과를 동시에 높이는 구조가 이미 현장에 자리 잡고 있습니다.`,
-  hashtags: ['#Shorts', '#디지털교육', '#에듀테크', '#AI튜터', '#개인화학습', '#교육트렌드', '#마이크로러닝', '#교육콘텐츠'],
-}
-
-const mockShortsVideo = {
-  url: '/test.mp4',
-  videoUrl: '/test.mp4',
-  duration: '30',
-  status: 'completed',
-  isDemo: true,
 }
 
 const BLOG_IMAGE_STYLE_EXAMPLES = {
@@ -331,16 +195,33 @@ function ImagePreviewModal({ previewImage, onClose }) {
             containerClassName="w-[min(78vw,640px,82vh)] rounded-[28px] shadow-2xl"
           />
         ) : previewImage.renderType === 'instagram-card' ? (
-          <InstagramImageArtwork
-            imageUrl={previewImage.src}
-            alt={previewImage.title}
-            cardNumber={previewImage.cardNumber}
-            cardTitle={previewImage.headline}
-            descriptionLines={previewImage.descriptionLines}
-            cardStyle={previewImage.cardStyle}
-            mode="modal"
-            containerClassName="w-[min(78vw,640px,82vh)] rounded-[28px] shadow-2xl"
-          />
+          <div className="relative aspect-square w-[min(78vw,640px,82vh)] overflow-hidden rounded-[28px] bg-surface-light shadow-2xl">
+            <img
+              src={previewImage.src}
+              alt={previewImage.title}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black/10" />
+            <div className="absolute inset-0 flex flex-col justify-between p-[7%]">
+              <div className="self-start rounded-full bg-black/65 px-3 py-1.5 text-[clamp(11px,1.2vw,14px)] font-bold text-white">
+                {previewImage.cardNumber}
+              </div>
+              <div className="rounded-[24px] bg-white/88 px-[5.5%] py-[5.2%] shadow-sm">
+                <p className="text-[clamp(15px,2vw,22px)] font-black leading-tight text-gray-800">
+                  {previewImage.headline}
+                </p>
+                {previewImage.descriptionLines?.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {previewImage.descriptionLines.map((line, index) => (
+                      <p key={`${line}-${index}`} className="text-[clamp(10px,1.1vw,12px)] font-semibold leading-tight text-gray-600">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         ) : (
           <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
         )}
@@ -352,32 +233,6 @@ function ImagePreviewModal({ previewImage, onClose }) {
     </div>,
     document.body,
   )
-}
-
-function getMockBlogImages(style = 'pastel', textOverlay = 'with-text') {
-  const src = BLOG_IMAGE_STYLE_EXAMPLES[style]?.src || BLOG_IMAGE_STYLE_EXAMPLES.pastel.src
-  if (textOverlay === 'without-text') {
-    return [
-      { imageUrl: src, prompt: style === 'photo' ? 'full realistic classroom photo' : 'digital education classroom' },
-      { imageUrl: src, prompt: style === 'photo' ? 'full realistic study scene photo' : 'LMS adoption education visual' },
-    ]
-  }
-  return [
-    { imageUrl: src, prompt: 'digital education classroom' },
-    { imageUrl: src, prompt: 'digital education classroom' },
-  ]
-}
-
-function getMockInstagramImages(style = 'pastel') {
-  const src = INSTAGRAM_IMAGE_STYLE_EXAMPLES[style]?.src || INSTAGRAM_IMAGE_STYLE_EXAMPLES.pastel.src
-  return [
-    { cardNumber: 1, imageUrl: src, prompt: style === 'photo' ? 'full realistic study photo' : 'digital learning adoption' },
-    { cardNumber: 2, imageUrl: src, prompt: style === 'photo' ? 'full realistic campus photo' : 'LMS usage in education' },
-    { cardNumber: 3, imageUrl: src, prompt: style === 'photo' ? 'full realistic tutoring photo' : 'personalized learning improvement' },
-    { cardNumber: 4, imageUrl: src, prompt: style === 'photo' ? 'full realistic classroom feedback photo' : 'real-time feedback in classroom' },
-    { cardNumber: 5, imageUrl: src, prompt: style === 'photo' ? 'full realistic AI tutor photo' : 'AI tutor classroom' },
-    { cardNumber: 6, imageUrl: src, prompt: style === 'photo' ? 'full realistic microlearning photo' : 'microlearning education content' },
-  ]
 }
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms))
@@ -488,7 +343,6 @@ export default function ExtractionPage() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState({})
   const [stepErrors, setStepErrors] = useState({})
-  const [demoMode, setDemoMode] = useState(true)
   const [emphasisText] = useState('')
   const [editingText, setEditingText] = useState(false)
   const [showParsedText, setShowParsedText] = useState(false)
@@ -790,8 +644,7 @@ export default function ExtractionPage() {
     ))
   }
 
-  const renderInstagramPreviewCard = (card, index) => {
-    const cards = buildInstagramDisplayCards(instagramContent)
+  const renderInstagramPreviewCards = (card, index) => {
     const cardNumber = getInstagramCardNumber(card, index)
     const imagePool = Array.isArray(instagramImages) ? instagramImages : []
     const matchedImage = card?.isCaptionCta
@@ -803,41 +656,43 @@ export default function ExtractionPage() {
         }) || imagePool[index] || imagePool[0] || null
       )
     const imageUrl = getGeneratedImageUrl(matchedImage)
-    const headline = getInstagramOverlayTitle(card, index)
+    if (!imageUrl) return []
+
+    const cardTitle = getInstagramOverlayTitle(card, index)
     const descriptionLines = getInstagramOverlayLines(card)
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
 
-    if (!imageUrl) return null
-    const openPreview = () => setPreviewImage({
-      renderType: 'instagram-card',
-      src: imageUrl,
-      title: `인스타 카드 ${cardNumber}`,
-      cardNumber,
-      headline,
-      descriptionLines,
-      cardStyle,
-    })
-
-    return (
-      <button
-        key={`insta-preview-${cardNumber}-${cards.length}-${index}`}
-        type="button"
-        onClick={openPreview}
-        aria-label={`인스타 카드 ${cardNumber} 크게 보기`}
-        title="크게 보기"
-        className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-zoom-in hover:ring-2 hover:ring-primary/40 transition-all text-left"
+    return [(
+      <div
+        key={`instagram-${cardNumber}-${index}`}
+        className="shrink-0 flex flex-col items-center gap-1.5"
       >
-        <InstagramImageArtwork
-          imageUrl={imageUrl}
-          alt={`인스타 ${cardNumber}`}
-          cardNumber={cardNumber}
-          cardTitle={headline}
-          descriptionLines={descriptionLines}
-          cardStyle={cardStyle}
-          mode="thumb"
-        />
-      </button>
-    )
+        <button
+          type="button"
+          className="relative w-28 h-28 rounded-md overflow-hidden border border-border bg-surface-light shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
+          style={{ fontFamily: "'Pretendard', sans-serif" }}
+          onClick={() => setPreviewImage({
+            renderType: 'instagram-card',
+            src: imageUrl,
+            title: `인스타 카드 ${cardNumber}`,
+            cardNumber,
+            headline: cardTitle,
+            descriptionLines,
+            cardStyle,
+          })}
+        >
+          <InstagramImageArtwork
+            imageUrl={imageUrl}
+            alt={`인스타 카드 ${cardNumber}`}
+            cardNumber={cardNumber}
+            cardTitle={cardTitle}
+            descriptionLines={descriptionLines}
+            cardStyle={cardStyle}
+            mode="thumb"
+          />
+        </button>
+      </div>
+    )]
   }
 
   const renderImageStyleExample = (kind, label) => {
@@ -967,14 +822,10 @@ export default function ExtractionPage() {
     resetFromStep(2)
     const errors = []
 
-    if (demoMode) {
-      await delay(MOCK_DELAY)
-      setParsedText(mockParsedText)
-      await delay(MOCK_DELAY)
-      setVerification(mockVerification)
+    if (!file) {
+      addStepErrors('analysis', [{ service: 'llamaparse', message: '분석할 파일을 먼저 업로드해주세요.' }])
       setStepLoading('analysis', false)
-      // 데모: 분석 후 자동 요약 진행
-      await runSummaryWith(mockParsedText)
+      showErrorAlert('PDF 분석', '분석할 파일을 먼저 업로드해주세요.')
       return
     }
 
@@ -1026,15 +877,6 @@ export default function ExtractionPage() {
     clearStepErrors('summary')
     setSummary(null)
 
-    if (demoMode) {
-      await delay(MOCK_DELAY)
-      setSummary(mockSummary)
-      setShowSummaryDetail(true)
-      setCurrentStep(3)
-      setStepLoading('summary', false)
-      return
-    }
-
     try {
       const result = await summarizeContent(targetText, { keywords: promptSettings.summary.keywords, style: promptSettings.summary.style, extra: promptSettings.summary.extra })
       if (result.title === '요약 생성 실패') {
@@ -1059,17 +901,6 @@ export default function ExtractionPage() {
     setStepLoading('content', true)
     clearStepErrors('content')
     resetFromStep(3)
-
-    if (demoMode) {
-      await delay(MOCK_DELAY)
-      if (selectedChannels.blog) { setBlogContent(mockBlogContent); await delay(300) }
-      if (selectedChannels.newsletter) { setNewsletterContent(mockNewsletterContent); await delay(300) }
-      if (selectedChannels.instagram) { setInstagramContent(mockInstagramContent); await delay(300) }
-      if (selectedChannels.shorts) { setShortsScript(mockShortsScript); await delay(300) }
-      setCurrentStep(4)
-      setStepLoading('content', false)
-      return
-    }
 
     const errors = []
     const channelMap = [
@@ -1119,27 +950,6 @@ export default function ExtractionPage() {
     const failedErrors = stepErrors.content || []
     if (failedErrors.length === 0) return
 
-    if (demoMode) {
-      const mockMap = {
-        '네이버 블로그': { data: mockBlogContent, setter: setBlogContent },
-        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
-        '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
-        '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-      }
-      setRetrying('content-all')
-      for (const err of failedErrors) {
-        const mock = mockMap[err.channel]
-        if (mock) {
-          await delay(300)
-          mock.setter(mock.data)
-        }
-      }
-      clearStepErrors('content')
-      if (currentStep < 4) setCurrentStep(4)
-      setRetrying(null)
-      return
-    }
-
     // 실패 채널 키 수집
     const failedKeys = failedErrors.map(e => labelToKey[e.channel]).filter(Boolean)
     if (failedKeys.length === 0) return
@@ -1177,25 +987,6 @@ export default function ExtractionPage() {
 
   // Step 3 개별 채널 재시도 (카드 내 재시도 버튼)
   const retryContentChannel = async (err) => {
-    if (demoMode) {
-      const mockMap = {
-        '네이버 블로그': { data: mockBlogContent, setter: setBlogContent },
-        '뉴스레터': { data: mockNewsletterContent, setter: setNewsletterContent },
-        '인스타그램': { data: mockInstagramContent, setter: setInstagramContent },
-        '숏폼 대본': { data: mockShortsScript, setter: setShortsScript },
-      }
-      const mock = mockMap[err.channel]
-      if (mock) {
-        setRetrying(`${err.service}-${err.channel}`)
-        await delay(MOCK_DELAY)
-        mock.setter(mock.data)
-        removeStepError('content', err.service, err.channel)
-        if (currentStep < 4) setCurrentStep(4)
-        setRetrying(null)
-      }
-      return
-    }
-
     // 1개만 실패한 경우 개별 호출, 여러 개면 통합 호출
     const failedCount = (stepErrors.content || []).length
     if (failedCount > 1) {
@@ -1229,7 +1020,6 @@ export default function ExtractionPage() {
 
   // Step 3 개별 채널 재생성 (성공한 채널도 다시 생성)
   const regenerateChannel = async (channelKey) => {
-    const mockMap = { blog: mockBlogContent, newsletter: mockNewsletterContent, instagram: mockInstagramContent, shorts: mockShortsScript }
     const fnMap = {
       blog: () => generateBlogContent(summary, parsedText, emphasisText, contentPromptOptions),
       newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText, contentPromptOptions),
@@ -1241,13 +1031,8 @@ export default function ExtractionPage() {
 
     setRetrying(`regen-${channelKey}`)
     try {
-      if (demoMode) {
-        await delay(MOCK_DELAY)
-        setter(mockMap[channelKey])
-      } else {
-        const result = await fnMap[channelKey]()
-        setter(result)
-      }
+      const result = await fnMap[channelKey]()
+      setter(result)
     } catch (err) {
       showErrorAlert('채널 재생성', err.message || '재생성 실패')
     } finally {
@@ -1663,7 +1448,6 @@ DO NOT:
         service: 'gemini',
         fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
         setter: setBlogImages,
-        demoData: getMockBlogImages(promptSettings.media.blogImageStyle, promptSettings.media.blogTextOverlay),
       },
       instaImg: {
         channel: '인스타 카드',
@@ -1672,7 +1456,6 @@ DO NOT:
           ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra })
           : Promise.resolve([]),
         setter: setInstagramImages,
-        demoData: getMockInstagramImages(promptSettings.media.instagramImageStyle),
       },
       shortsVid: {
         channel: '숏폼 영상',
@@ -1681,7 +1464,6 @@ DO NOT:
           ? Promise.resolve({ status: 'placeholder', duration: shortsScript.duration })
           : Promise.resolve(null),
         setter: setShortsVideo,
-        demoData: mockShortsVideo,
       },
     }
 
@@ -1695,13 +1477,6 @@ DO NOT:
       media: (p.media || []).filter(e => e.channel !== task.channel)
     }))
 
-    if (demoMode) {
-      await delay(MOCK_DELAY)
-      task.setter(task.demoData)
-      setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
-      return
-    }
-
     try {
       const result = await task.fn()
       task.setter(result)
@@ -1714,23 +1489,6 @@ DO NOT:
 
   // Step 4 재시도
   const retryMediaItem = async (err) => {
-    if (demoMode) {
-      const mockMap = {
-        '블로그 이미지': { data: getMockBlogImages(promptSettings.media.blogImageStyle, promptSettings.media.blogTextOverlay), setter: setBlogImages },
-        '인스타 카드': { data: getMockInstagramImages(promptSettings.media.instagramImageStyle), setter: setInstagramImages },
-        '숏폼 영상': { data: mockShortsVideo, setter: setShortsVideo },
-      }
-      const mock = mockMap[err.channel]
-      if (mock) {
-        setRetrying(`${err.service}-${err.channel}`)
-        await delay(MOCK_DELAY)
-        mock.setter(mock.data)
-        removeStepError('media', err.service, err.channel)
-        setRetrying(null)
-      }
-      return
-    }
-
     const retryKey = `${err.service}-${err.channel}`
     setRetrying(retryKey)
 
@@ -1898,10 +1656,9 @@ ${parsedText}
         blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
         shortsScript,
         blogImages, instagramImages, shortsVideo,
-        fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
+        fileName: file?.name,
         fileBase64,
         savedFromExtraction: true,
-        isDemo: demoMode,
       }
     })
   }
@@ -2005,13 +1762,6 @@ ${parsedText}
               )
             })}
           </div>
-          <button
-            onClick={() => setDemoMode(prev => !prev)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all shrink-0 ${demoMode ? 'bg-warning/15 text-warning border border-warning/30' : 'bg-surface-light text-text-muted border border-border hover:border-primary/30'}`}
-          >
-            {demoMode ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
-            데모
-          </button>
         </div>
 
         {/* 스텝 카드들 */}
@@ -2099,37 +1849,20 @@ ${parsedText}
         </div>
         <div className="p-5">
           {!file ? (
-            <>
-              {demoMode ? (
-                <div className="flex flex-col items-center gap-3 p-10">
-                  <p className="text-xs text-text-muted">데모 모드에서는 파일 업로드 없이 진행합니다.</p>
-                  <button
-                    onClick={() => {
-                      setFile({ name: 'demo_report.pdf', size: 2048000, type: 'application/pdf' })
-                      setCurrentStep(2)
-                    }}
-                    className="px-4 py-2 bg-warning/10 text-warning text-sm font-medium rounded-lg hover:bg-warning/20 transition-all"
-                  >
-                    데모 파일로 시작
-                  </button>
-                </div>
-              ) : (
-                <div
-                  className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
-                    ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
-                  <Upload size={28} className="mx-auto mb-3 text-text-muted" />
-                  <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
+            <div
+              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
+                ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
+              <Upload size={28} className="mx-auto mb-3 text-text-muted" />
+              <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
 
-                  <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
-                </div>
-              )}
-            </>
+              <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
+            </div>
           ) : (
             <div className="flex items-center gap-4 p-4 bg-success/5 rounded-lg border border-success/20">
               <FileText size={24} className="text-success" />
@@ -2921,7 +2654,7 @@ ${parsedText}
                   {hasImages && (
                     <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
                       {buildInstagramDisplayCards(instagramContent)
-                        .map((card, i) => renderInstagramPreviewCard(card, i))
+                        .flatMap((card, i) => renderInstagramPreviewCards(card, i))
                         .filter(Boolean)}
                     </div>
                   )}
@@ -3174,20 +2907,20 @@ ${parsedText}
                       }`}
                     >
                       {loading.shorts
-                        ? <><Loader2 size={16} className="animate-spin" /> {demoMode ? '데모 영상 생성 준비 중...' : 'HeyGen 영상 생성 중...'}</>
-                        : <><Film size={16} /> {demoMode ? '데모 숏폼 영상 생성' : '숏폼 영상 생성'}</>}
+                        ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
+                        : <><Film size={16} /> 숏폼 영상 생성</>}
                     </button>
                   )}
                   {!avatarImage && !shortsVideo && (
                     <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>
                   )}
-                  {!demoMode && avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
+                  {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
                     <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
                       <Loader2 size={14} className="text-primary animate-spin" />
                       <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
                     </div>
                   )}
-                  {!demoMode && avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
+                  {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
                     <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
                       <CheckCircle size={14} className="text-success" />
                       <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>

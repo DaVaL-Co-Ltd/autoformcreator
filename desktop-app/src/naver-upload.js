@@ -155,6 +155,39 @@ function normalizeTwoDigitValue(value) {
   return digits.padStart(2, '0').slice(-2)
 }
 
+function formatNaverScheduleDate(year, month, day) {
+  return `${String(year).padStart(4, '0')}. ${String(month).padStart(2, '0')}. ${String(day).padStart(2, '0')}`
+}
+
+function getScheduleComparison(scheduleState, schedule) {
+  const actualDate = normalizeDateDigits(scheduleState?.dateValue)
+  const expectedDate = normalizeDateDigits(schedule?.dateValue)
+  const actualHour = normalizeTwoDigitValue(scheduleState?.hourValue)
+  const expectedHour = normalizeTwoDigitValue(schedule?.hour24)
+  const actualMinute = normalizeTwoDigitValue(scheduleState?.minuteValue)
+  const expectedMinute = normalizeTwoDigitValue(schedule?.minute)
+
+  return {
+    actualDate,
+    expectedDate,
+    actualHour,
+    expectedHour,
+    actualMinute,
+    expectedMinute,
+    matches: Boolean(
+      actualDate &&
+        expectedDate &&
+        actualDate === expectedDate &&
+        actualHour &&
+        expectedHour &&
+        actualHour === expectedHour &&
+        actualMinute &&
+        expectedMinute &&
+        actualMinute === expectedMinute
+    ),
+  }
+}
+
 function parseScheduledAtValue(scheduledAt) {
   if (!scheduledAt) {
     return null
@@ -197,20 +230,11 @@ function isScheduledPublishStateConfirmed(scheduleState, schedule) {
     return hasCompleteScheduleFields
   }
 
-  const actualDate = normalizeDateDigits(scheduleState.dateValue)
-  const expectedDate = normalizeDateDigits(schedule.dateValue)
-  const actualHour = normalizeTwoDigitValue(scheduleState.hourValue)
-  const actualMinute = normalizeTwoDigitValue(scheduleState.minuteValue)
-
-  if (
-    actualDate === expectedDate &&
-    actualHour === schedule.hour24 &&
-    actualMinute === schedule.minute
-  ) {
+  if (getScheduleComparison(scheduleState, schedule).matches) {
     return true
   }
 
-  return Boolean(scheduleState.scheduleReady && hasCompleteScheduleFields)
+  return false
 }
 
 // SmartEditor auto-format??痍⑥냼???占쏀깶占?蹂쇰뱶 ?占쎌쑝占?蹂?占쏀븯??留덉빱?占쎌쓣 ?占쎄굅
@@ -234,6 +258,7 @@ function sanitizeForFormattingTyping(raw) {
     .replace(/~~([^~]+)~~/g, '$1')
     .replace(/--([^\n-]+)--/g, '$1')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/(^|[^\*])\*([^*\s][^*]*[^*\s])\*(?!\*)/g, '$1$2')
     .replace(/__([^_]+)__/g, '$1')
     .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
@@ -1442,6 +1467,7 @@ function normalizeScheduledPublishAt(scheduledAt) {
 
   return {
     adjusted: date.getTime() !== requestedDate.getTime(),
+    dateDisplayValue: formatNaverScheduleDate(parts.year, parts.month, parts.day),
     dateValue: `${parts.year}-${parts.month}-${parts.day}`,
     day: parts.day,
     hour12,
@@ -1914,6 +1940,300 @@ async function activateReservePublishMode(targets) {
   throw new Error(`[${RUNTIME_SOURCE}] Unable to activate reserve publish mode. ${attempts.slice(0, 4).join(' | ')}`)
 }
 
+async function setScheduleInputValue(locator, value) {
+  return locator.evaluate((element, nextValue) => {
+    element.focus?.()
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      element.removeAttribute?.('readonly')
+      element.select?.()
+      const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')
+      if (descriptor?.set) {
+        descriptor.set.call(element, '')
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, data: null, inputType: 'deleteContentBackward' }))
+        descriptor.set.call(element, nextValue)
+      } else {
+        element.value = ''
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, data: null, inputType: 'deleteContentBackward' }))
+        element.value = nextValue
+      }
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, data: nextValue, inputType: 'insertText' }))
+      element.dispatchEvent(new Event('change', { bubbles: true }))
+      element.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true }))
+      element.blur?.()
+      return element.value
+    }
+
+    return ''
+  }, value)
+}
+
+async function setScheduleSelectValue(locator, valueVariants) {
+  return locator.evaluate((element, variants) => {
+    if (!(element instanceof HTMLSelectElement)) {
+      return { matched: false, value: '', text: '' }
+    }
+
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const normalizeDigits = (value) => String(value || '').replace(/\D+/g, '')
+    const normalizedVariants = variants.map((value) => normalize(value))
+    const digitVariants = variants.map((value) => normalizeDigits(value)).filter(Boolean)
+    const option = Array.from(element.options).find((item) => {
+      const value = normalize(item.value)
+      const text = normalize(item.textContent)
+      const valueDigits = normalizeDigits(value)
+      const textDigits = normalizeDigits(text)
+      return normalizedVariants.includes(value) ||
+        normalizedVariants.includes(text) ||
+        digitVariants.includes(valueDigits) ||
+        digitVariants.includes(textDigits)
+    })
+
+    if (!option) {
+      return { matched: false, value: element.value, text: '' }
+    }
+
+    element.focus?.()
+    element.value = option.value
+    option.selected = true
+    element.dispatchEvent(new Event('input', { bubbles: true }))
+    element.dispatchEvent(new Event('change', { bubbles: true }))
+    element.blur?.()
+    return { matched: true, value: element.value, text: normalize(option.textContent) }
+  }, valueVariants.map((value) => String(value)))
+}
+
+async function clickScheduleCalendarDate(scope, schedule) {
+  const dateInput = scope.locator('input[class*="input_date"], input[readonly][type="text"]').first()
+  await dateInput.waitFor({ state: 'visible', timeout: 1500 })
+  await dateInput.scrollIntoViewIfNeeded({ timeout: 1500 }).catch(() => {})
+  await dateInput.click({ force: true, timeout: 1500 })
+  await sleep(500)
+
+  const candidateHandle = await scope.evaluateHandle((input) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const normalizeDigits = (value) => String(value || '').replace(/\D+/g, '')
+    const isVisible = (element, { requirePointerEvents = true } = {}) => {
+      if (!(element instanceof Element)) {
+        return false
+      }
+
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        (!requirePointerEvents || style.pointerEvents !== 'none') &&
+        rect.width > 0 &&
+        rect.height > 0
+    }
+    const scrollCalendarIntoView = (dateElement) => {
+      if (!(dateElement instanceof Element)) {
+        return
+      }
+
+      const rect = dateElement.getBoundingClientRect()
+      if (rect.bottom <= window.innerHeight - 12 && rect.top >= 0) {
+        return
+      }
+
+      const scrollableParents = []
+      let current = dateElement.parentElement
+      while (current instanceof HTMLElement) {
+        const style = window.getComputedStyle(current)
+        const canScroll = /(auto|scroll)/.test(`${style.overflow}${style.overflowY}`) && current.scrollHeight > current.clientHeight
+        if (canScroll) {
+          scrollableParents.push(current)
+        }
+        current = current.parentElement
+      }
+
+      const delta = rect.bottom - window.innerHeight + 24
+      const target = scrollableParents[0]
+      if (target) {
+        target.scrollTop += delta > 0 ? delta : -80
+      } else {
+        window.scrollBy(0, delta > 0 ? delta : -80)
+      }
+    }
+    const getContext = (element) => {
+      const parts = []
+      let current = element
+      for (let depth = 0; current instanceof HTMLElement && depth < 5; depth += 1) {
+        parts.push(
+          normalize([
+            current.className,
+            current.id,
+            current.getAttribute('aria-label'),
+            current.getAttribute('role'),
+            current.getAttribute('data-date'),
+            current.textContent,
+          ].join(' '))
+        )
+        current = current.parentElement
+      }
+      return normalize(parts.join(' '))
+    }
+    const findClickableDateElement = (element) => {
+      let current = element
+      for (let depth = 0; current instanceof HTMLElement && depth < 5; depth += 1) {
+        const tag = current.tagName.toLowerCase()
+        const role = normalize(current.getAttribute('role')).toLowerCase()
+        const label = normalize([
+          current.textContent,
+          current.getAttribute('aria-label'),
+          current.getAttribute('title'),
+          current.getAttribute('data-date'),
+          current.getAttribute('value'),
+        ].join(' '))
+        const exactDay = normalize(current.textContent) === expectedDay || normalize(current.textContent) === input.day
+        const hasFullDate = normalizeDigits(label) === expectedDigits
+        const clickableTag = ['button', 'a', 'td', 'li'].includes(tag)
+        const clickableRole = role === 'button' || role === 'option' || role === 'gridcell'
+        const hasClickAttr = current.hasAttribute?.('onclick') || current.hasAttribute?.('data-date')
+
+        if (
+          isVisible(current) &&
+          !current.hasAttribute?.('disabled') &&
+          current.getAttribute?.('aria-disabled') !== 'true' &&
+          (hasFullDate || (exactDay && (clickableTag || clickableRole || hasClickAttr)))
+        ) {
+          return current
+        }
+
+        current = current.parentElement
+      }
+
+      return element
+    }
+
+    const expectedDay = String(Number(input.day))
+    const expectedMonth = String(Number(input.month))
+    const expectedDigits = `${input.year}${input.month}${input.day}`
+    const dateInput =
+      document.querySelector('input[class*="input_date"]') ||
+      document.querySelector('input[readonly][type="text"]')
+    const dateRect = dateInput instanceof Element ? dateInput.getBoundingClientRect() : null
+    const clickableSelector = 'button, a, td, li, div, span, [role="button"], [role="option"], [aria-label], [data-date]'
+    const elements = Array.from(document.querySelectorAll(clickableSelector))
+      .filter((element) => element instanceof HTMLElement)
+      .filter((element) => isVisible(element, { requirePointerEvents: false }))
+      .filter((element) => {
+        const tag = element.tagName.toLowerCase()
+        const type = normalize(element.getAttribute('type')).toLowerCase()
+        return !(tag === 'input' || tag === 'textarea' || type === 'text')
+      })
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        const text = normalize(element.textContent)
+        const context = getContext(element)
+        const lowerContext = context.toLowerCase()
+        const label = normalize([
+          text,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.getAttribute('data-date'),
+          element.getAttribute('value'),
+          element.className,
+        ].join(' '))
+        const digits = normalizeDigits(label)
+        const lowerClass = normalize(element.className).toLowerCase()
+        const calendarish = lowerContext.includes('calendar') ||
+          lowerContext.includes('datepicker') ||
+          lowerContext.includes('date') ||
+          context.includes('\uB0A0\uC9DC') ||
+          context.includes('\uB2EC\uB825') ||
+          context.includes('\uC6D4') ||
+          /[일월화수목금토]/.test(context)
+        const nearDateInput = !dateRect || (
+          rect.top >= dateRect.top - 80 &&
+          rect.top <= dateRect.top + 680 &&
+          rect.left >= dateRect.left - 360 &&
+          rect.left <= dateRect.left + 520
+        )
+        const exactDayText = /^\d{1,2}$/.test(text) && Number(text) === Number(input.day)
+        let score = 0
+
+        if (digits === expectedDigits) score += 200
+        if (label.includes(input.year)) score += 25
+        if (label.includes(`${expectedMonth}\uC6D4`) || label.includes(`${input.month}\uC6D4`)) score += 35
+        if (text === expectedDay || text === input.day) score += 80
+        if (exactDayText) score += 90
+        if (digits.endsWith(input.month + input.day) || digits.endsWith(expectedMonth + input.day)) score += 35
+        if (calendarish) score += 40
+        if (nearDateInput) score += 20
+        if (!calendarish && digits !== expectedDigits && !exactDayText) score -= 120
+        if (!nearDateInput && digits !== expectedDigits) score -= 80
+        if (lowerClass.includes('calendar') || lowerClass.includes('datepicker') || lowerClass.includes('day')) score += 20
+        if (lowerClass.includes('disabled') || lowerClass.includes('outside') || lowerClass.includes('prev') || lowerClass.includes('next')) score -= 100
+        if (element.hasAttribute?.('disabled') || element.getAttribute?.('aria-disabled') === 'true') score -= 100
+
+        const clickTarget = findClickableDateElement(element)
+        const targetRect = clickTarget instanceof Element ? clickTarget.getBoundingClientRect() : rect
+        return { clickTarget, element, label, score, text, top: targetRect.top, left: targetRect.left }
+      })
+      .filter((candidate) => candidate.score >= 70)
+      .sort((left, right) => right.score - left.score || left.top - right.top || left.left - right.left)
+
+    const target = elements[0]
+    if (!target) {
+      return null
+    }
+
+    scrollCalendarIntoView(target.clickTarget || target.element)
+    return target.clickTarget || target.element
+  }, schedule)
+
+  const candidateElement = candidateHandle.asElement()
+  if (!candidateElement) {
+    await candidateHandle.dispose().catch(() => {})
+    const reason = await scope.evaluate(() => {
+      const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+      const isVisible = (element) => {
+        if (!(element instanceof Element)) return false
+        const style = window.getComputedStyle(element)
+        const rect = element.getBoundingClientRect()
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+      }
+      const clickableSelector = 'button, a, td, li, div, span, [role="button"], [role="option"], [aria-label], [data-date]'
+      const visibleNumericCandidates = Array.from(document.querySelectorAll(clickableSelector))
+        .filter((element) => element instanceof HTMLElement)
+        .filter(isVisible)
+        .map((element) => normalize([
+          element.textContent,
+          element.getAttribute('aria-label'),
+          element.getAttribute('title'),
+          element.className,
+        ].join(' ')))
+        .filter((label) => label && /\d/.test(label))
+        .slice(0, 8)
+      return `date candidate not found candidates=${visibleNumericCandidates.join(' | ')}`
+    }).catch(() => 'date candidate not found')
+    return { clicked: false, reason }
+  }
+
+  const info = await candidateElement.evaluate((element) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    return {
+      label: normalize([
+        element.textContent,
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('data-date'),
+        element.className,
+      ].join(' ')),
+      text: normalize(element.textContent),
+    }
+  }).catch(() => ({}))
+
+  await candidateElement.scrollIntoViewIfNeeded().catch(() => {})
+  await candidateElement.click({ force: true, timeout: 2000 })
+  await candidateHandle.dispose().catch(() => {})
+  return {
+    clicked: true,
+    label: info.label,
+    text: info.text,
+  }
+}
+
 async function fillScheduledPublishInputs(targets, schedule) {
   const attempts = []
 
@@ -1925,34 +2245,62 @@ async function fillScheduledPublishInputs(targets, schedule) {
         await reserveRadio.check({ force: true, timeout: 3000 })
       }
 
+      const dateInput = target.scope.locator('input[class*="input_date"], input[readonly][type="text"]').first()
       const hourSelect = target.scope.locator('select[class*="hour"], select[title*="\uC2DC\uAC04"]').first()
       const minuteSelect = target.scope.locator('select[class*="minute"], select[title*="\uBD84"]').first()
+      await dateInput.waitFor({ state: 'visible', timeout: 1500 })
       await hourSelect.waitFor({ state: 'visible', timeout: 1500 })
       await minuteSelect.waitFor({ state: 'visible', timeout: 1500 })
-      await hourSelect.selectOption(schedule.hour24)
-      await minuteSelect.selectOption(schedule.minute)
-      const selectedHour = await hourSelect.inputValue()
-      const selectedMinute = await minuteSelect.inputValue()
-      await hourSelect.evaluate((element) => element.blur?.())
-      await minuteSelect.evaluate((element) => element.blur?.())
-
-      const dateInput = target.scope.locator('input[class*="input_date"], input[readonly][type="text"]').first()
+      const hourResult = await setScheduleSelectValue(hourSelect, [schedule.hour24, Number(schedule.hour24), `${Number(schedule.hour24)}\uC2DC`, `${schedule.hour24}\uC2DC`])
+      const minuteResult = await setScheduleSelectValue(minuteSelect, [schedule.minute, Number(schedule.minute), `${Number(schedule.minute)}\uBD84`, `${schedule.minute}\uBD84`])
+      if (!hourResult.matched || !minuteResult.matched) {
+        attempts.push(`${target.label}: locator option mismatch (hourMatched=${hourResult.matched} minuteMatched=${minuteResult.matched})`)
+        throw new Error('schedule select option was not found')
+      }
+      const selectedHour = normalizeTwoDigitValue(await hourSelect.inputValue())
+      const selectedMinute = normalizeTwoDigitValue(await minuteSelect.inputValue())
       let dateValue = null
       try {
-        await dateInput.waitFor({ state: 'visible', timeout: 1000 })
         dateValue = await dateInput.inputValue()
       } catch {}
 
-      const normalizedDate = normalizeDateDigits(dateValue)
+      let normalizedDate = normalizeDateDigits(dateValue)
       const expectedDate = normalizeDateDigits(schedule.dateValue)
-      if ((!normalizedDate || normalizedDate === expectedDate) && selectedHour === schedule.hour24 && selectedMinute === schedule.minute) {
+      const expectedHour = normalizeTwoDigitValue(schedule.hour24)
+      const expectedMinute = normalizeTwoDigitValue(schedule.minute)
+
+      if (normalizedDate !== expectedDate) {
+        const calendarResult = await clickScheduleCalendarDate(target.scope, schedule)
+        await sleep(300)
+        dateValue = null
+        try {
+          dateValue = await dateInput.inputValue()
+        } catch {}
+        const calendarDate = normalizeDateDigits(dateValue)
+        if (calendarResult?.clicked && calendarDate === expectedDate) {
+          normalizedDate = calendarDate
+          console.log(
+            `[Naver Upload] Filled schedule date via calendar ${target.label} -> date="${dateValue || ''}" match="${calendarResult.label || calendarResult.text || ''}"`
+          )
+        } else {
+          attempts.push(`${target.label}: calendar date mismatch (clicked=${Boolean(calendarResult?.clicked)} date=${dateValue || ''} expectedDate=${expectedDate} match=${calendarResult?.label || calendarResult?.reason || ''})`)
+          await setScheduleInputValue(dateInput, schedule.dateDisplayValue || schedule.dateValue)
+          await sleep(150)
+          try {
+            dateValue = await dateInput.inputValue()
+          } catch {}
+          normalizedDate = normalizeDateDigits(dateValue)
+        }
+      }
+
+      if (normalizedDate === expectedDate && selectedHour === expectedHour && selectedMinute === expectedMinute) {
         console.log(
           `[Naver Upload] Filled schedule inputs via ${target.label} -> locator hour=${selectedHour} minute=${selectedMinute} date="${dateValue || ''}"`
         )
         return
       }
 
-      attempts.push(`${target.label}: locator value mismatch (date=${dateValue || ''} hour=${selectedHour} minute=${selectedMinute})`)
+      attempts.push(`${target.label}: locator value mismatch (date=${dateValue || ''} hour=${selectedHour} minute=${selectedMinute} expectedDate=${expectedDate} expectedHour=${expectedHour} expectedMinute=${expectedMinute})`)
     } catch (error) {
       attempts.push(`${target.label}: locator schedule fill failed (${error.message})`)
     }
@@ -1960,6 +2308,11 @@ async function fillScheduledPublishInputs(targets, schedule) {
     try {
       const result = await target.scope.evaluate((input) => {
         const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+        const normalizeDateDigits = (value) => String(value || '').replace(/\D+/g, '')
+        const normalizeTwoDigit = (value) => {
+          const digits = String(value || '').replace(/\D+/g, '')
+          return digits ? digits.padStart(2, '0').slice(-2) : ''
+        }
         const isVisible = (element) => {
           if (!(element instanceof Element)) {
             return false
@@ -1973,6 +2326,17 @@ async function fillScheduledPublishInputs(targets, schedule) {
         const inputEvent = () => new Event('input', { bubbles: true })
         const changeEvent = () => new Event('change', { bubbles: true })
         const clicks = []
+        const getValue = (element) => {
+          if (!element) {
+            return ''
+          }
+
+          if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+            return normalize(element.value)
+          }
+
+          return normalize(element.textContent || element.getAttribute?.('aria-label') || element.getAttribute?.('value'))
+        }
 
         const visibleElements = Array.from(document.querySelectorAll('body *'))
           .filter((element) => element instanceof HTMLElement)
@@ -2051,10 +2415,112 @@ async function fillScheduledPublishInputs(targets, schedule) {
           }
 
           candidate.focus()
-          candidate.value = value
+          candidate.removeAttribute?.('readonly')
+          const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(candidate), 'value')
+          if (descriptor?.set) {
+            descriptor.set.call(candidate, value)
+          } else {
+            candidate.value = value
+          }
           candidate.dispatchEvent(inputEvent())
           candidate.dispatchEvent(changeEvent())
+          candidate.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true }))
+          candidate.blur?.()
           return true
+        }
+
+        const findDateInput = () => Array.from(panelRoot.querySelectorAll('input, textarea'))
+          .filter((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+          .filter(isVisible)
+          .find((element) => {
+            const meta = normalize([
+              element.type,
+              element.name,
+              element.id,
+              element.className,
+              element.placeholder,
+              element.getAttribute('aria-label'),
+              element.getAttribute('data-placeholder'),
+              element.getAttribute('title'),
+            ].join(' '))
+            const lowered = lower(meta)
+            return lowered.includes('date') || lowered.includes('calendar') || meta.includes('\uB0A0\uC9DC')
+          }) || null
+
+        const clickElement = (element) => {
+          element.scrollIntoView?.({ block: 'center', inline: 'center' })
+          element.focus?.()
+          element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+          element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+          element.click?.()
+          element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+        }
+
+        const clickCalendarDate = () => {
+          const dateInput = findDateInput()
+          if (!dateInput) {
+            return false
+          }
+
+          clickElement(dateInput)
+
+          const expectedDay = String(Number(input.day))
+          const expectedMonth = String(Number(input.month))
+          const expectedDigits = `${input.year}${input.month}${input.day}`
+          const roots = Array.from(document.querySelectorAll('body *'))
+            .filter((element) => element instanceof HTMLElement)
+            .filter(isVisible)
+            .filter((element) => {
+              const text = normalize(element.textContent)
+              return text.includes(expectedDay) &&
+                (
+                  text.includes(input.year) ||
+                  text.includes(`${expectedMonth}\uC6D4`) ||
+                  text.includes(`${input.month}\uC6D4`) ||
+                  lower(normalize(element.className)).includes('calendar') ||
+                  lower(normalize(element.className)).includes('datepicker')
+                )
+            })
+            .sort((left, right) => {
+              const leftRect = left.getBoundingClientRect()
+              const rightRect = right.getBoundingClientRect()
+              return (leftRect.width * leftRect.height) - (rightRect.width * rightRect.height)
+            })
+
+          for (const root of roots) {
+            const candidates = Array.from(root.querySelectorAll('button, a, td, [role="button"], [role="option"]'))
+              .filter((element) => element instanceof HTMLElement)
+              .filter(isVisible)
+              .filter((element) => !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true')
+              .map((element) => {
+                const text = normalize(element.textContent)
+                const label = normalize([
+                  text,
+                  element.getAttribute('aria-label'),
+                  element.getAttribute('title'),
+                  element.getAttribute('data-date'),
+                  element.getAttribute('value'),
+                ].join(' '))
+                const digits = label.replace(/\D+/g, '')
+                let score = 0
+                if (text === expectedDay || text === input.day) score += 60
+                if (digits === expectedDigits) score += 120
+                if (digits.endsWith(input.month + input.day) || digits.endsWith(expectedMonth + input.day)) score += 25
+                if (label.includes(input.year)) score += 20
+                if (label.includes(`${expectedMonth}\uC6D4`) || label.includes(`${input.month}\uC6D4`)) score += 20
+                return { element, label, score, text }
+              })
+              .filter((candidate) => candidate.score > 0)
+              .sort((left, right) => right.score - left.score)
+
+            if (candidates[0]) {
+              clickElement(candidates[0].element)
+              clicks.push(`calendar:${candidates[0].label || candidates[0].text}`)
+              return true
+            }
+          }
+
+          return false
         }
 
         const setSelectValue = (matcher, valueVariants) => {
@@ -2073,9 +2539,16 @@ async function fillScheduledPublishInputs(targets, schedule) {
           }
 
           const variants = valueVariants.map((value) => String(value))
+          const digitVariants = variants.map((value) => value.replace(/\D+/g, '')).filter(Boolean)
           const option = Array.from(candidate.options).find((item) => {
             const text = normalize(item.textContent)
-            return variants.includes(item.value) || variants.includes(text)
+            const value = normalize(item.value)
+            const valueDigits = value.replace(/\D+/g, '')
+            const textDigits = text.replace(/\D+/g, '')
+            return variants.includes(value) ||
+              variants.includes(text) ||
+              digitVariants.includes(valueDigits) ||
+              digitVariants.includes(textDigits)
           })
 
           if (!option) {
@@ -2083,8 +2556,10 @@ async function fillScheduledPublishInputs(targets, schedule) {
           }
 
           candidate.value = option.value
+          option.selected = true
           candidate.dispatchEvent(inputEvent())
           candidate.dispatchEvent(changeEvent())
+          candidate.blur?.()
           return true
         }
 
@@ -2092,9 +2567,19 @@ async function fillScheduledPublishInputs(targets, schedule) {
 
         clickMatch([input.reserveText])
 
-        const filledDate =
-          setInputValue((meta) => lower(meta).includes('date') || lower(meta).includes('calendar') || meta.includes('\uB0A0\uC9DC'), input.dateValue) ||
-          setInputValue((meta) => lower(meta).includes('year') || meta.includes('\uB144') || meta.includes('\uC6D4') || meta.includes('\uC77C'), input.dateValue)
+        const desiredDateValue = input.dateDisplayValue || input.dateValue
+        let filledDate =
+          setInputValue((meta) => lower(meta).includes('date') || lower(meta).includes('calendar') || meta.includes('\uB0A0\uC9DC'), desiredDateValue) ||
+          setInputValue((meta) => lower(meta).includes('year') || meta.includes('\uB144') || meta.includes('\uC6D4') || meta.includes('\uC77C'), desiredDateValue)
+
+        const dateInputAfterTyping =
+          panelRoot.querySelector('input[class*="input_date"]') ||
+          panelRoot.querySelector('input[readonly][type="text"]')
+        const typedDateValue = getValue(dateInputAfterTyping)
+        const expectedDate = normalizeDateDigits(input.dateValue)
+        if (normalizeDateDigits(typedDateValue) !== expectedDate) {
+          filledDate = clickCalendarDate() || filledDate
+        }
 
         const filledTime =
           setInputValue((meta) => lower(meta).includes('time') || meta.includes('\uC2DC\uAC04'), `${input.hour24}:${input.minute}`) ||
@@ -2105,15 +2590,44 @@ async function fillScheduledPublishInputs(targets, schedule) {
           setSelectValue((meta) => lower(meta).includes('year') || meta.includes('\uB144'), [input.year]),
           setSelectValue((meta) => lower(meta).includes('month') || meta.includes('\uC6D4'), [Number(input.month), input.month]),
           setSelectValue((meta) => lower(meta).includes('day') || meta.includes('\uC77C'), [Number(input.day), input.day]),
-          setSelectValue((meta) => lower(meta).includes('hour') || meta.includes('\uC2DC'), [Number(input.hour24), input.hour24]),
-          setSelectValue((meta) => lower(meta).includes('minute') || meta.includes('\uBD84'), [Number(input.minute), input.minute]),
+          setSelectValue((meta) => lower(meta).includes('hour') || meta.includes('\uC2DC'), [Number(input.hour24), input.hour24, `${Number(input.hour24)}\uC2DC`, `${input.hour24}\uC2DC`]),
+          setSelectValue((meta) => lower(meta).includes('minute') || meta.includes('\uBD84'), [Number(input.minute), input.minute, `${Number(input.minute)}\uBD84`, `${input.minute}\uBD84`]),
         ].filter(Boolean).length
 
         if (!filledDate && !filledTime && selectResults === 0) {
           return { error: 'schedule inputs not found' }
         }
 
-        return { clicks, filledDate, filledTime, selectResults }
+        const dateInput =
+          panelRoot.querySelector('input[class*="input_date"]') ||
+          panelRoot.querySelector('input[readonly][type="text"]')
+        const hourSelect =
+          panelRoot.querySelector('select[class*="hour"]') ||
+          panelRoot.querySelector('select[title*="\uC2DC\uAC04"]')
+        const minuteSelect =
+          panelRoot.querySelector('select[class*="minute"]') ||
+          panelRoot.querySelector('select[title*="\uBD84"]')
+
+        const dateValue = getValue(dateInput)
+        const hourValue = getValue(hourSelect)
+        const minuteValue = getValue(minuteSelect)
+        const actualDate = normalizeDateDigits(dateValue)
+        const actualHour = normalizeTwoDigit(hourValue)
+        const actualMinute = normalizeTwoDigit(minuteValue)
+        const expectedHour = normalizeTwoDigit(input.hour24)
+        const expectedMinute = normalizeTwoDigit(input.minute)
+
+        if (actualDate !== expectedDate || actualHour !== expectedHour || actualMinute !== expectedMinute) {
+          return {
+            error: `schedule value mismatch (date=${dateValue || ''} hour=${hourValue || ''} minute=${minuteValue || ''} expectedDate=${expectedDate} expectedHour=${expectedHour} expectedMinute=${expectedMinute})`,
+            clicks,
+            filledDate,
+            filledTime,
+            selectResults,
+          }
+        }
+
+        return { clicks, filledDate, filledTime, selectResults, dateValue, hourValue, minuteValue }
       }, {
         ...schedule,
         categoryText: CATEGORY_TEXT,
@@ -2252,8 +2766,8 @@ async function configureScheduledPublish(page, targets, scheduledAt) {
 
   let lastScheduleState = null
   const expectedDate = normalizeDateDigits(schedule.dateValue)
-  const expectedHour = schedule.hour24
-  const expectedMinute = schedule.minute
+  const expectedHour = normalizeTwoDigitValue(schedule.hour24)
+  const expectedMinute = normalizeTwoDigitValue(schedule.minute)
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await dismissEditorPopups(page, scheduleTargets)
@@ -2272,11 +2786,9 @@ async function configureScheduledPublish(page, targets, scheduledAt) {
       return schedule
     }
 
-    const actualDate = normalizeDateDigits(lastScheduleState?.dateValue)
-    const actualHour = normalizeTwoDigitValue(lastScheduleState?.hourValue)
-    const actualMinute = normalizeTwoDigitValue(lastScheduleState?.minuteValue)
+    const comparison = getScheduleComparison(lastScheduleState, schedule)
     console.warn(
-      `[Naver Upload] Scheduled publish confirmation retry ${attempt}/3 failed. reserveModeActive=${lastScheduleState?.reserveModeActive} scheduleReady=${lastScheduleState?.scheduleReady} date="${lastScheduleState?.dateValue}" hour="${lastScheduleState?.hourValue}" minute="${lastScheduleState?.minuteValue}" expectedDate="${expectedDate}" expectedHour="${expectedHour}" expectedMinute="${expectedMinute}" actualDate="${actualDate}" actualHour="${actualHour}" actualMinute="${actualMinute}" validationError="${lastScheduleState?.validationError || ''}"`
+      `[Naver Upload] Scheduled publish confirmation retry ${attempt}/3 failed. reserveModeActive=${lastScheduleState?.reserveModeActive} scheduleReady=${lastScheduleState?.scheduleReady} date="${lastScheduleState?.dateValue}" hour="${lastScheduleState?.hourValue}" minute="${lastScheduleState?.minuteValue}" expectedDate="${expectedDate}" expectedHour="${expectedHour}" expectedMinute="${expectedMinute}" actualDate="${comparison.actualDate}" actualHour="${comparison.actualHour}" actualMinute="${comparison.actualMinute}" validationError="${lastScheduleState?.validationError || ''}"`
     )
     await sleep(400)
   }
@@ -2403,6 +2915,12 @@ async function clickMainFramePublishButton(page, which = 'first', { scheduledAt 
           const lower = label.toLowerCase()
           const clickArea = normalize(element.getAttribute?.('data-click-area')).toLowerCase()
           const isToolbarPublish = clickArea === 'tpb.publish'
+          const isReserveCandidate =
+            label.includes(reserveText) ||
+            lower.includes('reserve') ||
+            lower.includes('schedule') ||
+            clickArea.includes('reserve') ||
+            clickArea.includes('schedule')
           const isToolbarScheduleToggle =
             clickArea === 'tpb*t.schedule' ||
             clickArea === 'schedulecl' ||
@@ -2420,9 +2938,10 @@ async function clickMainFramePublishButton(page, which = 'first', { scheduledAt 
           const classScore = lower.includes('confirm') ? 25 : 0
           const score = bottomScore + rightScore + textScore + reserveScore + classScore + rect.left / 1000 + rect.top / 1000
 
-          return { clickArea, element, isToolbarPublish, isToolbarScheduleToggle, label, rect, score, looksFinal }
+          return { clickArea, element, isReserveCandidate, isToolbarPublish, isToolbarScheduleToggle, label, rect, score, looksFinal }
         })
         .filter((candidate) => candidate.looksFinal)
+        .filter((candidate) => scheduledMode || !candidate.isReserveCandidate)
         .filter((candidate) => !candidate.isToolbarPublish && !candidate.isToolbarScheduleToggle)
         .sort((left, right) => right.score - left.score)
 
@@ -2577,6 +3096,135 @@ async function clickScheduledPublishConfirmation(page) {
     )
   }
 
+  return result
+}
+
+async function clickScheduledFinalPublishButton(page) {
+  const mainFrame = page.frame({ name: 'mainFrame' }) || page.frames().find((frame) => /mainFrame/i.test(frame.name()))
+  if (!mainFrame) {
+    throw new Error(`[${RUNTIME_SOURCE}] mainFrame was not found for scheduled final publish click.`)
+  }
+
+  const result = await mainFrame.evaluate(({ categoryText, publishText, reserveText, scheduleText, visibilityText }) => {
+    const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const style = window.getComputedStyle(element)
+      const rect = element.getBoundingClientRect()
+      return style.display !== 'none' &&
+        style.visibility !== 'hidden' &&
+        style.pointerEvents !== 'none' &&
+        rect.width > 0 &&
+        rect.height > 0
+    }
+    const isEnabled = (element) => !element.hasAttribute?.('disabled') && element.getAttribute?.('aria-disabled') !== 'true'
+    const getLabel = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('value'),
+      element.getAttribute?.('data-click-area'),
+      element.className,
+    ].filter(Boolean).join(' '))
+
+    const roots = Array.from(document.querySelectorAll([
+      '[data-group="popupLayer"]',
+      '[role="dialog"]',
+      '[class*="popup"]',
+      '[class*="Popup"]',
+      '[class*="layer"]',
+      '[class*="Layer"]',
+      'body *',
+    ].join(',')))
+      .filter((element) => element instanceof HTMLElement)
+      .filter(isVisible)
+      .filter((element) => {
+        const text = normalize(element.textContent)
+        return text.includes(categoryText) && text.includes(visibilityText) && text.includes(scheduleText)
+      })
+      .sort((left, right) => {
+        const leftRect = left.getBoundingClientRect()
+        const rightRect = right.getBoundingClientRect()
+        return (rightRect.width * rightRect.height) - (leftRect.width * leftRect.height)
+      })
+
+    const root = roots[0] || document
+    const rootRect = root instanceof Element
+      ? root.getBoundingClientRect()
+      : { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight }
+
+    const candidates = Array.from(root.querySelectorAll('button, [role="button"], a, input[type="button"], input[type="submit"], [data-click-area]'))
+      .filter((element) => element instanceof HTMLElement)
+      .filter(isVisible)
+      .filter(isEnabled)
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        const label = getLabel(element)
+        const lower = label.toLowerCase()
+        const clickArea = normalize(element.getAttribute?.('data-click-area')).toLowerCase()
+        const className = normalize(element.className).toLowerCase()
+        const isToolbarPublish = clickArea === 'tpb.publish'
+        const isScheduleToggle =
+          clickArea === 'tpb*t.schedule' ||
+          clickArea === 'tpb*i.schedule' ||
+          clickArea === 'schedulecl' ||
+          clickArea.includes('schedulecl')
+        const hasFinalText =
+          label.includes(publishText) ||
+          label.includes(reserveText) ||
+          lower.includes('publish') ||
+          lower.includes('confirm') ||
+          lower.includes('submit')
+
+        let score = 0
+        if (label.includes(publishText)) score += 70
+        if (label.includes(reserveText)) score += 55
+        if (lower.includes('confirm') || lower.includes('submit')) score += 40
+        if (clickArea.includes('publish') || clickArea.includes('confirm') || clickArea.includes('reserve')) score += 25
+        if (className.includes('confirm') || className.includes('publish') || className.includes('reserve')) score += 20
+        if (rect.top >= rootRect.top + rootRect.height * 0.55) score += 35
+        if (rect.left >= rootRect.left + rootRect.width * 0.45) score += 25
+        score += rect.left / 1000 + rect.top / 1000
+
+        return { clickArea, element, hasFinalText, isScheduleToggle, isToolbarPublish, label, rect, score }
+      })
+      .filter((candidate) => candidate.hasFinalText)
+      .filter((candidate) => !candidate.isToolbarPublish && !candidate.isScheduleToggle)
+      .sort((left, right) => right.score - left.score)
+
+    const target = candidates[0]
+    if (!target) {
+      return null
+    }
+
+    target.element.scrollIntoView?.({ block: 'center', inline: 'center' })
+    target.element.focus()
+    target.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+    target.element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+    target.element.click()
+    target.element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+
+    return {
+      clickArea: target.clickArea,
+      label: target.label,
+      score: Math.round(target.score),
+      top: Math.round(target.rect.top),
+    }
+  }, {
+    categoryText: CATEGORY_TEXT,
+    publishText: PUBLISH_TEXT,
+    reserveText: RESERVE_TEXT,
+    scheduleText: SCHEDULE_TEXT,
+    visibilityText: VISIBILITY_TEXT,
+  })
+
+  if (!result) {
+    throw new Error(`[${RUNTIME_SOURCE}] Scheduled final publish button was not found inside publish dialog.`)
+  }
+
+  console.log(
+    `[Naver Upload] Clicked scheduled final publish button top=${result.top} score=${result.score} area="${result.clickArea}" label="${String(result.label || '').slice(0, 120)}"`
+  )
   return result
 }
 
@@ -3382,7 +4030,9 @@ async function clickFinalPublishButton(page, targets, { scheduledAt = null } = {
   let lastConfirmClick = null
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    lastFinalClick = await clickMainFramePublishButton(page, 'last', { scheduledAt })
+    lastFinalClick = scheduledAt
+      ? await clickScheduledFinalPublishButton(page)
+      : await clickMainFramePublishButton(page, 'last', { scheduledAt })
     if (scheduledAt) {
       await sleep(700)
       lastConfirmClick = await clickScheduledPublishConfirmation(page)
@@ -3777,6 +4427,7 @@ module.exports = {
     clickPublishButton,
     clickFinalPublishButton,
     clickPublishButtonByDom,
+    clickScheduledFinalPublishButton,
     configureScheduledPublish,
     fillTags,
     findScheduledPostUrl,

@@ -1,5 +1,6 @@
 ﻿import 'dotenv/config'
 import express from 'express'
+import dotenv from 'dotenv'
 import cors from 'cors'
 import fs from 'fs'
 import path from 'path'
@@ -10,6 +11,9 @@ import crypto from 'crypto'
 import { publishInstagramMediaWithRetry } from './services/instagram-publish.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+dotenv.config({ path: path.join(__dirname, '.env.local') })
+
 const require = createRequire(import.meta.url)
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path
 const sharp = require('sharp')
@@ -32,6 +36,10 @@ registerOptionalFont('Maplestory-Bold.ttf', 'Maplestory')
 registerOptionalFont('TmoneyRoundWind-Regular.woff', 'TmoneyRoundWind')
 registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
 registerOptionalFont('A2z-Bold.woff2', 'A2z')
+
+function getLlamaParseApiKey() {
+  return process.env.LLAMAPARSE_API_KEY || process.env.VITE_LLAMAPARSE_API_KEY
+}
 
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
 const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -80,7 +88,7 @@ app.post('/api/llamaparse/upload', (req, res) => {
   req.on('data', chunk => chunks.push(chunk))
   req.on('end', async () => {
     try {
-      const apiKey = process.env.LLAMAPARSE_API_KEY
+      const apiKey = getLlamaParseApiKey()
       if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
       const body = Buffer.concat(chunks)
       const response = await fetch('https://api.cloud.llamaindex.ai/api/v1/parsing/upload', {
@@ -103,7 +111,7 @@ app.post('/api/llamaparse/upload', (req, res) => {
 // LlamaParse Proxy - Job Status
 app.get('/api/llamaparse/job/:jobId', async (req, res) => {
   try {
-    const apiKey = process.env.LLAMAPARSE_API_KEY
+    const apiKey = getLlamaParseApiKey()
     if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
     const response = await fetch(`https://api.cloud.llamaindex.ai/api/v1/parsing/job/${req.params.jobId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -119,7 +127,7 @@ app.get('/api/llamaparse/job/:jobId', async (req, res) => {
 // LlamaParse Proxy - Job Result
 app.get('/api/llamaparse/job/:jobId/result/markdown', async (req, res) => {
   try {
-    const apiKey = process.env.LLAMAPARSE_API_KEY
+    const apiKey = getLlamaParseApiKey()
     if (!apiKey) return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
     const response = await fetch(`https://api.cloud.llamaindex.ai/api/v1/parsing/job/${req.params.jobId}/result/markdown`, {
       headers: { Authorization: `Bearer ${apiKey}` },

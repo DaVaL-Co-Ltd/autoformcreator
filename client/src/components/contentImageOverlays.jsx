@@ -207,8 +207,11 @@ export function InstagramImageArtwork({
             <div className={`inline-flex items-center rounded-full bg-primary/10 text-primary-dark ${isThumb ? 'px-2 py-0.5 mb-2 text-[9px] font-bold' : 'px-3 py-1 mb-4 text-xs font-extrabold tracking-[0.18em]'}`}>
               CARD {cardNumber}
             </div>
-            <p className={`${isThumb ? 'text-[9px]' : 'text-[clamp(16px,2.2vw,24px)]'} font-black text-gray-800 leading-tight`}>
-              {cardTitle}
+            <p
+              className={`${isThumb ? 'text-[9px]' : 'text-[clamp(16px,2.2vw,24px)]'} font-black text-gray-800 leading-tight`}
+              style={IMAGE_TEXT_WRAP_STYLE}
+            >
+              {renderBalancedLines(cardTitle, isThumb ? 14 : 18)}
             </p>
             {visibleDescriptions.length > 0 && (
               <div className={`${isThumb ? 'mt-1.5 space-y-1' : 'mt-3 space-y-1.5'}`}>
@@ -216,8 +219,9 @@ export function InstagramImageArtwork({
                   <p
                     key={`${line}-${index}`}
                     className={`${isThumb ? 'text-[6px]' : 'text-[clamp(10px,1.2vw,13px)]'} font-semibold text-gray-600 leading-tight`}
+                    style={IMAGE_TEXT_WRAP_STYLE}
                   >
-                    {line}
+                    {renderBalancedLines(line, isThumb ? 18 : 22)}
                   </p>
                 ))}
               </div>
@@ -235,8 +239,11 @@ export function InstagramImageArtwork({
             </div>
           )}
           <div className={`${isThumb ? 'rounded-lg px-2.5 py-2' : 'rounded-[24px] px-[5.5%] py-[5.2%]'} bg-white/88 shadow-sm`}>
-            <p className={`${isThumb ? 'text-[8px]' : 'text-[clamp(15px,2vw,22px)]'} font-black text-gray-800 leading-tight`}>
-              {cardTitle}
+            <p
+              className={`${isThumb ? 'text-[8px]' : 'text-[clamp(15px,2vw,22px)]'} font-black text-gray-800 leading-tight`}
+              style={IMAGE_TEXT_WRAP_STYLE}
+            >
+              {renderBalancedLines(cardTitle, isThumb ? 14 : 18)}
             </p>
             {visibleDescriptions.length > 0 && (
               <div className={`${isThumb ? 'mt-1 space-y-1' : 'mt-2 space-y-1.5'}`}>
@@ -244,8 +251,9 @@ export function InstagramImageArtwork({
                   <p
                     key={`${line}-${index}`}
                     className={`${isThumb ? 'text-[6px]' : 'text-[clamp(10px,1.1vw,12px)]'} font-semibold text-gray-600 leading-tight`}
+                    style={IMAGE_TEXT_WRAP_STYLE}
                   >
-                    {line}
+                    {renderBalancedLines(line, isThumb ? 18 : 22)}
                   </p>
                 ))}
               </div>

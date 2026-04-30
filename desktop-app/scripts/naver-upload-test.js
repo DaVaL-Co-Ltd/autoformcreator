@@ -126,6 +126,7 @@ function testNormalizeScheduledPublishAtPreservesRequestedSchedule() {
     const schedule = __private.normalizeScheduledPublishAt('2026-04-22T02:10:00.000Z')
     assert.equal(schedule.adjusted, false)
     assert.equal(schedule.iso, '2026-04-22T02:10:00.000Z')
+    assert.equal(schedule.dateDisplayValue, '2026. 04. 22')
     assert.equal(schedule.hour24, '11')
     assert.equal(schedule.minute, '10')
   } finally {
@@ -211,6 +212,23 @@ function testScheduledPublishStateConfirmationAcceptsReadyBanner() {
       schedule
     ),
     true
+  )
+
+  assert.equal(
+    __private.isScheduledPublishStateConfirmed(
+      {
+        panelVisible: true,
+        reserveModeActive: true,
+        reservedTime: null,
+        dateValue: '2026. 04. 22',
+        hourValue: '22',
+        minuteValue: '30',
+        scheduleReady: true,
+        validationError: null,
+      },
+      schedule
+    ),
+    false
   )
 }
 
@@ -492,6 +510,100 @@ async function testClickPhotoButtonByDomPrefersToolbarPhotoButton() {
   delete global.MouseEvent
 }
 
+async function testClickScheduledFinalPublishButtonPrefersDialogBottomButton() {
+  const clicked = []
+
+  class FakeElement {}
+  class FakeHTMLElement extends FakeElement {}
+  class FakeHTMLButtonElement extends FakeHTMLElement {}
+  class FakeMouseEvent {
+    constructor() {}
+  }
+
+  global.Element = FakeElement
+  global.HTMLElement = FakeHTMLElement
+  global.HTMLButtonElement = FakeHTMLButtonElement
+  global.MouseEvent = FakeMouseEvent
+
+  const makeButton = ({ text, className, clickArea, rect, key }) => Object.assign(new FakeHTMLButtonElement(), {
+    tagName: 'BUTTON',
+    textContent: text,
+    className,
+    getAttribute: (name) => {
+      if (name === 'class') return className
+      if (name === 'data-click-area') return clickArea
+      return ''
+    },
+    hasAttribute: () => false,
+    getBoundingClientRect: () => rect,
+    scrollIntoView: () => clicked.push(`${key}-scroll`),
+    focus: () => clicked.push(`${key}-focus`),
+    click: () => clicked.push(`${key}-click`),
+    dispatchEvent: () => clicked.push(`${key}-dispatch`),
+  })
+
+  const scheduleToggle = makeButton({
+    key: 'toggle',
+    text: '\uC608\uC57D',
+    className: 'schedule_toggle',
+    clickArea: 'tpb*i.schedule',
+    rect: { top: 180, left: 820, width: 80, height: 32 },
+  })
+  const finalButton = makeButton({
+    key: 'final',
+    text: '\uC608\uC57D \uBC1C\uD589',
+    className: 'reserve_btn confirm_btn',
+    clickArea: 'publish.reserve',
+    rect: { top: 610, left: 1120, width: 120, height: 42 },
+  })
+  const cancelButton = makeButton({
+    key: 'cancel',
+    text: '\uCDE8\uC18C',
+    className: 'cancel_btn',
+    clickArea: 'cancel',
+    rect: { top: 610, left: 980, width: 90, height: 42 },
+  })
+
+  const dialogRoot = Object.assign(new FakeHTMLElement(), {
+    tagName: 'DIV',
+    textContent: '\uCE74\uD14C\uACE0\uB9AC \uACF5\uAC1C \uBC1C\uD589 \uC2DC\uAC04 \uC608\uC57D \uBC1C\uD589',
+    getBoundingClientRect: () => ({ top: 100, left: 760, width: 560, height: 560 }),
+    querySelectorAll: () => [scheduleToggle, cancelButton, finalButton],
+  })
+
+  const mainFrame = {
+    name: () => 'mainFrame',
+    evaluate: async (fn, args) => {
+      global.document = {
+        querySelectorAll: () => [dialogRoot],
+      }
+      global.window = {
+        innerWidth: 1360,
+        innerHeight: 860,
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible', pointerEvents: 'auto' }),
+      }
+      return fn.call(null, args)
+    },
+  }
+  const page = {
+    frame: ({ name }) => name === 'mainFrame' ? mainFrame : null,
+    frames: () => [mainFrame],
+  }
+
+  const result = await __private.clickScheduledFinalPublishButton(page)
+
+  assert.match(result.label, /\uC608\uC57D \uBC1C\uD589/)
+  assert.equal(result.clickArea, 'publish.reserve')
+  assert.deepEqual(clicked, ['final-scroll', 'final-focus', 'final-dispatch', 'final-dispatch', 'final-click', 'final-dispatch'])
+
+  delete global.document
+  delete global.window
+  delete global.Element
+  delete global.HTMLElement
+  delete global.HTMLButtonElement
+  delete global.MouseEvent
+}
+
 async function main() {
   await testPopupRecoveryRetriesInterceptedClicks()
   await testPopupRecoveryDoesNotRetryOtherErrors()
@@ -508,6 +620,7 @@ async function main() {
   await testClickPublishButtonByDomPrefersPanelConfirmButton()
   await testActivateReservePublishModeByDomSkipsHeaderScheduleButton()
   await testClickPhotoButtonByDomPrefersToolbarPhotoButton()
+  await testClickScheduledFinalPublishButtonPrefersDialogBottomButton()
   console.log('naver-upload tests passed')
 }
 
