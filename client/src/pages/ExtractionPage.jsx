@@ -1,5 +1,6 @@
 ﻿import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
@@ -310,6 +311,47 @@ const normalizeInstagramCardStyle = (value) => {
 const getGeneratedImageUrl = (image) => {
   if (typeof image === 'string') return image
   return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
+}
+
+function ImagePreviewModal({ previewImage, onClose }) {
+  if (!previewImage || typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        {previewImage.renderType === 'blog-card' ? (
+          <BlogImageArtwork
+            src={previewImage.src}
+            alt={previewImage.title}
+            variant={previewImage.variant}
+            headline={previewImage.headline}
+            description={previewImage.description}
+            accentColor={previewImage.accentColor}
+            mode="modal"
+            containerClassName="w-[min(78vw,640px,82vh)] rounded-[28px] shadow-2xl"
+          />
+        ) : previewImage.renderType === 'instagram-card' ? (
+          <InstagramImageArtwork
+            imageUrl={previewImage.src}
+            alt={previewImage.title}
+            cardNumber={previewImage.cardNumber}
+            cardTitle={previewImage.headline}
+            descriptionLines={previewImage.descriptionLines}
+            cardStyle={previewImage.cardStyle}
+            mode="modal"
+            containerClassName="w-[min(78vw,640px,82vh)] rounded-[28px] shadow-2xl"
+          />
+        ) : (
+          <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
+        )}
+        <div className="absolute -top-10 left-0 right-0 flex items-center justify-between">
+          <span className="text-sm text-white font-medium">{previewImage.title}</span>
+          <button type="button" onClick={onClose} className="text-white/70 hover:text-white transition-colors"><XCircle size={20} /></button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 function getMockBlogImages(style = 'pastel', textOverlay = 'with-text') {
@@ -766,21 +808,24 @@ export default function ExtractionPage() {
     const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
 
     if (!imageUrl) return null
+    const openPreview = () => setPreviewImage({
+      renderType: 'instagram-card',
+      src: imageUrl,
+      title: `인스타 카드 ${cardNumber}`,
+      cardNumber,
+      headline,
+      descriptionLines,
+      cardStyle,
+    })
 
     return (
       <button
         key={`insta-preview-${cardNumber}-${cards.length}-${index}`}
         type="button"
-        onClick={() => setPreviewImage({
-          renderType: 'instagram-card',
-          src: imageUrl,
-          title: `인스타 카드 ${cardNumber}`,
-          cardNumber,
-          headline,
-          descriptionLines,
-          cardStyle,
-        })}
-        className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all text-left"
+        onClick={openPreview}
+        aria-label={`인스타 카드 ${cardNumber} 크게 보기`}
+        title="크게 보기"
+        className="relative shrink-0 w-24 h-24 rounded-md overflow-hidden border border-border bg-surface-light cursor-zoom-in hover:ring-2 hover:ring-primary/40 transition-all text-left"
       >
         <InstagramImageArtwork
           imageUrl={imageUrl}
@@ -1896,41 +1941,7 @@ ${parsedText}
     <div className="w-full">
       {/* 팝업들 (고정 위치, 레이아웃 밖) */}
       <ErrorAlert message={errorAlert} onClose={() => setErrorAlert(null)} />
-      {previewImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setPreviewImage(null)}>
-          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
-            {previewImage.renderType === 'blog-card' ? (
-              <BlogImageArtwork
-                src={previewImage.src}
-                alt={previewImage.title}
-                variant={previewImage.variant}
-                headline={previewImage.headline}
-                description={previewImage.description}
-                accentColor={previewImage.accentColor}
-                mode="modal"
-                containerClassName="w-[min(78vw,640px)] rounded-[28px] shadow-2xl"
-              />
-            ) : previewImage.renderType === 'instagram-card' ? (
-              <InstagramImageArtwork
-                imageUrl={previewImage.src}
-                alt={previewImage.title}
-                cardNumber={previewImage.cardNumber}
-                cardTitle={previewImage.headline}
-                descriptionLines={previewImage.descriptionLines}
-                cardStyle={previewImage.cardStyle}
-                mode="modal"
-                containerClassName="w-[min(78vw,640px)] rounded-[28px] shadow-2xl"
-              />
-            ) : (
-              <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
-            )}
-            <div className="absolute -top-10 left-0 right-0 flex items-center justify-between">
-              <span className="text-sm text-white font-medium">{previewImage.title}</span>
-              <button onClick={() => setPreviewImage(null)} className="text-white/70 hover:text-white transition-colors"><XCircle size={20} /></button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ImagePreviewModal previewImage={previewImage} onClose={() => setPreviewImage(null)} />
       <ConfirmDialog message={confirmDialog} onConfirm={() => { setConfirmDialog(null); navigateToResults() }} onCancel={() => setConfirmDialog(null)} />
       {/* 크레딧 소모 확인 팝업 */}
       {creditConfirm && (
