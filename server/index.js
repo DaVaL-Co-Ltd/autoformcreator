@@ -2272,7 +2272,7 @@ app.get('/api/scheduled/list', async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
-      .select('*')
+      .select('id, platform, extraction_id, scheduled_at, status, uploaded_url, uploaded_at, error, attempts, created_at')
       .order('scheduled_at', { ascending: true })
     if (error) throw error
     res.json(data)
