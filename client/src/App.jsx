@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
 import Header from './components/Header'
@@ -152,6 +152,17 @@ function AppRoutes() {
   )
 }
 
+const router = createBrowserRouter([
+  {
+    path: '*',
+    element: (
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    ),
+  },
+])
+
 export default function App() {
   const [browserAlert, setBrowserAlert] = useState(null)
 
@@ -178,11 +189,7 @@ export default function App() {
 
   return (
     <>
-      <BrowserRouter>
-        <AuthProvider>
-          <AppRoutes />
-        </AuthProvider>
-      </BrowserRouter>
+      <RouterProvider router={router} />
       <ErrorDialog
         title="오류"
         message={browserAlert}

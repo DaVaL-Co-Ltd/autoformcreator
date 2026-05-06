@@ -1,4 +1,4 @@
-﻿import { useState, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
@@ -16,6 +16,7 @@ import {
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
+import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 import {
@@ -45,6 +46,13 @@ function resolveMediaUrl(url) {
   if (url.startsWith('/output/') && API_BASE) return `${API_BASE}${url}`
   if (url.startsWith('/') && typeof window !== 'undefined') return `${window.location.origin}${url}`
   return url
+}
+
+function getDistinctRawShortsUrl(video) {
+  const rawUrl = resolveMediaUrl(video?.rawUrl)
+  const finalUrl = resolveMediaUrl(video?.url || video?.videoUrl || video?.combinedVideoUrl)
+  if (!rawUrl || rawUrl === finalUrl) return null
+  return rawUrl
 }
 
 const steps = [
@@ -431,6 +439,21 @@ export default function ExtractionPage() {
     setLoading(p => ({ ...p, media: false }))
     setMediaItemLoading({})
   }
+
+  const isBusy = !!(
+    loading.analysis || loading.summary || loading.content ||
+    loading.media || loading.shorts || heygenUploading || fixingIssues
+  )
+
+  useEffect(() => {
+    if (!isBusy) return
+    const handler = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isBusy])
 
   const setStepLoading = (step, val) => setLoading(p => ({ ...p, [step]: val }))
   const addStepErrors = (step, errs) => setStepErrors(p => ({ ...p, [step]: errs }))
@@ -1696,6 +1719,7 @@ ${parsedText}
 
   return (
     <div className="w-full">
+      <NavigationBlockerModal when={isBusy} />
       {/* 팝업들 (고정 위치, 레이아웃 밖) */}
       <ErrorAlert message={errorAlert} onClose={() => setErrorAlert(null)} />
       <ImagePreviewModal previewImage={previewImage} onClose={() => setPreviewImage(null)} />
@@ -2673,18 +2697,6 @@ ${parsedText}
       <div id="step-5" className="flex gap-4 items-stretch">
         <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
           <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 숏폼 설정</p>
-          {PF('비주얼 스타일', {
-            type: 'select',
-            value: promptSettings.shorts.videoStyle,
-            onChange: v => updatePrompt('shorts', 'videoStyle', v),
-            options: [
-              { value: 'avatar', label: '아바타 중심' },
-              { value: 'clean modern studio explainer', label: '모던 스튜디오' },
-              { value: 'infographic-driven explainer visuals', label: '인포그래픽 중심' },
-              { value: 'documentary-style editorial visuals', label: '다큐멘터리 스타일' },
-              { value: 'fast-paced social media visuals', label: '소셜 숏폼 스타일' },
-            ],
-          })}
           {PF('나레이션 톤', {
             type: 'select',
             value: promptSettings.shorts.narrationTone,
@@ -2889,10 +2901,21 @@ ${parsedText}
                         </button>
                       </div>
                       {shortsVideo.url && (
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
-                            <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="flex flex-col items-center gap-2">
+                            <p className="text-xs font-medium text-text-muted">자막 포함 최종본</p>
+                            <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                              <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
+                            </div>
                           </div>
+                          {getDistinctRawShortsUrl(shortsVideo) && (
+                            <div className="flex flex-col items-center gap-2">
+                              <p className="text-xs font-medium text-text-muted">자막 추가 전 원본</p>
+                              <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-border shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                                <video src={getDistinctRawShortsUrl(shortsVideo)} controls className="w-full h-full object-contain" />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

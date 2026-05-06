@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>AutoForm Creator 포트폴리오</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Pretendard', 'Noto Sans KR', 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #1f2937;
+    line-height: 1.65;
+    font-size: 10.3pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    background: #fff;
+  }
+  p {
+    margin: 6px 0 10px 0;
+  }
+  ul {
+    margin: 8px 0 12px 0;
+    padding-left: 18px;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  .cover {
+    background: linear-gradient(135deg, #111827 0%, #1d4ed8 48%, #0f766e 100%);
+    color: #fff;
+    padding: 22mm 24mm 10mm 24mm;
+    margin: -18mm -16mm 14mm -16mm;
+    border-radius: 0 0 14px 14px;
+    min-height: 98mm;
+  }
+  .eyebrow {
+    font-size: 10pt;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.9;
+    margin-bottom: 10px;
+  }
+  .cover h1 {
+    font-size: 28pt;
+    line-height: 1.08;
+    margin: 0 0 8px 0;
+    font-weight: 800;
+  }
+  .cover h2 {
+    font-size: 13pt;
+    line-height: 1.45;
+    margin: 0 0 16px 0;
+    font-weight: 500;
+    opacity: 0.95;
+  }
+  .cover .lead {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-left: 4px solid rgba(255, 255, 255, 0.7);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 10.5pt;
+  }
+  .cover-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .metric {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .metric .value {
+    font-size: 15pt;
+    font-weight: 800;
+    margin-bottom: 2px;
+  }
+  .metric .label {
+    font-size: 9pt;
+    opacity: 0.9;
+  }
+  h2.section {
+    font-size: 16pt;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 22px 0 10px 0;
+    padding: 6px 0 8px 0;
+    border-bottom: 2px solid #1d4ed8;
+    page-break-after: avoid;
+  }
+  h2.section .num {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    line-height: 28px;
+    text-align: center;
+    background: #1d4ed8;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 11pt;
+    margin-right: 10px;
+  }
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 700;
+    color: #1d4ed8;
+    margin: 0 0 6px 0;
+  }
+  .section-intro {
+    color: #475569;
+    margin-bottom: 12px;
+  }
+  .quote {
+    background: #eff6ff;
+    border-left: 4px solid #2563eb;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 10px 0 14px 0;
+    color: #1e3a8a;
+  }
+  .showcase-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0 14px 0;
+  }
+  .channel-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+    page-break-inside: avoid;
+  }
+  .channel-card .top {
+    padding: 10px 12px 8px 12px;
+    border-bottom: 1px solid #eef2f7;
+    background: #f8fafc;
+  }
+  .channel-card .name {
+    font-size: 9.5pt;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .channel-card .headline {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #111827;
+    margin-top: 3px;
+  }
+  .channel-card .body {
+    padding: 12px;
+  }
+  .channel-card img {
+    width: 100%;
+    display: block;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+  }
+  .channel-card .desc {
+    margin-top: 8px;
+    color: #475569;
+    font-size: 9.5pt;
+  }
+  .placeholder {
+    min-height: 170px;
+    border: 1px dashed #94a3b8;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .placeholder .tag {
+    display: inline-block;
+    align-self: flex-start;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 8.5pt;
+    font-weight: 800;
+    margin-bottom: 8px;
+  }
+  .placeholder .title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 6px;
+  }
+  .placeholder .text {
+    color: #475569;
+    font-size: 9.5pt;
+    line-height: 1.6;
+  }
+  .figure {
+    margin: 12px 0 14px 0;
+    page-break-inside: avoid;
+  }
+  .figure img {
+    max-width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  }
+  .caption {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 9.2pt;
+    text-align: center;
+  }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 14px;
+    align-items: start;
+    margin: 10px 0 14px 0;
+  }
+  .panel {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px 14px;
+    background: #fff;
+    page-break-inside: avoid;
+  }
+  .panel .kicker {
+    color: #2563eb;
+    font-size: 8.8pt;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .panel .title {
+    font-size: 11.2pt;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 6px;
+  }
+  .result-list {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0 0;
+  }
+  .result-list li {
+    position: relative;
+    padding-left: 22px;
+    margin-bottom: 6px;
+    color: #334155;
+  }
+  .result-list li::before {
+    content: '•';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    color: #2563eb;
+    font-weight: 800;
+  }
+  .video-gallery {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    align-items: start;
+    margin: 12px 0 10px 0;
+  }
+  .video-cell {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 6px;
+    page-break-inside: avoid;
+  }
+  .video-cell img {
+    width: 100%;
+    display: block;
+    border-radius: 8px;
+  }
+  .video-cell .label {
+    text-align: center;
+    color: #475569;
+    font-size: 9pt;
+    margin-top: 5px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px 0;
+    font-size: 9.7pt;
+  }
+  th, td {
+    border: 1px solid #e2e8f0;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #1d4ed8;
+    color: #fff;
+    font-weight: 700;
+  }
+  tr:nth-child(even) td {
+    background: #fafcff;
+  }
+  .priority-high {
+    color: #b91c1c;
+    font-weight: 800;
+  }
+  .priority-mid {
+    color: #92400e;
+    font-weight: 800;
+  }
+  .stack-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 10px 0 14px 0;
+  }
+  .stack-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .stack-item .label {
+    color: #1d4ed8;
+    font-weight: 700;
+    font-size: 9.7pt;
+    margin-bottom: 3px;
+  }
+  .stack-item .value {
+    color: #334155;
+    font-size: 9.3pt;
+    line-height: 1.55;
+  }
+  .footer-note {
+    margin-top: 22px;
+    padding-top: 12px;
+    border-top: 1px dashed #cbd5e1;
+    color: #64748b;
+    font-size: 9pt;
+    text-align: center;
+  }
+  .pagebreak {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="eyebrow">Portfolio Showcase</div>
+  <h1>AutoForm Creator</h1>
+  <h2>한 개의 자료를 실제 배포 가능한 멀티채널 결과물로 바꾸는 콘텐츠 자동화 SaaS</h2>
+  <div class="cover-metrics">
+    <div class="metric">
+      <div class="value">1개</div>
+      <div class="label">입력 자료</div>
+    </div>
+    <div class="metric">
+      <div class="value">4개</div>
+      <div class="label">출력 채널</div>
+    </div>
+    <div class="metric">
+      <div class="value">6단계</div>
+      <div class="label">생성 워크플로우</div>
+    </div>
+    <div class="metric">
+      <div class="value">업로드</div>
+      <div class="label">예약 발행 연동</div>
+    </div>
+  </div>
+</section>
+
+<h2 class="section"><span class="num">1</span>한눈에 보는 결과물</h2>
+<div class="showcase-grid">
+  <div class="channel-card">
+    <div class="top">
+      <div class="name">YouTube Shorts</div>
+      <div class="headline">아바타, 자막, 타이틀, 인포그래픽이 결합된 세로 영상</div>
+    </div>
+    <div class="body">
+      <img src="images/5.png" alt="숏츠 결과물 예시" />
+      <div class="desc">실제 결과물 캡처. 상단 타이틀 카드, 중앙 아바타, 하단 자막이 한 화면에서 동작하는 형태로 렌더링됩니다.</div>
+    </div>
+  </div>
+
+  <div class="channel-card">
+    <div class="top">
+      <div class="name">Infographic Scene</div>
+      <div class="headline">숫자와 비교를 강조하는 데이터형 씬 결과</div>
+    </div>
+    <div class="body">
+      <img src="images/4.png" alt="인포그래픽 씬 예시" />
+      <div class="desc">영상 안에서 필요한 장면은 아바타만 쓰지 않고, 정보 전달에 맞는 카드형 인포그래픽으로 분리합니다.</div>
+    </div>
+  </div>
+
+  <div class="channel-card">
+    <div class="top">
+      <div class="name">Instagram Carousel</div>
+      <div class="headline">6장 카드뉴스 결과</div>
+    </div>
+    <div class="body">
+      <div class="placeholder">
+        <div class="tag">Instagram</div>
+        <div class="title">표지 카드 / 정보 카드 / CTA 카드</div>
+        <div class="text">
+          대표 카드 3장 구성
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="channel-card">
+    <div class="top">
+      <div class="name">Blog + Newsletter</div>
+      <div class="headline">블로그와 뉴스레터 결과</div>
+    </div>
+    <div class="body">
+      <div class="placeholder">
+        <div class="tag">Text Output</div>
+        <div class="title">블로그 본문 / 뉴스레터 미리보기</div>
+        <div class="text">
+          제목, 본문 구조, 강조 박스, 미리보기 화면
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="section"><span class="num">2</span>실제 사용 화면</h2>
+
+<div class="two-col">
+  <div class="figure">
+    <img src="images/1.png" alt="AutoForm Creator 단계별 진행 화면" />
+    <div class="caption">채널 선택부터 숏폼 생성까지 한 화면에서 관리하는 실제 운영 UI</div>
+  </div>
+  <div class="panel">
+    <div class="kicker">Workflow</div>
+    <div class="title">입력 하나에서 결과 네 가지로 분기되는 구조</div>
+    <ul class="result-list">
+      <li>원본 PDF 업로드 후 문서 분석, 검증, 생성, 이미지, 숏츠 단계가 순차적으로 진행됩니다.</li>
+      <li>채널별로 블로그, 뉴스레터, 인스타그램, 유튜브 숏츠를 동시에 선택할 수 있습니다.</li>
+      <li>사용자는 제작 도구를 옮겨 다니지 않고 한 인터페이스 안에서 결과를 확인합니다.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <div class="kicker">Control</div>
+    <div class="title">사용자가 결과 톤을 조정하는 입력 패널</div>
+    <ul class="result-list">
+      <li>블로그와 인스타그램 이미지 스타일을 각각 따로 지정할 수 있습니다.</li>
+      <li>카드 텍스트 배치 방식과 추가 지시사항을 직접 넣을 수 있습니다.</li>
+      <li>즉, 자동 생성이지만 결과물 톤은 사용자가 계속 통제합니다.</li>
+    </ul>
+  </div>
+  <div class="figure">
+    <img src="images/2.png" alt="이미지 설정 패널" style="max-width: 62%; margin: 0 auto; display: block;" />
+    <div class="caption">결과물 스타일을 직접 조절하는 설정 패널</div>
+  </div>
+</div>
+
+<h2 class="section"><span class="num">3</span>숏츠 결과물</h2>
+
+<div class="video-gallery">
+  <div class="video-cell">
+    <img src="images/3.png" alt="숏츠 아바타와 자막 결과물" />
+    <div class="label">아바타 중심 씬과 하단 자막</div>
+  </div>
+  <div class="video-cell">
+    <img src="images/5.png" alt="숏츠 타이틀 카드가 포함된 결과물" />
+    <div class="label">상단 타이틀 카드와 핵심 메시지</div>
+  </div>
+  <div class="video-cell">
+    <img src="images/4.png" alt="숏츠 인포그래픽 결과물" />
+    <div class="label">데이터 강조용 인포그래픽 씬</div>
+  </div>
+</div>
+<div class="caption">하나의 숏츠 안에서 아바타형 씬과 정보형 씬을 분리해 구성하는 실제 결과물 예시</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 22%;">구성 요소</th>
+      <th>실제 결과에 반영되는 방식</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>아바타</b></td>
+      <td>캐릭터나 인물 중심 화면을 기본으로 사용해 말하는 느낌을 전달합니다.</td>
+    </tr>
+    <tr>
+      <td><b>자막</b></td>
+      <td>하단 안전영역에 맞춰 burn-in 자막을 추가해, 무음 시청 환경에서도 내용을 따라갈 수 있게 합니다.</td>
+    </tr>
+    <tr>
+      <td><b>타이틀 카드</b></td>
+      <td>장면별 키워드를 상단 카드 형태로 분리해 핵심 메시지를 빠르게 인지하게 합니다.</td>
+    </tr>
+    <tr>
+      <td><b>인포그래픽</b></td>
+      <td>숫자 비교 장면은 별도 시각 카드로 분리해 일반 아바타 씬보다 전달력을 높입니다.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="pagebreak"></div>
+
+<h2 class="section"><span class="num">4</span>프로젝트 강점</h2>
+<div class="showcase-grid">
+  <div class="panel">
+    <div class="kicker">Output First</div>
+    <div class="title">채널별 결과물이 서로 다른 형식으로 나온다</div>
+    <p>
+      같은 원본 자료라도 블로그는 길고 읽기 좋게, 인스타그램은 카드형으로, 숏츠는 훅 중심 영상으로 재구성됩니다.
+      결과물들이 서로 비슷하게 복붙되지 않는 점이 강점입니다.
+    </p>
+  </div>
+  <div class="panel">
+    <div class="kicker">Operator UI</div>
+    <div class="title">사용자가 결과 방향을 계속 조절할 수 있다</div>
+    <p>
+      전부 자동 생성이지만, 스타일과 추가 지시사항 입력이 열려 있어 "자동화의 속도"와 "결과물 통제"를 함께 가져갑니다.
+    </p>
+  </div>
+  <div class="panel">
+    <div class="kicker">Render Ready</div>
+    <div class="title">텍스트 생성에서 끝나지 않고 실제 배포용 미디어까지 만든다</div>
+    <p>
+      인스타 카드 이미지 합성, 숏츠 영상 렌더링, 업로드용 제목과 설명 생성까지 한 흐름으로 묶여 있습니다.
+    </p>
+  </div>
+  <div class="panel">
+    <div class="kicker">Distribution</div>
+    <div class="title">결과 확인 다음 단계가 바로 업로드다</div>
+    <p>
+      글로벌 채널은 공식 API로, 네이버 블로그는 데스크톱 헬퍼 기반 RPA로 연결해 "만들고 끝"이 아니라 "배포까지 이어지는 구조"를 갖췄습니다.
+    </p>
+  </div>
+</div>
+
+<h2 class="section"><span class="num">5</span>추가 이미지 체크리스트</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 18%;">우선순위</th>
+      <th style="width: 22%;">영역</th>
+      <th style="width: 30%;">필요한 이미지</th>
+      <th>용도</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="priority-high">높음</td>
+      <td><b>인스타그램 결과물</b></td>
+      <td>표지 카드 1장, 정보 카드 1장, 마지막 CTA 카드 1장</td>
+      <td>카드뉴스 결과 대표 예시</td>
+    </tr>
+    <tr>
+      <td class="priority-high">높음</td>
+      <td><b>블로그 결과물</b></td>
+      <td>실제 블로그 본문 화면 1장, 이미지가 포함된 본문 구간 1장</td>
+      <td>블로그 결과 화면 예시</td>
+    </tr>
+    <tr>
+      <td class="priority-high">높음</td>
+      <td><b>뉴스레터 결과물</b></td>
+      <td>메일 제목, 프리헤더, 본문 일부가 함께 보이는 미리보기 1장</td>
+      <td>뉴스레터 결과 화면 예시</td>
+    </tr>
+    <tr>
+      <td class="priority-mid">중간</td>
+      <td><b>결과 모아보기 화면</b></td>
+      <td>블로그, 인스타, 숏츠가 한 화면 또는 한 흐름에서 보이는 결과 페이지 캡처 1장</td>
+      <td>통합 결과 화면 예시</td>
+    </tr>
+    <tr>
+      <td class="priority-mid">중간</td>
+      <td><b>Before / After</b></td>
+      <td>입력 PDF 첫 페이지 1장 + 출력 결과물 콜라주 1장</td>
+      <td>입력 대비 출력 비교</td>
+    </tr>
+    <tr>
+      <td class="priority-mid">중간</td>
+      <td><b>업로드 완료 상태</b></td>
+      <td>인스타그램 또는 유튜브 업로드 완료 알림, 예약 상태 화면 1장</td>
+      <td>업로드 및 예약 상태 예시</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 class="section"><span class="num">6</span>기술 스택 요약</h2>
+<div class="stack-grid">
+  <div class="stack-item">
+    <div class="label">AI 엔진</div>
+    <div class="value">LlamaParse, Google Gemini, 이미지 생성 파이프라인</div>
+  </div>
+  <div class="stack-item">
+    <div class="label">영상 렌더링</div>
+    <div class="value">Remotion 기반 씬 조합, 자막 burn-in, 인포그래픽 합성</div>
+  </div>
+  <div class="stack-item">
+    <div class="label">프론트엔드</div>
+    <div class="value">React 19, Vite, Tailwind</div>
+  </div>
+  <div class="stack-item">
+    <div class="label">서버</div>
+    <div class="value">Node.js, Express, 채널별 업로드 프록시</div>
+  </div>
+  <div class="stack-item">
+    <div class="label">채널 연동</div>
+    <div class="value">YouTube/Instagram 공식 API, 네이버 블로그 RPA 데스크톱 헬퍼</div>
+  </div>
+  <div class="stack-item">
+    <div class="label">배포 구조</div>
+    <div class="value">웹 UI + 서버 + 로컬 헬퍼가 결합된 하이브리드 SaaS 구조</div>
+  </div>
+</div>
+
+</body>
+</html>

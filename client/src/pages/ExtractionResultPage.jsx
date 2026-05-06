@@ -29,6 +29,7 @@ import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { normalizeBlogTags } from '../utils/blogTags'
 import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
+import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import {
   cleanCardText,
   deriveBlogHeadline,
@@ -95,6 +96,13 @@ const attachRenderedImageUrls = (images, urls) => ensureArray(images).map((image
     : image
 })
 
+function getDistinctRawShortsUrl(videoData = {}) {
+  const rawUrl = videoData?.rawUrl || null
+  const finalUrl = videoData?.combinedVideoUrl || videoData?.url || videoData?.videoUrl || null
+  if (!rawUrl || rawUrl === finalUrl) return null
+  return rawUrl
+}
+
 async function captureElementPng(el, label) {
   return withTimeout(
     () => domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }),
@@ -160,6 +168,18 @@ export default function ExtractionResultPage() {
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
+
+  const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
+
+  useEffect(() => {
+    if (!isBusy) return
+    const handler = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isBusy])
 
   useEffect(() => {
     const stateData = location.state || null
@@ -1431,23 +1451,24 @@ export default function ExtractionResultPage() {
     playingSceneRef.current = -1
   }
 
-  const renderVideoPanel = (videoData, versionLabel) => {
+  const renderVideoPanel = (videoData, versionLabel, options = {}) => {
     const videoUrl = videoData?.combinedVideoUrl || videoData?.url || videoData?.videoUrl
     const timings = videoData?.sceneTimings || []
+    const shouldSyncNarration = options.syncNarration !== false
     const isLoading = videoData && !videoUrl
     return (
       <div className="w-64 shrink-0">
         <div className="aspect-[9/16] bg-gradient-to-b from-gray-900 to-gray-800 rounded-2xl overflow-hidden relative shadow-xl">
           {videoUrl ? (
             <video
-              ref={shortsVideoRef}
+              ref={shouldSyncNarration ? shortsVideoRef : undefined}
               controls
               className="w-full h-full object-cover absolute inset-0"
               src={videoUrl}
-              onPlay={handleShortsPlay}
-              onPause={handleShortsPause}
-              onEnded={handleShortsPause}
-              onTimeUpdate={handleShortsTimeUpdate}
+              onPlay={shouldSyncNarration ? handleShortsPlay : undefined}
+              onPause={shouldSyncNarration ? handleShortsPause : undefined}
+              onEnded={shouldSyncNarration ? handleShortsPause : undefined}
+              onTimeUpdate={shouldSyncNarration ? handleShortsTimeUpdate : undefined}
             />
           ) : isLoading ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
@@ -1494,7 +1515,7 @@ export default function ExtractionResultPage() {
             </button>
           </div>
         )}
-        {ensureArray(shortsNarration).map((n, i) => (
+        {shouldSyncNarration && ensureArray(shortsNarration).map((n, i) => (
           n.audioUrl && <audio key={i} ref={el => shortsAudioRefs.current[i] = el} src={n.audioUrl} preload="auto" />
         ))}
       </div>
@@ -1503,6 +1524,7 @@ export default function ExtractionResultPage() {
 
   const renderShorts = () => {
     const shortsVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl
+    const rawShortsVideoUrl = getDistinctRawShortsUrl(shortsVideo)
     const shortsTitle = shortsScript?.uploadTitle || shortsScript?.title || ''
     const shortsHashtags = ensureArray(shortsScript?.hashtags)
     const sanitizedShortsDescription = stripResultCtaText(
@@ -1550,8 +1572,9 @@ export default function ExtractionResultPage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
-          {renderVideoPanel(shortsVideo, '숏츠 영상')}
+        <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap lg:items-start">
+          {renderVideoPanel(shortsVideo, '자막 포함 최종본')}
+          {rawShortsVideoUrl && renderVideoPanel({ ...shortsVideo, combinedVideoUrl: rawShortsVideoUrl }, '자막 추가 전 원본', { syncNarration: false })}
 
           <div className="space-y-3 min-w-0 flex-1">
             <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
@@ -1602,6 +1625,7 @@ export default function ExtractionResultPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
+      <NavigationBlockerModal when={isBusy} />
       <div className="flex flex-wrap items-center gap-2 bg-surface rounded-xl border border-border p-2">
         <button
           onClick={() => navigate(state?.fromContents ? '/contents' : '/extraction')}
