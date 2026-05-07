@@ -26,7 +26,7 @@ function buildInstagramImagePrompt(card, options = {}) {
   const instagramCardStyle = normalizeInstagramCardStyle(options.instagramCardStyle)
   const promptText = card.imagePrompt || `${card.headline || ''} ${card.content || ''}`
   const colorHint = ` ${pickPalette(`${card.headline || ''}|${card.content || ''}|${options.imageStyle || ''}|${instagramCardStyle}|instagram`, INSTAGRAM_COLORFUL_PALETTES)}`
-  const extraHint = options.extra ? ` ${options.extra}.` : ''
+  const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
   const layoutHint = isPhotoStyle
     ? 'Create one full-bleed square realistic photo that fills the entire frame with a single continuous real-world scene. Use actual students, teachers, classrooms, school corridors, libraries, desks, laptops, notebooks, or campus settings so it feels like a genuine photo captured on location. Do not use poster layouts, pattern backgrounds, split zones, graphic panels, abstract color fields, or designed card backdrops.'
     : instagramCardStyle === 'center-card'

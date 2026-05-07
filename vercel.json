@@ -1,11 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "installCommand": "cd client && npm install",
+  "installCommand": "npm install --prefix api && npm install --prefix client",
   "buildCommand": "cd client && npm run build",
   "outputDirectory": "client/dist",
   "framework": null,
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/downloads/(.*)", "destination": "/downloads/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

@@ -35,7 +35,7 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
   const isPhotoStyle = options.imageStyle === 'photo'
   const variation = BLOG_VISUAL_VARIATIONS[index % BLOG_VISUAL_VARIATIONS.length]
   const paletteDesc = getBlogPalette(section, options)
-  const extraHint = options.extra ? ` ${options.extra}.` : ''
+  const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
   const mediumHint = isPhotoStyle
     ? 'Generate a 1:1 square realistic photo for a Korean education blog image'
     : 'Generate a 1:1 square illustration for a Korean education blog image'

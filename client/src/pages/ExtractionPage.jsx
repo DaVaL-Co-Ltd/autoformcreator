@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, ToggleLeft, ToggleRight, Download,
   Mail
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -25,6 +25,11 @@ import {
   getInstagramOverlayLines,
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
+import {
+  BLOG_CATEGORY_OPTIONS,
+  getBlogCategoryProfile,
+  getBlogImageStyleLabel,
+} from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const API_SECRET = import.meta.env.VITE_API_SECRET || ''
@@ -75,8 +80,32 @@ const CHANNEL_OPTIONS = [
 const aiServiceInfo = {
   llamaparse: { name: 'LlamaParse', color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
   gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
-  flux: { name: 'Flux', color: 'text-purple-400', bg: 'bg-purple-400/10 border-purple-400/20' },
 }
+
+const MOCK_DELAY = 800
+
+const mockParsedText = `[데모 모드] 2026년 디지털 교육 전환 트렌드 보고서
+
+1. 교육 현장 도입 현황
+- 초중고 디지털 학습 플랫폼 도입률: 78.4%
+- 대학 및 평생교육기관 LMS 활용률: 83.1%
+- AI 기반 학습 지원 도구 도입 학교 비율: 46.7%
+
+2. 학습 성과 변화
+- 개인화 학습 적용 시 과제 완수율: +26.8%
+- 실시간 피드백 제공 시 학습 지속률: +18.5%
+- AI 튜터 활용 수업 만족도: 91.2점
+
+3. 주요 운영 방식
+- 실시간 수업과 비동기 학습 병행: 64.3%
+- 마이크로러닝 콘텐츠 운영: 58.9%
+- 교사 지원형 자동 채점 및 피드백: 42.6%
+
+4. 핵심 트렌드
+- AI 기반 맞춤형 학습 경로 추천 확대
+- 짧고 반복 가능한 마이크로러닝 콘텐츠 증가
+- 교사 행정 업무를 줄이는 자동 피드백 도구 확산
+- 온오프라인 혼합형 수업 운영 모델 정착`
 
 const BLOG_IMAGE_STYLE_EXAMPLES = {
   pastel: {
@@ -346,6 +375,7 @@ export default function ExtractionPage() {
   const fileInputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
+  const [demoMode, setDemoMode] = useState(true)
   const [selectedChannels, setSelectedChannels] = useState({ blog: true, newsletter: true, instagram: true, shorts: true })
   const [channelsConfirmed, setChannelsConfirmed] = useState(false)
   const [file, setFile] = useState(null)
@@ -376,7 +406,16 @@ export default function ExtractionPage() {
   const [promptSettings, setPromptSettings] = useState({
     analysis: { focus: '', extra: '' },
     summary: { keywords: '', style: 'auto', extra: '' },
-    content: { tone: 'auto', commonExtra: '', blogExtra: '', newsletterExtra: '', instaExtra: '', shortsExtra: '' },
+    content: {
+      tone: 'auto',
+      blogCategoryMode: 'auto',
+      blogCategoryId: '',
+      commonExtra: '',
+      blogExtra: '',
+      newsletterExtra: '',
+      instaExtra: '',
+      shortsExtra: '',
+    },
     media: {
       blogImageStyle: 'pastel',
       instagramImageStyle: 'pastel',
@@ -389,7 +428,13 @@ export default function ExtractionPage() {
   })
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
   const toggleMediaPreview = (key) => setMediaPreviewOpen((prev) => ({ ...prev, [key]: !prev[key] }))
-  const contentPromptOptions = promptSettings.content
+  const buildContentPromptOptions = () => ({
+    ...promptSettings.content,
+    enableBlogCategory: selectedChannels.blog,
+    blogCategorySelection: promptSettings.content.blogCategoryMode === 'auto'
+      ? blogContent?.categoryInfo || null
+      : null,
+  })
 
   // Data states
   const [parsedText, setParsedText] = useState('')
@@ -574,6 +619,15 @@ export default function ExtractionPage() {
   // 에러 발생 시 팝업 표시
   const showErrorAlert = (serviceName, detail) => {
     setErrorAlert(`${serviceName} 서비스에서 오류가 발생했습니다.\n\n${detail}\n\n해당 작업의 재시도 버튼을 눌러 다시 시도할 수 있습니다.`)
+  }
+
+  const ensureBlogCategoryReady = (targetsBlog = selectedChannels.blog) => {
+    if (!targetsBlog) return true
+    if (promptSettings.content.blogCategoryMode !== 'manual') return true
+    if (promptSettings.content.blogCategoryId) return true
+
+    showErrorAlert('블로그 카테고리', '직접 선택 모드에서는 블로그 카테고리를 먼저 지정해주세요.')
+    return false
   }
 
   // 특정 단계 이후의 모든 결과를 초기화
@@ -854,7 +908,7 @@ export default function ExtractionPage() {
 
     let text = ''
     try {
-      text = await parsePDF(file)
+      text = demoMode ? mockParsedText : await parsePDF(file)
       setParsedText(text)
     } catch (err) {
       errors.push({ service: 'gemini', message: `PDF 분석 실패 - ${err.message}` })
@@ -921,6 +975,7 @@ export default function ExtractionPage() {
 
   // Step 3: 콘텐츠 생성
   const runContentGeneration = async () => {
+    if (!ensureBlogCategoryReady()) return
     setStepLoading('content', true)
     clearStepErrors('content')
     resetFromStep(3)
@@ -934,8 +989,9 @@ export default function ExtractionPage() {
     ].filter(c => selectedChannels[c.key])
 
     try {
+      const contentOptions = buildContentPromptOptions()
       // 1회 API 호출로 4개 채널 통합 생성
-      const allContent = await generateAllContent(summary, parsedText, emphasisText, { tone: promptSettings.content.tone, commonExtra: promptSettings.content.commonExtra, blogExtra: promptSettings.content.blogExtra, newsletterExtra: promptSettings.content.newsletterExtra, instaExtra: promptSettings.content.instaExtra, shortsExtra: promptSettings.content.shortsExtra })
+      const allContent = await generateAllContent(summary, parsedText, emphasisText, contentOptions)
 
       let anySuccess = false
       for (const ch of channelMap) {
@@ -976,10 +1032,11 @@ export default function ExtractionPage() {
     // 실패 채널 키 수집
     const failedKeys = failedErrors.map(e => labelToKey[e.channel]).filter(Boolean)
     if (failedKeys.length === 0) return
+    if (!ensureBlogCategoryReady(failedKeys.includes('blog'))) return
 
     setRetrying('content-all')
     try {
-      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText, contentPromptOptions)
+      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText, buildContentPromptOptions())
 
       const newErrors = []
       for (const key of failedKeys) {
@@ -1018,10 +1075,11 @@ export default function ExtractionPage() {
 
     const key = labelToKey[err.channel]
     if (!key) return
+    if (!ensureBlogCategoryReady(key === 'blog')) return
 
     setRetrying(`${err.service}-${err.channel}`)
     try {
-      const results = await retryFailedChannels([key], summary, parsedText, emphasisText, contentPromptOptions)
+      const results = await retryFailedChannels([key], summary, parsedText, emphasisText, buildContentPromptOptions())
       if (results[key]) {
         keyToSetter[key](results[key])
         removeStepError('content', err.service, err.channel)
@@ -1043,11 +1101,13 @@ export default function ExtractionPage() {
 
   // Step 3 개별 채널 재생성 (성공한 채널도 다시 생성)
   const regenerateChannel = async (channelKey) => {
+    if (!ensureBlogCategoryReady(channelKey === 'blog')) return
+    const contentOptions = buildContentPromptOptions()
     const fnMap = {
-      blog: () => generateBlogContent(summary, parsedText, emphasisText, contentPromptOptions),
-      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText, contentPromptOptions),
-      instagram: () => generateInstagramContent(summary, parsedText, emphasisText, contentPromptOptions),
-      shorts: () => generateShortsScript(summary, parsedText, emphasisText, contentPromptOptions),
+      blog: () => generateBlogContent(summary, parsedText, emphasisText, contentOptions),
+      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText, contentOptions),
+      instagram: () => generateInstagramContent(summary, parsedText, emphasisText, contentOptions),
+      shorts: () => generateShortsScript(summary, parsedText, emphasisText, contentOptions),
     }
     const setter = keyToSetter[channelKey]
     if (!setter) return
@@ -1125,6 +1185,7 @@ export default function ExtractionPage() {
     setHeygenReady(false)
     setHeygenUploading(false)
     setShortsVideo(null)
+
     try {
       const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
       const res = await fetch(
@@ -1679,9 +1740,10 @@ ${parsedText}
         blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
         shortsScript,
         blogImages, instagramImages, shortsVideo,
-        fileName: file?.name,
+        fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
         fileBase64,
         savedFromExtraction: true,
+        isDemo: demoMode,
       }
     })
   }
@@ -1710,6 +1772,12 @@ ${parsedText}
 
 
   const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
+  const manualBlogCategoryProfile = getBlogCategoryProfile(promptSettings.content.blogCategoryId)
+  const appliedBlogCategoryInfo = blogContent?.categoryInfo || null
+  const appliedBlogCategoryProfile = getBlogCategoryProfile(appliedBlogCategoryInfo?.finalCategoryId)
+  const categoryPreviewProfile = promptSettings.content.blogCategoryMode === 'manual'
+    ? manualBlogCategoryProfile
+    : appliedBlogCategoryProfile
 
   // 선택된 채널에 따라 스텝 번호 동적 계산 (Step 0은 채널 선택)
   const visibleStepIds = [0, 1, 2, 3]
@@ -1804,6 +1872,14 @@ ${parsedText}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setDemoMode(prev => !prev)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all shrink-0 ${demoMode ? 'bg-warning/15 text-warning border border-warning/30' : 'bg-surface-light text-text-muted border border-border hover:border-primary/30'}`}
+              title="데모 모드 전환"
+            >
+              {demoMode ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
+              데모
+            </button>
             {CHANNEL_OPTIONS.map(ch => {
               const Icon = ch.icon
               const isSelected = selectedChannels[ch.key]
@@ -1873,20 +1949,40 @@ ${parsedText}
         </div>
         <div className="p-5">
           {!file ? (
-            <div
-              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
-                ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
-              <Upload size={28} className="mx-auto mb-3 text-text-muted" />
-              <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
+            demoMode ? (
+              <div className="rounded-xl border border-warning/25 bg-warning/5 p-6 text-center">
+                <Upload size={28} className="mx-auto mb-3 text-warning" />
+                <p className="text-sm text-text">데모 모드에서는 샘플 문서로 바로 진행합니다.</p>
+                <p className="text-xs text-text-muted mt-1">파일 업로드 없이 분석, 콘텐츠, 이미지, 숏폼 생성 흐름을 확인할 수 있습니다.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFile({ name: 'demo_report.pdf', size: 2048000, type: 'application/pdf' })
+                    clearStepErrors('upload')
+                    setCurrentStep(2)
+                  }}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-all hover:bg-primary-dark"
+                >
+                  <Sparkles size={14} />
+                  데모 파일로 시작
+                </button>
+              </div>
+            ) : (
+              <div
+                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
+                  ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
+                <Upload size={28} className="mx-auto mb-3 text-text-muted" />
+                <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
 
-              <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
-            </div>
+                <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
+              </div>
+            )
           ) : (
             <div className="flex items-center gap-4 p-4 bg-success/5 rounded-lg border border-success/20">
               <FileText size={24} className="text-success" />
@@ -2092,7 +2188,53 @@ ${parsedText}
           {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
           {PF('공통 추가 지시', { optional: true, type: 'textarea', placeholder: '모든 채널에 공통 적용', value: promptSettings.content.commonExtra, onChange: v => updatePrompt('content', 'commonExtra', v) })}
           <div className="border-t border-border/30 my-1" />
-          {selectedChannels.blog && PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
+          {selectedChannels.blog && (
+            <>
+              {PF('블로그 카테고리 적용 방식', {
+                type: 'select',
+                value: promptSettings.content.blogCategoryMode,
+                onChange: v => updatePrompt('content', 'blogCategoryMode', v),
+                options: [
+                  { value: 'auto', label: '자동 추천' },
+                  { value: 'manual', label: '직접 선택' },
+                ],
+              })}
+              {promptSettings.content.blogCategoryMode === 'manual' && PF('블로그 카테고리', {
+                type: 'select',
+                value: promptSettings.content.blogCategoryId,
+                onChange: v => updatePrompt('content', 'blogCategoryId', v),
+                options: BLOG_CATEGORY_OPTIONS,
+                hint: '선택한 카테고리 규칙을 블로그 프롬프트에 바로 반영합니다.',
+              })}
+              <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-xs text-text-muted space-y-1">
+                {promptSettings.content.blogCategoryMode === 'auto' ? (
+                  <>
+                    <p className="font-semibold text-text">자동 추천 모드</p>
+                    <p>블로그 생성 시 문서 내용으로 카테고리를 먼저 분류한 뒤 해당 규칙으로 작성합니다.</p>
+                    {appliedBlogCategoryInfo?.finalCategoryId && (
+                      <p>
+                        최근 적용 카테고리: <span className="font-semibold text-text">{appliedBlogCategoryInfo.finalCategoryLabel}</span>
+                        {appliedBlogCategoryInfo.reason ? ` · ${appliedBlogCategoryInfo.reason}` : ''}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="font-semibold text-text">직접 선택 모드</p>
+                    <p>
+                      적용 카테고리: <span className="font-semibold text-text">{manualBlogCategoryProfile ? manualBlogCategoryProfile.label : '미선택'}</span>
+                    </p>
+                  </>
+                )}
+                {categoryPreviewProfile?.recommendedImageStyle && (
+                  <p>
+                    추천 이미지 스타일: <span className="font-semibold text-text">{getBlogImageStyleLabel(categoryPreviewProfile.recommendedImageStyle)}</span>
+                  </p>
+                )}
+              </div>
+              {PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드, 반드시 다뤄야 할 포인트 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
+            </>
+          )}
           {selectedChannels.newsletter && PF('📧 뉴스레터', { optional: true, type: 'textarea', placeholder: '구독자 톤, CTA 등', value: promptSettings.content.newsletterExtra, onChange: v => updatePrompt('content', 'newsletterExtra', v) })}
           {selectedChannels.instagram && PF('📷 인스타', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
           {selectedChannels.shorts && PF('🎬 숏폼', { optional: true, type: 'textarea', placeholder: '후킹 문구 등', value: promptSettings.content.shortsExtra, onChange: v => updatePrompt('content', 'shortsExtra', v) })}

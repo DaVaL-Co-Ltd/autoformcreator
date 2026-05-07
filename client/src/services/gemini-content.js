@@ -1,5 +1,13 @@
 ﻿import { callGeminiWithFallback, parseJSON } from './gemini-core'
 import { normalizeBlogTags } from '../utils/blogTags'
+import {
+  BLOG_CATEGORY_PROFILES,
+  getBlogCategoryLabel,
+  getBlogCategoryProfile,
+  getBlogImageStyleLabel,
+  inferBlogCategoryHeuristically,
+  isValidBlogCategoryId,
+} from './blogCategoryProfile'
 
 function stripMarkdownEmphasis(text = '') {
   return String(text || '')
@@ -651,6 +659,158 @@ function buildEmphasisInstruction(emphasis) {
 `
 }
 
+function normalizeBlogCategorySelection(selection = {}) {
+  const finalCategoryId = selection?.finalCategoryId || selection?.categoryId || ''
+  if (!isValidBlogCategoryId(finalCategoryId)) return null
+
+  const recommendedCategoryId = isValidBlogCategoryId(selection?.recommendedCategoryId)
+    ? selection.recommendedCategoryId
+    : null
+  const recommendedImageStyle = selection?.recommendedImageStyle
+    || getBlogCategoryProfile(recommendedCategoryId || finalCategoryId)?.recommendedImageStyle
+    || null
+
+  return {
+    mode: selection?.mode === 'manual' ? 'manual' : 'auto',
+    recommendedCategoryId,
+    recommendedCategoryLabel: recommendedCategoryId ? getBlogCategoryLabel(recommendedCategoryId) : '',
+    finalCategoryId,
+    finalCategoryLabel: getBlogCategoryLabel(finalCategoryId),
+    confidence: selection?.confidence || '',
+    reason: selection?.reason || '',
+    recommendedImageStyle,
+    recommendedImageStyleLabel: recommendedImageStyle ? getBlogImageStyleLabel(recommendedImageStyle) : '',
+  }
+}
+
+function buildManualBlogCategorySelection(categoryId) {
+  if (!isValidBlogCategoryId(categoryId)) return null
+  const profile = getBlogCategoryProfile(categoryId)
+  return normalizeBlogCategorySelection({
+    mode: 'manual',
+    finalCategoryId: categoryId,
+    confidence: 'manual',
+    reason: '사용자가 프롬프트 설정에서 블로그 카테고리를 직접 선택했습니다.',
+    recommendedImageStyle: profile?.recommendedImageStyle || '',
+  })
+}
+
+function buildBlogCategoryRecommendationPrompt(summary, rawText, emphasis) {
+  const categoryGuide = Object.values(BLOG_CATEGORY_PROFILES)
+    .map((profile) => {
+      const hints = profile.classifierHints.join(', ')
+      return `- ${profile.id}: ${profile.label} | ${profile.goal} | 단서: ${hints}`
+    })
+    .join('\n')
+
+  return `당신은 네이버 블로그 콘텐츠 분류자입니다. 아래 입력을 읽고 가장 적합한 블로그 카테고리 1개만 고르세요.
+
+카테고리 목록:
+${categoryGuide}
+
+분류 규칙:
+- 반드시 categoryId는 위 목록 중 하나만 반환하세요.
+- 글의 중심 목적과 전개 방식을 기준으로 고르세요.
+- "입시 및 학습 전략 스타일 1"은 성적, 과목, 공부법, 실행 전략 중심입니다.
+- "입시 및 학습 전략 스타일 2"는 제도 변화, 운영 포인트, 방향 전환 설명 중심입니다.
+- "자료나눔 및 공유"는 자료 제공, 신청, 다운로드, 마감 안내가 핵심일 때 고르세요.
+- "자체 서비스 홍보"는 특정 서비스, 프로그램, 상담, 컨설팅 소개가 핵심일 때 고르세요.
+- JSON만 출력하세요.
+
+요약 데이터:
+${JSON.stringify(summary, null, 2)}
+
+강조 요청:
+${String(emphasis || '').trim() || '없음'}
+
+원문 일부:
+${String(rawText || '').slice(0, 5000)}
+
+출력 스키마:
+{"categoryId":"service_promo","confidence":"high","reason":"한 문장 설명"}`
+}
+
+export async function recommendBlogCategory(summary, rawText, emphasis, options = {}) {
+  if (options.enableBlogCategory === false) return null
+
+  const manualSelection = buildManualBlogCategorySelection(options.blogCategoryId)
+  if (options.blogCategoryMode === 'manual' && manualSelection) {
+    return manualSelection
+  }
+
+  const existingSelection = normalizeBlogCategorySelection(options.blogCategorySelection)
+  if (existingSelection) {
+    return existingSelection
+  }
+
+  const fallbackCategoryId = inferBlogCategoryHeuristically([
+    summary?.title || '',
+    summary?.summary || '',
+    ...(Array.isArray(summary?.keywords) ? summary.keywords : []),
+    ...(Array.isArray(summary?.insights) ? summary.insights : []),
+    String(rawText || '').slice(0, 4000),
+    String(emphasis || ''),
+  ].join(' '))
+
+  try {
+    const result = await callGeminiWithFallback(
+      buildBlogCategoryRecommendationPrompt(summary, rawText, emphasis),
+      {
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+        jsonMode: true,
+      },
+    )
+    const parsed = parseJSON(result, null)
+    const recommendedCategoryId = isValidBlogCategoryId(parsed?.categoryId)
+      ? parsed.categoryId
+      : fallbackCategoryId
+
+    return normalizeBlogCategorySelection({
+      mode: 'auto',
+      recommendedCategoryId,
+      finalCategoryId: recommendedCategoryId,
+      confidence: String(parsed?.confidence || '').trim() || 'medium',
+      reason: String(parsed?.reason || '').trim() || '요약과 원문 주제를 기준으로 자동 분류했습니다.',
+      recommendedImageStyle: getBlogCategoryProfile(recommendedCategoryId)?.recommendedImageStyle || '',
+    })
+  } catch {
+    return normalizeBlogCategorySelection({
+      mode: 'auto',
+      recommendedCategoryId: fallbackCategoryId,
+      finalCategoryId: fallbackCategoryId,
+      confidence: 'fallback',
+      reason: '자동 분류 응답이 불안정해 키워드 기반 보조 규칙으로 분류했습니다.',
+      recommendedImageStyle: getBlogCategoryProfile(fallbackCategoryId)?.recommendedImageStyle || '',
+    })
+  }
+}
+
+function buildBlogCategoryInstruction(selection = null) {
+  if (!selection?.finalCategoryId) return ''
+  const profile = getBlogCategoryProfile(selection.finalCategoryId)
+  if (!profile) return ''
+
+  return `
+## 블로그 카테고리 가이드
+- 적용 카테고리: ${profile.label}
+- 작성 목적: ${profile.goal}
+- 제목 패턴: ${profile.titlePattern}
+- 도입 방식: ${profile.introPattern}
+- 본문 구조: ${profile.bodyPattern.join(' -> ')}
+- CTA 강도: ${profile.ctaLevel}
+${profile.promptLines.map((line) => `- ${line}`).join('\n')}
+`
+}
+
+function withBlogCategoryMetadata(content, selection) {
+  if (!content || !selection?.finalCategoryId) return content
+  return {
+    ...content,
+    categoryInfo: normalizeBlogCategorySelection(selection),
+  }
+}
+
 function buildOptionsInstruction(options = {}) {
   const parts = []
   const toneMap = {
@@ -802,6 +962,7 @@ ${buildInstagramCaptionRules()}
 - sections[].content는 충분한 길이의 본문으로 작성하세요.
 - sections[].content에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 ${buildBlogBodyLineBreakRules()}
+${buildBlogCategoryInstruction(options.blogCategorySelection)}
 
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
@@ -876,8 +1037,9 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 }
 
 export async function generateAllContent(summary, rawText, emphasis, options = {}) {
+  const blogCategorySelection = await recommendBlogCategory(summary, rawText, emphasis, options)
   const [fourResult] = await Promise.allSettled([
-    generate4Channels(summary, rawText, emphasis, options),
+    generate4Channels(summary, rawText, emphasis, { ...options, blogCategorySelection }),
   ])
 
   const four = fourResult.status === 'fulfilled' ? fourResult.value : null
@@ -887,7 +1049,7 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
   }
 
   return {
-    blog: await finalizeBlogContent(four?.blog || null),
+    blog: withBlogCategoryMetadata(await finalizeBlogContent(four?.blog || null), blogCategorySelection),
     newsletter: four?.newsletter || null,
     instagram: sanitizeInstagramContent(four?.instagram || null, { summary, rawText }),
     shorts: sanitizeShortsContent(four?.shorts || null),
@@ -909,6 +1071,9 @@ const CHANNEL_LABELS = {
 }
 
 async function retryNonLongform(channels, summary, rawText, emphasis, options = {}) {
+  const blogCategorySelection = channels.includes('blog')
+    ? await recommendBlogCategory(summary, rawText, emphasis, options)
+    : null
   const schemaLines = channels.map((channel) => CHANNEL_SCHEMAS[channel]).join(',\n  ')
   const channelNames = channels.map((channel) => CHANNEL_LABELS[channel]).join(', ')
 
@@ -930,6 +1095,7 @@ ${buildInstagramCaptionRules()}
 ${buildBlogTitleRules()}
 ## 블로그 규칙
 - sections[].content에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+${buildBlogCategoryInstruction(blogCategorySelection)}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
@@ -949,6 +1115,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   for (const channel of channels) {
     output[channel] = parsed[channel] || null
   }
+  if (output.blog) output.blog = withBlogCategoryMetadata(output.blog, blogCategorySelection)
   if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram, { summary, rawText })
   if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
   return output
@@ -976,6 +1143,7 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis, 
 }
 
 export async function generateBlogContent(summary, rawText, emphasis, options = {}) {
+  const blogCategorySelection = await recommendBlogCategory(summary, rawText, emphasis, options)
   const prompt = `당신은 네이버 블로그 전문 작가입니다. 아래 정보를 바탕으로 블로그 글을 작성하세요.
 
 ## 공통 규칙
@@ -986,6 +1154,7 @@ export async function generateBlogContent(summary, rawText, emphasis, options = 
 - 블로그 본문에서는 취소선(~~text~~, --text--)과 italic(*text*, _text_)도 사용하지 마세요.
 - 날짜, 일정, 핵심 키워드도 굵게 표시하지 말고 일반 텍스트로 작성하세요.
 ${buildBlogBodyLineBreakRules()}
+${buildBlogCategoryInstruction(blogCategorySelection)}
 
 ${buildBlogTitleRules()}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
@@ -994,7 +1163,10 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 {"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
-  return await finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' }))
+  return withBlogCategoryMetadata(
+    await finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })),
+    blogCategorySelection,
+  )
 }
 
 export async function generateNewsletterContent(summary, rawText, emphasis, options = {}) {

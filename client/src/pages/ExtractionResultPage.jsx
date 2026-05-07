@@ -46,6 +46,7 @@ import {
   getInstagramOverlayLines,
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
+import { getBlogImageStyleLabel } from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
@@ -290,8 +291,8 @@ export default function ExtractionResultPage() {
         const title = blogTitle || blogContent?.title || ''
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
         const tags = normalizeBlogTags(blogContent)
-        const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
         const categoryPath = String(platformConnections?.blog?.categoryPath || '').trim()
+        const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
           ? options.scheduledAtOverride
           : null
 
@@ -329,10 +330,10 @@ export default function ExtractionResultPage() {
           formData.append('content', content)
           formData.append('tags', JSON.stringify(tags))
           formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
-          if (scheduledAt) {
           if (categoryPath) {
             formData.append('categoryPath', categoryPath)
           }
+          if (scheduledAt) {
             formData.append('scheduledAt', scheduledAt)
           }
 
@@ -1004,6 +1005,7 @@ export default function ExtractionResultPage() {
 
   const renderBlog = () => {
     const blogTags = normalizeBlogTags(blogContent)
+    const blogCategoryInfo = blogContent?.categoryInfo || null
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1065,8 +1067,23 @@ export default function ExtractionResultPage() {
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
               {blogContent?.title}
             </h1>
-            {blogTags.length > 0 && (
+            {(blogCategoryInfo?.finalCategoryId || blogTags.length > 0) && (
               <div className="mt-4 flex flex-wrap gap-2">
+                {blogCategoryInfo?.finalCategoryLabel && (
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    카테고리: {blogCategoryInfo.finalCategoryLabel}
+                  </span>
+                )}
+                {blogCategoryInfo?.mode && (
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
+                    {blogCategoryInfo.mode === 'manual' ? '직접 선택' : '자동 추천'}
+                  </span>
+                )}
+                {blogCategoryInfo?.recommendedImageStyleLabel && (
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+                    추천 이미지: {getBlogImageStyleLabel(blogCategoryInfo.recommendedImageStyle)}
+                  </span>
+                )}
                 {blogTags.map((tag, index) => (
                   <span
                     key={`${tag}-${index}`}

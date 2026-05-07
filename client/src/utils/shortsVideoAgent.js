@@ -232,7 +232,7 @@ export function buildShortsVideoAgentPrompt({
     'Never cover the avatar face with subtitles, titles, labels, charts, or numeric overlays.',
     'Do not use the lower third for decorative overlays, scene labels, or emphasis text.',
     'Avoid adding extra scenes or stretching the script beyond the target runtime.',
-    extraPrompt || '',
+    extraPrompt ? `Highest-priority user override: ${extraPrompt}` : '',
   ]
     .filter(Boolean)
     .join('\n')
