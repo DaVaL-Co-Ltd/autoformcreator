@@ -7,11 +7,8 @@ const { hasSavedSession, getPlaywrightDiagnostics } = require('./naver-upload')
 const { uploadToNaverBlogV2 } = require('./naver-blog-rpa-v2')
 const { getUploadById, getUploadRuntimeState } = require('./upload-runtime')
 const { naverLogin } = require('./naver-login')
-const { bandLogin } = require('./band-login')
-const { openBandWriteModal } = require('./band-upload')
 const {
   clearSessionState,
-  loadBandSessionState,
   validateStoredNaverSession,
 } = require('./session-state')
 
@@ -251,85 +248,6 @@ function createApp() {
     }
   })
 
-  expressApp.post('/api/session/band/login', helperClientGuard, async (_req, res) => {
-    try {
-      const result = await bandLogin()
-      res.json({
-        success: true,
-        endpoint: `http://127.0.0.1:${PORT}/api/session/band/login`,
-        source: UPLOAD_SOURCE,
-        sessionPath: result.sessionPath,
-      })
-    } catch (error) {
-      console.error('[Desktop API] Band login failed', error)
-      res.status(500).json({
-        success: false,
-        endpoint: `http://127.0.0.1:${PORT}/api/session/band/login`,
-        source: UPLOAD_SOURCE,
-        error: error.message,
-      })
-    }
-  })
-
-  expressApp.get('/api/test/band/inspect-session', helperClientGuard, (_req, res) => {
-    const endpoint = `http://127.0.0.1:${PORT}/api/test/band/inspect-session`
-    try {
-      const state = loadBandSessionState()
-      if (!state) {
-        res.status(404).json({ success: false, endpoint, error: 'Band session file is missing.' })
-        return
-      }
-      const cookies = state.cookies || []
-      const now = Date.now() / 1000
-      const cookieSummary = cookies.map((cookie) => ({
-        name: cookie.name,
-        domain: cookie.domain,
-        path: cookie.path,
-        secure: Boolean(cookie.secure),
-        httpOnly: Boolean(cookie.httpOnly),
-        sameSite: cookie.sameSite || null,
-        expires: cookie.expires || 0,
-        expired: typeof cookie.expires === 'number' && cookie.expires > 0 && cookie.expires <= now,
-      }))
-      const hasBandsession = cookieSummary.some((cookie) => /band/i.test(cookie.name))
-      const origins = (state.origins || []).map((origin) => ({
-        origin: origin.origin,
-        localStorageKeys: (origin.localStorage || []).map((entry) => entry.name),
-      }))
-      res.json({
-        success: true,
-        endpoint,
-        cookieCount: cookies.length,
-        hasBandsession,
-        cookies: cookieSummary,
-        origins,
-      })
-    } catch (error) {
-      console.error('[Desktop API] Band inspect-session failed', error)
-      res.status(500).json({ success: false, endpoint, error: error.message })
-    }
-  })
-
-  expressApp.post('/api/test/band/open-write-modal', helperClientGuard, async (req, res) => {
-    const endpoint = `http://127.0.0.1:${PORT}/api/test/band/open-write-modal`
-    try {
-      const { bandUrl, headless, holdMs } = req.body || {}
-      if (!bandUrl) {
-        res.status(400).json({ success: false, endpoint, error: 'bandUrl is required' })
-        return
-      }
-      const result = await openBandWriteModal({
-        bandUrl,
-        headless: Boolean(headless),
-        holdMs: typeof holdMs === 'number' ? holdMs : 5000,
-      })
-      res.json({ endpoint, ...result })
-    } catch (error) {
-      console.error('[Desktop API] Band open-write-modal failed', error)
-      res.status(500).json({ success: false, endpoint, error: error.message })
-    }
-  })
-
   expressApp.post('/api/upload', helperClientGuard, upload.array('photos', 20), async (req, res) => {
     const photoPaths = (req.files || []).map((file) => file.path)
     const endpoint = `http://127.0.0.1:${PORT}/api/upload`
@@ -364,6 +282,9 @@ function createApp() {
       }
 
       const { content, showBrowser, title } = req.body
+      const categoryPath = typeof req.body.categoryPath === 'string'
+        ? req.body.categoryPath.trim()
+        : ''
       const scheduledAt = req.body.scheduledAt &&
         !['null', 'undefined', ''].includes(String(req.body.scheduledAt).trim().toLowerCase())
         ? req.body.scheduledAt
@@ -372,6 +293,7 @@ function createApp() {
       const headless = showBrowser !== 'true'
 
       const uploadPromise = uploadToNaverBlogV2({
+        categoryPath,
         content,
         headless,
         photoPaths,

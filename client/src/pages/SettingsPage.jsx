@@ -210,6 +210,7 @@ export default function SettingsPage() {
       accumulator[key] = {
         displayName: all[key]?.displayName || '',
         url: all[key]?.url || '',
+        categoryPath: all[key]?.categoryPath || '',
       }
       return accumulator
     }, {})
@@ -278,6 +279,7 @@ export default function SettingsPage() {
           accumulator[key] = {
             displayName: all[key]?.displayName || '',
             url: all[key]?.url || '',
+            categoryPath: all[key]?.categoryPath || '',
           }
           return accumulator
         }, {})
@@ -348,6 +350,7 @@ export default function SettingsPage() {
     await updateDisplay(key, {
       displayName: draft.displayName.trim(),
       url: draft.url.trim(),
+      ...(key === 'blog' ? { categoryPath: draft.categoryPath.trim() } : {}),
     })
     setFooterSavedKey(key)
     setTimeout(() => {
@@ -743,7 +746,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               {FOOTER_PLATFORMS.map(({ key, name, Icon, color, bg, urlPlaceholder }) => {
                 const FooterPlatformIcon = Icon
-                const draft = footerDrafts[key] || { displayName: '', url: '' }
+                const draft = footerDrafts[key] || { displayName: '', url: '', categoryPath: '' }
                 const saved = footerSavedKey === key
 
                 return (
@@ -793,6 +796,27 @@ export default function SettingsPage() {
                         />
                       </div>
                     </div>
+
+                    {key === 'blog' && (
+                      <div className="mt-3">
+                        <label className="mb-1.5 block text-xs font-medium text-text-muted">기본 카테고리</label>
+                        <input
+                          type="text"
+                          value={draft.categoryPath}
+                          onChange={(event) =>
+                            setFooterDrafts((previous) => ({
+                              ...previous,
+                              [key]: { ...previous[key], categoryPath: event.target.value },
+                            }))
+                          }
+                          placeholder="예: 대입 정보 > 수시"
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                        <p className="mt-1.5 text-xs text-text-muted">
+                          블로그 발행 시 이 값을 우선 적용합니다. 네이버에 보이는 이름과 동일하게 입력하세요.
+                        </p>
+                      </div>
+                    )}
 
                     <div className="mt-3 flex justify-end">
                       <button

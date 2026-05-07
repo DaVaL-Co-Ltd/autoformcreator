@@ -291,6 +291,7 @@ export default function ExtractionResultPage() {
         const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
         const tags = normalizeBlogTags(blogContent)
         const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
+        const categoryPath = String(platformConnections?.blog?.categoryPath || '').trim()
           ? options.scheduledAtOverride
           : null
 
@@ -304,7 +305,7 @@ export default function ExtractionResultPage() {
               'Content-Type': 'application/json',
               'x-app-secret': import.meta.env.VITE_API_SECRET || '',
             },
-            body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags }),
+            body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags, categoryPath }),
           }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
           responseStatus = response.status
 
@@ -329,6 +330,9 @@ export default function ExtractionResultPage() {
           formData.append('tags', JSON.stringify(tags))
           formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
           if (scheduledAt) {
+          if (categoryPath) {
+            formData.append('categoryPath', categoryPath)
+          }
             formData.append('scheduledAt', scheduledAt)
           }
 

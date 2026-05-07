@@ -11,6 +11,7 @@ import { normalizeBlogTags } from '../utils/blogTags.js'
 import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
 import { sanitizeBlogBodyForUpload } from '../utils/blogBodySanitizer.js'
+import { getAll as getPlatformConnections } from '../utils/platformConnections.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -79,6 +80,7 @@ export async function uploadToBlog(extractionId, options = {}) {
 
   const normalizedContent = stripMarkdown(rawContent)
   const normalizedTags = normalizeBlogTags(blog)
+  const categoryPath = String(getPlatformConnections()?.blog?.categoryPath || '').trim()
   const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
     ? options.scheduledAtOverride
     : null
@@ -94,6 +96,7 @@ export async function uploadToBlog(extractionId, options = {}) {
           content: normalizedContent,
           scheduledAt,
           tags: normalizedTags,
+          categoryPath,
         }),
       },
       BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
@@ -119,6 +122,9 @@ export async function uploadToBlog(extractionId, options = {}) {
   formData.append('content', normalizedContent)
   formData.append('tags', JSON.stringify(normalizedTags))
   formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
+  if (categoryPath) {
+    formData.append('categoryPath', categoryPath)
+  }
   if (scheduledAt) {
     formData.append('scheduledAt', scheduledAt)
   }

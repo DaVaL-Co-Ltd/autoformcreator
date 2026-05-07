@@ -14,17 +14,8 @@ function getSessionPath() {
   return path.join(app.getPath('userData'), 'naver-session.json')
 }
 
-function getBandSessionPath() {
-  return path.join(app.getPath('userData'), 'band-session.json')
-}
-
 function isAuthCookie(cookie) {
   return cookie?.name === 'NID_AUT' || cookie?.name === 'NID_SES'
-}
-
-function isBandSessionCookie(cookie) {
-  const domain = String(cookie?.domain || '').toLowerCase()
-  return domain.endsWith('band.us')
 }
 
 function isCookieExpired(cookie) {
@@ -105,42 +96,6 @@ function hasUsableSessionState() {
     }
 
     return (state.cookies || []).some((cookie) => isAuthCookie(cookie) && !isCookieExpired(cookie))
-  } catch {
-    return false
-  }
-}
-
-function loadBandSessionState() {
-  const sessionPath = getBandSessionPath()
-  if (!fs.existsSync(sessionPath)) {
-    return null
-  }
-
-  const raw = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))
-  return unwrapSessionPayload(raw)
-}
-
-function saveBandSessionState(storageState) {
-  const sessionPath = getBandSessionPath()
-  fs.writeFileSync(sessionPath, JSON.stringify(wrapSessionPayload(storageState), null, 2), 'utf8')
-  return sessionPath
-}
-
-function clearBandSessionState() {
-  const sessionPath = getBandSessionPath()
-  if (fs.existsSync(sessionPath)) {
-    fs.rmSync(sessionPath, { force: true })
-  }
-}
-
-function hasUsableBandSessionState() {
-  try {
-    const state = loadBandSessionState()
-    if (!state) {
-      return false
-    }
-
-    return (state.cookies || []).some((cookie) => isBandSessionCookie(cookie) && !isCookieExpired(cookie))
   } catch {
     return false
   }
@@ -233,16 +188,11 @@ async function validateStoredNaverSession({ bypassCache = false } = {}) {
 }
 
 module.exports = {
-  clearBandSessionState,
   clearSessionState,
-  getBandSessionPath,
   getSessionPath,
   hasNaverLoginMarker,
-  hasUsableBandSessionState,
   hasUsableSessionState,
-  loadBandSessionState,
   loadSessionState,
-  saveBandSessionState,
   saveSessionState,
   validateStoredNaverSession,
 }

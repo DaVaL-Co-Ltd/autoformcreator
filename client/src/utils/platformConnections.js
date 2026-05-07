@@ -11,6 +11,7 @@ const DEFAULTS = {
     account: null,
     displayName: '블로그 바로가기',
     url: 'https://m.blog.naver.com/PostList.naver?blogId=onlyjungdw',
+    categoryPath: '',
     connectedAt: null,
   },
   newsletter: {
@@ -184,14 +185,16 @@ export async function connect(platform, accountOrPayload) {
   return all[platform]
 }
 
-export async function updateDisplay(platform, { displayName, url } = {}) {
+export async function updateDisplay(platform, updates = {}) {
   const all = readLocal()
   const prev = all[platform] || DEFAULTS[platform]
+  const { displayName, url, ...localOnlyUpdates } = updates
 
   all[platform] = {
     ...prev,
     ...(displayName !== undefined ? { displayName } : {}),
     ...(url !== undefined ? { url } : {}),
+    ...localOnlyUpdates,
   }
 
   writeLocal(all)

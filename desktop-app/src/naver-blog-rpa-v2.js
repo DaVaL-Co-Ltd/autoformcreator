@@ -1600,6 +1600,231 @@ async function openPublishDialogV2(page, targets) {
   throw new Error('Naver blog publish popup did not open after mainFrame simple click.')
 }
 
+function normalizeCategoryPath(categoryPath = '') {
+  return String(categoryPath)
+    .split('>')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+}
+
+async function clickCategorySelectorInScope(scope) {
+  return scope.evaluate(() => {
+    const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== 'hidden' &&
+        style.display !== 'none' &&
+        Number(style.opacity || '1') > 0
+    }
+    const getLabel = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('value'),
+      element.getAttribute?.('data-name'),
+      element.getAttribute?.('data-testid'),
+      element.className,
+    ].filter(Boolean).join(' '))
+    const dialogRoots = Array.from(document.querySelectorAll([
+      '[data-group="popupLayer"]',
+      '[role="dialog"]',
+      '[class*="popup"]',
+      '[class*="Popup"]',
+      '[class*="layer"]',
+      '[class*="Layer"]',
+    ].join(','))).filter(isVisible)
+    const dialogRoot = dialogRoots.find((root) => {
+      const text = normalize(root.textContent)
+      return text.includes('카테고리') && (text.includes('공개') || text.includes('발행') || text.includes('예약') || text.includes('태그'))
+    })
+    if (!dialogRoot) return { clicked: false, reason: 'dialog-not-found' }
+
+    const selector = [
+      'button',
+      'a',
+      'input[type="button"]',
+      'input[type="submit"]',
+      '[role="button"]',
+      '[class*="category"]',
+      '[class*="Category"]',
+      '[class*="select"]',
+      '[class*="Select"]',
+    ].join(',')
+
+    const candidates = Array.from(dialogRoot.querySelectorAll(selector))
+      .filter(isVisible)
+      .map((element) => {
+        const label = getLabel(element)
+        const lower = label.toLowerCase()
+        let score = 0
+        if (label.includes('카테고리')) score += 120
+        if (lower.includes('category')) score += 80
+        if (/\b(category|select|dropdown)\b/i.test(String(element.className || ''))) score += 30
+        if (label.includes('태그') || label.includes('발행') || label.includes('공개') || label.includes('예약')) score -= 80
+        return { element, label, score }
+      })
+      .filter((item) => item.score > 0)
+      .sort((left, right) => right.score - left.score)
+
+    const target = candidates[0]
+    if (!target) return { clicked: false, reason: 'selector-not-found' }
+    target.element.scrollIntoView({ block: 'center', inline: 'center' })
+    target.element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }))
+    target.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+    target.element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+    target.element.click()
+    return { clicked: true, label: target.label }
+  }).catch(() => ({ clicked: false, reason: 'scope-error' }))
+}
+
+async function clickCategoryOptionInScope(scope, categoryPath) {
+  return scope.evaluate(({ categoryPath }) => {
+    const segments = String(categoryPath)
+      .split('>')
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+    const fullPath = segments.join(' > ')
+    const leaf = segments[segments.length - 1] || ''
+    const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim()
+    const isVisible = (element) => {
+      if (!(element instanceof Element)) return false
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 &&
+        rect.height > 0 &&
+        style.visibility !== 'hidden' &&
+        style.display !== 'none' &&
+        Number(style.opacity || '1') > 0
+    }
+    const getLabel = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('value'),
+    ].filter(Boolean).join(' '))
+    const roots = Array.from(document.querySelectorAll([
+      '[data-group="popupLayer"]',
+      '[role="dialog"]',
+      '[class*="popup"]',
+      '[class*="Popup"]',
+      '[class*="layer"]',
+      '[class*="Layer"]',
+      '[role="listbox"]',
+      'ul',
+      'ol',
+    ].join(',')))
+      .filter(isVisible)
+      .filter((element) => {
+        const text = normalize(element.textContent)
+        return (
+          text.includes('카테고리') ||
+          text.includes(leaf) ||
+          (fullPath && text.includes(fullPath))
+        )
+      })
+    const selector = [
+      'button',
+      'a',
+      'input[type="button"]',
+      'input[type="submit"]',
+      '[role="button"]',
+      'li',
+      'label',
+      '[class*="item"]',
+      '[class*="Item"]',
+      '[class*="option"]',
+      '[class*="Option"]',
+      '[class*="category"]',
+      '[class*="Category"]',
+      'div',
+      'span',
+    ].join(',')
+
+    const candidatePool = roots.length > 0
+      ? roots.flatMap((root) => Array.from(root.querySelectorAll(selector)))
+      : Array.from(document.querySelectorAll(selector))
+
+    const candidates = candidatePool
+      .filter(isVisible)
+      .map((element) => {
+        const label = getLabel(element)
+        if (!label) return null
+        if (label.includes('카테고리') || label.includes('태그') || label.includes('발행') || label.includes('공개') || label.includes('예약')) {
+          return null
+        }
+
+        const rect = element.getBoundingClientRect()
+        let score = 0
+        if (label === fullPath) score += 200
+        if (label === leaf) score += 160
+        if (leaf && label.endsWith(leaf)) score += 100
+        if (fullPath && label.includes(fullPath)) score += 90
+        if (leaf && label.includes(leaf)) score += 70
+        if (/\b(category|item|option|list)\b/i.test(String(element.className || ''))) score += 20
+        if (element.closest('[role="listbox"], ul, ol, [class*="list"], [class*="option"], [class*="Option"]')) score += 20
+        if (rect.top > 0 && rect.left > 0) score += 1
+
+        return score > 0 ? { element, label, score } : null
+      })
+      .filter(Boolean)
+      .sort((left, right) => right.score - left.score)
+
+    const target = candidates[0]
+    if (!target) {
+      return { clicked: false, reason: 'option-not-found' }
+    }
+
+    target.element.scrollIntoView({ block: 'center', inline: 'center' })
+    target.element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }))
+    target.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+    target.element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+    target.element.click()
+    return { clicked: true, label: target.label }
+  }, { categoryPath }).catch(() => ({ clicked: false, reason: 'scope-error' }))
+}
+
+async function selectPublishCategory(page, targets, categoryPath) {
+  const segments = normalizeCategoryPath(categoryPath)
+  if (!segments.length) return
+
+  const normalizedPath = segments.join(' > ')
+  updateUploadStage('select-category', {
+    stageLabel: 'select category',
+    categoryPath: normalizedPath,
+  })
+
+  const dialogTargets = getPublishDialogTargets(targets)
+  const attempts = []
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (const target of dialogTargets) {
+      const result = await clickCategoryOptionInScope(target.scope, normalizedPath)
+      if (result.clicked) {
+        console.log(`[Naver Blog V2] Selected category via ${target.label}: ${result.label}`)
+        await page.waitForTimeout(500)
+        return
+      }
+      attempts.push(`${target.label}:${result.reason}`)
+    }
+
+    for (const target of dialogTargets) {
+      const result = await clickCategorySelectorInScope(target.scope)
+      if (result.clicked) {
+        console.log(`[Naver Blog V2] Opened category selector via ${target.label}: ${result.label}`)
+        await page.waitForTimeout(500)
+        break
+      }
+      attempts.push(`${target.label}:${result.reason}`)
+    }
+  }
+
+  throw new Error(`설정한 블로그 카테고리를 네이버 발행창에서 찾지 못했습니다: ${normalizedPath} (${attempts.slice(0, 6).join(' | ')})`)
+}
+
 async function clickPublishV2(page) {
   updateUploadStage('publish-open', { stageLabel: 'open publish' })
   const opened = await clickButtonByPatterns(page, [
@@ -1642,7 +1867,7 @@ async function waitForPublishResult(page) {
   return page.url()
 }
 
-async function uploadToNaverBlogV2({ title, content, tags = [], photoPaths = [], headless = true, scheduledAt = null }) {
+async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [], photoPaths = [], headless = true, scheduledAt = null }) {
   if (!title || !String(title).trim()) throw new Error('블로그 제목이 필요합니다.')
   if (!content || !String(content).trim()) throw new Error('블로그 본문이 필요합니다.')
 
@@ -1696,6 +1921,7 @@ async function uploadToNaverBlogV2({ title, content, tags = [], photoPaths = [],
 
     const targets = getEditorTargets(page)
     await openPublishDialogV2(page, targets)
+    await selectPublishCategory(page, targets, categoryPath)
 
     updateUploadStage('fill-tags', { stageLabel: 'fill tags', tagCount: tags.length })
     await fillPublishDialogTags(page, targets, tags)
