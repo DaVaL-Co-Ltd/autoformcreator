@@ -28,6 +28,9 @@
     "electron": "^42.0.0",
     "electron-builder": "^26.8.1"
   },
+  "overrides": {
+    "fast-uri": "^3.1.2"
+  },
   "build": {
     "appId": "com.autoformcreator.naverrpa",
     "productName": "AutoForm Naver RPA",
