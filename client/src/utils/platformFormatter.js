@@ -47,6 +47,55 @@ export function formatInstagramRequest(instagramContent = {}, imageUrls = []) {
 }
 
 /**
+ * Convert generated shorts content into the Instagram Reels upload payload.
+ * @param {{ title?: string, uploadTitle?: string, uploadDescription?: string, hook?: string, scenes?: Array<{ narration?: string }>, cta?: string, hashtags?: string[] }} shortsScript
+ * @param {string} videoUrl
+ * @returns {{ videoUrl: string, caption: string, hashtags: string[] }}
+ */
+export function formatInstagramReelsRequest(shortsScript = {}, videoUrl = '') {
+  const limits = PLATFORM_LIMITS.instagram
+
+  let rawCaption
+  if (shortsScript.uploadDescription) {
+    rawCaption = stripMarkdownEmphasis(shortsScript.uploadDescription)
+  } else {
+    const captionParts = []
+    if (shortsScript.uploadTitle || shortsScript.title) {
+      captionParts.push(stripMarkdownEmphasis(shortsScript.uploadTitle || shortsScript.title))
+    }
+    if (shortsScript.hook) captionParts.push(stripMarkdownEmphasis(shortsScript.hook))
+    if (Array.isArray(shortsScript.scenes)) {
+      shortsScript.scenes.forEach((scene, index) => {
+        if (scene?.narration) {
+          captionParts.push(`${index + 1}. ${stripMarkdownEmphasis(scene.narration)}`)
+        }
+      })
+    }
+    if (shortsScript.cta) captionParts.push(stripMarkdownEmphasis(shortsScript.cta))
+    rawCaption = captionParts.join('\n')
+  }
+
+  const caption = truncate(rawCaption, limits.captionMax)
+  const hashtags = stripExtraHashtags(shortsScript.hashtags || [], limits.hashtagMax)
+  const tagText = hashtags
+    .map((tag) => (String(tag).startsWith('#') ? tag : `#${tag}`))
+    .join(' ')
+  const fullCaption = tagText ? `${caption}\n\n${tagText}` : caption
+
+  console.log('[platformFormatter] formatInstagramReelsRequest', {
+    captionLength: fullCaption.length,
+    hashtagCount: hashtags.length,
+    videoUrl,
+  })
+
+  return {
+    videoUrl,
+    caption: fullCaption,
+    hashtags,
+  }
+}
+
+/**
  * Convert generated shorts content into the YouTube upload payload.
  * @param {{ title?: string, uploadTitle?: string, uploadDescription?: string, hook?: string, scenes?: Array<{ narration?: string }>, cta?: string, hashtags?: string[] }} shortsScript
  * @param {string} videoUrl
