@@ -13,7 +13,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
-import { formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
+import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
 import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 import {
   getAll as getPlatformConnections,
@@ -124,14 +124,14 @@ const menuItems = [
   { id: 'blog',       label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   { id: 'newsletter', label: '뉴스레터',      icon: Mail,     color: 'text-blue-500',    bg: 'bg-blue-500/10' },
   { id: 'instagram',  label: '인스타그램',    icon: Image,    color: 'text-pink-400',    bg: 'bg-pink-400/10' },
-  { id: 'shorts',     label: '유튜브 숏츠',   icon: Film,     color: 'text-red-500',     bg: 'bg-red-500/10' },
+  { id: 'shorts',     label: '유튜브 쇼츠/릴스', icon: Film,   color: 'text-red-500',     bg: 'bg-red-500/10' },
 ]
 
 const footerLinkMeta = {
   blog: { badge: 'N', badgeBg: '#03C75A', badgeColor: '#ffffff', bg: '#03C75A', fallbackLabel: '블로그 바로가기' },
   newsletter: { badge: '✉', bg: '#2563eb', fallbackLabel: '뉴스레터 바로가기' },
   instagram: { badge: '◐', bg: '#E1306C', fallbackLabel: '인스타그램 바로가기' },
-  shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '유튜브 바로가기' },
+  shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '쇼츠/릴스 바로가기' },
 }
 
 export default function ExtractionResultPage() {
@@ -169,6 +169,7 @@ export default function ExtractionResultPage() {
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
+  const [shortsUploadTargets, setShortsUploadTargets] = useState({ instagram: true, youtube: true })
 
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
@@ -462,67 +463,151 @@ export default function ExtractionResultPage() {
 
     if (channel === 'shorts') {
       try {
+        const requestedTargets = options.targets || shortsUploadTargets
+        const selectedTargets = {
+          youtube: Boolean(requestedTargets.youtube),
+          instagram: Boolean(requestedTargets.instagram),
+        }
+        if (!selectedTargets.youtube && !selectedTargets.instagram) {
+          throw new Error('업로드할 플랫폼을 하나 이상 선택해주세요.')
+        }
+
         // 상대 경로면 현재 origin을 붙여 서버가 fetch 가능한 URL로 변환
-        let absVideoUrl = shortsVideo?.url || ''
+        let absVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl || ''
         if (absVideoUrl.startsWith('/output/') && API_BASE) {
           absVideoUrl = `${API_BASE}${absVideoUrl}`
         } else if (absVideoUrl.startsWith('/')) {
           absVideoUrl = `${window.location.origin}${absVideoUrl}`
         }
+        if (!absVideoUrl) {
+          throw new Error('업로드할 쇼츠/릴스 영상이 없습니다.')
+        }
+
         const scheduledAt = options.scheduledAtOverride || scheduleInfo.shorts?.scheduledAt || null
-        const formatted = formatYouTubeRequest(shortsScript, absVideoUrl, scheduledAt)
-        console.log('[ExtractionResultPage] 유튜브 숏츠 업로드 요청:', formatted)
-        const response = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-app-secret': import.meta.env.VITE_API_SECRET || '',
-          },
-          body: JSON.stringify(formatted),
-        }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'YouTube upload request')
-        const data = await withTimeout(
-          () => readApiResponse(response),
-          API_RESPONSE_TIMEOUT_MS,
-          'YouTube upload response parsing'
-        )
-        if (data.success) {
-          setUploadStatus(p => ({ ...p, shorts: 'done' }))
-          const ytUrl = data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null)
-          const resolvedScheduledAt = data.scheduledAt || scheduledAt || null
-          const nextUploadMeta = {
-            nativeSchedule: Boolean(data.scheduled || scheduledAt),
-            scheduledAt: resolvedScheduledAt,
-            status: 'uploaded',
-            uploadedAt: new Date().toISOString(),
-            uploadedUrl: ytUrl,
+        const results = {}
+        const failures = []
+
+        const uploadOrder = options.uploadOrder || ['instagram', 'youtube']
+        const uploadYoutube = async () => {
+          try {
+            const formatted = formatYouTubeRequest(shortsScript, absVideoUrl, scheduledAt)
+            console.log('[ExtractionResultPage] 유튜브 쇼츠/릴스 업로드 요청:', formatted)
+            const response = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-app-secret': import.meta.env.VITE_API_SECRET || '',
+              },
+              body: JSON.stringify(formatted),
+            }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'YouTube upload request')
+            const data = await withTimeout(
+              () => readApiResponse(response),
+              API_RESPONSE_TIMEOUT_MS,
+              'YouTube upload response parsing'
+            )
+            if (!data.success) {
+              throw new Error(getApiErrorMessage(data, `유튜브 쇼츠/릴스 업로드 실패 (${response.status})`))
+            }
+            results.youtube = {
+              scheduled: Boolean(data.scheduled || scheduledAt),
+              scheduledAt: data.scheduledAt || scheduledAt || null,
+              url: data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null),
+              videoId: data.videoId || null,
+            }
+          } catch (err) {
+            failures.push(`유튜브: ${err.message}`)
           }
+        }
+
+        const uploadInstagramReels = async () => {
+          try {
+            const formatted = formatInstagramReelsRequest(shortsScript, absVideoUrl)
+            console.log('[ExtractionResultPage] 인스타그램 릴스 업로드 요청:', formatted)
+            const response = await fetchWithTimeout(`${API_BASE}/api/instagram/reel`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-app-secret': import.meta.env.VITE_API_SECRET || '',
+              },
+              body: JSON.stringify(formatted),
+            }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Instagram Reels upload request')
+            const data = await withTimeout(
+              () => readApiResponse(response),
+              API_RESPONSE_TIMEOUT_MS,
+              'Instagram Reels upload response parsing'
+            )
+            if (!data.success) {
+              throw new Error(getApiErrorMessage(data, `인스타그램 릴스 업로드 실패 (${response.status})`))
+            }
+            results.instagram = {
+              mediaId: data.mediaId || data.id || null,
+              url: data.permalink || data.url || null,
+            }
+          } catch (err) {
+            failures.push(`인스타그램: ${err.message}`)
+          }
+        }
+
+        for (const target of uploadOrder) {
+          if (target === 'instagram' && selectedTargets.instagram) {
+            await uploadInstagramReels()
+          }
+          if (target === 'youtube' && selectedTargets.youtube) {
+            await uploadYoutube()
+          }
+        }
+
+        const uploadedUrls = {
+          youtube: results.youtube?.url || null,
+          instagram: results.instagram?.url || null,
+        }
+        const primaryUrl = uploadedUrls.instagram || uploadedUrls.youtube || null
+        const resolvedScheduledAt = results.youtube?.scheduledAt || scheduledAt || null
+        const hasSuccess = Boolean(uploadedUrls.youtube || uploadedUrls.instagram)
+        const nextUploadMeta = {
+          nativeSchedule: Boolean(results.youtube?.scheduled || scheduledAt),
+          scheduledAt: resolvedScheduledAt,
+          status: failures.length ? (hasSuccess ? 'partial_failed' : 'failed') : 'uploaded',
+          uploadedAt: new Date().toISOString(),
+          uploadedUrl: primaryUrl,
+          uploadedUrls,
+          uploadTargets: selectedTargets,
+        }
+
+        if (hasSuccess) {
           mergeStoredUploadMeta('shorts', nextUploadMeta)
           if (extractionId) {
             updateUploadStatus(extractionId, 'shorts', nextUploadMeta)
               .catch(err => console.warn('[uploadStatus 저장 실패]', err))
           }
           if (resolvedScheduledAt) {
-            setScheduleInfo(p => ({ ...p, shorts: { scheduledAt: resolvedScheduledAt } }))
+            setScheduleInfo(p => ({ ...p, shorts: { scheduledAt: resolvedScheduledAt, uploadTargets: selectedTargets } }))
           }
-          if (ytUrl) {
-            console.log('[YouTube 업로드 완료]', ytUrl)
-            alert(`유튜브 업로드 완료!\n\n${ytUrl}\n\n링크가 클립보드에 복사되었습니다.`)
-            try {
-              await navigator.clipboard.writeText(ytUrl)
-            } catch {
-              // 클립보드 권한이 없으면 업로드 완료만 유지한다.
-            }
-            window.open(ytUrl, '_blank')
-          } else {
-            alert('업로드 완료 (URL 없음)')
-          }
+        }
+
+        if (failures.length) {
+          setUploadStatus(p => ({ ...p, shorts: hasSuccess ? 'done' : 'error' }))
+          setUploadError(`쇼츠/릴스 업로드 일부 실패: ${failures.join(' / ')}`)
         } else {
-          setUploadStatus(p => ({ ...p, shorts: 'error' }))
-          setUploadError(`유튜브 숏츠 업로드 실패: ${getApiErrorMessage(data, `유튜브 숏츠 업로드 실패 (${response.status})`)}`)
+          setUploadStatus(p => ({ ...p, shorts: 'done' }))
+          setUploadError(null)
+        }
+
+        const completedLinks = Object.entries(uploadedUrls)
+          .filter(([, url]) => Boolean(url))
+          .map(([platform, url]) => `${platform === 'youtube' ? 'YouTube' : 'Instagram'}: ${url}`)
+        if (completedLinks.length) {
+          try {
+            await navigator.clipboard.writeText(completedLinks.join('\n'))
+          } catch {
+            // 클립보드 권한이 없으면 업로드 완료만 유지한다.
+          }
+          alert(`업로드 완료!\n\n${completedLinks.join('\n')}\n\n링크가 클립보드에 복사되었습니다.`)
+          if (primaryUrl) window.open(primaryUrl, '_blank')
         }
       } catch (err) {
         setUploadStatus(p => ({ ...p, shorts: 'error' }))
-        setUploadError(`유튜브 숏츠 업로드 실패: ${err.message}`)
+        setUploadError(`쇼츠/릴스 업로드 실패: ${err.message}`)
       }
     }
   }
@@ -577,7 +662,7 @@ export default function ExtractionResultPage() {
     setDownloading(false)
   }
 
-  const downloadShortsVideo = async (videoUrl, filename = '숏츠_영상.webm') => {
+  const downloadShortsVideo = async (videoUrl, filename = '쇼츠_영상.webm') => {
     if (!videoUrl) return
     setDownloading(true)
     try {
@@ -771,7 +856,7 @@ export default function ExtractionResultPage() {
           statusMap[ch] = s
         } else if (typeof s === 'object') {
           if (s.status) statusMap[ch] = s.status
-          if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt }
+          if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt, uploadTargets: s.uploadTargets }
         }
       })
       if (Object.keys(statusMap).length) setUploadStatus(prev => ({ ...prev, ...statusMap }))
@@ -790,14 +875,18 @@ export default function ExtractionResultPage() {
         setScheduleInfo(prev => {
           const next = { ...prev }
           mine.forEach(item => {
-            next[item.platform] = { scheduledAt: item.scheduledAt, scheduledId: item.id }
+            next[item.platform] = {
+              scheduledAt: item.scheduledAt,
+              scheduledId: item.id,
+              uploadTargets: item.content?.uploadTargets,
+            }
           })
           return next
         })
         setUploadStatus(prev => {
           const next = { ...prev }
           mine.forEach(item => {
-            if (item.status === 'scheduled') next[item.platform] = 'scheduled'
+            if (item.status === 'pending') next[item.platform] = 'scheduled'
           })
           return next
         })
@@ -1107,19 +1196,23 @@ export default function ExtractionResultPage() {
               }
 
               return ensureArray(blogContent?.sections).map((section, index) => {
-                const image =
-                  blogImageList.find(img => img?.heading === section.heading && img?.imageUrl) ||
-                  blogImageList[index] ||
-                  null
-                const imageUrl = image?.imageUrl || null
-                const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || blogPngUrls[index] || null
-                const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
+                const matchedImages = blogImageList.filter(img =>
+                  img?.heading && section.heading && img.heading === section.heading &&
+                  (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl)
+                )
+                const fallbackImage = blogImageList[index] || null
+                const sectionImages = matchedImages.length
+                  ? matchedImages
+                  : fallbackImage
+                    ? [fallbackImage]
+                    : []
                 const headingText = cleanCardText(section?.heading || '')
-                const headline = deriveBlogHeadline(keyPhrase, headingText)
-                const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
                 const accentColor = accentPalette[bgColors[index % bgColors.length]] || '#6366f1'
+                const generatedArtworkIndex = sectionImages.findIndex(image =>
+                  image?.imageUrl && !image?.renderedImageUrl && !image?.pngUrl
+                )
 
-                if (!imageUrl && !renderedImageUrl) {
+                if (sectionImages.length === 0) {
                   blogImagesRef.current[index] = null
                 }
 
@@ -1127,28 +1220,42 @@ export default function ExtractionResultPage() {
                 <section key={index} className="space-y-5">
                   <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
 
-                  {(imageUrl || renderedImageUrl) && (
-                    <div className="mb-4">
-                      {renderedImageUrl ? (
-                        <img
-                          src={renderedImageUrl}
-                          alt={section.heading || `블로그 이미지 ${index + 1}`}
-                          className="w-full max-w-xl rounded-xl shadow-sm"
-                        />
-                      ) : (
-                        <BlogImageArtwork
-                          innerRef={el => { blogImagesRef.current[index] = el }}
-                          src={imageUrl}
-                          alt={section.heading || `블로그 이미지 ${index + 1}`}
-                          headline={headline}
-                          description={description}
-                          accentColor={accentColor}
-                          showTextOverlay={showBlogImageTextOverlay}
-                          variant="circle"
-                          mode="modal"
-                          containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
-                        />
-                      )}
+                  {sectionImages.length > 0 && (
+                    <div className="mb-4 space-y-4">
+                      {sectionImages.map((image, imageIndex) => {
+                        const imageUrl = image?.imageUrl || null
+                        const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || (imageIndex === 0 ? blogPngUrls[index] : null)
+                        const imageKey = `${section.heading || index}-${image?.title || image?.source || 'image'}-${imageIndex}`
+                        const imageHeadline = deriveBlogHeadline(cleanCardText(image?.keyPhrase || section?.keyPhrase || ''), headingText)
+                        const imageDescription = deriveBlogImageDescription(image?.keyPhrase || '', headingText, section?.content || '')
+
+                        return renderedImageUrl ? (
+                          <img
+                            key={imageKey}
+                            src={renderedImageUrl}
+                            alt={image?.title || section.heading || `블로그 이미지 ${index + 1}-${imageIndex + 1}`}
+                            className="w-full max-w-xl rounded-xl shadow-sm"
+                          />
+                        ) : imageUrl ? (
+                          <BlogImageArtwork
+                            key={imageKey}
+                            innerRef={el => {
+                              if (imageIndex === (generatedArtworkIndex >= 0 ? generatedArtworkIndex : 0)) {
+                                blogImagesRef.current[index] = el
+                              }
+                            }}
+                            src={imageUrl}
+                            alt={section.heading || `블로그 이미지 ${index + 1}`}
+                            headline={imageHeadline}
+                            description={imageDescription}
+                            accentColor={accentColor}
+                            showTextOverlay={showBlogImageTextOverlay}
+                            variant="circle"
+                            mode="modal"
+                            containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
+                          />
+                        ) : null
+                      })}
                     </div>
                   )}
 
@@ -1516,7 +1623,7 @@ export default function ExtractionResultPage() {
           <div className="mt-2 flex items-center gap-3">
             <button
               type="button"
-              onClick={() => downloadShortsVideo(videoUrl, `숏츠_${versionLabel}.webm`)}
+              onClick={() => downloadShortsVideo(videoUrl, `쇼츠_${versionLabel}.webm`)}
               disabled={downloading}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors disabled:opacity-50"
             >
@@ -1528,7 +1635,7 @@ export default function ExtractionResultPage() {
                 sceneTimings: timings,
                 scenes: shortsScript?.scenes || [],
                 narrations: shortsNarration || [],
-                title: `${shortsScript?.title || '숏츠 영상'} (${versionLabel})`,
+                title: `${shortsScript?.title || '쇼츠 영상'} (${versionLabel})`,
               }})}
               className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
             >
@@ -1565,6 +1672,27 @@ export default function ExtractionResultPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div />
           <div className="flex items-center gap-2 flex-wrap">
+            {[
+              { key: 'youtube', label: 'YouTube' },
+              { key: 'instagram', label: 'Instagram' },
+            ].map((target) => {
+              const selected = shortsUploadTargets[target.key]
+              return (
+                <button
+                  key={target.key}
+                  type="button"
+                  onClick={() => setShortsUploadTargets(prev => ({ ...prev, [target.key]: !prev[target.key] }))}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                    selected
+                      ? 'border-primary/40 bg-primary/10 text-primary-light'
+                      : 'border-border text-text-muted hover:text-text hover:border-primary/40'
+                  }`}
+                >
+                  {selected && <CheckCircle size={14} />}
+                  {target.label}
+                </button>
+              )
+            })}
             <button
               onClick={() => copy(shortsDetailText)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
@@ -1642,6 +1770,9 @@ export default function ExtractionResultPage() {
     ? state.uploadStatus[activeMenu]
     : null
   const activeUploadedUrl = activeUploadMeta?.uploadedUrl || (activeMenu === 'blog' ? blogUploadResult?.url || null : null)
+  const activeUploadedUrls = activeUploadMeta?.uploadedUrls && typeof activeUploadMeta.uploadedUrls === 'object'
+    ? Object.entries(activeUploadMeta.uploadedUrls).filter(([, url]) => Boolean(url))
+    : []
   const activeMenuLabel = menuItems.find(item => item.id === activeMenu)?.label || '결과물'
 
   return (
@@ -1684,7 +1815,7 @@ export default function ExtractionResultPage() {
               const ch = activeMenu
               const status = uploadStatus[ch]
               const sched = scheduleInfo[ch]
-              const isNativeSchedule = ['blog', 'shorts'].includes(ch) && status === 'done' && Boolean(sched?.scheduledAt)
+              const isNativeSchedule = ch === 'blog' && status === 'done' && Boolean(sched?.scheduledAt)
               const isScheduled = status === 'scheduled' && !isNativeSchedule
               return (
                 <>
@@ -1731,7 +1862,10 @@ export default function ExtractionResultPage() {
                         blog: blogContent,
                         newsletter: newsletterContent,
                         instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
-                        shorts: shortsScript,
+                        shorts: {
+                          ...(shortsScript || {}),
+                          uploadTargets: sched?.uploadTargets || activeUploadMeta?.uploadTargets || shortsUploadTargets,
+                        },
                       }
                       setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
                     }}
@@ -1752,6 +1886,22 @@ export default function ExtractionResultPage() {
           <div className="min-w-0">
             <p className="text-sm font-medium text-text">{activeMenuLabel} 결과물을 확인할 수 있습니다.</p>
             <p className="mt-1 text-xs text-text-muted break-all">{activeUploadedUrl}</p>
+            {activeUploadedUrls.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {activeUploadedUrls.map(([platform, url]) => (
+                  <a
+                    key={platform}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-primary/20 px-2.5 py-1 text-xs font-medium text-primary-light hover:border-primary/40"
+                  >
+                    {platform === 'youtube' ? 'YouTube' : 'Instagram'}
+                    <ExternalLink size={11} />
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <a
             href={activeUploadedUrl}
@@ -1817,7 +1967,7 @@ export default function ExtractionResultPage() {
         defaultPlatform={scheduleDialog.platform}
         content={scheduleDialog.content}
         lockPlatform={true}
-        onSave={async ({ platform, scheduledAt, content }) => {
+        onSave={async ({ platform, scheduledAt, content, uploadTargets }) => {
           let id = extractionId
           if (!id) {
             try {
@@ -1846,10 +1996,39 @@ export default function ExtractionResultPage() {
             handleUpload(platform, { scheduledAtOverride: scheduledAt })
             return
           } else if (platform === 'shorts') {
-            setScheduleInfo(p => ({ ...p, [platform]: { scheduledAt } }))
-            setUploadStatus(p => ({ ...p, [platform]: 'loading' }))
-            setUploadError(null)
-            handleUpload(platform, { scheduledAtOverride: scheduledAt })
+            const selectedTargets = uploadTargets || shortsUploadTargets
+            try {
+              const scheduledId = scheduleInfo[platform]?.scheduledId || null
+              const savedSchedule = await createScheduledUpload({
+                platform,
+                content: {
+                  title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
+                  uploadTargets: selectedTargets,
+                },
+                scheduledAt,
+                extractionId: id,
+                scheduledId,
+              })
+              setScheduleInfo(p => ({
+                ...p,
+                [platform]: {
+                  scheduledAt: savedSchedule.scheduledAt,
+                  scheduledId: savedSchedule.id,
+                  uploadTargets: selectedTargets,
+                },
+              }))
+            } catch (err) {
+              console.error('[쇼츠/릴스 예약 생성 실패]', err)
+              alert(`예약 생성 실패: ${err.message}`)
+              return
+            }
+            await updateUploadStatus(id, platform, {
+              status: 'scheduled',
+              scheduledAt,
+              nativeSchedule: false,
+              uploadTargets: selectedTargets,
+            })
+            setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
             return
           } else {
             try {
@@ -1882,7 +2061,7 @@ export default function ExtractionResultPage() {
         onDelete={scheduleDialog.mode === 'edit' ? async () => {
           const platform = scheduleDialog.platform
           const scheduledId = scheduleInfo[platform]?.scheduledId
-          if (scheduledId && platform !== 'blog' && platform !== 'shorts') {
+          if (scheduledId && platform !== 'blog') {
             try {
               await removeScheduledUpload(scheduledId)
             } catch (err) {
@@ -1895,7 +2074,7 @@ export default function ExtractionResultPage() {
               const nextStatus = uploadStatus[platform] === 'done' ? 'uploaded' : 'not_uploaded'
               updateUploadStatus(extractionId, platform, { nativeSchedule: false, scheduledAt: null, status: nextStatus })
             } else {
-              updateUploadStatus(extractionId, platform, { status: 'not_uploaded' })
+              updateUploadStatus(extractionId, platform, { status: 'not_uploaded', nativeSchedule: false, scheduledAt: null })
             }
           }
           if (platform !== 'blog') {

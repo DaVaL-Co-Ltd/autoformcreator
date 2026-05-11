@@ -464,25 +464,31 @@ export async function renderBlogUploadImageDataUrl({
 }
 
 export async function buildBlogUploadImageDataUrls({ blogImages = [], sections = [] }) {
+  const list = Array.isArray(blogImages) ? blogImages : []
+  const thumbnailImage = list.find((image) => image?.isThumbnail && getImageUrl(image)) || null
+
   if (typeof document === 'undefined') {
-    return (Array.isArray(blogImages) ? blogImages : []).map((image) => getImageUrl(image)).filter(Boolean)
+    return [...list]
+      .sort((a, b) => Number(!!b?.isThumbnail) - Number(!!a?.isThumbnail))
+      .map((image) => getImageUrl(image))
+      .filter(Boolean)
   }
 
   const uploads = []
+  const pushedImages = new Set()
 
-  for (let index = 0; index < sections.length; index += 1) {
-    const section = sections[index] || {}
-    const image = findBlogImageSource(blogImages, section, index)
+  const appendBlogUploadImage = async (image, section, index) => {
     const renderedUrl = getRenderedImageUrl(image)
     if (renderedUrl) {
       uploads.push(renderedUrl)
-      continue
+      pushedImages.add(image)
+      return
     }
 
     const sourceUrl = getImageUrl(image)
     if (!sourceUrl) {
       uploads.push(null)
-      continue
+      return
     }
 
     const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
@@ -503,7 +509,29 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
     } catch (error) {
       console.warn(`[uploadImageComposite] Failed to render blog image ${index + 1}:`, error)
       uploads.push(sourceUrl)
+    } finally {
+      pushedImages.add(image)
     }
+  }
+
+  if (thumbnailImage) {
+    const thumbnailSectionIndex = sections.findIndex((section) => section?.heading && section.heading === thumbnailImage.heading)
+    const thumbnailSection = sections[thumbnailSectionIndex] || sections[0] || {}
+    await appendBlogUploadImage(thumbnailImage, thumbnailSection, Math.max(thumbnailSectionIndex, 0))
+  }
+
+  for (let index = 0; index < sections.length; index += 1) {
+    const section = sections[index] || {}
+    const image = findBlogImageSource(blogImages, section, index)
+    if (pushedImages.has(image)) {
+      continue
+    }
+    if (!image) {
+      uploads.push(null)
+      continue
+    }
+
+    await appendBlogUploadImage(image, section, index)
   }
 
   return uploads.filter(Boolean)

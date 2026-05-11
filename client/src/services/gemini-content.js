@@ -1,10 +1,10 @@
 ﻿import { callGeminiWithFallback, parseJSON } from './gemini-core'
 import { normalizeBlogTags } from '../utils/blogTags'
 import {
-  BLOG_CATEGORY_PROFILES,
   getBlogCategoryLabel,
   getBlogCategoryProfile,
   getBlogImageStyleLabel,
+  getOrderedBlogCategoryProfiles,
   inferBlogCategoryHeuristically,
   isValidBlogCategoryId,
 } from './blogCategoryProfile'
@@ -696,7 +696,7 @@ function buildManualBlogCategorySelection(categoryId) {
 }
 
 function buildBlogCategoryRecommendationPrompt(summary, rawText, emphasis) {
-  const categoryGuide = Object.values(BLOG_CATEGORY_PROFILES)
+  const categoryGuide = getOrderedBlogCategoryProfiles()
     .map((profile) => {
       const hints = profile.classifierHints.join(', ')
       return `- ${profile.id}: ${profile.label} | ${profile.goal} | 단서: ${hints}`
@@ -711,10 +711,10 @@ ${categoryGuide}
 분류 규칙:
 - 반드시 categoryId는 위 목록 중 하나만 반환하세요.
 - 글의 중심 목적과 전개 방식을 기준으로 고르세요.
-- "입시 및 학습 전략 스타일 1"은 성적, 과목, 공부법, 실행 전략 중심입니다.
-- "입시 및 학습 전략 스타일 2"는 제도 변화, 운영 포인트, 방향 전환 설명 중심입니다.
-- "자료나눔 및 공유"는 자료 제공, 신청, 다운로드, 마감 안내가 핵심일 때 고르세요.
-- "자체 서비스 홍보"는 특정 서비스, 프로그램, 상담, 컨설팅 소개가 핵심일 때 고르세요.
+- "입시 및 학습 전략 (글 위주)"는 성적, 과목, 공부법, 실행 전략을 문단 중심으로 풀어 설명하는 글입니다.
+- "입시 및 학습 전략 (키워드 위주)"는 제도 변화, 전형 운영 포인트, 방향 전환을 핵심 키워드 중심으로 정리하는 글입니다.
+- "자료 나눔 및 공유"는 자료 제공, 신청, 다운로드, 마감 안내가 핵심일 때 고르세요.
+- "서비스 소개/서비스 마케팅"은 특정 서비스, 프로그램, 상담, 컨설팅 소개가 핵심일 때 고르세요.
 - JSON만 출력하세요.
 
 요약 데이터:
@@ -1067,7 +1067,7 @@ const CHANNEL_LABELS = {
   blog: '네이버 블로그',
   newsletter: '뉴스레터',
   instagram: '인스타그램',
-  shorts: '유튜브 숏츠',
+  shorts: '유튜브 쇼츠/릴스',
 }
 
 async function retryNonLongform(channels, summary, rawText, emphasis, options = {}) {
