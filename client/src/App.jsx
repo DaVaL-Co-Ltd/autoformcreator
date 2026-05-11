@@ -15,6 +15,7 @@ import TitlePreviewPage from './pages/TitlePreviewPage'
 import ContentPage from './pages/ContentPage'
 import DashboardPage from './pages/DashboardPage'
 import PromptLabPage from './pages/PromptLabPage'
+import BlogCategoryComparePage from './pages/BlogCategoryComparePage'
 import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
@@ -52,6 +53,7 @@ function AppLayout() {
           <Route path="/contents" element={<ContentPage />} />
           <Route path="/contents/view" element={<ExtractionResultPage />} />
           <Route path="/prompt-lab" element={<PromptLabPage />} />
+          <Route path="/prompt-lab/blog-category" element={<BlogCategoryComparePage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/scheduled" element={<ScheduledUploadsPage />} />
           <Route path="/shorts/view" element={<ShortsViewerPage />} />

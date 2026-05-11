@@ -46,9 +46,10 @@ import {
   getInstagramOverlayLines,
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
-import { getBlogImageStyleLabel } from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
+const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
+const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
 
@@ -62,6 +63,23 @@ const escapeHtml = (value = '') => String(value)
 
 const nlToBr = (value = '') => escapeHtml(value).replace(/\n/g, '<br />')
 const FIXED_NEWSLETTER_GREETING = '안녕하세요 구독자 여러분.'
+const buildBlogTagText = (tags = []) => ensureArray(tags)
+  .map((tag) => String(tag || '').trim().replace(/^#+/, ''))
+  .filter(Boolean)
+  .map((tag) => `#${tag}`)
+  .join(' ')
+
+const appendBlogTagsToBody = (content = '', tags = []) => {
+  const trimmedContent = String(content || '').trim()
+  const tagText = buildBlogTagText(tags)
+
+  if (!tagText) return trimmedContent
+  if (!trimmedContent) return tagText
+  if (trimmedContent.includes(tagText)) return trimmedContent
+
+  return `${trimmedContent}\n\n${tagText}`
+}
+
 const stripResultCtaText = (value) => {
   if (typeof value !== 'string' || !value.trim()) return ''
 
@@ -96,6 +114,35 @@ const attachRenderedImageUrls = (images, urls) => ensureArray(images).map((image
     ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
     : image
 })
+
+function readResultDraft(draftKey) {
+  if (typeof window === 'undefined' || !draftKey) return null
+  const memoryDrafts = window[RESULT_DRAFT_WINDOW_KEY]
+  if (memoryDrafts && typeof memoryDrafts === 'object' && memoryDrafts[draftKey]) {
+    return memoryDrafts[draftKey]
+  }
+  try {
+    const raw = sessionStorage.getItem(`${RESULT_DRAFT_STORAGE_PREFIX}${draftKey}`)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function mergeStateWithDraft(state) {
+  if (!state?.draftKey) return state
+  const draft = readResultDraft(state.draftKey)
+  if (!draft) return state
+
+  return {
+    ...draft,
+    ...state,
+    blogImages: state.blogImages ?? draft.blogImages,
+    instagramImages: state.instagramImages ?? draft.instagramImages,
+    shortsVideo: state.shortsVideo ?? draft.shortsVideo,
+    fileBase64: state.fileBase64 ?? draft.fileBase64,
+  }
+}
 
 function getDistinctRawShortsUrl(videoData = {}) {
   const rawUrl = videoData?.rawUrl || null
@@ -137,12 +184,12 @@ const footerLinkMeta = {
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const [resolvedState, setResolvedState] = useState(location.state || null)
+  const [resolvedState, setResolvedState] = useState(() => mergeStateWithDraft(location.state || null))
   const [isPageLoading, setIsPageLoading] = useState(
     Boolean(location.state?.fromContents && location.state?.extractionId)
   )
   const state = useMemo(
-    () => resolvedState || location.state || {},
+    () => resolvedState || mergeStateWithDraft(location.state || null) || {},
     [resolvedState, location.state]
   )
   const dataMap = { blog: state.blogContent, newsletter: state.newsletterContent, instagram: state.instagramContent, shorts: state.shortsScript }
@@ -184,7 +231,7 @@ export default function ExtractionResultPage() {
   }, [isBusy])
 
   useEffect(() => {
-    const stateData = location.state || null
+    const stateData = mergeStateWithDraft(location.state || null)
     let cancelled = false
 
     if (!stateData) {
@@ -290,8 +337,11 @@ export default function ExtractionResultPage() {
         })
 
         const title = blogTitle || blogContent?.title || ''
-        const content = sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections)))
         const tags = normalizeBlogTags(blogContent)
+        const content = appendBlogTagsToBody(
+          sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections))),
+          tags
+        )
         const categoryPath = String(platformConnections?.blog?.categoryPath || '').trim()
         const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
           ? options.scheduledAtOverride
@@ -828,14 +878,25 @@ export default function ExtractionResultPage() {
   const saveOnceRef = useRef(false)
   useEffect(() => {
     if (saveOnceRef.current) return
-    const stateData = location.state
+    const stateData = state
     if (!stateData || !stateData.savedFromExtraction) return
     const hasContent = stateData.blogContent || stateData.newsletterContent || stateData.instagramContent || stateData.shortsScript
     if (!hasContent) return
 
     saveOnceRef.current = true
     saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
-  }, [location.state])
+  }, [state])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !extractionId || !state?.draftKey) return
+    try {
+      sessionStorage.removeItem(`${RESULT_DRAFT_STORAGE_PREFIX}${state.draftKey}`)
+    } catch {}
+    const memoryDrafts = window[RESULT_DRAFT_WINDOW_KEY]
+    if (memoryDrafts && typeof memoryDrafts === 'object') {
+      delete memoryDrafts[state.draftKey]
+    }
+  }, [extractionId, state?.draftKey])
 
   // 기존 추출 결과에서 오면 id와 uploadStatus를 location.state에서 가져옴
   const [scheduleInfo, setScheduleInfo] = useState({}) // { [channel]: { scheduledAt } }
@@ -1090,7 +1151,7 @@ export default function ExtractionResultPage() {
 
   const renderBlog = () => {
     const blogTags = normalizeBlogTags(blogContent)
-    const blogCategoryInfo = blogContent?.categoryInfo || null
+    const blogTagText = buildBlogTagText(blogTags)
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1130,7 +1191,7 @@ export default function ExtractionResultPage() {
             {blogServerStatus !== 'offline' && <RefreshCw size={12} />}
           </button>
           <button
-            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${blogBody || compileBlogBody(ensureArray(blogContent?.sections))}`)}
+            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogTagsToBody(blogBody || compileBlogBody(ensureArray(blogContent?.sections)), blogTags)}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
           >
             {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
@@ -1152,23 +1213,8 @@ export default function ExtractionResultPage() {
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
               {blogContent?.title}
             </h1>
-            {(blogCategoryInfo?.finalCategoryId || blogTags.length > 0) && (
+            {blogTags.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
-                {blogCategoryInfo?.finalCategoryLabel && (
-                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    카테고리: {blogCategoryInfo.finalCategoryLabel}
-                  </span>
-                )}
-                {blogCategoryInfo?.mode && (
-                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700">
-                    {blogCategoryInfo.mode === 'manual' ? '직접 선택' : '자동 추천'}
-                  </span>
-                )}
-                {blogCategoryInfo?.recommendedImageStyleLabel && (
-                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-                    추천 이미지: {getBlogImageStyleLabel(blogCategoryInfo.recommendedImageStyle)}
-                  </span>
-                )}
                 {blogTags.map((tag, index) => (
                   <span
                     key={`${tag}-${index}`}
@@ -1262,10 +1308,15 @@ export default function ExtractionResultPage() {
                   </div>
                 </section>
               )
-            })
-          })()}
-        </div>
-      </article>
+              })
+            })()}
+            {blogTagText && (
+              <p className="text-sm leading-relaxed text-text-muted">
+                {blogTagText}
+              </p>
+            )}
+          </div>
+        </article>
       </div>
     )
   }

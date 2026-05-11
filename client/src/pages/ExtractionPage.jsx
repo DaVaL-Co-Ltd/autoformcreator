@@ -11,7 +11,7 @@ import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
 import {
   generateBlogContent, generateNewsletterContent,
-  generateInstagramContent, generateShortsScript
+  generateInstagramContent, generateShortsScript, recommendBlogCategory
 } from '../services/gemini-content'
 import { generateBlogImages } from '../services/cardImage'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
@@ -24,6 +24,7 @@ import {
 } from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
+const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
 
 function apiFetch(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
@@ -375,7 +376,7 @@ export default function ExtractionPage() {
     ...promptSettings.content,
     enableBlogCategory: selectedChannels.blog,
     blogCategorySelection: promptSettings.content.blogCategoryMode === 'auto'
-      ? blogContent?.categoryInfo || null
+      ? blogContent?.categoryInfo || recommendedBlogCategory || null
       : null,
   })
 
@@ -383,12 +384,17 @@ export default function ExtractionPage() {
   const [parsedText, setParsedText] = useState('')
   const [verification, setVerification] = useState(null)
   const [summary, setSummary] = useState(null)
+  const [recommendedBlogCategory, setRecommendedBlogCategory] = useState(null)
+  const [loadingBlogCategoryRecommendation, setLoadingBlogCategoryRecommendation] = useState(false)
   const [blogContent, setBlogContent] = useState(null)
   const [newsletterContent, setNewsletterContent] = useState(null)
   const [instagramContent, setInstagramContent] = useState(null)
   const [shortsScript, setShortsScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
   const [blogUploadedImages, setBlogUploadedImages] = useState([])
+  const blogUploadedImagesRef = useRef([])
+  const blogImageProcessingPromiseRef = useRef(Promise.resolve())
+  const [processingBlogImages, setProcessingBlogImages] = useState(false)
   const [blogThumbnailDisabled, setBlogThumbnailDisabled] = useState(false)
   const [instagramImages, setInstagramImages] = useState(null)
   const [shortsVideo, setShortsVideo] = useState(null)
@@ -416,12 +422,13 @@ export default function ExtractionPage() {
 
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
+  const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
 
   const [retrying, setRetrying] = useState(null)
 
   const isBusy = !!(
     loading.analysis || loading.summary || loading.content ||
-    loading.media || loading.shorts || heygenUploading || fixingIssues
+    loading.media || loading.shorts || heygenUploading || fixingIssues || loadingBlogCategoryRecommendation || processingBlogImages
   )
 
   useEffect(() => {
@@ -443,6 +450,41 @@ export default function ExtractionPage() {
       [step]: (p[step] || []).filter(e => !(e.service === service && e.channel === channel))
     }))
   }
+
+  useEffect(() => {
+    if (!selectedChannels.blog || promptSettings.content.blogCategoryMode !== 'auto' || !summary || !parsedText) {
+      setRecommendedBlogCategory(null)
+      setLoadingBlogCategoryRecommendation(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingBlogCategoryRecommendation(true)
+
+    recommendBlogCategory(summary, parsedText, emphasisText, {
+      enableBlogCategory: true,
+      blogCategoryMode: 'auto',
+    })
+      .then((selection) => {
+        if (!cancelled) {
+          setRecommendedBlogCategory(selection || null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecommendedBlogCategory(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingBlogCategoryRecommendation(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedChannels.blog, promptSettings.content.blogCategoryMode, summary, parsedText, emphasisText])
 
   // 에러 발생 시 팝업 표시
   const showErrorAlert = (serviceName, detail) => {
@@ -480,12 +522,21 @@ export default function ExtractionPage() {
   const resetFromStep = (step) => {
     setCurrentStep(step)
     // Step 1 이하(파일 변경 포함) → 모든 후속 단계 초기화
-    if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setEditingText(false) }
+    if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setRecommendedBlogCategory(null); setEditingText(false) }
     if (step <= 3) setBlogContent(null)
     if (step <= 4) setNewsletterContent(null)
     if (step <= 5) setInstagramContent(null)
     if (step <= 6) setShortsScript(null)
-    if (step <= 7) { setBlogImages(null); setBlogUploadedImages([]); setBlogThumbnailDisabled(false); setInstagramImages(null); setMediaItemLoading({}) }
+    if (step <= 7) {
+      setBlogImages(null)
+      setInstagramImages(null)
+      setMediaItemLoading({})
+    }
+    if (step <= 2) {
+      blogUploadedImagesRef.current = []
+      setBlogUploadedImages([])
+      setBlogThumbnailDisabled(false)
+    }
     if (step <= 8) { setShortsVideo(null); setAvatarImage(null); setAvatarPrompt(''); setAvatarConfirmed(false) }
     // 에러 초기화
     if (step <= 1) clearStepErrors('upload')
@@ -1168,38 +1219,49 @@ ${parsedText}
   const handleBlogImageFiles = async (files) => {
     const imageFiles = Array.from(files || []).filter(isImageFile)
     if (imageFiles.length === 0) return
-    const hasThumbnail = blogUploadedImages.some(image => image?.isThumbnail)
-    const shouldAutoSetThumbnail = !blogThumbnailDisabled && !hasThumbnail
+    const processingTask = (async () => {
+      setProcessingBlogImages(true)
+      const currentUploadedImages = blogUploadedImagesRef.current
+      const hasThumbnail = currentUploadedImages.some(image => image?.isThumbnail)
+      const shouldAutoSetThumbnail = !blogThumbnailDisabled && !hasThumbnail
 
-    const nextImages = await Promise.all(imageFiles.map(async (imageFile, index) => {
-      const dataUrl = await fileToBase64(imageFile)
-      const targetIndex = blogUploadedImages.length + index
-      const imageId = `${Date.now()}-${targetIndex}-${imageFile.name}`
-      return {
-        id: imageId,
-        imageUrl: dataUrl,
-        renderedImageUrl: dataUrl,
-        pngUrl: dataUrl,
-        title: imageFile.name,
-        heading: blogContent?.sections?.[targetIndex]?.heading || '',
-        source: 'uploaded',
-        isThumbnail: shouldAutoSetThumbnail && index === 0,
+      const nextImages = await Promise.all(imageFiles.map(async (imageFile, index) => {
+        const dataUrl = await fileToBase64(imageFile)
+        const targetIndex = currentUploadedImages.length + index
+        const imageId = `${Date.now()}-${targetIndex}-${imageFile.name}`
+        return {
+          id: imageId,
+          imageUrl: dataUrl,
+          renderedImageUrl: dataUrl,
+          pngUrl: dataUrl,
+          title: imageFile.name,
+          heading: blogContent?.sections?.[targetIndex]?.heading || '',
+          source: 'uploaded',
+          isThumbnail: shouldAutoSetThumbnail && index === 0,
+        }
+      }))
+
+      const mergedImages = [...currentUploadedImages, ...nextImages].map((image, index, images) => ({
+        ...image,
+        isThumbnail: blogThumbnailDisabled
+          ? false
+          : images.some(item => item?.isThumbnail)
+            ? !!image?.isThumbnail
+            : index === 0,
+      }))
+      blogUploadedImagesRef.current = mergedImages
+      setBlogUploadedImages(mergedImages)
+      if (!promptSettings.media.blogGenerateImages) {
+        setBlogImages(mergedImages)
       }
-    }))
+      updatePrompt('media', 'blogAttachImages', true)
+    })()
 
-    const mergedImages = [...blogUploadedImages, ...nextImages].map((image, index, images) => ({
-      ...image,
-      isThumbnail: blogThumbnailDisabled
-        ? false
-        : images.some(item => item?.isThumbnail)
-          ? !!image?.isThumbnail
-          : index === 0,
-    }))
-    setBlogUploadedImages(mergedImages)
-    if (!promptSettings.media.blogGenerateImages) {
-      setBlogImages(mergedImages)
-    }
-    updatePrompt('media', 'blogAttachImages', true)
+    blogImageProcessingPromiseRef.current = processingTask.finally(() => {
+      setProcessingBlogImages(false)
+    })
+
+    await blogImageProcessingPromiseRef.current
   }
 
   // 결과 확인에 사용할 미완료/실패 목록 수집
@@ -1236,6 +1298,13 @@ ${parsedText}
   }
 
   const viewResults = async () => {
+    await blogImageProcessingPromiseRef.current.catch(() => {})
+
+    if (processingBlogImages) {
+      showErrorAlert('블로그 이미지 첨부', '첨부한 이미지를 아직 처리 중입니다. 잠시 후 다시 결과 확인을 눌러주세요.')
+      return
+    }
+
     const incomplete = getIncompleteItems()
 
     if (incomplete.length > 0) {
@@ -1254,7 +1323,7 @@ ${parsedText}
     const shouldAttach = !!promptSettings.media.blogAttachImages
     const shouldGenerate = !!promptSettings.media.blogGenerateImages
     const uploadedImages = shouldAttach
-      ? blogUploadedImages.map((image, index) => ({
+      ? blogUploadedImagesRef.current.map((image, index) => ({
           ...image,
           heading: image?.heading || blogContent?.sections?.[index]?.heading || '',
           source: 'uploaded',
@@ -1328,17 +1397,34 @@ ${parsedText}
         }
       : instagramContent
 
+    const resultState = {
+      parsedText, verification, summary,
+      blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
+      shortsScript,
+      blogImages: blogImagesForResult, instagramImages, shortsVideo,
+      fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
+      fileBase64,
+      savedFromExtraction: true,
+      isDemo: demoMode,
+      draftKey: `result_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    }
+
+    if (typeof window !== 'undefined') {
+      const drafts = window[RESULT_DRAFT_WINDOW_KEY] && typeof window[RESULT_DRAFT_WINDOW_KEY] === 'object'
+        ? window[RESULT_DRAFT_WINDOW_KEY]
+        : {}
+      drafts[resultState.draftKey] = resultState
+      window[RESULT_DRAFT_WINDOW_KEY] = drafts
+    }
+
+    try {
+      sessionStorage.setItem(`${RESULT_DRAFT_STORAGE_PREFIX}${resultState.draftKey}`, JSON.stringify(resultState))
+    } catch (error) {
+      console.warn('[ExtractionPage] 결과 초안 세션 저장 실패', error)
+    }
+
     navigate('/extraction/result', {
-      state: {
-        parsedText, verification, summary,
-        blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
-        shortsScript,
-        blogImages: blogImagesForResult, instagramImages, shortsVideo,
-        fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
-        fileBase64,
-        savedFromExtraction: true,
-        isDemo: demoMode,
-      }
+      state: resultState,
     })
   }
 
@@ -1388,6 +1474,7 @@ ${parsedText}
 
   const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
   const selectedBlogCategoryProfile = getBlogCategoryProfile(promptSettings.content.blogCategoryId)
+  const blogCategoryInfo = blogContent?.categoryInfo || recommendedBlogCategory || null
   const BlogCategoryPreview = ({ profile }) => {
     if (!profile) return null
 
@@ -1441,6 +1528,38 @@ ${parsedText}
               ))}
             </div>
           </div>
+        )}
+      </div>
+    )
+  }
+  const BlogCategoryAutoSummary = ({ info, pending = false }) => {
+    if (!info && !pending) return null
+
+    return (
+      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3 space-y-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-blue-700">자동 분류 결과</span>
+          {info?.finalCategoryLabel && (
+            <span className="rounded-full border border-blue-200 bg-white px-2 py-1 font-medium text-blue-700">
+              {info.finalCategoryLabel}
+            </span>
+          )}
+          {info?.confidence && info.confidence !== 'manual' && (
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 font-medium text-slate-600">
+              신뢰도: {info.confidence}
+            </span>
+          )}
+        </div>
+        {info?.reason ? (
+          <p className="leading-relaxed text-slate-700">{info.reason}</p>
+        ) : (
+          pending && (
+            <p className="leading-relaxed text-slate-600">
+              {loadingBlogCategoryRecommendation
+                ? '문서 요약을 바탕으로 블로그 카테고리를 자동 분류하고 있습니다.'
+                : '문서 요약을 바탕으로 추천 카테고리와 분류 근거를 여기에서 확인할 수 있습니다.'}
+            </p>
+          )
         )}
       </div>
     )
@@ -1524,6 +1643,7 @@ ${parsedText}
                   onClick={() => {
                     const next = blogUploadedImages.map(image => ({ ...image, isThumbnail: false }))
                     setBlogThumbnailDisabled(true)
+                    blogUploadedImagesRef.current = next
                     setBlogUploadedImages(next)
                     if (!generateEnabled) {
                       setBlogImages(next)
@@ -1552,6 +1672,7 @@ ${parsedText}
                             isThumbnail: (item.id || `${item.title}-${itemIndex}`) === thumbnailId,
                           }))
                           setBlogThumbnailDisabled(false)
+                          blogUploadedImagesRef.current = next
                           setBlogUploadedImages(next)
                           if (!generateEnabled) {
                             setBlogImages(next)
@@ -1559,7 +1680,7 @@ ${parsedText}
                         }}
                         className={`absolute bottom-0 left-0 right-0 px-2 py-2 text-center text-xs font-medium transition-colors ${
                           image.isThumbnail
-                            ? 'bg-primary text-white'
+                            ? 'bg-black/70 text-white'
                             : 'bg-black/70 text-white hover:bg-primary'
                         }`}
                         aria-label="블로그 썸네일로 지정"
@@ -1578,6 +1699,7 @@ ${parsedText}
                                   ? !!item?.isThumbnail
                                   : itemIndex === 0,
                             }))
+                          blogUploadedImagesRef.current = next
                           setBlogUploadedImages(next)
                           if (!generateEnabled) {
                             setBlogImages(next.length ? next : null)
@@ -2049,6 +2171,9 @@ ${parsedText}
                   {promptSettings.content.blogCategoryMode === 'manual' && selectedBlogCategoryProfile && (
                     <BlogCategoryPreview profile={selectedBlogCategoryProfile} />
                   )}
+                  {promptSettings.content.blogCategoryMode === 'auto' && (
+                    <BlogCategoryAutoSummary info={blogCategoryInfo} pending />
+                  )}
                   <BlogImageSettings />
                   {PF('블로그 추가 지시', { optional: true, type: 'textarea', placeholder: 'SEO 키워드, 반드시 다뤄야 할 포인트 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
                 </>
@@ -2154,6 +2279,9 @@ ${parsedText}
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
+                      {blogCategoryInfo && (
+                        <BlogCategoryAutoSummary info={blogCategoryInfo} />
+                      )}
                       {blogContent.sections?.map((sec, i) => (
                         <div key={i} className="border-l-2 border-primary/30 pl-3">
                           <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
@@ -2434,6 +2562,9 @@ ${parsedText}
               })}
               {promptSettings.content.blogCategoryMode === 'manual' && selectedBlogCategoryProfile && (
                 <BlogCategoryPreview profile={selectedBlogCategoryProfile} />
+              )}
+              {promptSettings.content.blogCategoryMode === 'auto' && (
+                <BlogCategoryAutoSummary info={blogCategoryInfo} pending />
               )}
               <BlogImageSettings />
               {PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드, 반드시 다뤄야 할 포인트 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
@@ -2817,14 +2948,14 @@ ${parsedText}
       <div className="flex justify-end">
         <button
           onClick={viewResults}
-          disabled={!hasAnyContent || loading.content || loading.media || loading.shorts}
+          disabled={!hasAnyContent || loading.content || loading.media || loading.shorts || processingBlogImages}
           className={`px-6 py-3 font-medium rounded-xl transition-all flex items-center gap-2 ${
-            hasAnyContent && !loading.content && !loading.media && !loading.shorts
+            hasAnyContent && !loading.content && !loading.media && !loading.shorts && !processingBlogImages
               ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
               : 'bg-surface-light text-text-muted border border-border cursor-not-allowed'
           }`}
         >
-          {loading.content || loading.media || loading.shorts ? (
+          {loading.content || loading.media || loading.shorts || processingBlogImages ? (
             <><Loader2 size={18} className="animate-spin" /> 작업 중...</>
           ) : (
             <><Eye size={18} /> 결과 확인 <ArrowRight size={16} /></>

@@ -751,13 +751,22 @@ export default function PromptLabPage() {
               이미지 비교는 블로그 첫 섹션과 인스타 첫 카드 기준으로 각 선택지 결과를 나란히 보여줍니다.
             </p>
           </div>
-          <button
-            onClick={resetAll}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-light px-4 py-2 text-sm font-medium text-text-muted transition-all hover:bg-surface"
-          >
-            <RefreshCw size={14} />
-            실험 초기화
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <a
+              href="/prompt-lab/blog-category"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-primary shadow-sm transition-all hover:bg-primary/5"
+            >
+              <Sparkles size={14} />
+              블로그 카테고리 비교
+            </a>
+            <button
+              onClick={resetAll}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface-light px-4 py-2 text-sm font-medium text-text-muted transition-all hover:bg-surface"
+            >
+              <RefreshCw size={14} />
+              실험 초기화
+            </button>
+          </div>
         </div>
       </div>
 
