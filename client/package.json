@@ -10,13 +10,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@remotion/cli": "^4.0.448",
-    "@remotion/player": "^4.0.448",
-    "@remotion/renderer": "^4.0.448",
+    "@remotion/cli": "^4.0.458",
+    "@remotion/player": "^4.0.458",
+    "@remotion/renderer": "^4.0.458",
     "@supabase/supabase-js": "^2.103.3",
-    "axios": "^1.13.4",
+    "axios": "^1.16.0",
     "html2canvas": "^1.4.1",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.1",
     "lucide-react": "^0.563.0",
     "marked": "^17.0.5",
     "modern-screenshot": "^4.6.8",
@@ -26,7 +26,7 @@
     "react-router-dom": "^7.13.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "remotion": "^4.0.448",
+    "remotion": "^4.0.458",
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
@@ -40,8 +40,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.14",
     "tailwindcss": "^4.1.18",
-    "vite": "^7.2.4"
+    "vite": "^7.3.3"
   }
 }

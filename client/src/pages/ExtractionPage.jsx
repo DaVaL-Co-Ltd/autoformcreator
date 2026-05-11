@@ -10,26 +10,17 @@ import {
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
 import {
-  generateAllContent, retryFailedChannels,
   generateBlogContent, generateNewsletterContent,
   generateInstagramContent, generateShortsScript
 } from '../services/gemini-content'
-import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
-import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
+import { generateBlogImages } from '../services/cardImage'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 import { findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
-  buildInstagramDisplayCards,
-  getInstagramCardNumber,
-  getInstagramOverlayLines,
-  getInstagramOverlayTitle,
-} from '../utils/instagramCarousel'
-import {
   BLOG_CATEGORY_OPTIONS,
   getBlogCategoryProfile,
-  getBlogImageStyleLabel,
 } from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
@@ -62,16 +53,26 @@ const steps = [
   { id: 0, label: '채널 선택', icon: CheckCircle, desc: '작업할 채널을 선택하세요' },
   { id: 1, label: '문서 업로드', icon: Upload, desc: '분석할 문서 파일을 업로드하세요' },
   { id: 2, label: '문서 분석', icon: Brain, desc: 'PDF 텍스트 추출 및 데이터 검증' },
-  { id: 3, label: '콘텐츠 생성', icon: PenTool, desc: '콘텐츠 텍스트 생성' },
-  { id: 4, label: '이미지 생성', icon: ImageIcon, desc: '블로그/인스타그램 이미지 생성' },
-  { id: 5, label: '숏폼 생성', icon: Film, desc: '숏폼 영상 생성' },
+  { id: 3, label: '블로그', icon: FileText, desc: '블로그 글 생성' },
+  { id: 4, label: '뉴스레터', icon: Mail, desc: '뉴스레터 생성' },
+  { id: 5, label: '인스타그램', icon: ImageIcon, desc: '인스타그램 문구 생성' },
+  { id: 6, label: '숏폼', icon: Film, desc: '숏폼 대본 및 영상 생성' },
 ]
+
+const CONTENT_CHANNEL_STEPS = {
+  blog: 3,
+  newsletter: 4,
+  instagram: 5,
+  shorts: 6,
+}
+
+const CONTENT_CHANNEL_ORDER = ['blog', 'newsletter', 'instagram', 'shorts']
 
 const CHANNEL_OPTIONS = [
   { key: 'blog',       label: '네이버 블로그', icon: FileText,  color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
   { key: 'newsletter', label: '뉴스레터',      icon: Mail,      color: 'text-blue-500',    bg: 'bg-blue-500/10',    border: 'border-blue-500/30' },
   { key: 'instagram',  label: '인스타그램',    icon: ImageIcon, color: 'text-pink-500',    bg: 'bg-pink-500/10',    border: 'border-pink-500/30' },
-  { key: 'shorts',     label: '유튜브 숏츠',   icon: Film,      color: 'text-red-500',     bg: 'bg-red-500/10',     border: 'border-red-500/30' },
+  { key: 'shorts',     label: '유튜브 쇼츠/릴스', icon: Film,    color: 'text-red-500',     bg: 'bg-red-500/10',     border: 'border-red-500/30' },
 ]
 
 // AI 서비스별 색상 매핑
@@ -202,64 +203,13 @@ const INSTAGRAM_CARD_STYLE_EXAMPLES = {
   },
 }
 
-const normalizeInstagramCardStyle = (value) => {
-  if (value === 'center-card' || value === 'center-focus') return 'center-card'
-  return 'background-text'
-}
-
-const getGeneratedImageUrl = (image) => {
-  if (typeof image === 'string') return image
-  return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || image?.url || null
-}
-
 function ImagePreviewModal({ previewImage, onClose }) {
   if (!previewImage || typeof document === 'undefined') return null
 
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        {previewImage.renderType === 'blog-card' ? (
-          <BlogImageArtwork
-            src={previewImage.src}
-            alt={previewImage.title}
-            variant={previewImage.variant}
-            headline={previewImage.headline}
-            description={previewImage.description}
-            accentColor={previewImage.accentColor}
-            mode="modal"
-            containerClassName="w-[min(78vw,640px,82vh)] rounded-[28px] shadow-2xl"
-          />
-        ) : previewImage.renderType === 'instagram-card' ? (
-          <div className="relative aspect-square w-[min(78vw,640px,82vh)] overflow-hidden rounded-[28px] bg-surface-light shadow-2xl">
-            <img
-              src={previewImage.src}
-              alt={previewImage.title}
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-black/10" />
-            <div className="absolute inset-0 flex flex-col justify-between p-[7%]">
-              <div className="self-start rounded-full bg-black/65 px-3 py-1.5 text-[clamp(11px,1.2vw,14px)] font-bold text-white">
-                {previewImage.cardNumber}
-              </div>
-              <div className="rounded-[24px] bg-white/88 px-[5.5%] py-[5.2%] shadow-sm">
-                <p className="text-[clamp(15px,2vw,22px)] font-black leading-tight text-gray-800">
-                  {previewImage.headline}
-                </p>
-                {previewImage.descriptionLines?.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
-                    {previewImage.descriptionLines.map((line, index) => (
-                      <p key={`${line}-${index}`} className="text-[clamp(10px,1.1vw,12px)] font-semibold leading-tight text-gray-600">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
-        )}
+        <img src={previewImage.src} alt={previewImage.title} className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain" />
         <div className="absolute -top-10 left-0 right-0 flex items-center justify-between">
           <span className="text-sm text-white font-medium">{previewImage.title}</span>
           <button type="button" onClick={onClose} className="text-white/70 hover:text-white transition-colors"><XCircle size={20} /></button>
@@ -371,6 +321,7 @@ function ErrorPanel({ errors, onRetry, retrying }) {
 export default function ExtractionPage() {
   const navigate = useNavigate()
   const fileInputRef = useRef(null)
+  const blogImageInputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [demoMode, setDemoMode] = useState(true)
@@ -393,12 +344,6 @@ export default function ExtractionPage() {
   const [previewImage, setPreviewImage] = useState(null)
   const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
   const [shortsTab, setShortsTab] = useState('script') // 'script' | 'upload'
-  const [mediaPreviewOpen, setMediaPreviewOpen] = useState({
-    blogStyle: false,
-    instagramStyle: false,
-    mainColor: false,
-    instagramCardStyle: false,
-  })
 
   // 프롬프트 설정 (각 Step별)
   const [promptSettings, setPromptSettings] = useState({
@@ -408,13 +353,14 @@ export default function ExtractionPage() {
       tone: 'auto',
       blogCategoryMode: 'auto',
       blogCategoryId: '',
-      commonExtra: '',
       blogExtra: '',
       newsletterExtra: '',
       instaExtra: '',
       shortsExtra: '',
     },
     media: {
+      blogGenerateImages: true,
+      blogAttachImages: false,
       blogImageStyle: 'pastel',
       instagramImageStyle: 'pastel',
       blogTextOverlay: 'with-text',
@@ -425,7 +371,6 @@ export default function ExtractionPage() {
     shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '' },
   })
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
-  const toggleMediaPreview = (key) => setMediaPreviewOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   const buildContentPromptOptions = () => ({
     ...promptSettings.content,
     enableBlogCategory: selectedChannels.blog,
@@ -443,6 +388,8 @@ export default function ExtractionPage() {
   const [instagramContent, setInstagramContent] = useState(null)
   const [shortsScript, setShortsScript] = useState(null)
   const [blogImages, setBlogImages] = useState(null)
+  const [blogUploadedImages, setBlogUploadedImages] = useState([])
+  const [blogThumbnailDisabled, setBlogThumbnailDisabled] = useState(false)
   const [instagramImages, setInstagramImages] = useState(null)
   const [shortsVideo, setShortsVideo] = useState(null)
 
@@ -467,21 +414,10 @@ export default function ExtractionPage() {
     !loading.media
 
 
-  // step 4까지 실행 완료 여부
-  const [mediaGenerationDone, setMediaGenerationDone] = useState(false)
-
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
 
   const [retrying, setRetrying] = useState(null)
-  const abortedRef = useRef(false)
-
-  const stopGeneration = () => {
-    abortedRef.current = true
-    setMediaGenerationDone(true)
-    setLoading(p => ({ ...p, media: false }))
-    setMediaItemLoading({})
-  }
 
   const isBusy = !!(
     loading.analysis || loading.summary || loading.content ||
@@ -508,112 +444,6 @@ export default function ExtractionPage() {
     }))
   }
 
-  const cleanCardText = (text = '') => (
-    String(text)
-      .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#>*_~`-]/g, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-  )
-
-  const trimCardTitleEnding = (text = '') => String(text).replace(/[\s,.:;!?/\\]+$/g, '').trim()
-  const BLOG_HEADLINE_MAX_LENGTH = 28
-  const BLOG_DESCRIPTION_MAX_LENGTH = 34
-  const WEAK_BLOG_KEYPHRASES = new Set([
-    '중요성',
-    '핵심내용',
-    '핵심',
-    '변화',
-    '활용',
-    '전망',
-    '필요성',
-    '효과',
-    '의미',
-    '개요',
-  ])
-
-  const limitBlogOverlayText = (text = '', maxLength = BLOG_DESCRIPTION_MAX_LENGTH) => {
-    const clean = trimCardTitleEnding(cleanCardText(text))
-    if (!clean || clean.length <= maxLength) return clean
-
-    const tokens = clean.split(/\s+/).filter(Boolean)
-    let limited = ''
-
-    for (const token of tokens) {
-      const next = limited ? `${limited} ${token}` : token
-      if (next.length > maxLength && limited) break
-      limited = next
-      if (next.length >= maxLength) break
-    }
-
-    return trimCardTitleEnding(limited || clean)
-  }
-
-  const normalizeBlogKeyword = (text = '') => (
-    trimCardTitleEnding(cleanCardText(text)).replace(/\s+/g, '').toLowerCase()
-  )
-
-  const deriveHeadingKeywordFallback = (heading = '') => {
-    const cleanHeading = trimCardTitleEnding(cleanCardText(heading))
-    if (!cleanHeading) return ''
-
-    let candidate = cleanHeading
-      .split(/[:\-–—,/]/)[0]
-      .replace(/(입니다|합니다|됩니다|있습니다|해야 합니다|할 수 있습니다|하는 방법)$/u, '')
-      .trim()
-
-    const tokens = candidate.split(/\s+/).filter(Boolean)
-    if (tokens.length > 3) {
-      candidate = tokens.slice(0, 3).join(' ')
-    }
-
-    return limitBlogOverlayText(candidate || cleanHeading, BLOG_HEADLINE_MAX_LENGTH)
-  }
-
-  const isWeakBlogKeyPhrase = (keyPhrase = '', heading = '') => {
-    const clean = trimCardTitleEnding(cleanCardText(keyPhrase))
-    if (!clean) return true
-    if (clean.length > 16) return true
-    if (clean.split(/\s+/).filter(Boolean).length > 4) return true
-    if (/[.!?]/.test(clean)) return true
-    if (/(입니다|합니다|됩니다|있습니다|할 수|하는 방법)$/u.test(clean)) return true
-
-    const normalized = normalizeBlogKeyword(clean)
-    if (WEAK_BLOG_KEYPHRASES.has(normalized)) return true
-
-    const normalizedHeading = normalizeBlogKeyword(heading)
-    if (normalizedHeading && normalized === normalizedHeading) return true
-
-    return false
-  }
-
-  const deriveBlogHeadline = (keyPhrase = '', heading = '') => {
-    const preferredKeyPhrase = cleanCardText(keyPhrase)
-    const source = preferredKeyPhrase
-      || (isWeakBlogKeyPhrase(keyPhrase, heading)
-        ? deriveHeadingKeywordFallback(heading)
-        : deriveHeadingKeywordFallback(heading))
-
-    return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
-  }
-
-  const deriveBlogImageDescription = (keyPhrase = '', heading = '', fallbackContent = '') => {
-    const cleanHeading = cleanCardText(heading)
-    if (cleanHeading) {
-      return limitBlogOverlayText(cleanHeading, BLOG_DESCRIPTION_MAX_LENGTH)
-    }
-
-    const contentPhrase = cleanCardText(fallbackContent || '')
-      .split(/(?<=[.!?。！？])\s+|\n+| {2,}/)
-      .map(line => trimCardTitleEnding(line))
-      .filter(Boolean)
-      .find(line => line.length <= BLOG_DESCRIPTION_MAX_LENGTH)
-
-    return limitBlogOverlayText(contentPhrase || cleanCardText(keyPhrase), BLOG_DESCRIPTION_MAX_LENGTH)
-  }
-
   // 에러 발생 시 팝업 표시
   const showErrorAlert = (serviceName, detail) => {
     setErrorAlert(`${serviceName} 서비스에서 오류가 발생했습니다.\n\n${detail}\n\n해당 작업의 재시도 버튼을 눌러 다시 시도할 수 있습니다.`)
@@ -628,244 +458,41 @@ export default function ExtractionPage() {
     return false
   }
 
+  const getVisibleStepIds = () => {
+    const ids = [0, 1, 2]
+    CONTENT_CHANNEL_ORDER.forEach(channelKey => {
+      if (selectedChannels[channelKey]) ids.push(CONTENT_CHANNEL_STEPS[channelKey])
+    })
+    return ids
+  }
+
+  const getNextVisibleStep = (stepId) => {
+    const ids = getVisibleStepIds()
+    return ids.find(id => id > stepId) || stepId
+  }
+
+  const getFirstContentStep = () => {
+    const firstChannel = CONTENT_CHANNEL_ORDER.find(channelKey => selectedChannels[channelKey])
+    return firstChannel ? CONTENT_CHANNEL_STEPS[firstChannel] : getNextVisibleStep(2)
+  }
+
   // 특정 단계 이후의 모든 결과를 초기화
   const resetFromStep = (step) => {
     setCurrentStep(step)
     // Step 1 이하(파일 변경 포함) → 모든 후속 단계 초기화
     if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setEditingText(false) }
-    if (step <= 3) { setBlogContent(null); setNewsletterContent(null); setInstagramContent(null); setShortsScript(null) }
-    if (step <= 4) { setBlogImages(null); setInstagramImages(null); setMediaGenerationDone(false); setMediaItemLoading({}) }
-    if (step <= 5) { setShortsVideo(null); setAvatarImage(null); setAvatarPrompt(''); setAvatarConfirmed(false) }
+    if (step <= 3) setBlogContent(null)
+    if (step <= 4) setNewsletterContent(null)
+    if (step <= 5) setInstagramContent(null)
+    if (step <= 6) setShortsScript(null)
+    if (step <= 7) { setBlogImages(null); setBlogUploadedImages([]); setBlogThumbnailDisabled(false); setInstagramImages(null); setMediaItemLoading({}) }
+    if (step <= 8) { setShortsVideo(null); setAvatarImage(null); setAvatarPrompt(''); setAvatarConfirmed(false) }
     // 에러 초기화
     if (step <= 1) clearStepErrors('upload')
     if (step <= 2) { clearStepErrors('analysis'); clearStepErrors('summary') }
     if (step <= 3) clearStepErrors('content')
-    if (step <= 4) clearStepErrors('media')
-    if (step <= 5) clearStepErrors('shorts')
-  }
-
-  const renderBlogPreviewCards = (section, index) => {
-    const blogImageList = Array.isArray(blogImages) ? blogImages : []
-    const matchedImage =
-      blogImageList.find(img => img?.heading === section?.heading && img?.imageUrl) ||
-      blogImageList[index] ||
-      null
-    const bgImageUrl = matchedImage?.imageUrl || null
-    const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
-    const accentPalette = {
-      'bg-[#FFF3E0]': '#e57a00',
-      'bg-[#E8F5E9]': '#2e7d32',
-      'bg-[#E3F2FD]': '#1565c0',
-      'bg-[#F3E5F5]': '#7b1fa2',
-    }
-    const fallbackBg = bgColors[index % bgColors.length]
-    const accentColor = accentPalette[fallbackBg] || '#6366f1'
-    const heading = cleanCardText(section?.heading || '')
-    const keyPhrase = cleanCardText(matchedImage?.keyPhrase || section?.keyPhrase || '')
-    const headline = deriveBlogHeadline(keyPhrase, heading)
-    const description = deriveBlogImageDescription(keyPhrase, heading, section?.content || '')
-    const showBlogTextOverlay = promptSettings.media.blogTextOverlay !== 'without-text'
-
-    if (!bgImageUrl) return []
-
-    const variants = showBlogTextOverlay
-      ? [{ key: 'circle', label: null }]
-      : [{ key: 'image', label: null }]
-
-    return variants.map((variant) => (
-      <div
-        key={`${section?.heading || 'blog'}-${index}-${variant.key}`}
-        className="shrink-0 flex flex-col items-center gap-1.5"
-      >
-        <button
-          type="button"
-          className={`relative w-28 h-28 rounded-md overflow-hidden border border-border bg-surface-light shadow-sm ${
-            bgImageUrl ? 'cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all' : ''
-          }`}
-          style={{ fontFamily: "'Pretendard', sans-serif" }}
-          onClick={() => {
-            if (!bgImageUrl) return
-            setPreviewImage(
-              showBlogTextOverlay
-                ? {
-                    renderType: 'blog-card',
-                    variant: variant.key,
-                    src: bgImageUrl,
-                    title: section?.heading || `블로그 이미지 ${index + 1}`,
-                    headline,
-                    description,
-                    accentColor,
-                  }
-                : {
-                    src: bgImageUrl,
-                    title: section?.heading || `블로그 이미지 ${index + 1}`,
-                  }
-            )
-          }}
-        >
-          <BlogImageArtwork
-            src={bgImageUrl}
-            alt={section?.heading || `블로그 이미지 ${index + 1}`}
-            variant={variant.key}
-            headline={headline}
-            description={description}
-            accentColor={accentColor}
-            showTextOverlay={showBlogTextOverlay}
-            mode="thumb"
-            containerClassName="rounded-md"
-          />
-        </button>
-      </div>
-    ))
-  }
-
-  const renderInstagramPreviewCards = (card, index) => {
-    const cardNumber = getInstagramCardNumber(card, index)
-    const imagePool = Array.isArray(instagramImages) ? instagramImages : []
-    const matchedImage = card?.isCaptionCta
-      ? (imagePool[imagePool.length - 1] || imagePool[0] || null)
-      : (
-        imagePool.find((image, imageIndex) => {
-          const imageCardNumber = Number(image?.cardNumber || image?.card_number) || imageIndex + 1
-          return imageCardNumber === cardNumber
-        }) || imagePool[index] || imagePool[0] || null
-      )
-    const imageUrl = getGeneratedImageUrl(matchedImage)
-    if (!imageUrl) return []
-
-    const cardTitle = getInstagramOverlayTitle(card, index)
-    const descriptionLines = getInstagramOverlayLines(card)
-    const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
-
-    return [(
-      <div
-        key={`instagram-${cardNumber}-${index}`}
-        className="shrink-0 flex flex-col items-center gap-1.5"
-      >
-        <button
-          type="button"
-          className="relative w-28 h-28 rounded-md overflow-hidden border border-border bg-surface-light shadow-sm cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
-          style={{ fontFamily: "'Pretendard', sans-serif" }}
-          onClick={() => setPreviewImage({
-            renderType: 'instagram-card',
-            src: imageUrl,
-            title: `인스타 카드 ${cardNumber}`,
-            cardNumber,
-            headline: cardTitle,
-            descriptionLines,
-            cardStyle,
-          })}
-        >
-          <InstagramImageArtwork
-            imageUrl={imageUrl}
-            alt={`인스타 카드 ${cardNumber}`}
-            cardNumber={cardNumber}
-            cardTitle={cardTitle}
-            descriptionLines={descriptionLines}
-            cardStyle={cardStyle}
-            mode="thumb"
-          />
-        </button>
-      </div>
-    )]
-  }
-
-  const renderImageStyleExample = (kind, label) => {
-    const styleValue = kind === 'blog' ? promptSettings.media.blogImageStyle : promptSettings.media.instagramImageStyle
-    const example =
-      kind === 'blog'
-        ? BLOG_IMAGE_STYLE_EXAMPLES[styleValue]
-        : INSTAGRAM_IMAGE_STYLE_EXAMPLES[styleValue]
-    if (!example) return null
-
-    return (
-      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
-        <div className="flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => setPreviewImage({ src: example.src, title: `${label} - ${example.title}` })}
-            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
-          >
-            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
-          </button>
-          <div className="min-w-0 space-y-1">
-            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
-            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
-            <button
-              type="button"
-              onClick={() => setPreviewImage({ src: example.src, title: `${label} - ${example.title}` })}
-              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
-            >
-              <Eye size={12} />
-              크게 보기
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const renderMainColorExample = () => {
-    const example = MAIN_COLOR_EXAMPLES[promptSettings.media.mainColor] || MAIN_COLOR_EXAMPLES.auto
-    if (!example) return null
-
-    return (
-      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
-        <div className="flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => setPreviewImage({ src: example.src, title: `대표 색상 - ${example.title}` })}
-            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
-          >
-            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
-          </button>
-          <div className="min-w-0 space-y-1">
-            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
-            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
-            <button
-              type="button"
-              onClick={() => setPreviewImage({ src: example.src, title: `대표 색상 - ${example.title}` })}
-              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
-            >
-              <Eye size={12} />
-              크게 보기
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const renderInstagramCardStyleExample = () => {
-    const cardStyle = normalizeInstagramCardStyle(promptSettings.media.instagramCardStyle)
-    const example = INSTAGRAM_CARD_STYLE_EXAMPLES[cardStyle]
-    if (!example) return null
-
-    return (
-      <div className="mt-2 rounded-lg border border-border bg-surface-light p-2.5 overflow-hidden">
-        <div className="flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => setPreviewImage({ src: example.src, title: `인스타 카드 스타일 - ${example.title}` })}
-            className="relative w-full aspect-square max-w-[160px] overflow-hidden rounded-md border border-border bg-white hover:ring-2 hover:ring-primary/30 transition-all"
-          >
-            <img src={example.src} alt={example.title} className="w-full h-full object-cover" loading="lazy" />
-          </button>
-          <div className="min-w-0 space-y-1">
-            <p className="break-words text-xs font-semibold text-text">{example.title}</p>
-            <p className="break-words text-[11px] leading-5 text-text-muted">{example.description}</p>
-            <button
-              type="button"
-              onClick={() => setPreviewImage({ src: example.src, title: `인스타 카드 스타일 - ${example.title}` })}
-              className="inline-flex max-w-full items-center gap-1 break-words text-[11px] font-medium text-primary hover:text-primary-dark transition-colors"
-            >
-              <Eye size={12} />
-              크게 보기
-            </button>
-          </div>
-        </div>
-      </div>
-    )
+    if (step <= 7) clearStepErrors('media')
+    if (step <= 8) clearStepErrors('shorts')
   }
 
   const handleFile = (f) => {
@@ -960,7 +587,7 @@ export default function ExtractionPage() {
       } else {
         setSummary(result)
         setShowSummaryDetail(true)
-        setCurrentStep(3)
+        setCurrentStep(getFirstContentStep())
       }
     } catch (err) {
       addStepErrors('summary', [{ service: 'gemini', message: `요약 생성 실패 - ${err.message}` }])
@@ -971,58 +598,99 @@ export default function ExtractionPage() {
     }
   }
 
-  // Step 3: 콘텐츠 생성
-  const runContentGeneration = async () => {
-    if (!ensureBlogCategoryReady()) return
-    setStepLoading('content', true)
-    clearStepErrors('content')
-    resetFromStep(3)
-
-    const errors = []
-    const channelMap = [
-      { key: 'blog', label: '네이버 블로그', setter: setBlogContent },
-      { key: 'newsletter', label: '뉴스레터', setter: setNewsletterContent },
-      { key: 'instagram', label: '인스타그램', setter: setInstagramContent },
-      { key: 'shorts', label: '숏폼 대본', setter: setShortsScript },
-    ].filter(c => selectedChannels[c.key])
-
-    try {
-      const contentOptions = buildContentPromptOptions()
-      // 1회 API 호출로 4개 채널 통합 생성
-      const allContent = await generateAllContent(summary, parsedText, emphasisText, contentOptions)
-
-      let anySuccess = false
-      for (const ch of channelMap) {
-        if (allContent[ch.key]) {
-          ch.setter(allContent[ch.key])
-          anySuccess = true
-        } else {
-          errors.push({ service: 'gemini', channel: ch.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' })
-        }
-      }
-
-      if (errors.length > 0) {
-        addStepErrors('content', errors)
-        const failedChannels = errors.map(e => e.channel).join(', ')
-        showErrorAlert('콘텐츠 생성', `다음 채널이 누락되었습니다: ${failedChannels}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
-      }
-      if (anySuccess) setCurrentStep(4)
-    } catch (err) {
-      // 통합 생성 자체가 실패한 경우 모든 채널에 에러 표시
-      for (const ch of channelMap) {
-        errors.push({ service: 'gemini', channel: ch.label, message: err.message || '생성 실패' })
-      }
-      addStepErrors('content', errors)
-      showErrorAlert('콘텐츠 생성', `API 호출에 실패했습니다: ${err.message}`)
-    }
-    setStepLoading('content', false)
-  }
+  const contentChannelConfigs = [
+    { key: 'blog', label: '네이버 블로그', actionLabel: '블로그 글', setter: setBlogContent, generate: generateBlogContent },
+    { key: 'newsletter', label: '뉴스레터', actionLabel: '뉴스레터', setter: setNewsletterContent, generate: generateNewsletterContent },
+    { key: 'instagram', label: '인스타그램', actionLabel: '인스타그램', setter: setInstagramContent, generate: generateInstagramContent },
+    { key: 'shorts', label: '숏폼 대본', actionLabel: '숏폼 대본', setter: setShortsScript, generate: generateShortsScript },
+  ]
+  const selectedContentChannels = () => contentChannelConfigs.filter(c => selectedChannels[c.key])
 
   // 라벨 → API 키 매핑
   const labelToKey = { '네이버 블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
   const keyToSetter = { blog: setBlogContent, newsletter: setNewsletterContent, instagram: setInstagramContent, shorts: setShortsScript }
 
-  // Step 3 재시도 — 실패한 채널을 모아서 1회 API 호출
+  const generateContentChannel = async (channelKey, options = {}) => {
+    const config = contentChannelConfigs.find(channel => channel.key === channelKey)
+    if (!config) return null
+    if (!ensureBlogCategoryReady(channelKey === 'blog')) return null
+
+    const contentOptions = buildContentPromptOptions()
+    const result = await config.generate(summary, parsedText, emphasisText, contentOptions)
+    config.setter(result)
+    if (options.clearError !== false) {
+      removeStepError('content', 'gemini', config.label)
+    }
+    return result
+  }
+
+  const runSingleContentStep = async (channelKey) => {
+    const config = contentChannelConfigs.find(channel => channel.key === channelKey)
+    if (!config) return
+    if (!ensureBlogCategoryReady(channelKey === 'blog')) return
+
+    resetFromStep(CONTENT_CHANNEL_STEPS[channelKey])
+    setStepLoading('content', true)
+    setContentPreview(null)
+    removeStepError('content', 'gemini', config.label)
+    setRetrying(`content-${channelKey}`)
+
+    try {
+      const result = await generateContentChannel(channelKey)
+      if (!result) {
+        addStepErrors('content', [{ service: 'gemini', channel: config.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' }])
+        return
+      }
+      setCurrentStep(getNextVisibleStep(CONTENT_CHANNEL_STEPS[channelKey]))
+    } catch (err) {
+      addStepErrors('content', [{ service: 'gemini', channel: config.label, message: err.message || '생성 실패' }])
+      showErrorAlert(config.actionLabel, err.message || '생성 실패')
+    } finally {
+      setRetrying(null)
+      setStepLoading('content', false)
+    }
+  }
+
+  // Step 3: 콘텐츠 생성 — 채널별로 별도 API 호출
+  const runContentGeneration = async () => {
+    const channels = selectedContentChannels()
+    if (!channels.length) return
+    if (!ensureBlogCategoryReady(channels.some(channel => channel.key === 'blog'))) return
+
+    setStepLoading('content', true)
+    clearStepErrors('content')
+    setContentPreview(null)
+    resetFromStep(3)
+
+    const errors = []
+    let anySuccess = false
+
+    for (const channel of channels) {
+      setRetrying(`content-${channel.key}`)
+      try {
+        const result = await generateContentChannel(channel.key, { clearError: false })
+        if (result) {
+          anySuccess = true
+        } else {
+          errors.push({ service: 'gemini', channel: channel.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' })
+        }
+      } catch (err) {
+        errors.push({ service: 'gemini', channel: channel.label, message: err.message || '생성 실패' })
+      }
+    }
+
+    if (errors.length > 0) {
+      addStepErrors('content', errors)
+      const failedChannels = errors.map(e => e.channel).join(', ')
+      showErrorAlert('콘텐츠 생성', `다음 채널 생성에 실패했습니다: ${failedChannels}\n\n각 항목의 재시도 버튼으로 개별 재시도할 수 있습니다.`)
+    }
+
+    if (anySuccess) setCurrentStep(getNextVisibleStep(6))
+    setRetrying(null)
+    setStepLoading('content', false)
+  }
+
+  // Step 3 재시도 — 실패한 채널을 각각 별도 API 호출
   const retryAllFailedContent = async () => {
     const failedErrors = stepErrors.content || []
     if (failedErrors.length === 0) return
@@ -1034,15 +702,19 @@ export default function ExtractionPage() {
 
     setRetrying('content-all')
     try {
-      const results = await retryFailedChannels(failedKeys, summary, parsedText, emphasisText, buildContentPromptOptions())
-
       const newErrors = []
       for (const key of failedKeys) {
-        if (results[key]) {
-          keyToSetter[key](results[key])
-        } else {
+        const config = contentChannelConfigs.find(channel => channel.key === key)
+        if (!config) continue
+        setRetrying(`content-${key}`)
+        try {
+          const result = await generateContentChannel(key)
+          if (!result) {
+            newErrors.push({ service: 'gemini', channel: config.label, message: '재생성에서도 해당 채널이 누락되었습니다.' })
+          }
+        } catch (retryErr) {
           const label = failedErrors.find(e => labelToKey[e.channel] === key)?.channel || key
-          newErrors.push({ service: 'gemini', channel: label, message: '재생성에서도 해당 채널이 누락되었습니다.' })
+          newErrors.push({ service: 'gemini', channel: label, message: retryErr.message || '재시도 실패' })
         }
       }
 
@@ -1051,7 +723,7 @@ export default function ExtractionPage() {
       } else {
         clearStepErrors('content')
       }
-      if (currentStep < 4) setCurrentStep(4)
+      if (currentStep < getNextVisibleStep(6)) setCurrentStep(getNextVisibleStep(6))
     } catch (retryErr) {
       // 전체 실패 — 에러 메시지 업데이트
       setStepErrors(p => ({
@@ -1065,23 +737,16 @@ export default function ExtractionPage() {
 
   // Step 3 개별 채널 재시도 (카드 내 재시도 버튼)
   const retryContentChannel = async (err) => {
-    // 1개만 실패한 경우 개별 호출, 여러 개면 통합 호출
-    const failedCount = (stepErrors.content || []).length
-    if (failedCount > 1) {
-      return retryAllFailedContent()
-    }
-
     const key = labelToKey[err.channel]
     if (!key) return
     if (!ensureBlogCategoryReady(key === 'blog')) return
 
     setRetrying(`${err.service}-${err.channel}`)
     try {
-      const results = await retryFailedChannels([key], summary, parsedText, emphasisText, buildContentPromptOptions())
-      if (results[key]) {
-        keyToSetter[key](results[key])
+      const result = await generateContentChannel(key)
+      if (result) {
         removeStepError('content', err.service, err.channel)
-        if (currentStep < 4) setCurrentStep(4)
+        if (currentStep < getNextVisibleStep(CONTENT_CHANNEL_STEPS[key])) setCurrentStep(getNextVisibleStep(CONTENT_CHANNEL_STEPS[key]))
       }
     } catch (retryErr) {
       setStepErrors(p => ({
@@ -1100,20 +765,13 @@ export default function ExtractionPage() {
   // Step 3 개별 채널 재생성 (성공한 채널도 다시 생성)
   const regenerateChannel = async (channelKey) => {
     if (!ensureBlogCategoryReady(channelKey === 'blog')) return
-    const contentOptions = buildContentPromptOptions()
-    const fnMap = {
-      blog: () => generateBlogContent(summary, parsedText, emphasisText, contentOptions),
-      newsletter: () => generateNewsletterContent(summary, parsedText, emphasisText, contentOptions),
-      instagram: () => generateInstagramContent(summary, parsedText, emphasisText, contentOptions),
-      shorts: () => generateShortsScript(summary, parsedText, emphasisText, contentOptions),
-    }
     const setter = keyToSetter[channelKey]
     if (!setter) return
 
     setRetrying(`regen-${channelKey}`)
     try {
-      const result = await fnMap[channelKey]()
-      setter(result)
+      resetFromStep(CONTENT_CHANNEL_STEPS[channelKey])
+      await generateContentChannel(channelKey)
     } catch (err) {
       showErrorAlert('채널 재생성', err.message || '재생성 실패')
     } finally {
@@ -1121,57 +779,7 @@ export default function ExtractionPage() {
     }
   }
 
-  // Step 4: 이미지 생성 (블로그 + 인스타그램)
-  const runMediaGeneration = async () => {
-    setStepLoading('media', true)
-    clearStepErrors('media')
-    resetFromStep(4)
-
-    const errors = []
-    const tasks = []
-
-    const alreadyDone = {
-      blogImg: blogImages?.length > 0 && blogImages.every(i => i.imageUrl),
-      instaImg: instagramImages?.length > 0,
-    }
-
-    if (selectedChannels.blog && !alreadyDone.blogImg) {
-      tasks.push(
-        { key: 'blogImg', service: 'gemini', channel: '블로그 이미지', fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]), setter: setBlogImages },
-      )
-    }
-
-    if (selectedChannels.instagram && !alreadyDone.instaImg && instagramContent?.cardTopics?.length) {
-      tasks.push(
-        { key: 'instaImg', service: 'gemini', channel: '인스타 카드', fn: () => generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra }), setter: setInstagramImages },
-      )
-    }
-
-    abortedRef.current = false
-    for (const task of tasks) {
-      if (abortedRef.current) break
-      setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
-      try {
-        const result = await task.fn()
-        task.setter(result)
-      } catch (err) {
-        if (abortedRef.current) break
-        errors.push({ service: task.service, channel: task.channel, message: err.reason?.message || err.message || '생성 실패' })
-      }
-      setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
-    }
-
-    if (errors.length > 0) {
-      addStepErrors('media', errors)
-      showErrorAlert('이미지 생성', `실패: ${errors.map(e => e.channel).join(', ')}`)
-    }
-
-    setMediaGenerationDone(true)
-    setCurrentStep(5)
-    setStepLoading('media', false)
-  }
-
-  // Step 5-1: 아바타 이미지 생성 (Gemini)
+  // 숏폼: 아바타 이미지 생성 (Gemini)
   const generateAvatar = async () => {
     if (!avatarPrompt.trim()) return
     setMediaItemLoading(p => ({ ...p, '아바타': true }))
@@ -1239,7 +847,7 @@ DO NOT:
     setMediaItemLoading(p => ({ ...p, '아바타': false }))
   }
 
-  // Step 5-2: 아바타 확정 시 HeyGen 업로드 + 폴링 대기 (백그라운드)
+  // 숏폼: 아바타 확정 시 HeyGen 업로드 + 폴링 대기 (백그라운드)
   const uploadAvatarToHeyGen = async (forceNew = false) => {
     if (!avatarImage) {
       throw new Error('아바타를 먼저 생성해주세요.')
@@ -1306,7 +914,7 @@ DO NOT:
     try {
       for (let i = 0; i < attempts; i++) {
         if (progressLabel) {
-          setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': progressLabel }))
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': progressLabel }))
         }
 
         const statusRes = await apiFetch(`/api/heygen/avatar-status/${groupId}`)
@@ -1348,18 +956,18 @@ DO NOT:
 
   const runShortsGeneration = async () => {
     if (!shortsScript) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '숏츠 대본이 없습니다.' }])
+      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '쇼츠 대본이 없습니다.' }])
       return
     }
 
     if (!avatarImage) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠', message: '아바타를 먼저 생성해주세요.' }])
+      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '아바타를 먼저 생성해주세요.' }])
       return
     }
 
     setStepLoading('shorts', true)
     clearStepErrors('shorts')
-    setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': true }))
+    setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': true }))
 
     try {
       const talkingPhotoId = heygenAvatarId || await uploadAvatarToHeyGen()
@@ -1391,7 +999,7 @@ DO NOT:
         voiceStyle: promptSettings.shorts.voiceStyle,
       })
 
-      setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': 'HeyGen Video Agent 생성 요청 중...' }))
+      setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': 'HeyGen Video Agent 생성 요청 중...' }))
 
       const generateRes = await apiFetch('/api/heygen/video-agent/generate', {
         method: 'POST',
@@ -1418,7 +1026,7 @@ DO NOT:
         throw new Error('HeyGen video_id를 받지 못했습니다.')
       }
 
-      setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': 'HeyGen 렌더가 완료되는 중...' }))
+      setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': 'HeyGen 렌더가 완료되는 중...' }))
 
       let finalVideo = null
       for (let i = 0; i < 240; i++) {
@@ -1494,102 +1102,14 @@ DO NOT:
 
       setShortsVideo(finalVideo)
     } catch (err) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '숏츠 영상', message: err.message || '숏츠 생성 실패' }])
-      showErrorAlert('숏츠 생성', err.message)
+      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠 영상', message: err.message || '쇼츠 생성 실패' }])
+      showErrorAlert('쇼츠 생성', err.message)
     }
 
-    setMediaItemLoading((prev) => ({ ...prev, '숏츠 영상': false }))
+    setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
     setStepLoading('shorts', false)
   }
 
-
-  // Step 4: 개별 미디어 생성
-  const runSingleMedia = async (key) => {
-    const taskMap = {
-      blogImg: {
-        channel: '블로그 이미지',
-        service: 'gemini',
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
-        setter: setBlogImages,
-      },
-      instaImg: {
-        channel: '인스타 카드',
-        service: 'gemini',
-        fn: () => instagramContent?.cardTopics?.length
-          ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra })
-          : Promise.resolve([]),
-        setter: setInstagramImages,
-      },
-      shortsVid: {
-        channel: '숏폼 영상',
-        service: 'gemini',
-        fn: () => shortsScript
-          ? Promise.resolve({ status: 'placeholder', duration: shortsScript.duration })
-          : Promise.resolve(null),
-        setter: setShortsVideo,
-      },
-    }
-
-    const task = taskMap[key]
-    if (!task) return
-
-    setMediaItemLoading(p => ({ ...p, [task.channel]: true }))
-    // 해당 채널 기존 에러 제거
-    setStepErrors(p => ({
-      ...p,
-      media: (p.media || []).filter(e => e.channel !== task.channel)
-    }))
-
-    try {
-      const result = await task.fn()
-      task.setter(result)
-    } catch (err) {
-      addStepErrors('media', [{ service: task.service, channel: task.channel, message: err.message || '생성 실패' }])
-      showErrorAlert('미디어 생성', `${task.channel} 생성에 실패했습니다: ${err.message}`)
-    }
-    setMediaItemLoading(p => ({ ...p, [task.channel]: false }))
-  }
-
-  // Step 4 재시도
-  const retryMediaItem = async (err) => {
-    const retryKey = `${err.service}-${err.channel}`
-    setRetrying(retryKey)
-
-    const mediaMap = {
-      '블로그 이미지': {
-        fn: () => blogContent?.sections ? generateBlogImages(blogContent.sections, { imageStyle: promptSettings.media.blogImageStyle, textOverlay: promptSettings.media.blogTextOverlay, mainColor: promptSettings.media.mainColor, extra: promptSettings.media.extra }) : Promise.resolve([]),
-        setter: setBlogImages,
-      },
-      '인스타 카드': {
-        fn: () => instagramContent?.cardTopics ? generateInstagramImages(instagramContent.cardTopics, { imageStyle: promptSettings.media.instagramImageStyle, instagramCardStyle: promptSettings.media.instagramCardStyle, extra: promptSettings.media.extra }) : Promise.resolve([]),
-        setter: setInstagramImages,
-      },
-      '숏폼 영상': {
-        fn: () => shortsScript ? Promise.resolve({ status: 'placeholder', duration: shortsScript.duration }) : Promise.resolve(null),
-        setter: setShortsVideo,
-      },
-    }
-
-    const task = mediaMap[err.channel]
-    if (!task) { setRetrying(null); return }
-
-    try {
-      const result = await task.fn()
-      task.setter(result)
-      removeStepError('media', err.service, err.channel)
-    } catch (retryErr) {
-      setStepErrors(p => ({
-        ...p,
-        media: (p.media || []).map(e =>
-          e.service === err.service && e.channel === err.channel
-            ? { ...e, message: retryErr.message || '재시도 실패' }
-            : e
-        )
-      }))
-    } finally {
-      setRetrying(null)
-    }
-  }
 
   // Step 2 재시도
   const retryAnalysis = async () => {
@@ -1640,6 +1160,48 @@ ${parsedText}
     reader.readAsDataURL(f)
   })
 
+  const isImageFile = (fileItem) => (
+    fileItem?.type?.startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(fileItem?.name || '')
+  )
+
+  const handleBlogImageFiles = async (files) => {
+    const imageFiles = Array.from(files || []).filter(isImageFile)
+    if (imageFiles.length === 0) return
+    const hasThumbnail = blogUploadedImages.some(image => image?.isThumbnail)
+    const shouldAutoSetThumbnail = !blogThumbnailDisabled && !hasThumbnail
+
+    const nextImages = await Promise.all(imageFiles.map(async (imageFile, index) => {
+      const dataUrl = await fileToBase64(imageFile)
+      const targetIndex = blogUploadedImages.length + index
+      const imageId = `${Date.now()}-${targetIndex}-${imageFile.name}`
+      return {
+        id: imageId,
+        imageUrl: dataUrl,
+        renderedImageUrl: dataUrl,
+        pngUrl: dataUrl,
+        title: imageFile.name,
+        heading: blogContent?.sections?.[targetIndex]?.heading || '',
+        source: 'uploaded',
+        isThumbnail: shouldAutoSetThumbnail && index === 0,
+      }
+    }))
+
+    const mergedImages = [...blogUploadedImages, ...nextImages].map((image, index, images) => ({
+      ...image,
+      isThumbnail: blogThumbnailDisabled
+        ? false
+        : images.some(item => item?.isThumbnail)
+          ? !!image?.isThumbnail
+          : index === 0,
+    }))
+    setBlogUploadedImages(mergedImages)
+    if (!promptSettings.media.blogGenerateImages) {
+      setBlogImages(mergedImages)
+    }
+    updatePrompt('media', 'blogAttachImages', true)
+  }
+
   // 결과 확인에 사용할 미완료/실패 목록 수집
   const getIncompleteItems = () => {
     const incomplete = []
@@ -1647,7 +1209,7 @@ ${parsedText}
       if (channel.includes('뉴스레터')) return selectedChannels.newsletter
       if (channel.includes('인스타')) return selectedChannels.instagram
       if (channel.includes('블로그')) return selectedChannels.blog
-      if (channel.includes('숏폼') || channel.includes('숏츠') || channel.includes('아바타')) return selectedChannels.shorts
+      if (channel.includes('숏폼') || channel.includes('쇼츠') || channel.includes('아바타')) return selectedChannels.shorts
       return true
     }
 
@@ -1660,9 +1222,7 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    if (selectedChannels.blog && !blogImages?.some(i => i.imageUrl)) incomplete.push('블로그 이미지')
-    if (selectedChannels.instagram && !instagramImages?.length) incomplete.push('인스타 카드 이미지')
-    // Step 5
+    // 숏폼 영상
     if (selectedChannels.shorts && !avatarImage) incomplete.push('숏폼 아바타')
     if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
     // 실패 항목
@@ -1688,6 +1248,55 @@ ${parsedText}
     await navigateToResults()
   }
 
+  const buildBlogImagesForResult = async () => {
+    if (!selectedChannels.blog || !blogContent) return null
+
+    const shouldAttach = !!promptSettings.media.blogAttachImages
+    const shouldGenerate = !!promptSettings.media.blogGenerateImages
+    const uploadedImages = shouldAttach
+      ? blogUploadedImages.map((image, index) => ({
+          ...image,
+          heading: image?.heading || blogContent?.sections?.[index]?.heading || '',
+          source: 'uploaded',
+        }))
+      : []
+    let generatedImages = shouldGenerate ? blogImages : []
+
+    const needsGeneratedImages =
+      shouldGenerate &&
+      (!Array.isArray(generatedImages) ||
+        generatedImages.length === 0 ||
+        generatedImages.every(image => !image?.imageUrl && !image?.renderedImageUrl && !image?.pngUrl))
+
+    if (needsGeneratedImages) {
+      setStepLoading('media', true)
+      try {
+        generatedImages = await generateBlogImages(blogContent.sections || [], {
+          imageStyle: promptSettings.media.blogImageStyle,
+          textOverlay: promptSettings.media.blogTextOverlay,
+          imageTextOverlay: promptSettings.media.blogTextOverlay,
+          mainColor: promptSettings.media.mainColor,
+          extra: promptSettings.media.extra,
+        })
+        setBlogImages(generatedImages)
+      } catch (err) {
+        addStepErrors('media', [{ service: 'gemini', channel: '블로그 이미지', message: err.message || '블로그 이미지 생성 실패' }])
+        showErrorAlert('블로그 이미지 생성', err.message || '블로그 이미지 생성 실패')
+        generatedImages = []
+      } finally {
+        setStepLoading('media', false)
+      }
+    }
+
+    const combinedImages = [
+      ...uploadedImages,
+      ...(Array.isArray(generatedImages) ? generatedImages.map(image => ({ ...image, source: image?.source || 'generated' })) : []),
+    ].filter(Boolean)
+      .sort((a, b) => Number(!!b?.isThumbnail) - Number(!!a?.isThumbnail))
+
+    return combinedImages.length > 0 ? combinedImages : null
+  }
+
   const navigateToResults = async () => {
     let fileBase64 = null
     if (file) {
@@ -1703,8 +1312,14 @@ ${parsedText}
           ...blogContent,
           imageStyle: promptSettings.media.blogImageStyle,
           imageTextOverlay: promptSettings.media.blogTextOverlay,
+          imageMode: [
+            promptSettings.media.blogGenerateImages ? 'generate' : null,
+            promptSettings.media.blogAttachImages ? 'upload' : null,
+          ].filter(Boolean),
         }
       : blogContent
+
+    const blogImagesForResult = await buildBlogImagesForResult()
 
     const instagramContentForResult = instagramContent
       ? {
@@ -1718,7 +1333,7 @@ ${parsedText}
         parsedText, verification, summary,
         blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
         shortsScript,
-        blogImages, instagramImages, shortsVideo,
+        blogImages: blogImagesForResult, instagramImages, shortsVideo,
         fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
         fileBase64,
         savedFromExtraction: true,
@@ -1728,10 +1343,31 @@ ${parsedText}
   }
 
   // 프롬프트 필드 렌더
-  const PF = (label, { optional, type = 'input', value, onChange, placeholder, hint, options } = {}) => (
+  const PF = (label, { optional, type = 'input', value, onChange, placeholder, hint, tooltip, tooltipTitle = '도움말', options } = {}) => (
     <div className="mb-4 last:mb-0">
-      <label className="block text-sm font-semibold text-text-muted mb-1.5">
-        {label} {optional && <span className="font-normal text-text-muted/50">(선택)</span>}
+      <label className="flex items-center gap-1.5 text-sm font-semibold text-text-muted mb-1.5">
+        <span>{label}</span>
+        {optional && <span className="font-normal text-text-muted/50">(선택)</span>}
+        {tooltip && (
+          <span className="relative inline-flex group">
+            <button
+              type="button"
+              className="flex h-4 w-4 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-[10px] font-bold text-primary-light transition-colors hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              aria-label={`${label} 도움말`}
+            >
+              ?
+            </button>
+            <span className="pointer-events-none absolute left-1/2 top-6 z-50 hidden w-72 -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl ring-1 ring-black/5 group-hover:block group-focus-within:block">
+              <span className="block border-b border-border bg-surface-light px-3 py-2 text-xs font-bold text-text">
+                {tooltipTitle}
+              </span>
+              <span className="block px-3 py-2.5 text-xs font-normal leading-relaxed text-text-muted">
+                {tooltip}
+              </span>
+              <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-l border-t border-border bg-surface-light" />
+            </span>
+          </span>
+        )}
       </label>
       {type === 'textarea' ? (
         <textarea defaultValue={value} onBlur={e => onChange(e.target.value)} placeholder={placeholder} rows={3}
@@ -1751,18 +1387,234 @@ ${parsedText}
 
 
   const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
-  const manualBlogCategoryProfile = getBlogCategoryProfile(promptSettings.content.blogCategoryId)
-  const appliedBlogCategoryInfo = blogContent?.categoryInfo || null
-  const appliedBlogCategoryProfile = getBlogCategoryProfile(appliedBlogCategoryInfo?.finalCategoryId)
-  const categoryPreviewProfile = promptSettings.content.blogCategoryMode === 'manual'
-    ? manualBlogCategoryProfile
-    : appliedBlogCategoryProfile
+  const selectedBlogCategoryProfile = getBlogCategoryProfile(promptSettings.content.blogCategoryId)
+  const BlogCategoryPreview = ({ profile }) => {
+    if (!profile) return null
 
-  // 선택된 채널에 따라 스텝 번호 동적 계산 (Step 0은 채널 선택)
-  const visibleStepIds = [0, 1, 2, 3]
-  if (selectedChannels.blog || selectedChannels.instagram) visibleStepIds.push(4)
-  if (selectedChannels.shorts) visibleStepIds.push(5)
-  const displayStepNum = (id) => visibleStepIds.indexOf(id)
+    const sources = profile.suitableSources?.length ? profile.suitableSources : profile.classifierHints
+    const examples = (profile.exampleLinks || []).slice(0, 2)
+
+    return (
+      <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 space-y-3 text-xs">
+        <div>
+          <p className="font-semibold text-text">{profile.label}</p>
+          <p className="mt-1 leading-relaxed text-text-muted">{profile.goal}</p>
+        </div>
+        {profile.bodyPattern?.length > 0 && (
+          <div>
+            <p className="mb-1.5 font-semibold text-text-muted">글 구조</p>
+            <div className="flex flex-wrap gap-1.5">
+              {profile.bodyPattern.map((item, index) => (
+                <span key={`${profile.id}-body-${item}`} className="rounded-full border border-border bg-surface px-2 py-1 text-[11px] text-text-muted">
+                  {index + 1}. {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {sources?.length > 0 && (
+          <div>
+            <p className="mb-1.5 font-semibold text-text-muted">적합한 자료</p>
+            <div className="flex flex-wrap gap-1.5">
+              {sources.slice(0, 6).map((item) => (
+                <span key={`${profile.id}-source-${item}`} className="rounded-md bg-surface-light px-2 py-1 text-[11px] text-text-muted">
+                  {item}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {examples.length > 0 && (
+          <div>
+            <p className="mb-1.5 font-semibold text-text-muted">예시 글</p>
+            <div className="space-y-1">
+              {examples.map((example, index) => (
+                <a
+                  key={`${profile.id}-example-${example.url || index}`}
+                  href={example.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block truncate rounded-lg border border-border bg-surface px-2 py-1.5 text-[11px] text-primary-light transition-colors hover:border-primary/30 hover:bg-primary/10"
+                >
+                  {example.title || `예시 글 ${index + 1}`}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+  const BlogImageSettings = () => {
+    const generateEnabled = promptSettings.media.blogGenerateImages !== false
+    const attachEnabled = !!promptSettings.media.blogAttachImages
+
+    return (
+      <div className="mb-4 last:mb-0 space-y-2">
+        <label className="flex items-center gap-1.5 text-sm font-semibold text-text-muted mb-1.5">
+          <span>블로그 이미지 설정</span>
+        </label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {[
+            {
+              key: 'generate',
+              label: '이미지 생성',
+              selected: generateEnabled,
+              onToggle: () => {
+                const next = !generateEnabled
+                updatePrompt('media', 'blogGenerateImages', next)
+                if (!next) setBlogImages(null)
+              },
+            },
+            {
+              key: 'upload',
+              label: '이미지 첨부',
+              selected: attachEnabled,
+              onToggle: () => updatePrompt('media', 'blogAttachImages', !attachEnabled),
+            },
+          ].map((option) => {
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={option.onToggle}
+                className={`rounded-lg border px-2 py-2 text-xs font-semibold transition-all ${
+                  option.selected
+                    ? 'border-primary/40 bg-primary/10 text-primary-light'
+                    : 'border-border bg-surface text-text-muted hover:border-primary/30 hover:text-text'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  {option.selected && <CheckCircle size={12} />}
+                  {option.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        {generateEnabled && attachEnabled && (
+          <p className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-primary-light">
+            첨부한 이미지 외에 글 내용에 맞는 AI 이미지가 추가로 생성됩니다.
+          </p>
+        )}
+        <input
+          ref={blogImageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            handleBlogImageFiles(event.target.files)
+            event.target.value = ''
+          }}
+        />
+        {attachEnabled && (
+          <div className="rounded-xl border border-border bg-surface-light p-3 space-y-2">
+            <button
+              type="button"
+              onClick={() => blogImageInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-text-muted transition-colors hover:border-primary/30 hover:text-text"
+            >
+              <Upload size={12} /> 이미지 선택
+            </button>
+            {blogUploadedImages.length > 0 ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = blogUploadedImages.map(image => ({ ...image, isThumbnail: false }))
+                    setBlogThumbnailDisabled(true)
+                    setBlogUploadedImages(next)
+                    if (!generateEnabled) {
+                      setBlogImages(next)
+                    }
+                  }}
+                  className={`w-full rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+                    blogThumbnailDisabled
+                      ? 'border-warning/30 bg-warning/10 text-warning'
+                      : 'border-border bg-surface text-text-muted hover:border-primary/30 hover:text-text'
+                  }`}
+                >
+                  썸네일 지정하지 않기
+                </button>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {blogUploadedImages.map((image, index) => (
+                    <div key={`${image.title}-${index}`} className={`group relative aspect-square overflow-hidden rounded-lg border bg-surface ${
+                      image.isThumbnail ? 'border-primary/60 ring-2 ring-primary/20' : 'border-border'
+                    }`}>
+                      <img src={image.renderedImageUrl || image.imageUrl} alt={image.title || `첨부 이미지 ${index + 1}`} className="h-full w-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const thumbnailId = image.id || `${image.title}-${index}`
+                          const next = blogUploadedImages.map((item, itemIndex) => ({
+                            ...item,
+                            isThumbnail: (item.id || `${item.title}-${itemIndex}`) === thumbnailId,
+                          }))
+                          setBlogThumbnailDisabled(false)
+                          setBlogUploadedImages(next)
+                          if (!generateEnabled) {
+                            setBlogImages(next)
+                          }
+                        }}
+                        className={`absolute bottom-0 left-0 right-0 px-2 py-2 text-center text-xs font-medium transition-colors ${
+                          image.isThumbnail
+                            ? 'bg-primary text-white'
+                            : 'bg-black/70 text-white hover:bg-primary'
+                        }`}
+                        aria-label="블로그 썸네일로 지정"
+                      >
+                        {image.isThumbnail ? '현재 썸네일' : '썸네일 지정'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = blogUploadedImages.filter((_, imageIndex) => imageIndex !== index)
+                            .map((item, itemIndex, items) => ({
+                              ...item,
+                              isThumbnail: blogThumbnailDisabled
+                                ? false
+                                : items.some(candidate => candidate?.isThumbnail)
+                                  ? !!item?.isThumbnail
+                                  : itemIndex === 0,
+                            }))
+                          setBlogUploadedImages(next)
+                          if (!generateEnabled) {
+                            setBlogImages(next.length ? next : null)
+                          }
+                        }}
+                        className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                        aria-label="첨부 이미지 삭제"
+                      >
+                        <XCircle size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">아직 첨부한 이미지가 없습니다.</p>
+            )}
+          </div>
+        )}
+        {!generateEnabled && !attachEnabled && (
+          <p className="rounded-lg bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning">
+            이미지 생성과 첨부가 모두 꺼져 있어 결과 블로그에 이미지가 포함되지 않습니다.
+          </p>
+        )}
+      </div>
+    )
+  }
+  const contentStepRows = [
+    { key: 'blog', stepId: 3, label: '네이버 블로그', icon: FileText, color: 'text-emerald-500 bg-emerald-500/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
+    { key: 'newsletter', stepId: 4, label: '뉴스레터', icon: Mail, color: 'text-blue-500 bg-blue-500/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
+    { key: 'instagram', stepId: 5, label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? '본문 작성' : null },
+    { key: 'shorts', stepId: 6, label: '숏폼', errorLabel: '숏폼 대본', icon: Film, color: 'text-red-500 bg-red-500/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
+  ].filter(row => selectedChannels[row.key])
+
+  // 콘텐츠 채널 단계는 품질 관리를 위해 고정 번호로 분리한다.
+  const displayStepNum = (id) => id
+  const showLegacyContentStep = false
 
   return (
     <div className="w-full">
@@ -1805,14 +1657,16 @@ ${parsedText}
         <div className="flex items-center gap-2 bg-surface rounded-xl border border-border p-2">
           <div className="flex items-center gap-1 flex-1">
             {steps.filter(s => {
-              if (s.id === 4) return selectedChannels.blog || selectedChannels.instagram
-              if (s.id === 5) return selectedChannels.shorts
+              if (s.id === 3) return selectedChannels.blog
+              if (s.id === 4) return selectedChannels.newsletter
+              if (s.id === 5) return selectedChannels.instagram
+              if (s.id === 6) return selectedChannels.shorts
               return true
             }).map((step, i, arr) => {
               const Icon = step.icon
               const isActive = step.id === currentStep
               const isDone = step.id < currentStep
-              const hasError = stepErrors[['select', 'upload', 'analysis', 'content', 'media', 'shorts'][step.id]]?.length > 0
+              const hasError = stepErrors[step.id >= 3 && step.id <= 6 ? 'content' : ['select', 'upload', 'analysis', null, null, null, null, 'media', 'shorts'][step.id]]?.length > 0
               return (
                 <div key={step.id} className="flex items-center flex-1">
                   <button
@@ -2160,19 +2014,412 @@ ${parsedText}
       </div>
       </div>
 
+      {/* Step 3-6: Channel Content Generation */}
+      {contentStepRows.map((row) => {
+        const Icon = row.icon
+        const errObj = stepErrors.content?.find(e => e.channel === (row.errorLabel || row.label))
+        const failed = !row.data && !!errObj
+        const generating = retrying === `content-${row.key}` || retrying === `regen-${row.key}` || retrying === `${errObj?.service}-${errObj?.channel}`
+        const isAvailable = currentStep >= row.stepId || !!row.data
+        return (
+          <div key={row.key} id={`step-${row.stepId}`} className="flex gap-4 items-stretch">
+            <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${!isAvailable ? 'opacity-50 pointer-events-none' : ''}`}>
+              <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> {row.label} 설정</p>
+              {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
+              {row.key === 'blog' && (
+                <>
+                  {PF('카테고리 분류', {
+                    type: 'select',
+                    value: promptSettings.content.blogCategoryMode,
+                    onChange: v => updatePrompt('content', 'blogCategoryMode', v),
+                    tooltipTitle: '자동 추천 모드',
+                    tooltip: '블로그 생성 시 문서 내용으로 카테고리를 먼저 분류한 뒤 해당 규칙으로 작성합니다.',
+                    options: [
+                      { value: 'auto', label: '자동 추천' },
+                      { value: 'manual', label: '직접 선택' },
+                    ],
+                  })}
+                  {promptSettings.content.blogCategoryMode === 'manual' && PF('블로그 카테고리', {
+                    type: 'select',
+                    value: promptSettings.content.blogCategoryId,
+                    onChange: v => updatePrompt('content', 'blogCategoryId', v),
+                    options: BLOG_CATEGORY_OPTIONS,
+                    hint: '선택한 카테고리 규칙을 블로그 프롬프트에 바로 반영합니다.',
+                  })}
+                  {promptSettings.content.blogCategoryMode === 'manual' && selectedBlogCategoryProfile && (
+                    <BlogCategoryPreview profile={selectedBlogCategoryProfile} />
+                  )}
+                  <BlogImageSettings />
+                  {PF('블로그 추가 지시', { optional: true, type: 'textarea', placeholder: 'SEO 키워드, 반드시 다뤄야 할 포인트 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
+                </>
+              )}
+              {row.key === 'newsletter' && PF('뉴스레터 추가 지시', { optional: true, type: 'textarea', placeholder: '구독자 톤, CTA 등', value: promptSettings.content.newsletterExtra, onChange: v => updatePrompt('content', 'newsletterExtra', v) })}
+              {row.key === 'instagram' && PF('인스타그램 추가 지시', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
+              {row.key === 'shorts' && (
+                <>
+                  {PF('숏폼 대본 추가 지시', { optional: true, type: 'textarea', placeholder: '후킹 문구 등', value: promptSettings.content.shortsExtra, onChange: v => updatePrompt('content', 'shortsExtra', v) })}
+                  <div className="border-t border-border/30 my-1" />
+                  {PF('나레이션 톤', {
+                    type: 'select',
+                    value: promptSettings.shorts.narrationTone,
+                    onChange: v => updatePrompt('shorts', 'narrationTone', v),
+                    options: [
+                      { value: 'auto', label: '자동' },
+                      { value: 'friendly and conversational', label: '친근한 설명형' },
+                      { value: 'energetic and punchy', label: '빠르고 에너지 있게' },
+                      { value: 'professional and authoritative', label: '전문가형' },
+                      { value: 'calm and trustworthy', label: '차분하고 신뢰감 있게' },
+                    ],
+                  })}
+                  {PF('목소리 스타일', {
+                    type: 'select',
+                    value: promptSettings.shorts.voiceStyle,
+                    onChange: v => updatePrompt('shorts', 'voiceStyle', v),
+                    options: [
+                      { value: 'auto', label: '자동 추천' },
+                      { value: 'warm and friendly Korean narrator voice', label: '따뜻하고 친근하게' },
+                      { value: 'bright and youthful Korean voice with lively energy', label: '밝고 경쾌하게' },
+                      { value: 'calm and intelligent Korean explainer voice', label: '차분하고 똑똑하게' },
+                      { value: 'cute and lovable Korean character voice', label: '귀엽고 캐릭터처럼' },
+                      { value: 'confident and polished Korean presenter voice', label: '또렷한 진행자 톤' },
+                    ],
+                  })}
+                  {PF('영상 추가 지시사항', {
+                    optional: true,
+                    type: 'textarea',
+                    placeholder: '예: 핵심 수치는 화면 상단 텍스트로만 강조, 텍스트는 짧고 강하게',
+                    value: promptSettings.shorts.extra,
+                    onChange: v => updatePrompt('shorts', 'extra', v),
+                    hint: '추천 모드(Video Agent)에서 가장 강하게 반영됩니다.',
+                  })}
+                </>
+              )}
+            </div>
+
+            <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === row.stepId ? 'border-primary/40' : 'border-border'} ${!isAvailable ? 'opacity-50' : ''}`}>
+              <div className="flex items-center justify-between p-5 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${row.data ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
+                    <Icon size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-text text-base">Step {displayStepNum(row.stepId)}. {row.label} 생성</h3>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {row.data && (
+                    <span className="text-xs font-medium flex items-center gap-1 text-success">
+                      <CheckCircle size={14} /> 완료 {row.detail ? `· ${row.detail}` : ''}
+                    </span>
+                  )}
+                  {failed && (
+                    <span className="text-xs font-medium flex items-center gap-1 text-danger">
+                      <XCircle size={14} /> 실패
+                    </span>
+                  )}
+                  <button
+                    onClick={() => row.data ? regenerateChannel(row.key) : failed ? retryContentChannel(errObj) : runSingleContentStep(row.key)}
+                    disabled={!isAvailable || generating || loading.content || loading.analysis || loading.summary}
+                    className={`${row.data ? 'px-3 py-1.5 bg-surface-light text-text-muted hover:bg-surface hover:text-text border border-border' : 'px-4 py-2 bg-primary text-white hover:bg-primary-dark'} text-sm font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-2`}
+                  >
+                    {generating
+                      ? <><Loader2 size={14} className="animate-spin" /> 생성중...</>
+                      : row.data
+                        ? <><RefreshCw size={14} /> 재생성</>
+                        : failed
+                          ? <><RefreshCw size={14} /> 재시도</>
+                          : <><Sparkles size={14} /> 생성</>
+                    }
+                  </button>
+                </div>
+              </div>
+
+              {isAvailable && (
+                <div className="p-5">
+                  {!row.data && !failed && (
+                    <div className="rounded-lg border border-border bg-surface-light p-4 text-sm text-text-muted">
+                      {row.key === 'shorts'
+                        ? '숏폼 대본을 생성하면 같은 단계에서 아바타와 영상을 이어서 만들 수 있습니다.'
+                        : `${row.label} 콘텐츠를 생성하면 다음 단계로 이동합니다.`}
+                    </div>
+                  )}
+                  {failed && (
+                    <div className="rounded-lg border border-danger/20 bg-danger/5 p-4 text-sm text-danger">
+                      {errObj.message}
+                    </div>
+                  )}
+                  {row.key === 'blog' && blogContent && (
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
+                        {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
+                      </div>
+                      {blogContent.sections?.map((sec, i) => (
+                        <div key={i} className="border-l-2 border-primary/30 pl-3">
+                          <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
+                          <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{sec.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {row.key === 'newsletter' && newsletterContent && (
+                    <div className="space-y-3">
+                      <h4 className="text-base font-bold text-text">{newsletterContent.subject}</h4>
+                      {newsletterContent.preheader && <p className="text-xs text-text-muted">{newsletterContent.preheader}</p>}
+                      {newsletterContent.body && <p className="text-sm text-text-muted whitespace-pre-wrap leading-6">{newsletterContent.body}</p>}
+                    </div>
+                  )}
+                  {row.key === 'instagram' && instagramContent && (
+                    <div className="space-y-3">
+                      {instagramContent.caption && <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>}
+                      {instagramContent.cardTopics?.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {instagramContent.cardTopics.map((card, i) => (
+                            <div key={i} className="bg-surface-light rounded-lg p-2.5 border border-border">
+                              <p className="text-xs font-bold text-text">{card.headline}</p>
+                              <p className="text-xs text-text-muted mt-0.5">{card.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {row.key === 'shorts' && shortsScript && (
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="text-base font-bold text-text">{shortsScript.title}</h4>
+                        <p className="text-xs text-text-muted">총 {shortsScript.duration}초 · {shortsScript.scenes?.length || 0}씬</p>
+                      </div>
+                      {shortsScript.hook && (
+                        <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20">
+                          <p className="text-xs font-semibold text-warning mb-0.5">오프닝 훅</p>
+                          <p className="text-sm text-text">{shortsScript.hook}</p>
+                        </div>
+                      )}
+                      {shortsScript.scenes?.map((scene, i) => (
+                        <div key={i} className="border-l-2 border-warning/30 pl-3">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded">씬 {scene.sceneNumber}</span>
+                            <span className="text-xs text-text-muted">{scene.duration}초</span>
+                          </div>
+                          <p className="text-sm text-text">{scene.narration}</p>
+                          {scene.textOverlay && <p className="text-xs text-text-muted mt-1">{scene.textOverlay}</p>}
+                        </div>
+                      ))}
+                      <div className="border-t border-border pt-5 space-y-5">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.avatar}</span>
+                            <p className="text-base font-semibold text-text">아바타 생성</p>
+                            {avatarImage && <CheckCircle size={14} className="text-success" />}
+                          </div>
+                          <div className="flex gap-3">
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                value={avatarPrompt}
+                                onChange={e => setAvatarPrompt(e.target.value)}
+                                placeholder="예: 도서관에서 공부하는 하얀 말티즈"
+                                className="w-full px-3 py-2.5 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                              />
+                              <p className="text-xs text-text-muted mt-1">원하는 캐릭터/인물을 설명하면 정면 아바타 이미지를 생성합니다</p>
+                            </div>
+                            <button
+                              onClick={generateAvatar}
+                              disabled={!avatarPrompt.trim() || mediaItemLoading['아바타']}
+                              className="px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-1.5 shrink-0 h-fit"
+                            >
+                              {mediaItemLoading['아바타'] ? <><Loader2 size={14} className="animate-spin" /> 생성중</> : avatarImage ? <><RefreshCw size={14} /> 재생성</> : <><Sparkles size={14} /> 생성</>}
+                            </button>
+                          </div>
+                          {avatarImage && (
+                            <div className="flex flex-col items-center gap-3">
+                              <div className={`w-36 rounded-xl overflow-hidden shadow-lg ${avatarConfirmed ? 'border-2 border-success/50' : 'border-2 border-primary/30'}`} style={{ aspectRatio: '9/16' }}>
+                                <img src={avatarImage} alt="아바타" className="w-full h-full object-cover cursor-pointer" onClick={() => setPreviewImage({ src: avatarImage, title: '아바타 미리보기' })} />
+                              </div>
+                              {avatarConfirmed ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-success flex items-center gap-1"><CheckCircle size={12} /> 확정됨</span>
+                                  <button onClick={() => { setAvatarConfirmed(false); setHeygenAvatarId(null); setHeygenReady(false); setHeygenUploading(false) }}
+                                    className="text-sm text-text-muted hover:text-text transition-colors">변경</button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button onClick={generateAvatar} disabled={mediaItemLoading['아바타']}
+                                    className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all border border-border flex items-center gap-1">
+                                    <RefreshCw size={11} /> 재시도
+                                  </button>
+                                  <button onClick={confirmAndUploadAvatar}
+                                    className="px-4 py-1.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-1">
+                                    <CheckCircle size={11} /> 확정
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.subtitle}</span>
+                            <p className="text-base font-semibold text-text">자막 스타일</p>
+                            {subtitleStyle && <CheckCircle size={14} className="text-success" />}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-semibold text-text-muted">폰트</p>
+                            {[
+                              { value: 'default', label: '기본', style: {} },
+                              { value: 'bold', label: '볼드', style: { fontFamily: 'A2z, sans-serif', fontWeight: 700 } },
+                              { value: 'dongle', label: '동글', style: { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } },
+                              { value: 'handwriting', label: '손글씨', style: { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } },
+                              { value: 'gothic', label: '고딕', style: { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } },
+                            ].map(f => (
+                              <button
+                                key={f.value}
+                                onClick={() => setSubtitleFont(f.value)}
+                                style={f.style}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${subtitleFont === f.value ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-surface-light border-border text-text-muted hover:border-primary/20'}`}
+                              >
+                                {f.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            {[
+                              { value: 'style1', label: 'Style1', desc: '흰 글자 + 검정 반투명 박스' },
+                              { value: 'style2', label: 'Style2', desc: '흰 글자 + 외곽선 (배경 없음)' },
+                            ].map(s => {
+                              const isSelected = subtitleStyle === s.value
+                              const fontStyle =
+                                subtitleFont === 'bold' ? { fontFamily: 'A2z, sans-serif', fontWeight: 700 } :
+                                subtitleFont === 'dongle' ? { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } :
+                                subtitleFont === 'handwriting' ? { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } :
+                                subtitleFont === 'gothic' ? { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } : {}
+                              return (
+                                <button
+                                  key={s.value}
+                                  onClick={() => setSubtitleStyle(s.value)}
+                                  className={`flex flex-col gap-2 p-3 rounded-xl transition-all border ${isSelected ? 'bg-primary/10 border-primary/30 shadow-sm' : 'bg-surface-light border-border hover:border-primary/20'}`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-text'}`}>{s.label}</p>
+                                    {isSelected && <CheckCircle size={14} className="text-primary" />}
+                                  </div>
+                                  <p className="text-[11px] text-text-muted text-left">{s.desc}</p>
+                                  <div className="bg-slate-400 rounded-lg px-2 py-2 flex items-center justify-center">
+                                    {s.value === 'style1' ? (
+                                      <div className="bg-black/70 px-3 py-1.5 rounded">
+                                        <p className="text-white text-xs font-medium text-center" style={fontStyle}>안녕하세요 AI 분석입니다</p>
+                                      </div>
+                                    ) : (
+                                      <div className="px-3 py-1.5">
+                                        <p className="text-white text-xs font-bold text-center" style={{ ...fontStyle, textShadow: '0 0 1px rgba(0,0,0,1), 0 0 1px rgba(0,0,0,0.8)' }}>안녕하세요 AI 분석입니다</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.video}</span>
+                            <p className="text-base font-semibold text-text">영상 생성</p>
+                            {shortsVideo && <CheckCircle size={14} className="text-success" />}
+                          </div>
+                          {shortsVideo ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3 p-3 bg-success/5 rounded-lg border border-success/20">
+                                <CheckCircle size={16} className="text-success" />
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-text">숏폼 영상 생성 완료</p>
+                                  <p className="text-xs text-text-muted">{shortsVideo.duration || shortsScript?.duration}초</p>
+                                </div>
+                                <button
+                                  onClick={() => setCreditConfirm(true)}
+                                  disabled={loading.shorts}
+                                  className="px-3 py-1.5 text-sm font-medium rounded-lg bg-surface-light hover:bg-surface text-text-muted border border-border transition-all flex items-center gap-1"
+                                >
+                                  <RefreshCw size={10} /> 재생성
+                                </button>
+                              </div>
+                              {shortsVideo.url && (
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="flex flex-col items-center gap-2">
+                                    <p className="text-xs font-medium text-text-muted">자막 포함 최종본</p>
+                                    <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                                      <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
+                                    </div>
+                                  </div>
+                                  {getDistinctRawShortsUrl(shortsVideo) && (
+                                    <div className="flex flex-col items-center gap-2">
+                                      <p className="text-xs font-medium text-text-muted">자막 추가 전 원본</p>
+                                      <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-border shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
+                                        <video src={getDistinctRawShortsUrl(shortsVideo)} controls className="w-full h-full object-contain" />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setCreditConfirm(true)}
+                              disabled={!isShortsVideoReady}
+                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                                isShortsVideoReady
+                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
+                              }`}
+                            >
+                              {loading.shorts
+                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
+                                : <><Film size={16} /> 숏폼 영상 생성</>}
+                            </button>
+                          )}
+                          {!avatarImage && !shortsVideo && <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>}
+                          {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
+                            <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
+                              <Loader2 size={14} className="text-primary animate-spin" />
+                              <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
+                            </div>
+                          )}
+                          {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
+                            <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
+                              <CheckCircle size={14} className="text-success" />
+                              <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>
+                            </div>
+                          )}
+                        </div>
+                        <ErrorPanel errors={stepErrors.shorts} onRetry={(err) => {
+                          if (err.channel === '아바타') { generateAvatar() }
+                          else { runShortsGeneration() }
+                        }} retrying={retrying} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+
       {/* Step 3: Content Generation */}
-      <div id="step-3" className="flex gap-4 items-stretch">
+      {showLegacyContentStep && (<div id="step-legacy-content" className="flex gap-4 items-stretch">
         <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 3 ? 'opacity-50 pointer-events-none' : ''}`}>
           <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 콘텐츠 설정</p>
           {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
-          {PF('공통 추가 지시', { optional: true, type: 'textarea', placeholder: '모든 채널에 공통 적용', value: promptSettings.content.commonExtra, onChange: v => updatePrompt('content', 'commonExtra', v) })}
-          <div className="border-t border-border/30 my-1" />
           {selectedChannels.blog && (
             <>
-              {PF('블로그 카테고리 적용 방식', {
+              {PF('카테고리 분류', {
                 type: 'select',
                 value: promptSettings.content.blogCategoryMode,
                 onChange: v => updatePrompt('content', 'blogCategoryMode', v),
+                tooltipTitle: '자동 추천 모드',
+                tooltip: '블로그 생성 시 문서 내용으로 카테고리를 먼저 분류한 뒤 해당 규칙으로 작성합니다.',
                 options: [
                   { value: 'auto', label: '자동 추천' },
                   { value: 'manual', label: '직접 선택' },
@@ -2185,32 +2432,10 @@ ${parsedText}
                 options: BLOG_CATEGORY_OPTIONS,
                 hint: '선택한 카테고리 규칙을 블로그 프롬프트에 바로 반영합니다.',
               })}
-              <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-xs text-text-muted space-y-1">
-                {promptSettings.content.blogCategoryMode === 'auto' ? (
-                  <>
-                    <p className="font-semibold text-text">자동 추천 모드</p>
-                    <p>블로그 생성 시 문서 내용으로 카테고리를 먼저 분류한 뒤 해당 규칙으로 작성합니다.</p>
-                    {appliedBlogCategoryInfo?.finalCategoryId && (
-                      <p>
-                        최근 적용 카테고리: <span className="font-semibold text-text">{appliedBlogCategoryInfo.finalCategoryLabel}</span>
-                        {appliedBlogCategoryInfo.reason ? ` · ${appliedBlogCategoryInfo.reason}` : ''}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="font-semibold text-text">직접 선택 모드</p>
-                    <p>
-                      적용 카테고리: <span className="font-semibold text-text">{manualBlogCategoryProfile ? manualBlogCategoryProfile.label : '미선택'}</span>
-                    </p>
-                  </>
-                )}
-                {categoryPreviewProfile?.recommendedImageStyle && (
-                  <p>
-                    추천 이미지 스타일: <span className="font-semibold text-text">{getBlogImageStyleLabel(categoryPreviewProfile.recommendedImageStyle)}</span>
-                  </p>
-                )}
-              </div>
+              {promptSettings.content.blogCategoryMode === 'manual' && selectedBlogCategoryProfile && (
+                <BlogCategoryPreview profile={selectedBlogCategoryProfile} />
+              )}
+              <BlogImageSettings />
               {PF('📝 블로그', { optional: true, type: 'textarea', placeholder: 'SEO 키워드, 반드시 다뤄야 할 포인트 등', value: promptSettings.content.blogExtra, onChange: v => updatePrompt('content', 'blogExtra', v) })}
             </>
           )}
@@ -2225,18 +2450,25 @@ ${parsedText}
               <PenTool size={18} />
             </div>
             <div>
-              <h3 className="font-semibold text-text text-base">Step {displayStepNum(3)}. 콘텐츠 생성</h3>
-              <p className="text-xs text-text-muted">컨텐츠에 적합한 문구 생성</p>
+              <h3 className="font-semibold text-text text-base">Step {displayStepNum(3)}. 채널별 콘텐츠 생성</h3>
+              <p className="text-xs text-text-muted">블로그, 뉴스레터, 인스타그램, 숏폼을 각각 별도 호출로 생성</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
 
-            {hasAnyContent && (() => {
-              const total = Object.values(selectedChannels).filter(Boolean).length
+            {currentStep >= 3 && (() => {
+              const rows = [
+                { key: 'blog', data: blogContent },
+                { key: 'newsletter', data: newsletterContent },
+                { key: 'instagram', data: instagramContent },
+                { key: 'shorts', data: shortsScript },
+              ].filter(ch => selectedChannels[ch.key])
+              const total = rows.length
+              const done = rows.filter(ch => ch.data).length
               return (
                 <span className={`text-xs font-medium flex items-center gap-1 ${stepErrors.content?.length ? 'text-warning' : 'text-success'}`}>
                   {stepErrors.content?.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
-                  {total - (stepErrors.content?.length || 0)}/{total} 채널 생성 완료
+                  {done}/{total} 채널 생성 완료
                 </span>
               )
             })()}
@@ -2246,7 +2478,7 @@ ${parsedText}
                 disabled={loading.content || loading.analysis || loading.summary}
                 className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
               >
-                {loading.content ? <><Loader2 size={14} className="animate-spin" /> 생성중...</> : <><Sparkles size={14} /> 실행</>}
+                {loading.content ? <><Loader2 size={14} className="animate-spin" /> 순차 생성중...</> : <><Sparkles size={14} /> 선택 채널 생성</>}
               </button>
             )}
             {hasAnyContent && (
@@ -2255,12 +2487,12 @@ ${parsedText}
                 disabled={loading.content || loading.analysis || loading.summary}
                 className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
               >
-                {loading.content ? <><Loader2 size={12} className="animate-spin" /> 재생성중...</> : <><RefreshCw size={12} /> 전체 재생성</>}
+                {loading.content ? <><Loader2 size={12} className="animate-spin" /> 순차 재생성중...</> : <><RefreshCw size={12} /> 선택 채널 재생성</>}
               </button>
             )}
           </div>
         </div>
-        {hasAnyContent && (
+        {currentStep >= 3 && (
           <div className="p-5">
             <div className="space-y-2">
               {[
@@ -2272,6 +2504,8 @@ ${parsedText}
                 const Icon = ch.icon
                 const errObj = stepErrors.content?.find(e => e.channel === ch.label)
                 const failed = !ch.data && !!errObj
+                const generating = retrying === `content-${ch.key}` || retrying === `regen-${ch.key}` || retrying === `${errObj?.service}-${errObj?.channel}`
+                const queued = loading.content && retrying && !generating && !ch.data && !failed
                 return (
                   <div key={i}
                     onClick={() => ch.data && setContentPreview(prev => prev === ch.key ? null : ch.key)}
@@ -2291,10 +2525,10 @@ ${parsedText}
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); regenerateChannel(ch.key) }}
-                          disabled={retrying === `regen-${ch.key}`}
+                          disabled={generating || loading.content}
                           className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-light hover:bg-surface text-text-muted text-[11px] font-medium transition-all border border-border disabled:opacity-50"
                         >
-                          {retrying === `regen-${ch.key}`
+                          {generating
                             ? <><Loader2 size={10} className="animate-spin" /> 생성중</>
                             : <><RefreshCw size={10} /> 재생성</>
                           }
@@ -2308,22 +2542,28 @@ ${parsedText}
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); retryContentChannel(errObj) }}
-                          disabled={retrying === `${errObj.service}-${errObj.channel}`}
+                          disabled={generating || loading.content}
                           className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all"
                         >
-                          {retrying === `${errObj.service}-${errObj.channel}`
+                          {generating
                             ? <><Loader2 size={10} className="animate-spin" /> 재시도중</>
                             : <><RefreshCw size={10} /> 재시도</>
                           }
                         </button>
                       </div>
-                    ) : loading.content ? (
+                    ) : generating || queued ? (
                       <div className="flex items-center gap-1 shrink-0">
-                        <Loader2 size={12} className="text-text-muted animate-spin" />
-                        <span className="text-xs text-text-muted">생성중...</span>
+                        {generating && <Loader2 size={12} className="text-text-muted animate-spin" />}
+                        <span className="text-xs text-text-muted">{generating ? '생성중...' : '대기중'}</span>
                       </div>
                     ) : (
-                      <span className="text-xs text-text-muted shrink-0">-</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); regenerateChannel(ch.key) }}
+                        disabled={!!retrying || loading.content}
+                        className="flex items-center gap-1 px-2 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary-light text-xs font-medium transition-all disabled:opacity-50"
+                      >
+                        <Sparkles size={10} /> 생성
+                      </button>
                     )}
                   </div>
                 )
@@ -2559,10 +2799,10 @@ ${parsedText}
           <div className="mx-5 mb-4">
             <button
               onClick={retryAllFailedContent}
-              disabled={retrying === 'content-all'}
+              disabled={!!retrying || loading.content}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary-light text-sm font-medium transition-all border border-primary/20 disabled:opacity-50"
             >
-              {retrying === 'content-all'
+              {retrying
                 ? <><Loader2 size={14} className="animate-spin" /> 실패 항목 재생성 중...</>
                 : <><RefreshCw size={14} /> 실패한 {stepErrors.content.length}개 채널 한번에 재시도</>
               }
@@ -2571,525 +2811,15 @@ ${parsedText}
         )}
         <ErrorPanel errors={stepErrors.content} onRetry={retryContentChannel} retrying={retrying} />
       </div>
-      </div>
+      </div>)}
 
-      {/* Step 4: Media Generation */}
-      {(selectedChannels.blog || selectedChannels.instagram) && (
-      <div id="step-4" className="flex gap-4 items-stretch">
-        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 이미지 설정</p>
-            <span className="text-[11px] text-text-muted">예시는 필요할 때만 펼쳐보기</span>
-          </div>
-
-          {selectedChannels.blog && (
-            <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-text">블로그</p>
-                  <p className="text-xs text-text-muted">대표 이미지 스타일과 글자 표시 방식을 정합니다.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => toggleMediaPreview('blogStyle')}
-                  className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
-                >
-                  {mediaPreviewOpen.blogStyle ? '예시 숨기기' : '예시 보기'}
-                </button>
-              </div>
-              {PF('블로그 이미지 스타일', {
-                type: 'select',
-                value: promptSettings.media.blogImageStyle,
-                onChange: v => updatePrompt('media', 'blogImageStyle', v),
-                options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }, { value: 'solid-pattern', label: '단색/패턴 배경' }],
-              })}
-              {PF('블로그 이미지 글자 표시', {
-                type: 'select',
-                value: promptSettings.media.blogTextOverlay,
-                onChange: v => updatePrompt('media', 'blogTextOverlay', v),
-                options: [
-                  { value: 'with-text', label: '글자 넣기' },
-                  { value: 'without-text', label: '글자 없이 보기' },
-                ],
-              })}
-              {PF('블로그 메인 컬러', { type: 'select', value: promptSettings.media.mainColor, onChange: v => updatePrompt('media', 'mainColor', v), options: [{ value: 'auto', label: '자동' }, { value: 'blue', label: '파란 계열' }, { value: 'pink', label: '분홍 계열' }, { value: 'green', label: '초록 계열' }, { value: 'purple', label: '보라 계열' }] })}
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => toggleMediaPreview('mainColor')}
-                  className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
-                >
-                  {mediaPreviewOpen.mainColor ? '색상 숨기기' : '색상 예시'}
-                </button>
-              </div>
-              {mediaPreviewOpen.blogStyle && renderImageStyleExample('blog', '블로그 이미지 스타일')}
-              {mediaPreviewOpen.mainColor && renderMainColorExample()}
-            </div>
-          )}
-
-          {selectedChannels.instagram && (
-            <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-text">인스타그램</p>
-                  <p className="text-xs text-text-muted">배경 스타일과 카드 텍스트 배치를 함께 조정합니다.</p>
-                </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => toggleMediaPreview('instagramStyle')}
-                    className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
-                  >
-                    {mediaPreviewOpen.instagramStyle ? '배경 숨기기' : '배경 예시'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => toggleMediaPreview('instagramCardStyle')}
-                    className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-muted hover:bg-border transition-all"
-                  >
-                    {mediaPreviewOpen.instagramCardStyle ? '카드 숨기기' : '카드 예시'}
-                  </button>
-                </div>
-              </div>
-              {PF('인스타 이미지 스타일', {
-                type: 'select',
-                value: promptSettings.media.instagramImageStyle,
-                onChange: v => updatePrompt('media', 'instagramImageStyle', v),
-                options: [{ value: 'pastel', label: '파스텔 일러스트' }, { value: '3d', label: '3D 렌더링' }, { value: 'photo', label: '사실적 사진' }, { value: 'watercolor', label: '수채화' }, { value: 'solid-pattern', label: '단색/패턴 배경' }],
-              })}
-              {PF('인스타 카드 스타일', {
-                type: 'select',
-                value: promptSettings.media.instagramCardStyle,
-                onChange: v => updatePrompt('media', 'instagramCardStyle', v),
-                options: [
-                  { value: 'background-text', label: '배경 + 텍스트' },
-                  { value: 'center-card', label: '중앙 카드 강조 텍스트' },
-                ],
-              })}
-              {mediaPreviewOpen.instagramStyle && renderImageStyleExample('instagram', '인스타 이미지 스타일')}
-              {mediaPreviewOpen.instagramCardStyle && renderInstagramCardStyleExample()}
-            </div>
-          )}
-
-          <div className="rounded-xl border border-border bg-surface-light p-3 space-y-3">
-            <div>
-              <div>
-                <p className="text-sm font-semibold text-text">공통</p>
-                <p className="text-xs text-text-muted">추가 지시사항만 전체 이미지 생성에 공통 적용합니다.</p>
-              </div>
-            </div>
-            {PF('추가 지시사항', { optional: true, type: 'textarea', placeholder: '캐릭터 포함 등', value: promptSettings.media.extra, onChange: v => updatePrompt('media', 'extra', v) })}
-          </div>
-        </div>
-        <div className={`flex-1 min-w-0 bg-surface rounded-xl border transition-all ${currentStep === 4 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-50' : ''}`}>
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${blogImages ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
-              <ImageIcon size={18} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-text text-base">Step {displayStepNum(4)}. 이미지 생성</h3>
-              <p className="text-xs text-text-muted">블로그/인스타그램 이미지 생성</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-
-            {currentStep >= 4 && !loading.media && !mediaGenerationDone && (
-              <button
-                onClick={runMediaGeneration}
-                disabled={loading.analysis || loading.summary || loading.content}
-                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
-              >
-                <Sparkles size={14} /> 전체 실행
-              </button>
-            )}
-            {mediaGenerationDone && !loading.media && (
-              <button
-                onClick={runMediaGeneration}
-                disabled={loading.analysis || loading.summary || loading.content}
-                className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
-              >
-                <RefreshCw size={12} /> 전체 재생성
-              </button>
-            )}
-            {loading.media && (
-              <button
-                onClick={stopGeneration}
-                className="px-4 py-2 bg-danger/10 text-danger text-sm font-medium rounded-lg hover:bg-danger/20 transition-all flex items-center gap-2 border border-danger/20"
-              >
-                <XCircle size={14} /> 중단
-              </button>
-            )}
-          </div>
-        </div>
-        {currentStep >= 4 && (
-          <div className="p-5 space-y-4">
-            {/* 블로그 이미지 */}
-            {selectedChannels.blog && (() => {
-              const failed = stepErrors.media?.some(e => e.channel === '블로그 이미지')
-              const isLoading = mediaItemLoading['블로그 이미지']
-              const ok = blogImages?.some(i => i.imageUrl)
-              return (
-                <div className={`rounded-lg p-3 border ${
-                  isLoading ? 'bg-primary/5 border-primary/20' :
-                  failed ? 'bg-danger/5 border-danger/20' :
-                  ok ? 'bg-success/5 border-success/20' :
-                  'bg-surface-light border-border'
-                }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1">
-                      <ImageIcon size={12} className="text-purple-400" />
-                      <p className="text-sm font-medium text-text">블로그 이미지</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isLoading && <div className="flex items-center gap-1"><Loader2 size={10} className="text-primary animate-spin" /><span className="text-xs text-primary">생성중...</span></div>}
-                      {!isLoading && ok && <div className="flex items-center gap-1"><CheckCircle size={10} className="text-success" /><p className="text-xs text-success">{blogImages.filter(i => i.imageUrl).length}/{blogImages.length}개</p></div>}
-                      {!isLoading && failed && <div className="flex items-center gap-1"><XCircle size={10} className="text-danger" /><span className="text-xs text-danger">실패</span></div>}
-                      {!isLoading && !ok && !failed && <span className="text-xs text-text-muted">대기</span>}
-                      {!isLoading && !ok && !!blogContent?.sections && !loading.media && (
-                        <button onClick={() => runSingleMedia('blogImg')} className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary-light text-sm font-medium transition-all border border-primary/20"><Sparkles size={10} /> 실행</button>
-                      )}
-                      {!isLoading && ok && !loading.media && (
-                        <button onClick={() => runSingleMedia('blogImg')} className="flex items-center gap-1 px-2 py-1 rounded-md bg-surface-light hover:bg-surface text-text-muted text-sm font-medium transition-all border border-border"><RefreshCw size={10} /> 재생성</button>
-                      )}
-                    </div>
-                  </div>
-                  {ok && (
-                    <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                      {(blogContent?.sections || [])
-                        .flatMap((section, i) => renderBlogPreviewCards(section, i))
-                        .filter(Boolean)}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-
-            {/* 인스타 카드 */}
-            {selectedChannels.instagram && (() => {
-              const failed = stepErrors.media?.some(e => e.channel === '인스타 카드')
-              const isLoading = mediaItemLoading['인스타 카드']
-              const ok = instagramImages?.length > 0
-              const hasImages = instagramImages?.some(getGeneratedImageUrl)
-              return (
-                <div className={`rounded-lg p-3 border ${
-                  isLoading ? 'bg-primary/5 border-primary/20' :
-                  failed ? 'bg-danger/5 border-danger/20' :
-                  ok ? 'bg-success/5 border-success/20' :
-                  'bg-surface-light border-border'
-                }`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1">
-                      <ImageIcon size={12} className="text-pink-400" />
-                      <p className="text-sm font-medium text-text">인스타 카드</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isLoading && <div className="flex items-center gap-1"><Loader2 size={10} className="text-primary animate-spin" /><span className="text-xs text-primary">생성중...</span></div>}
-                      {!isLoading && ok && <div className="flex items-center gap-1"><CheckCircle size={10} className="text-success" /><p className="text-xs text-success">{instagramImages.length}장 카드</p></div>}
-                      {!isLoading && failed && <div className="flex items-center gap-1"><XCircle size={10} className="text-danger" /><span className="text-xs text-danger">실패</span></div>}
-                      {!isLoading && !ok && !failed && <span className="text-xs text-text-muted">대기</span>}
-                      {!isLoading && !ok && !!instagramContent?.cardTopics?.length && !loading.media && (
-                        <button onClick={() => runSingleMedia('instaImg')} className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 hover:bg-primary/20 text-primary-light text-sm font-medium transition-all border border-primary/20"><Sparkles size={10} /> 실행</button>
-                      )}
-                      {!isLoading && ok && !loading.media && (
-                        <button onClick={() => runSingleMedia('instaImg')} className="flex items-center gap-1 px-2 py-1 rounded-md bg-surface-light hover:bg-surface text-text-muted text-sm font-medium transition-all border border-border"><RefreshCw size={10} /> 재생성</button>
-                      )}
-                    </div>
-                  </div>
-                  {hasImages && (
-                    <div className="flex gap-2 overflow-x-auto pt-2 pb-1">
-                      {buildInstagramDisplayCards(instagramContent)
-                        .flatMap((card, i) => renderInstagramPreviewCards(card, i))
-                        .filter(Boolean)}
-                    </div>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        )}
-        <ErrorPanel errors={stepErrors.media} onRetry={retryMediaItem} retrying={retrying} />
-      </div>
-      </div>
-      )}
-
-      {/* Step 5: 숏폼 생성 (아바타 + 목소리 + 영상) */}
-      {selectedChannels.shorts && (
-      <div id="step-5" className="flex gap-4 items-stretch">
-        <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${currentStep < 4 ? 'opacity-50 pointer-events-none' : ''}`}>
-          <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> 숏폼 설정</p>
-          {PF('나레이션 톤', {
-            type: 'select',
-            value: promptSettings.shorts.narrationTone,
-            onChange: v => updatePrompt('shorts', 'narrationTone', v),
-            options: [
-              { value: 'auto', label: '자동' },
-              { value: 'friendly and conversational', label: '친근한 설명형' },
-              { value: 'energetic and punchy', label: '빠르고 에너지 있게' },
-              { value: 'professional and authoritative', label: '전문가형' },
-              { value: 'calm and trustworthy', label: '차분하고 신뢰감 있게' },
-            ],
-          })}
-          {PF('목소리 스타일', {
-            type: 'select',
-            value: promptSettings.shorts.voiceStyle,
-            onChange: v => updatePrompt('shorts', 'voiceStyle', v),
-            options: [
-              { value: 'auto', label: '자동 추천' },
-              { value: 'warm and friendly Korean narrator voice', label: '따뜻하고 친근하게' },
-              { value: 'bright and youthful Korean voice with lively energy', label: '밝고 경쾌하게' },
-              { value: 'calm and intelligent Korean explainer voice', label: '차분하고 똑똑하게' },
-              { value: 'cute and lovable Korean character voice', label: '귀엽고 캐릭터처럼' },
-              { value: 'confident and polished Korean presenter voice', label: '또렷한 진행자 톤' },
-            ],
-          })}
-          {PF('추가 지시사항', {
-            optional: true,
-            type: 'textarea',
-            placeholder: '예: 핵심 수치는 화면 상단 텍스트로만 강조, 텍스트는 짧고 강하게',
-            value: promptSettings.shorts.extra,
-            onChange: v => updatePrompt('shorts', 'extra', v),
-            hint: '추천 모드(Video Agent)에서 가장 강하게 반영됩니다.',
-          })}
-        </div>
-        <div className={`flex-1 min-w-0 bg-surface rounded-2xl border transition-all shadow-sm ${currentStep === 5 ? 'border-primary/40' : 'border-border'} ${currentStep < 4 ? 'opacity-40 pointer-events-none' : ''}`}>
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <div className="flex items-center gap-4">
-            <div className={`p-2.5 rounded-xl ${shortsVideo ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>
-              <Film size={18} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-text text-base">Step {displayStepNum(5)}. 숏폼 생성</h3>
-              <p className="text-xs text-text-muted">아바타 + 나레이션 + HeyGen 영상</p>
-            </div>
-          </div>
-
-          {shortsVideo && <span className="text-xs text-success font-medium flex items-center gap-1"><CheckCircle size={14} /> 생성 완료</span>}
-        </div>
-        {currentStep >= 4 && (
-          <div className="p-5 space-y-5">
-            {!shortsScript ? (
-              <p className="text-xs text-text-muted">Step 3에서 숏폼 대본이 생성되어야 합니다.</p>
-            ) : (
-              <>
-                {/* 5-1: 아바타 생성 */}
-
-
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">1</span>
-                    <p className="text-base font-semibold text-text">아바타 생성</p>
-                    {avatarImage && <CheckCircle size={14} className="text-success" />}
-                  </div>
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={avatarPrompt}
-                        onChange={e => setAvatarPrompt(e.target.value)}
-                        placeholder="예: 도서관에서 공부하는 하얀 말티즈"
-                        className="w-full px-3 py-2.5 bg-surface-light border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-                      />
-                      <p className="text-xs text-text-muted mt-1">원하는 캐릭터/인물을 설명하면 정면 아바타 이미지를 생성합니다</p>
-                    </div>
-                    <button
-                      onClick={generateAvatar}
-                      disabled={!avatarPrompt.trim() || mediaItemLoading['아바타']}
-                      className="px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-1.5 shrink-0 h-fit"
-                    >
-                      {mediaItemLoading['아바타'] ? <><Loader2 size={14} className="animate-spin" /> 생성중</> : avatarImage ? <><RefreshCw size={14} /> 재생성</> : <><Sparkles size={14} /> 생성</>}
-                    </button>
-                  </div>
-                  {avatarImage && (
-                    <div className="flex flex-col items-center gap-3">
-                      <div className={`w-36 rounded-xl overflow-hidden shadow-lg ${avatarConfirmed ? 'border-2 border-success/50' : 'border-2 border-primary/30'}`} style={{ aspectRatio: '9/16' }}>
-                        <img src={avatarImage} alt="아바타" className="w-full h-full object-cover cursor-pointer" onClick={() => setPreviewImage({ src: avatarImage, title: '아바타 미리보기' })} />
-                      </div>
-                      {avatarConfirmed ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-success flex items-center gap-1"><CheckCircle size={12} /> 확정됨</span>
-                          <button onClick={() => { setAvatarConfirmed(false); setHeygenAvatarId(null); setHeygenReady(false); setHeygenUploading(false) }}
-                            className="text-sm text-text-muted hover:text-text transition-colors">변경</button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button onClick={generateAvatar} disabled={mediaItemLoading['아바타']}
-                            className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all border border-border flex items-center gap-1">
-                            <RefreshCw size={11} /> 재시도
-                          </button>
-                          <button onClick={confirmAndUploadAvatar}
-                            className="px-4 py-1.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-1">
-                            <CheckCircle size={11} /> 확정
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 5-3: 자막 스타일 선택 */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.subtitle}</span>
-                    <p className="text-base font-semibold text-text">자막 스타일</p>
-                    {subtitleStyle && <CheckCircle size={14} className="text-success" />}
-                  </div>
-                  {/* 폰트 선택 */}
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-text-muted">폰트</p>
-                    {[
-                      { value: 'default', label: '기본', style: {} },
-                      { value: 'bold', label: '볼드', style: { fontFamily: 'A2z, sans-serif', fontWeight: 700 } },
-                      { value: 'dongle', label: '동글', style: { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } },
-                      { value: 'handwriting', label: '손글씨', style: { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } },
-                      { value: 'gothic', label: '고딕', style: { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } },
-                    ].map(f => {
-                      const isSel = subtitleFont === f.value
-                      return (
-                        <button
-                          key={f.value}
-                          onClick={() => setSubtitleFont(f.value)}
-                          style={f.style}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${isSel ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-surface-light border-border text-text-muted hover:border-primary/20'}`}
-                        >
-                          {f.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {/* 스타일 카드 */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { value: 'style1', label: 'Style1', desc: '흰 글자 + 검정 반투명 박스' },
-                      { value: 'style2', label: 'Style2', desc: '흰 글자 + 외곽선 (배경 없음)' },
-                    ].map(s => {
-                      const isSelected = subtitleStyle === s.value
-                      const fontStyle =
-                        subtitleFont === 'bold' ? { fontFamily: 'A2z, sans-serif', fontWeight: 700 } :
-                        subtitleFont === 'dongle' ? { fontFamily: 'TmoneyRoundWind, sans-serif', fontWeight: 400 } :
-                        subtitleFont === 'handwriting' ? { fontFamily: 'Maplestory, sans-serif', fontWeight: 300 } :
-                        subtitleFont === 'gothic' ? { fontFamily: 'KBODiaGothic, sans-serif', fontWeight: 300 } : {}
-                      return (
-                        <button
-                          key={s.value}
-                          onClick={() => setSubtitleStyle(s.value)}
-                          className={`flex flex-col gap-2 p-3 rounded-xl transition-all border ${isSelected ? 'bg-primary/10 border-primary/30 shadow-sm' : 'bg-surface-light border-border hover:border-primary/20'}`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-text'}`}>{s.label}</p>
-                            {isSelected && <CheckCircle size={14} className="text-primary" />}
-                          </div>
-                          <p className="text-[11px] text-text-muted text-left">{s.desc}</p>
-                          <div className="bg-slate-400 rounded-lg px-2 py-2 flex items-center justify-center">
-                            {s.value === 'style1' && (
-                              <div className="bg-black/70 px-3 py-1.5 rounded">
-                                <p className="text-white text-xs font-medium text-center" style={fontStyle}>안녕하세요 AI 분석입니다</p>
-                              </div>
-                            )}
-                            {s.value === 'style2' && (
-                              <div className="px-3 py-1.5">
-                                <p className="text-white text-xs font-bold text-center" style={{ ...fontStyle, textShadow: '0 0 1px rgba(0,0,0,1), 0 0 1px rgba(0,0,0,0.8)' }}>안녕하세요 AI 분석입니다</p>
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* 5-4: 영상 생성 */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.video}</span>
-                    <p className="text-base font-semibold text-text">영상 생성</p>
-                    {shortsVideo && <CheckCircle size={14} className="text-success" />}
-                  </div>
-                  {shortsVideo ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3 p-3 bg-success/5 rounded-lg border border-success/20">
-                        <CheckCircle size={16} className="text-success" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-text">숏폼 영상 생성 완료</p>
-                          <p className="text-xs text-text-muted">{shortsVideo.duration || shortsScript?.duration}초</p>
-                        </div>
-                        <button
-                          onClick={() => setCreditConfirm(true)}
-                          disabled={loading.shorts}
-                          className="px-3 py-1.5 text-sm font-medium rounded-lg bg-surface-light hover:bg-surface text-text-muted border border-border transition-all flex items-center gap-1"
-                        >
-                          <RefreshCw size={10} /> 재생성
-                        </button>
-                      </div>
-                      {shortsVideo.url && (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="flex flex-col items-center gap-2">
-                            <p className="text-xs font-medium text-text-muted">자막 포함 최종본</p>
-                            <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
-                              <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
-                            </div>
-                          </div>
-                          {getDistinctRawShortsUrl(shortsVideo) && (
-                            <div className="flex flex-col items-center gap-2">
-                              <p className="text-xs font-medium text-text-muted">자막 추가 전 원본</p>
-                              <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-border shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
-                                <video src={getDistinctRawShortsUrl(shortsVideo)} controls className="w-full h-full object-contain" />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setCreditConfirm(true)}
-                      disabled={!isShortsVideoReady}
-                      className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                        isShortsVideoReady
-                          ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
-                          : 'bg-primary text-white opacity-50 cursor-not-allowed'
-                      }`}
-                    >
-                      {loading.shorts
-                        ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
-                        : <><Film size={16} /> 숏폼 영상 생성</>}
-                    </button>
-                  )}
-                  {!avatarImage && !shortsVideo && (
-                    <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>
-                  )}
-                  {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
-                    <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
-                      <Loader2 size={14} className="text-primary animate-spin" />
-                      <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
-                    </div>
-                  )}
-                  {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
-                    <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
-                      <CheckCircle size={14} className="text-success" />
-                      <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        <ErrorPanel errors={stepErrors.shorts} onRetry={(err) => {
-          if (err.channel === '아바타') { generateAvatar() }
-          else { retryMediaItem(err) }
-        }} retrying={retrying} />
-      </div>
-      </div>
-      )}
-
-      {/* View Results Button - 콘텐츠 또는 미디어가 하나라도 있으면 활성화, 로딩 중이면 비활성 */}
+      {/* View Results Button - 콘텐츠가 하나라도 있으면 활성화, 로딩 중이면 비활성 */}
       <div className="flex justify-end">
         <button
           onClick={viewResults}
-          disabled={!(hasAnyContent || mediaGenerationDone) || loading.content || loading.media || loading.shorts}
+          disabled={!hasAnyContent || loading.content || loading.media || loading.shorts}
           className={`px-6 py-3 font-medium rounded-xl transition-all flex items-center gap-2 ${
-            (hasAnyContent || mediaGenerationDone) && !loading.content && !loading.media && !loading.shorts
+            hasAnyContent && !loading.content && !loading.media && !loading.shorts
               ? 'bg-primary text-white hover:bg-primary-dark shadow-lg shadow-primary/20'
               : 'bg-surface-light text-text-muted border border-border cursor-not-allowed'
           }`}
