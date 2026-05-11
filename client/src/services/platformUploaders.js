@@ -26,10 +26,8 @@ const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
-const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const apiHeaders = (extra = {}) => ({
   'Content-Type': 'application/json',
-  'x-app-secret': API_SECRET,
   ...extra,
 })
 

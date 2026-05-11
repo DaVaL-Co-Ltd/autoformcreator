@@ -88,8 +88,8 @@ function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
-// SmartEditor媛 ?占쎈젰 占?auto-format?占쎈줈 蹂?占쏀븯??留덉빱???占쎄굅 (痍⑥냼????諛⑼옙?)
-// ?? 蹂쇰뱶 泥섎━??parseBoldInlineSegments媛 蹂꾨룄占?泥섎━?占쏙옙?占?** ???占쎄린???占쎄굅 ????
+// SmartEditor가 입력 마커를 auto-format으로 바꾸기 전에 제거한다.
+// 볼드 처리는 parseBoldInlineSegments가 별도로 담당하므로 ** 표시는 여기서 없앤다.
 function stripAutoFormatMarkers(raw) {
   return String(raw || '')
     .replace(/~~([^~]+)~~/g, '$1')
@@ -909,8 +909,8 @@ const SUBHEADING_FONT_SIZE = '24'
 const BODY_FONT_SIZE = '16'
 
 async function typeMultilineWithFormatting(page, text) {
-  // 蹂쇰뱶 留덉빱(**)??parseBoldInlineSegments媛 泥섎━?占쏙옙?占?蹂댁〈
-  // 占???~~, __, _, --, ` ??auto-format ?占쎈━占?留덉빱占??占쎄굅
+  // 볼드 마커(**)는 parseBoldInlineSegments가 처리하므로 여기서는 보존한다.
+  // ~~ , __ , _ , -- , ` 같은 auto-format 마커만 제거한다.
   const lines = stripAutoFormatMarkers(text).split(/\r?\n/)
   await recoverFormattingContext(page)
   let boldEnabled = false

@@ -12,12 +12,23 @@ import { publishInstagramMediaWithRetry } from './services/instagram-publish.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+dotenv.config({ path: path.resolve(__dirname, '..', '.env.local') })
 dotenv.config({ path: path.join(__dirname, '.env.local') })
 
 const require = createRequire(import.meta.url)
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path
 const sharp = require('sharp')
 const { createCanvas, GlobalFonts } = require('@napi-rs/canvas')
+const {
+  ensureSupabaseConfigured,
+  saveExtraction,
+  updateExtractionMedia,
+  listExtractions,
+  fetchExtractionById,
+  updateUploadStatus,
+  deleteExtraction,
+  deleteExtractionChannel,
+} = require('../api/_extractionsStore')
 const fontsDir = path.join(__dirname, 'fonts')
 
 function registerOptionalFont(filename, family) {
@@ -38,7 +49,27 @@ registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
 registerOptionalFont('A2z-Bold.woff2', 'A2z')
 
 function getLlamaParseApiKey() {
-  return process.env.LLAMAPARSE_API_KEY || process.env.VITE_LLAMAPARSE_API_KEY
+  return process.env.LLAMAPARSE_API_KEY
+}
+
+const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
+const GEMINI_MODEL_NAME_PATTERN = /^gemini-[a-z0-9._-]+$/i
+
+function getServerGeminiApiKey() {
+  return String(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '').trim()
+}
+
+function sanitizeGeminiPayload(body) {
+  const payload = {}
+
+  if (Array.isArray(body.contents)) payload.contents = body.contents
+  if (body.generationConfig && typeof body.generationConfig === 'object') payload.generationConfig = body.generationConfig
+  if (Array.isArray(body.safetySettings)) payload.safetySettings = body.safetySettings
+  if (Array.isArray(body.tools)) payload.tools = body.tools
+  if (body.toolConfig && typeof body.toolConfig === 'object') payload.toolConfig = body.toolConfig
+  if (body.systemInstruction && typeof body.systemInstruction === 'object') payload.systemInstruction = body.systemInstruction
+
+  return payload
 }
 
 const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
@@ -56,6 +87,55 @@ app.use(cors({
   credentials: true,
 }))
 
+function getExpectedRequestOrigin(req) {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim()
+  if (!host) return null
+  const protocol = String(req.headers['x-forwarded-proto'] || 'https').trim()
+  return `${protocol}://${host}`
+}
+
+function getRequestOrigin(req) {
+  try {
+    if (req.headers.origin) {
+      return new URL(String(req.headers.origin)).origin
+    }
+    if (req.headers.referer) {
+      return new URL(String(req.headers.referer)).origin
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+function hasValidApiSecret(req) {
+  const expected = String(process.env.API_SECRET || '').trim()
+  if (!expected) return true
+
+  const providedAppSecret = String(req.headers['x-app-secret'] || '').trim()
+  const providedApiSecret = String(req.headers['x-api-secret'] || '').trim()
+  return providedAppSecret === expected || providedApiSecret === expected
+}
+
+function isAuthorizedBrowserRequest(req) {
+  const requestOrigin = getRequestOrigin(req)
+  const expectedOrigin = getExpectedRequestOrigin(req)
+
+  if (requestOrigin && expectedOrigin && requestOrigin === expectedOrigin) {
+    return true
+  }
+  if (requestOrigin && Array.isArray(allowedOrigins) && allowedOrigins.includes(requestOrigin)) {
+    return true
+  }
+
+  const fetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase()
+  return fetchSite === 'same-origin' || fetchSite === 'same-site'
+}
+
+function isAuthorizedApiRequest(req) {
+  return hasValidApiSecret(req) || isAuthorizedBrowserRequest(req)
+}
+
 // JSON body for most routes except large multipart uploads.
 app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
@@ -72,12 +152,10 @@ app.use((req, res, next) => {
   if (req.path === '/api/youtube/auth-url') return next()
   if (req.path === '/api/youtube/auth-status') return next()
   if (req.path === '/api/instagram/oauth/callback') return next()
-  const expected = process.env.API_SECRET
-  if (!expected) return next() // Allow local development when no secret is configured.
-  const provided = req.headers['x-app-secret']
-  if (provided !== expected) {
-    console.log(`[AUTH FAIL] path=${req.path} provided=${provided?.slice(0, 20)} expected=${expected?.slice(0, 20)}`)
-    return res.status(401).json({ error: 'Unauthorized: invalid x-app-secret' })
+  if (!String(process.env.API_SECRET || '').trim()) return next() // Allow local development when no secret is configured.
+  if (!isAuthorizedApiRequest(req)) {
+    console.log(`[AUTH FAIL] path=${req.path} origin=${req.headers.origin || '-'} referer=${req.headers.referer || '-'} site=${req.headers['sec-fetch-site'] || '-'}`)
+    return res.status(401).json({ error: 'Unauthorized' })
   }
   next()
 })
@@ -137,6 +215,47 @@ app.get('/api/llamaparse/job/:jobId/result/markdown', async (req, res) => {
     res.json(data)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// Gemini Proxy - Generate Content
+app.post('/api/gemini/generate-content', async (req, res) => {
+  const apiKey = getServerGeminiApiKey()
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GOOGLE_API_KEY or GEMINI_API_KEY is not configured on the server.' })
+  }
+
+  const model = String(req.body?.model || '').trim()
+  if (!GEMINI_MODEL_NAME_PATTERN.test(model)) {
+    return res.status(400).json({ error: 'A valid Gemini model name is required.' })
+  }
+
+  const payload = sanitizeGeminiPayload(req.body || {})
+  if (!Array.isArray(payload.contents) || payload.contents.length === 0) {
+    return res.status(400).json({ error: 'contents is required.' })
+  }
+
+  try {
+    const response = await fetch(`${GEMINI_ENDPOINT_BASE}/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const responseText = await response.text()
+    const contentType = response.headers.get('content-type') || 'application/json'
+
+    res.status(response.status)
+    res.setHeader('Content-Type', contentType)
+    return res.send(responseText)
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Gemini proxy request failed.',
+      message: error.message,
+    })
   }
 })
 
@@ -403,7 +522,7 @@ app.post('/api/heygen/avatar-group/create', async (req, res) => {
   }
 })
 
-// ===== 紐⑥뀡 諛곌꼍 ?곸긽 ?앹꽦 (FFmpeg) =====
+// ===== 모션 배경 영상 생성 (FFmpeg) =====
 app.post('/api/background/generate', async (req, res) => {
   const { style = 'gradient', duration = 8 } = req.body
   const outputDir2 = path.join(__dirname, '..', 'output')
@@ -412,7 +531,7 @@ app.post('/api/background/generate', async (req, res) => {
   const ts = Date.now()
   const outputPath = path.join(outputDir2, `bg_${style}_${ts}.mp4`)
 
-  // FFmpeg ?꾪꽣濡?紐⑥뀡 諛곌꼍 ?앹꽦 (1080x1920, 9:16)
+  // FFmpeg 필터로 모션 배경을 생성한다. (1080x1920, 9:16)
   const filters = {
     gradient: `color=s=1080x1920:c=black:d=${duration},format=yuv420p,geq='r=30+20*sin(2*PI*T/4+Y/200):g=30+40*sin(2*PI*T/5+X/300):b=80+50*sin(2*PI*T/3+Y/150)'`,
     warm: `color=s=1080x1920:c=black:d=${duration},format=yuv420p,geq='r=60+40*sin(2*PI*T/6+Y/250):g=40+20*sin(2*PI*T/4+X/200):b=20+10*sin(2*PI*T/5)'`,
@@ -551,7 +670,7 @@ app.post('/api/title-bg/generate', async (req, res) => {
   res.json({ images: results })
 })
 
-// ===== ?명룷洹몃옒??諛곌꼍 ?대?吏 ?앹꽦 (Canvas + ?쒓? ?고듃) =====
+// ===== 인포그래픽 배경 이미지 생성 (Canvas) =====
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath()
   ctx.moveTo(x + r, y)
@@ -597,11 +716,11 @@ app.post('/api/infographic/generate', async (req, res) => {
     const canvas = createCanvas(W, H)
     const ctx = canvas.getContext('2d')
 
-    // 諛곌꼍
+    // 배경
     ctx.fillStyle = theme.bg
     ctx.fillRect(0, 0, W, H)
 
-    // ?곷떒 ?μ떇 ??
+    // 상단 장식 원
     ctx.globalAlpha = 0.2; ctx.fillStyle = theme.accent
     ctx.beginPath(); ctx.arc(480, 200, 45, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 0.3
@@ -614,12 +733,12 @@ app.post('/api/infographic/generate', async (req, res) => {
     ctx.textAlign = 'center'
     ctx.fillText(title, W / 2, 400)
 
-    // 援щ텇??
+    // 구분선
     ctx.fillStyle = theme.accent; ctx.globalAlpha = 0.5
     roundRect(ctx, 340, 440, 400, 4, 2); ctx.fill()
     ctx.globalAlpha = 1
 
-    // 諛?李⑦듃
+    // 막대 차트
     bullets.forEach((b, i) => {
       const y = 600 + i * 200
       const parts = b.split(':')
@@ -628,27 +747,27 @@ app.post('/api/infographic/generate', async (req, res) => {
       const numMatch = value.match(/[\d.]+/)
       const barWidth = numMatch ? Math.min(750, Math.max(200, parseFloat(numMatch[0]) * 10)) : 500
 
-      // ?쇰꺼
+      // 항목명
       ctx.font = '38px Pretendard'
       ctx.fillStyle = theme.text
       ctx.textAlign = 'left'
       ctx.fillText(label, 120, y)
 
-      // 諛곌꼍 諛?
+      // 배경 바
       ctx.globalAlpha = 0.3; ctx.fillStyle = theme.accent
       roundRect(ctx, 120, y + 20, barWidth, 55, 28); ctx.fill()
-      // 吏꾪뻾 諛?
+      // 진행 바
       ctx.globalAlpha = 1; ctx.fillStyle = theme.accent
       roundRect(ctx, 120, y + 20, barWidth * 0.85, 55, 28); ctx.fill()
 
-      // 媛?
+      // 값
       ctx.font = '34px Pretendard'
       ctx.fillStyle = theme.accent
       ctx.textAlign = 'left'
       ctx.fillText(value, 140 + barWidth * 0.85, y + 58)
     })
 
-    // ?뚰꽣留덊겕
+    // 워터마크
     ctx.font = '22px Pretendard'
     ctx.fillStyle = theme.sub
     ctx.globalAlpha = 0.5
@@ -983,7 +1102,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     // Clean up generated PNG overlays. Keep provided WebM overlays intact.
     titleOverlays.forEach(t => { if (t.cleanup) { try { fs.unlinkSync(t.path) } catch {} } })
 
-    // 5) ?묐떟
+    // 5) 응답
     const size = fs.statSync(outputPath).size
     const url = `/output/final_${ts}.mp4`
     res.json({
@@ -2452,6 +2571,89 @@ app.post('/api/scheduled/run', async (req, res) => {
     }
 
     res.json({ processed: results.length, results })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ======================================================================
+// Extractions backed by Supabase
+// ======================================================================
+
+app.get('/api/extractions', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const page = req.query.page ? Number(req.query.page) : null
+    const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null
+    const result = await listExtractions(
+      Number.isFinite(page) && Number.isFinite(pageSize)
+        ? { page, pageSize }
+        : {}
+    )
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/extractions', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const item = await saveExtraction(req.body || {}, req)
+    res.json(item)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/extractions/:id', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const item = await fetchExtractionById(req.params.id)
+    if (!item) return res.status(404).json({ error: 'Extraction not found.' })
+    res.json(item)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.delete('/api/extractions/:id', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    await deleteExtraction(req.params.id)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/extractions/:id/media', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const item = await updateExtractionMedia(req.params.id, req.body || {}, req)
+    res.json(item)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/extractions/:id/upload-status', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const { channel, info } = req.body || {}
+    if (!channel) return res.status(400).json({ error: 'channel is required' })
+    const item = await updateUploadStatus(req.params.id, channel, info || {})
+    res.json(item)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.delete('/api/extractions/:id/channels/:channel', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const item = await deleteExtractionChannel(req.params.id, req.params.channel)
+    res.json({ ok: true, item })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

@@ -5,7 +5,7 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' })
   }
   if (!isApiSecretValid(req)) {
-    return res.status(401).json({ error: 'Unauthorized: invalid x-app-secret' })
+    return res.status(401).json({ error: 'Unauthorized' })
   }
 
   clearYoutubeTokens()

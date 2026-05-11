@@ -3,12 +3,10 @@ import { getBlogUploadServerBase } from '../utils/blogUploadServer.js'
 import { fetchWithTimeout } from '../utils/requestTimeout.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
-const API_SECRET = import.meta.env.VITE_API_SECRET || ''
 const BLOG_HELPER_BASE = getBlogUploadServerBase()
 const REQUEST_TIMEOUT_MS = 10000
 const LOGIN_TIMEOUT_MS = 6 * 60 * 1000
 const helperHeaders = { 'x-autoform-client': 'web-client' }
-const apiHeaders = API_SECRET ? { 'x-app-secret': API_SECRET } : {}
 
 async function readJsonOrThrow(response, fallbackMessage) {
   const data = await readApiResponse(response)
@@ -106,10 +104,7 @@ export async function beginYoutubeReconnect() {
 export async function disconnectYoutubeSession() {
   const response = await fetchWithTimeout(
     `${API_BASE}/api/youtube/logout`,
-    {
-      method: 'POST',
-      headers: apiHeaders,
-    },
+    { method: 'POST' },
     REQUEST_TIMEOUT_MS,
     'YouTube logout request'
   )
@@ -120,9 +115,7 @@ export async function disconnectYoutubeSession() {
 export async function fetchInstagramSessionStatus() {
   const response = await fetchWithTimeout(
     `${API_BASE}/api/instagram/auth-status`,
-    {
-      headers: apiHeaders,
-    },
+    {},
     REQUEST_TIMEOUT_MS,
     'Instagram auth status request'
   )
@@ -149,9 +142,7 @@ export async function beginInstagramReconnect() {
 
   const response = await fetchWithTimeout(
     `${API_BASE}/api/instagram/auth-url`,
-    {
-      headers: apiHeaders,
-    },
+    {},
     REQUEST_TIMEOUT_MS,
     'Instagram auth URL request'
   )
@@ -169,10 +160,7 @@ export async function beginInstagramReconnect() {
 export async function disconnectInstagramSession() {
   const response = await fetchWithTimeout(
     `${API_BASE}/api/instagram/logout`,
-    {
-      method: 'POST',
-      headers: apiHeaders,
-    },
+    { method: 'POST' },
     REQUEST_TIMEOUT_MS,
     'Instagram logout request'
   )

@@ -1,31 +1,14 @@
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
-const GEMINI_IMAGE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent'
+import { findInlineDataPart, requestGeminiContent } from '../gemini-core'
 
 export async function generateImage(prompt, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const res = await fetch(`${GEMINI_IMAGE_URL}?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-        }),
+      const data = await requestGeminiContent({
+        model: 'gemini-2.5-flash-image',
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
       })
-
-      if (res.status === 429) {
-        await new Promise(resolve => setTimeout(resolve, 5000))
-        continue
-      }
-
-      if (!res.ok) {
-        const err = await res.text()
-        throw new Error(`이미지 생성 실패: ${res.status} - ${err.slice(0, 200)}`)
-      }
-
-      const data = await res.json()
-      const parts = data.candidates?.[0]?.content?.parts || []
-      const imagePart = parts.find(part => part.inlineData)
+      const imagePart = findInlineDataPart(data)
 
       if (!imagePart) throw new Error('이미지를 생성하지 못했습니다.')
 
@@ -33,6 +16,11 @@ export async function generateImage(prompt, retries = 2) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png'
       return `data:${mimeType};base64,${base64}`
     } catch (err) {
+      if (String(err?.message || '').includes(': 429 -')) {
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        continue
+      }
+
       if (attempt === retries) throw err
       await new Promise(resolve => setTimeout(resolve, 3000))
     }

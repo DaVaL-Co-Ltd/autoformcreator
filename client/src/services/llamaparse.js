@@ -1,13 +1,9 @@
-import { callGeminiWithFallback } from './gemini-core'
+import { callGeminiWithFallback, requestGeminiContent } from './gemini-core'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const LLAMAPARSE_PROXY = `${API_BASE}/api/llamaparse`
 
-
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY
-const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
-
-// ── LlamaParse: 텍스트 기반 PDF 추출 ──
+// LlamaParse: 텍스트 기반 문서 추출
 async function llamaParsePDF(file) {
   const formData = new FormData()
   formData.append('file', file)
@@ -67,12 +63,11 @@ function isImageFile(file) {
   return ['.jpg', '.jpeg', '.png', '.webp'].includes(ext)
 }
 
-// ── Gemini: 멀티모달 문서 분석 (base64 인라인) ──
+// Gemini 멀티모달 문서 분석용 base64 변환
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => {
-      // data:application/pdf;base64,XXXX → XXXX 부분만 추출
       const base64 = reader.result.split(',')[1]
       resolve(base64)
     }
@@ -84,27 +79,33 @@ function fileToBase64(file) {
 async function geminiParsePDF(file) {
   const mimeType = getFileMimeType(file)
 
-  // Gemini가 지원하지 않는 형식(HWP 등)은 스킵
-  const geminiSupported = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/vnd.ms-powerpoint', 'image/jpeg', 'image/png', 'image/webp']
+  const geminiSupported = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-powerpoint',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ]
+
   if (!geminiSupported.includes(mimeType)) {
     throw new Error(`Gemini는 ${file.name?.split('.').pop()?.toUpperCase()} 형식을 지원하지 않습니다.`)
   }
 
-  // 20MB 초과 시 인라인 불가
   if (file.size > 20 * 1024 * 1024) {
     throw new Error('파일이 20MB를 초과합니다. LlamaParse로 분석합니다.')
   }
 
   const base64Data = await fileToBase64(file)
 
-  const generateRes = await fetch(`${GEMINI_GENERATE_URL}?key=${GEMINI_API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { inlineData: { mimeType, data: base64Data } },
-          { text: `이 문서의 모든 내용을 정확하게 텍스트로 추출해주세요.
+  const generateData = await requestGeminiContent({
+    model: 'gemini-2.5-flash',
+    contents: [{
+      parts: [
+        { inlineData: { mimeType, data: base64Data } },
+        { text: `이 문서의 모든 내용을 정확하게 텍스트로 추출해주세요.
 
 ## 핵심 규칙
 - 이미지 안에 포함된 텍스트도 모두 읽어서 추출하세요.
@@ -114,27 +115,19 @@ async function geminiParsePDF(file) {
 - 추측하거나 내용을 창작하지 마세요. 보이는 것만 추출하세요.
 - 마크다운 형식으로 구조화하여 출력하세요.
 
-전체 내용을 빠짐없이 추출해주세요.` }
-        ]
-      }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 65536 },
-    }),
+전체 내용을 빠짐없이 추출해주세요.` },
+      ],
+    }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 65536 },
   })
 
-  if (!generateRes.ok) {
-    const err = await generateRes.text()
-    console.error('[Gemini] 문서 분석 실패 상세:', err)
-    throw new Error(`Gemini 문서 분석 실패: ${generateRes.status} - ${err.slice(0, 300)}`)
-  }
-
-  const generateData = await generateRes.json()
   const parts = generateData.candidates?.[0]?.content?.parts || []
   const extractedText = parts.filter(p => p.text).map(p => p.text).join('\n')
   if (!extractedText) throw new Error('Gemini에서 텍스트를 추출하지 못했습니다.')
   return extractedText
 }
 
-// ── Gemini로 두 결과를 통합하여 최적 결과 생성 ──
+// 두 분석 결과를 Gemini로 통합
 async function mergeResults(llamaText, geminiText) {
   try {
     return await callGeminiWithFallback(`아래에 같은 문서를 두 가지 방식으로 추출한 결과가 있습니다. 두 결과를 통합하여 최적의 문서 텍스트를 만들어주세요.
@@ -159,13 +152,12 @@ ${geminiText}
 ---
 위 두 결과를 통합한 순수 문서 텍스트만 출력하세요. 도구 이름이나 비교 분석을 포함하지 마세요.`, { temperature: 0.1, maxOutputTokens: 65536 })
   } catch {
-    return geminiText // 통합 실패 시 Gemini 결과 사용
+    return geminiText
   }
 }
 
-// ── 메인: LlamaParse + Gemini 병렬 분석 → 통합 ──
+// 메인: LlamaParse + Gemini 병렬 분석 후 통합
 export async function parsePDF(file) {
-  // 이미지 파일은 Gemini 비전으로만 처리 (LlamaParse 스킵)
   if (isImageFile(file)) {
     return await geminiParsePDF(file)
   }
@@ -180,17 +172,13 @@ export async function parsePDF(file) {
   const llamaError = llamaResult.status === 'rejected' ? llamaResult.reason.message : null
   const geminiError = geminiResult.status === 'rejected' ? geminiResult.reason.message : null
 
-  // 둘 다 실패
   if (!llamaText && !geminiText) {
     throw new Error(`LlamaParse: ${llamaError} / Gemini: ${geminiError}`)
   }
 
-  // 둘 다 성공 → Gemini로 통합
   if (llamaText && geminiText) {
-    const merged = await mergeResults(llamaText, geminiText)
-    return merged
+    return await mergeResults(llamaText, geminiText)
   }
 
-  // 하나만 성공
   return geminiText || llamaText
 }

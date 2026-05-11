@@ -1,7 +1,16 @@
-export const config = { api: { bodyParser: false } }
+const { isAuthorizedRequest, rejectUnauthorized } = require('../_requestAuth')
+const { getLlamaParseAuthHeader } = require('../_llamaparse')
 
-export default async function handler(req, res) {
+const config = { api: { bodyParser: false } }
+
+async function handler(req, res) {
+  if (!isAuthorizedRequest(req)) return rejectUnauthorized(res)
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const authHeader = getLlamaParseAuthHeader()
+  if (!authHeader) {
+    return res.status(500).json({ error: 'LLAMAPARSE_API_KEY not configured on server' })
+  }
 
   const chunks = []
   req.on('data', chunk => chunks.push(chunk))
@@ -11,7 +20,7 @@ export default async function handler(req, res) {
       const response = await fetch('https://api.cloud.llamaindex.ai/api/v1/parsing/upload', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${req.headers['x-api-key']}`,
+          Authorization: authHeader,
           'Content-Type': req.headers['content-type'],
         },
         body,
@@ -24,3 +33,6 @@ export default async function handler(req, res) {
     }
   })
 }
+
+module.exports = handler
+module.exports.config = config

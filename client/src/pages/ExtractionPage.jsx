@@ -19,6 +19,7 @@ import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentIm
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+import { findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
   buildInstagramDisplayCards,
   getInstagramCardNumber,
@@ -32,14 +33,11 @@ import {
 } from '../services/blogCategoryProfile'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
-const API_SECRET = import.meta.env.VITE_API_SECRET || ''
-const API_HEADERS = API_SECRET ? { 'x-app-secret': API_SECRET } : {}
 
 function apiFetch(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      ...API_HEADERS,
       ...(options.headers || {}),
     },
   })
@@ -1187,14 +1185,9 @@ export default function ExtractionPage() {
     setShortsVideo(null)
 
     try {
-      const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `Generate a photorealistic vertical portrait photograph. Subject: ${avatarPrompt.trim()}.
+      const data = await requestGeminiContent({
+        model: 'gemini-2.5-flash-image',
+        contents: [{ parts: [{ text: `Generate a photorealistic vertical portrait photograph. Subject: ${avatarPrompt.trim()}.
 
 IMPORTANT REQUIREMENTS:
 - Look like a real camera photo, not AI art
@@ -1230,23 +1223,9 @@ DO NOT:
 - Use surreal lighting, glossy CGI textures, fake studio backdrops, empty seamless backgrounds, or obviously AI-looking scenery
 - Avoid exaggerated bokeh, fake cinematic haze, plastic fur or skin, or unnatural prop placement
 - Include any text or watermarks` }] }],
-            generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-          }),
-        }
-      )
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `Gemini 오류: ${res.status}`)
-      }
-      const data = await res.json()
-      // 모든 candidates의 모든 parts에서 이미지 탐색
-      let imagePart = null
-      for (const candidate of data.candidates || []) {
-        for (const part of candidate.content?.parts || []) {
-          if (part.inlineData) { imagePart = part; break }
-        }
-        if (imagePart) break
-      }
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+      })
+      const imagePart = findInlineDataPart(data)
       if (!imagePart) {
         throw new Error('아바타 이미지를 생성하지 못했습니다. 다시 시도해주세요.')
       }

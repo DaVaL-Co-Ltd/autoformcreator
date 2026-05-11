@@ -387,7 +387,6 @@ function generate5() {
 function download5() { downloadBlob('5') }
 
 // === 방식 6: Gemini 이미지 + 자막 ===
-const GEMINI_KEY = 'AIzaSyABRiBA8mPkX1grj_LNvGx06drPwRBV6Ns'
 const sceneVisuals = [
   'A Korean high school student looking confused while reading exam papers at a desk, warm soft lighting, vertical 9:16',
   'A bright modern Korean classroom with students raising hands enthusiastically, warm atmosphere, vertical 9:16',
@@ -395,10 +394,11 @@ const sceneVisuals = [
 ]
 
 async function generateGeminiImage(prompt) {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_KEY}`, {
+  const res = await fetch('/api/gemini/generate-content', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      model: 'gemini-2.5-flash-image',
       contents: [{ parts: [{ text: `Generate a 9:16 vertical photograph. ${prompt}. NO text, NO letters, NO words anywhere. Pure visual only.` }] }],
       generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
     })

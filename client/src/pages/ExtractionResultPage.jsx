@@ -304,7 +304,6 @@ export default function ExtractionResultPage() {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'x-app-secret': import.meta.env.VITE_API_SECRET || '',
             },
             body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags, categoryPath }),
           }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
@@ -428,7 +427,6 @@ export default function ExtractionResultPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-app-secret': import.meta.env.VITE_API_SECRET || '',
           },
           body: JSON.stringify(formatted),
         }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Instagram upload request')
@@ -476,7 +474,6 @@ export default function ExtractionResultPage() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-app-secret': import.meta.env.VITE_API_SECRET || '',
           },
           body: JSON.stringify(formatted),
         }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'YouTube upload request')

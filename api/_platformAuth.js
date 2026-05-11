@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
+const { isAuthorizedRequest } = require('./_requestAuth')
 
 const ROOT_DIR = process.cwd()
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
@@ -162,9 +163,7 @@ function getApiSecret() {
 }
 
 function isApiSecretValid(req) {
-  const expected = getApiSecret()
-  if (!expected) return true
-  return req.headers['x-app-secret'] === expected
+  return isAuthorizedRequest(req)
 }
 
 function createSignedState(scope, secret) {

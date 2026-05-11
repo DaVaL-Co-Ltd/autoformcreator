@@ -237,7 +237,7 @@ function isScheduledPublishStateConfirmed(scheduleState, schedule) {
   return false
 }
 
-// SmartEditor auto-format??痍⑥냼???占쏀깶占?蹂쇰뱶 ?占쎌쑝占?蹂?占쏀븯??留덉빱?占쎌쓣 ?占쎄굅
+// SmartEditor auto-format에 쓰이는 마커를 제거해 일반 본문 입력으로 바꾼다.
 function sanitizeForTyping(raw) {
   return String(raw || '')
     .replace(/~~([^~]+)~~/g, '$1')
@@ -251,8 +251,8 @@ function sanitizeForTyping(raw) {
     .replace(/~/g, '')
 }
 
-// 蹂몃Ц(typeMultilineWithFormatting) ?占쎈젰 ?占쎌슜. **bold** 留덉빱??parseBoldInlineSegments 媛 泥섎━?占쏙옙?占?蹂댁〈?占쎄퀬
-// 占??占쎌뿉 SmartEditor 媛 ?占쎈젰 占??占쎈룞 蹂?占쏀븯??留덉빱(痍⑥냼???占쏀깶占??占쎈뜑?占쎌퐫????占??占쎄굅?占쎈떎.
+// 본문 입력 전처리에 사용한다. **bold** 마커는 parseBoldInlineSegments가 따로 처리하므로 보존하고
+// 그 외 SmartEditor가 자동 변환할 수 있는 마커만 제거한다.
 function sanitizeForFormattingTyping(raw) {
   return String(raw || '')
     .replace(/~~([^~]+)~~/g, '$1')
@@ -304,8 +304,8 @@ function parseBoldInlineSegments(text) {
 }
 
 async function toggleBoldFormatting(page) {
-  // releaseFormattingModifiers ??typeMultilineWithFormatting 吏꾩엯 ??1?占쎈쭔 ?占쎌텧 ??占??占쏙옙?留덈떎 4媛쒖쓽 keyup
-  // ?占쎈깽?占쏙옙? 諛쒖깮?占쎌폒 SmartEditor ?占쎈컮占?留ㅻ쾲 ?占쎈젋?占쎈쭅?占쏀궎??鍮꾩슜???占쎄굅?占쎈떎.
+  // releaseFormattingModifiers가 먼저 modifier를 정리하므로 여기서는 Control+B 한 번만 보낸다.
+  // SmartEditor가 중복 keyup 이벤트를 과도하게 처리하지 않도록 최소 입력만 유지한다.
   await page.keyboard.down('Control')
   await page.keyboard.press('KeyB')
   await page.keyboard.up('Control')
@@ -394,9 +394,9 @@ async function findBoldButtonState(scope) {
   })
 }
 
-// SmartEditor ???占쎌젣占??占쎈ぉ ?占쏙옙???踰꾪듉???占쎈룄. ?占쎈┃ ?占쎄났 ?占쏙옙?占?諛섑솚?占쎄퀬, ?占쏀뙣?占쎈㈃ ?占쎌텧?占쏙옙? ?占쏀쉶?占쎈떎.
-// SmartEditor 2 ???占쎈씫 ?占쏙옙??占쏙옙? ?占쎌긽 ?占쎈컮 ?占쎈∼?占쎌슫 ??"?占쎌젣占?1/2/3" ?占쎈뒗 "?占쎈ぉ" 踰꾪듉?占쎈ŉ,
-// aria-label/data ?占쎌꽦/?占쎈옒??紐낆씠 ?占쎄꼍留덈떎 ?占쏙옙? ???占쎌뼱 ?占쎈낫 ?占?占쏀꽣占??占쎌쨷 ?占쎈룄?占쎈떎.
+// SmartEditor 소제목 버튼을 찾는다. 클릭 성공 여부만 반환하고, 실패하면 호출 측에서 우회한다.
+// SmartEditor 2 환경마다 "제목1/2/3", "소제목", heading 계열 버튼 이름이 달라서
+// aria-label, data 속성, 클래스명을 함께 본다.
 async function clickSubheadingButton(scope) {
   return scope.evaluate(() => {
     const candidates = [
@@ -458,15 +458,14 @@ async function clickSubheadingButton(scope) {
   })
 }
 
-// ?占쎌텧 痢≪뿉???占쏙옙? ?占쏀깭占?異붿쟻??setSubheadingFormatting(page, true/false, currentState) ?占쎌쑝占??占쎌슜.
-// 踰꾪듉???占쎌쑝占?currentState 占?洹몌옙?占?諛섑솚???占쎌쓬 ?占쎌텧??wraparound ?占쎈줈 ?占쎌뿰?占쎈읇占?臾대젰?占쎈맂??
+// 호출 측에서 현재 상태를 추적하므로 setSubheadingFormatting(page, true/false, currentState) 형태로 사용한다.
+// 버튼을 못 찾으면 currentState를 그대로 반환해 wraparound 입력을 계속 진행한다.
 let subheadingButtonAvailable = null
 async function setSubheadingFormatting(page, enabled, currentState) {
   if (currentState === enabled) return currentState
-  if (subheadingButtonAvailable === false) return currentState  // ?占쎌쟾???占쎈룄?占쎄퀬 遺???占쎌씤??
+  if (subheadingButtonAvailable === false) return currentState  // 이전 탐색에서 버튼이 없다고 확인됨
 
-  // releaseFormattingModifiers ??typeMultilineWithFormatting 吏꾩엯 ??1?占쎈쭔 ?占쎌텧 ??占??占쏙옙?留덈떎
-  // 遺덊븘?占쏀븳 keyup ?占쎈깽?占쎈줈 SmartEditor ?占쎈컮媛 ?占쎈젋?占쎈쭅?占쎈뜕 鍮꾩슜???占쎄굅?占쎈떎.
+  // typeMultilineWithFormatting 진입 전에 modifier를 정리하므로 불필요한 keyup을 줄인다.
   const scopes = getFormattingScopes(page)
   let clicked = false
   for (const scope of scopes) {
@@ -1075,15 +1074,15 @@ async function setFontSizeFormatting(page, sizeLabel, currentState) {
   return sizeLabel
 }
 
-// `## ` 占??占쎌옉?占쎈뒗 ?占쎌씤?占??占쎈씪?占쎌뼵?占쏙옙? ?占쎌뀡 ?占쎈ぉ?占쎌쓣 ?占쎌떆??占???SmartEditor ???占쎌젣占??占쏙옙??占쎌쓣 ?占쏙옙??占쎈떎.
+// `## ` 로 시작하는 줄은 섹션 소제목으로 간주하고 SmartEditor 서식을 적용한다.
 const SUBHEADING_PREFIX = /^##\s+/
 const SUBHEADING_FONT_SIZE = '24'
 const BODY_FONT_SIZE = '16'
 
 async function typeMultilineWithFormatting(page, text) {
-  // **bold** ???占쎈룞 ?占쎈㎎ ?占쎈━占?留덉빱(痍⑥냼????占??占쎄굅??SmartEditor 媛 ?占?占쏀븨 占?痍⑥냼?占쎌쓣 ?占쏙옙??占쎈뒗 寃껋쓣 諛⑼옙??占쎈떎.
+  // **bold** 마커는 인라인 세그먼트로 분리해 SmartEditor 자동 포맷과 충돌하지 않게 한다.
   const lines = sanitizeForFormattingTyping(text).split(/\r?\n/)
-  // ?占쎌뿬 modifier ?占쏀깭媛 ?占쎈떎占?1?占쎈쭔 ?占쎈━. ?占쏀썑 ?占쏙옙?留덈떎 keyup ?占쎈깽?占쏙옙? 諛섎났 諛쒖깮?占쏀궎吏 ?占쎈뒗??
+  // 남아 있는 modifier 상태를 한 번만 정리해 이후 줄마다 keyup이 반복되지 않게 한다.
   await releaseFormattingModifiers(page)
   await recoverFormattingContext(page)
   let boldEnabled = false
@@ -1097,12 +1096,12 @@ async function typeMultilineWithFormatting(page, text) {
     let line = lines[lineIndex]
     const isSubheading = SUBHEADING_PREFIX.test(line)
     if (isSubheading) {
-      // `## ` 留덉빱???占쎈뼡 寃쎌슦?占쎈룄 蹂몃Ц???占쎌텧?占쏙옙? ?占쎈룄占??占쎄굅?占쎈떎 (?占쎌젣占??占쏙옙? ?占쎄났 ?占쏙옙??占?臾댐옙?).
+      // `## ` 마커는 제거하고 본문만 입력한다. 마커 자체가 에디터에 남지 않게 한다.
       line = line.replace(SUBHEADING_PREFIX, '')
       subheadingEnabled = await setSubheadingFormatting(page, true, subheadingEnabled)
       fontSize = await setFontSizeFormatting(page, SUBHEADING_FONT_SIZE, fontSize)
     } else if (subheadingEnabled) {
-      // ?占쎈컲 蹂몃Ц 以꾨줈 ?占쎌븘?占쎌쑝占??占쎌젣占?紐⑤뱶 ?占쎌젣
+      // 일반 본문 줄로 돌아오면 소제목 서식을 해제한다.
       subheadingEnabled = await setSubheadingFormatting(page, false, subheadingEnabled)
       fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, fontSize)
     }

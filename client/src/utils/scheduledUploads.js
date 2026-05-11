@@ -1,6 +1,5 @@
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
-const API_SECRET = import.meta.env.VITE_API_SECRET || ''
-const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', 'x-app-secret': API_SECRET, ...extra })
+const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', ...extra })
 
 export async function getAll() {
   try {
