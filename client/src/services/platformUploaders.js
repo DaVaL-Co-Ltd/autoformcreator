@@ -12,6 +12,11 @@ import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.j
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
 import { sanitizeBlogBodyForUpload } from '../utils/blogBodySanitizer.js'
 import { getAll as getPlatformConnections } from '../utils/platformConnections.js'
+import {
+  BLOG_HEADING_STYLE,
+  buildBlogHeadingPrefix,
+  resolveBlogHeadingStyle,
+} from '../utils/blogHeadingStyle.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const UPLOAD_BLOG_SERVER = getBlogUploadServerBase()
@@ -54,18 +59,27 @@ export async function uploadToBlog(extractionId, options = {}) {
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
   const title = blog.title || blog.uploadTitle || '제목 없음'
-  let rawContent = blog.body || blog.content || ''
+  const blogConnection = getPlatformConnections()?.blog || {}
+  const categoryPath = String(blogConnection.categoryPath || blog.categoryPath || '').trim()
+  const sections = Array.isArray(blog.sections) ? blog.sections : []
+  const headingStyle = resolveBlogHeadingStyle(categoryPath, sections)
+  const quoteStyle = headingStyle === BLOG_HEADING_STYLE.HEADING ? '' : headingStyle
+  let rawContent = ''
 
-  if (!rawContent && Array.isArray(blog.sections)) {
-    rawContent = blog.sections
+  if (sections.length) {
+    rawContent = sections
       .map((section, index) => {
-        const heading = section.heading ? `## ${section.heading}\n\n` : ''
+        const heading = buildBlogHeadingPrefix(section.heading, headingStyle)
         const keyPhrase = section.keyPhrase ? `${section.keyPhrase}\n\n` : ''
         const imageMarker = `[IMG:${index + 1}]\n`
         const body = section.content || section.body || ''
         return `${heading}${imageMarker}${keyPhrase}${body}`
       })
       .join('\n\n')
+  }
+
+  if (!rawContent) {
+    rawContent = blog.body || blog.content || ''
   }
 
   if (!rawContent && blog.summary) {
@@ -78,7 +92,6 @@ export async function uploadToBlog(extractionId, options = {}) {
 
   const normalizedContent = stripMarkdown(rawContent)
   const normalizedTags = normalizeBlogTags(blog)
-  const categoryPath = String(getPlatformConnections()?.blog?.categoryPath || '').trim()
   const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
     ? options.scheduledAtOverride
     : null
@@ -95,6 +108,7 @@ export async function uploadToBlog(extractionId, options = {}) {
           scheduledAt,
           tags: normalizedTags,
           categoryPath,
+          quoteStyle,
         }),
       },
       BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
@@ -123,12 +137,14 @@ export async function uploadToBlog(extractionId, options = {}) {
   if (categoryPath) {
     formData.append('categoryPath', categoryPath)
   }
+  if (quoteStyle) {
+    formData.append('quoteStyle', quoteStyle)
+  }
   if (scheduledAt) {
     formData.append('scheduledAt', scheduledAt)
   }
 
   const images = ext.data?.blogImages || ext.blogImages || []
-  const sections = ext.data?.blogContent?.sections || ext.blogContent?.sections || []
   const uploadImageUrls = await buildBlogUploadImageDataUrls({
     blogImages: images,
     sections,

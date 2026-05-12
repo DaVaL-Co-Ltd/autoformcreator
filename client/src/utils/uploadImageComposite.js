@@ -2,6 +2,7 @@
   cleanCardText,
   deriveBlogHeadline,
   deriveBlogImageDescription,
+  getBlogImageFontPreset,
   wrapCardTextLines,
 } from './contentImageOverlay'
 import {
@@ -277,12 +278,58 @@ function renderCenteredText(ctx, lines, x, startY, lineHeight) {
   })
 }
 
+function drawPosterTitleText(ctx, width, height, headline, fontPreset = 'pretendard') {
+  const size = getBaseSize(width, height)
+  const preset = getBlogImageFontPreset(fontPreset)
+  const headlineFontSize = Math.max(46, Math.round(size * 0.088))
+
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.font = `${preset.weight} ${headlineFontSize}px ${preset.family}`
+  const headlineLines = wrapText(ctx, headline, width * 0.68, { splitLongWords: false })
+  const headlineLineHeight = Math.round(headlineFontSize * 1.18)
+  const totalHeight = headlineLines.length * headlineLineHeight
+  const startY = (height - totalHeight) / 2
+
+  ctx.lineJoin = 'round'
+  ctx.fillStyle = '#111827'
+
+  headlineLines.forEach((line, index) => {
+    const y = startY + (index * headlineLineHeight)
+    ctx.fillText(line, width / 2, y)
+  })
+  ctx.restore()
+}
+
+function drawCircleTitleTextOnly(ctx, width, height, headline, fontPreset = 'pretendard') {
+  const size = getBaseSize(width, height)
+  const preset = getBlogImageFontPreset(fontPreset)
+  const headlineFontSize = Math.max(52, Math.round(size * 0.09))
+
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.font = `${preset.weight} ${headlineFontSize}px ${preset.family}`
+  const headlineLines = wrapText(ctx, headline, width * 0.56, { splitLongWords: false })
+  const headlineLineHeight = Math.round(headlineFontSize * 1.18)
+  const totalHeight = headlineLines.length * headlineLineHeight
+  const startY = ((height - totalHeight) / 2) + (height * 0.01)
+
+  ctx.fillStyle = '#111827'
+  headlineLines.forEach((line, index) => {
+    const y = startY + (index * headlineLineHeight)
+    ctx.fillText(line, width / 2, y)
+  })
+  ctx.restore()
+}
+
 function drawBlogCircleOverlay(ctx, width, height, headline, description, accentColor) {
   const size = getBaseSize(width, height)
   ctx.fillStyle = 'rgba(0, 0, 0, 0.10)'
   ctx.fillRect(0, 0, width, height)
 
-  const circleSize = size * 0.52
+  const circleSize = size * 0.68
   const circleY = (height - circleSize) / 2
 
   ctx.save()
@@ -297,19 +344,16 @@ function drawBlogCircleOverlay(ctx, width, height, headline, description, accent
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
 
-  const headlineFontSize = Math.max(32, Math.round(size * 0.05))
+  const headlineFontSize = description
+    ? Math.max(32, Math.round(size * 0.05))
+    : Math.max(52, Math.round(size * 0.09))
   ctx.font = `900 ${headlineFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
-  const headlineLines = wrapText(ctx, headline, circleSize * 0.68)
+  const headlineLines = wrapText(ctx, headline, description ? circleSize * 0.68 : circleSize * 0.82, { splitLongWords: false })
   const headlineLineHeight = Math.round(headlineFontSize * 1.18)
-  const headlineStartY = circleY + circleSize * 0.27 - ((headlineLines.length - 1) * headlineLineHeight) / 2
+  const headlineStartY = description
+    ? circleY + circleSize * 0.27 - ((headlineLines.length - 1) * headlineLineHeight) / 2
+    : (height - (headlineLines.length * headlineLineHeight)) / 2
   renderCenteredText(ctx, headlineLines, width / 2, headlineStartY, headlineLineHeight)
-
-  const barWidth = circleSize * 0.22
-  const barHeight = Math.max(4, Math.round(size * 0.006))
-  const barY = headlineStartY + (headlineLines.length * headlineLineHeight) + size * 0.018
-  drawRoundedRect(ctx, width / 2 - (barWidth / 2), barY, barWidth, barHeight, barHeight / 2)
-  ctx.fillStyle = accentColor
-  ctx.fill()
 
   if (!description) return
 
@@ -318,8 +362,12 @@ function drawBlogCircleOverlay(ctx, width, height, headline, description, accent
   ctx.font = `600 ${bodyFontSize}px Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif`
   const descriptionLines = wrapText(ctx, description, circleSize * 0.62)
   const bodyLineHeight = Math.round(bodyFontSize * 1.35)
-  const bodyStartY = barY + barHeight + size * 0.02
+  const bodyStartY = headlineStartY + (headlineLines.length * headlineLineHeight) + size * 0.04
   renderCenteredText(ctx, descriptionLines, width / 2, bodyStartY, bodyLineHeight)
+}
+
+function drawBlogPosterTitleOverlay(ctx, width, height, headline, fontPreset = 'pretendard') {
+  drawPosterTitleText(ctx, width, height, headline, fontPreset)
 }
 
 function drawInstagramBottomOverlay(ctx, width, height, cardNumber, title, detailLines) {
@@ -443,6 +491,7 @@ export async function renderBlogUploadImageDataUrl({
   description,
   accentColor = '#6366f1',
   variant = 'circle',
+  fontPreset = 'pretendard',
 }) {
   if (typeof document === 'undefined' || !imageUrl) return imageUrl
 
@@ -454,7 +503,11 @@ export async function renderBlogUploadImageDataUrl({
 
   drawCoverImage(ctx, image, width, height)
 
-  if (variant === 'plain') {
+  if (variant === 'circle-text-only') {
+    drawCircleTitleTextOnly(ctx, width, height, headline, fontPreset)
+  } else if (variant === 'poster-title') {
+    drawBlogPosterTitleOverlay(ctx, width, height, headline, fontPreset)
+  } else if (variant === 'plain') {
     drawBlogCircleOverlay(ctx, width, height, headline, description, accentColor)
   } else {
     drawBlogCircleOverlay(ctx, width, height, headline, description, accentColor)
@@ -493,8 +546,12 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
 
     const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
     const headingText = cleanCardText(section?.heading || '')
-    const headline = deriveBlogHeadline(keyPhrase, headingText)
-    const description = deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
+    const headline = image?.overlayMode === 'headline-only'
+      ? headingText || keyPhrase
+      : deriveBlogHeadline(keyPhrase, headingText)
+    const description = image?.overlayMode === 'headline-only'
+      ? ''
+      : deriveBlogImageDescription(keyPhrase, headingText, section?.content || '')
     const accentColor = BLOG_ACCENT_COLORS[index % BLOG_ACCENT_COLORS.length] || '#6366f1'
 
     try {
@@ -503,7 +560,8 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
         headline,
         description,
         accentColor,
-        variant: 'circle',
+        variant: image?.variant || 'circle',
+        fontPreset: image?.overlayFont || 'pretendard',
       })
       uploads.push(renderedUrl)
     } catch (error) {

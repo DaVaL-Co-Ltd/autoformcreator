@@ -22,6 +22,10 @@ const PUBLISH_TIMEOUT_MS = 90000
 const EDITABLE_SELECTOR = '[contenteditable="true"], [role="textbox"], textarea, input[type="text"], input:not([type]), .se-title-text p, .se-section-text p, .se-text-paragraph'
 const HEADING_FONT_SIZE = '24'
 const BODY_FONT_SIZE = '15'
+const QUOTE_STYLE_LABELS = {
+  'line-quote': ['라인 & 따옴표', '라인&따옴표', '라인 따옴표'],
+  postit: ['포스트잇'],
+}
 const {
   clickFinalPublishButton,
   clickPublishButton,
@@ -50,10 +54,18 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#39;')
 }
 
+function normalizeQuoteStyle(value = '') {
+  const key = String(value || '').trim().toLowerCase()
+  return Object.prototype.hasOwnProperty.call(QUOTE_STYLE_LABELS, key)
+    ? key
+    : ''
+}
+
 function parseBlogBlocks(content = '') {
   const lines = String(content || '').replace(/\r/g, '').split('\n')
   const blocks = []
   let paragraph = []
+  let quote = []
 
   const flushParagraph = () => {
     const text = paragraph.join(' ').replace(/\s+/g, ' ').trim()
@@ -61,31 +73,49 @@ function parseBlogBlocks(content = '') {
     paragraph = []
   }
 
+  const flushQuote = () => {
+    const text = quote.join(' ').replace(/\s+/g, ' ').trim()
+    if (text) blocks.push({ type: 'quote', text })
+    quote = []
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trim()
     if (!line) {
       flushParagraph()
+      flushQuote()
       continue
     }
 
     const headingMatch = line.match(/^#{1,3}\s+(.+)$/)
     if (headingMatch) {
       flushParagraph()
+      flushQuote()
       blocks.push({ type: 'heading', text: stripMarkdown(headingMatch[1]) })
+      continue
+    }
+
+    const quoteMatch = line.match(/^>\s+(.+)$/)
+    if (quoteMatch) {
+      flushParagraph()
+      quote.push(stripMarkdown(quoteMatch[1]))
       continue
     }
 
     const listMatch = line.match(/^[-*]\s+(.+)$/)
     if (listMatch) {
       flushParagraph()
+      flushQuote()
       blocks.push({ type: 'paragraph', text: `- ${stripMarkdown(listMatch[1])}` })
       continue
     }
 
+    flushQuote()
     paragraph.push(stripMarkdown(line))
   }
 
   flushParagraph()
+  flushQuote()
   return blocks
 }
 
@@ -95,6 +125,10 @@ function buildBodyHtml(content = '') {
     const text = escapeHtml(block.text)
     if (block.type === 'heading') {
       return `<p style="font-size:24px;font-weight:700;line-height:1.45;margin:24px 0 10px 0;">${text}</p>`
+    }
+
+    if (block.type === 'quote') {
+      return `<blockquote style="margin:18px 0;padding:12px 16px;border-left:4px solid #d0d7de;background:#f6f8fa;color:#57606a;font-size:15px;line-height:1.75;">${text}</blockquote>`
     }
 
     return `<p style="font-size:15px;font-weight:400;line-height:1.75;margin:0 0 14px 0;">${text}</p>`
@@ -733,6 +767,176 @@ function getFormattingScopes(page) {
   return [page, ...page.frames()]
 }
 
+function getToolbarSelectors(kind) {
+  if (kind === 'bold') {
+    return [
+      'button[aria-label*="bold" i]',
+      '[role="button"][aria-label*="bold" i]',
+      'button[title*="bold" i]',
+      '[role="button"][title*="bold" i]',
+      '[data-click-area*="bold"]',
+      '[data-name="bold"]',
+      '[data-command="bold"]',
+      '[data-tool="bold"]',
+      '[data-testid*="bold"]',
+      'button.se-toolbar-item-bold',
+      '.se-toolbar-item-bold button',
+    ]
+  }
+
+  if (kind === 'fontSize') {
+    return [
+      'button[aria-label*="font size" i]',
+      '[role="button"][aria-label*="font size" i]',
+      'button[title*="font size" i]',
+      '[role="button"][title*="font size" i]',
+      '[data-name="fontSize"]',
+      '[data-name="fontsize"]',
+      '[data-command="fontSize"]',
+      '[data-command="fontsize"]',
+      '[data-tool="fontSize"]',
+      '[data-tool="fontsize"]',
+      '[data-click-area*="font"]',
+      '[data-click-area*="size"]',
+      '[data-click-area*="font-size"]',
+      'button.se-toolbar-item-font-size',
+      '.se-toolbar-item-font-size button',
+      '[class*="font-size"] button',
+      '[class*="fontSize"] button',
+    ]
+  }
+
+  if (kind === 'quote') {
+    return [
+      'button[aria-label*="quote" i]',
+      '[role="button"][aria-label*="quote" i]',
+      'button[title*="quote" i]',
+      '[role="button"][title*="quote" i]',
+      '[data-name="quote"]',
+      '[data-name="blockquote"]',
+      '[data-command="quote"]',
+      '[data-command="blockquote"]',
+      '[data-tool="quote"]',
+      '[data-tool="blockquote"]',
+      '[data-click-area*="quote"]',
+      '[data-click-area*="blockquote"]',
+      'button.se-toolbar-item-quote',
+      '.se-toolbar-item-quote button',
+      '[class*="quote"] button',
+    ]
+  }
+
+  return []
+}
+
+async function findToolbarButtonStateByKind(scope, kind) {
+  return scope.evaluate(({ kind, selectors }) => {
+    const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const labelOf = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('data-name'),
+      element.getAttribute?.('data-command'),
+      element.getAttribute?.('data-tool'),
+      element.getAttribute?.('data-click-area'),
+      element.className,
+    ].filter(Boolean).join(' '))
+    const score = (element) => {
+      const label = labelOf(element)
+      if (kind === 'bold') {
+        if (label.includes('bold')) return 100
+        if (label.includes('굵')) return 95
+        return 0
+      }
+      if (kind === 'fontSize') {
+        if (label.includes('font size')) return 100
+        if (label.includes('fontsize')) return 95
+        if (label.includes('글자 크기')) return 92
+        if (label.includes('font')) return 75
+        if (label.includes('size')) return 70
+        return 0
+      }
+      if (label.includes('blockquote')) return 100
+      if (label.includes('quote')) return 95
+      if (label.includes('인용')) return 92
+      return 0
+    }
+
+    const button = selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return null
+
+    const activeText = normalize([
+      button.getAttribute('aria-pressed'),
+      button.getAttribute('aria-checked'),
+      button.getAttribute('data-active'),
+      button.getAttribute('data-selected'),
+      button.className,
+      button.parentElement?.className,
+    ].filter(Boolean).join(' '))
+    const sizeMatch = labelOf(button).match(/\b(\d{1,2})(?:\s*px)?\b/)
+
+    return {
+      active: activeText.includes('true') || activeText.includes('active') || activeText.includes('selected') || activeText.includes(' on'),
+      size: sizeMatch ? sizeMatch[1] : null,
+    }
+  }, { kind, selectors: getToolbarSelectors(kind) }).catch(() => null)
+}
+
+async function clickToolbarButtonByKind(scope, kind) {
+  return scope.evaluate(({ kind, selectors }) => {
+    const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const labelOf = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('data-name'),
+      element.getAttribute?.('data-command'),
+      element.getAttribute?.('data-tool'),
+      element.getAttribute?.('data-click-area'),
+      element.className,
+    ].filter(Boolean).join(' '))
+    const score = (element) => {
+      const label = labelOf(element)
+      if (kind === 'bold') return label.includes('bold') || label.includes('굵') ? 100 : 0
+      if (kind === 'fontSize') {
+        if (label.includes('font size') || label.includes('fontsize') || label.includes('글자 크기')) return 100
+        if (label.includes('font') || label.includes('size')) return 70
+        return 0
+      }
+      if (label.includes('blockquote')) return 100
+      if (label.includes('quote')) return 95
+      if (label.includes('인용')) return 92
+      return 0
+    }
+
+    const button = selectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  }, { kind, selectors: getToolbarSelectors(kind) }).catch(() => false)
+}
+
 async function findToolbarButtonState(scope, kind) {
   return scope.evaluate((kind) => {
     const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
@@ -1001,12 +1205,81 @@ async function clickFontSizeOptionAcrossPage(page, sizeLabel, timeoutMs = 3500) 
   return false
 }
 
+async function selectQuoteStyleOption(page, quoteStyle) {
+  const styleKey = normalizeQuoteStyle(quoteStyle)
+  if (!styleKey) return false
+
+  const labels = QUOTE_STYLE_LABELS[styleKey] || []
+  for (const scope of getFormattingScopes(page)) {
+    const clicked = await scope.evaluate((styleLabels) => {
+      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+      const normalizedLabels = styleLabels.map((label) => normalize(label))
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect()
+        const style = window.getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+      }
+      const labelOf = (element) => normalize([
+        element.textContent,
+        element.getAttribute?.('aria-label'),
+        element.getAttribute?.('title'),
+        element.getAttribute?.('data-name'),
+        element.getAttribute?.('data-command'),
+        element.getAttribute?.('data-tool'),
+        element.className,
+      ].filter(Boolean).join(' '))
+
+      const candidates = Array.from(document.querySelectorAll('button, [role="button"], li, [data-name], [data-command], [data-tool]'))
+        .filter((element) => element instanceof HTMLElement && isVisible(element))
+        .map((element) => ({ element, label: labelOf(element) }))
+        .filter(({ label }) => normalizedLabels.some((target) => label.includes(target)))
+
+      if (!candidates.length) return false
+
+      candidates[0].element.click()
+      return true
+    }, labels).catch(() => false)
+
+    if (clicked) {
+      await page.waitForTimeout(180)
+      return true
+    }
+  }
+
+  return false
+}
+
 async function setBoldFormatting(page, enabled, currentState = null) {
   for (const scope of getFormattingScopes(page)) {
-    const state = await findToolbarButtonState(scope, 'bold')
+    const state = await findToolbarButtonStateByKind(scope, 'bold')
     if (state && state.active === enabled) return enabled
-    if (state && await clickToolbarButton(scope, 'bold')) {
+    if (state && await clickToolbarButtonByKind(scope, 'bold')) {
       await page.waitForTimeout(120)
+      return enabled
+    }
+  }
+  return currentState
+}
+
+async function setQuoteFormatting(page, enabled, currentState = null, quoteStyle = '') {
+  for (const scope of getFormattingScopes(page)) {
+    const state = await findToolbarButtonStateByKind(scope, 'quote')
+    if (enabled && state?.active) {
+      if (quoteStyle) {
+        const selected = await selectQuoteStyleOption(page, quoteStyle)
+        if (!selected && await clickToolbarButtonByKind(scope, 'quote')) {
+          await page.waitForTimeout(120)
+          await selectQuoteStyleOption(page, quoteStyle)
+        }
+      }
+      return true
+    }
+    if (state && state.active === enabled) return enabled
+    if (state && await clickToolbarButtonByKind(scope, 'quote')) {
+      await page.waitForTimeout(120)
+      if (enabled && quoteStyle) {
+        await selectQuoteStyleOption(page, quoteStyle)
+      }
       return enabled
     }
   }
@@ -1015,9 +1288,9 @@ async function setBoldFormatting(page, enabled, currentState = null) {
 
 async function setFontSizeFormatting(page, sizeLabel, currentState = null) {
   for (const scope of getFormattingScopes(page)) {
-    const state = await findToolbarButtonState(scope, 'fontSize')
+    const state = await findToolbarButtonStateByKind(scope, 'fontSize')
     if (state?.size === sizeLabel) return sizeLabel
-    if (!(await clickToolbarButton(scope, 'fontSize'))) continue
+    if (!(await clickToolbarButtonByKind(scope, 'fontSize'))) continue
     await page.waitForTimeout(350)
     if (await clickFontSizeOption(scope, sizeLabel) || await clickFontSizeOptionAcrossPage(page, sizeLabel)) {
       await page.waitForTimeout(250)
@@ -1070,8 +1343,9 @@ async function clickBodyField(page, preferLast = false) {
 async function insertBodyTextV4(
   page,
   text,
+  quoteStyle = '',
   clear = false,
-  formatState = { bold: null, fontSize: null },
+  formatState = { bold: null, fontSize: null, quote: null },
   preferLast = false,
   trailingEnterCount = 2
 ) {
@@ -1091,17 +1365,24 @@ async function insertBodyTextV4(
       }
     }
     if (block.type === 'heading') {
+      formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
       formatState.fontSize = await setFontSizeFormatting(page, HEADING_FONT_SIZE, formatState.fontSize)
       formatState.bold = await setBoldFormatting(page, true, formatState.bold)
+    } else if (block.type === 'quote') {
+      formatState.bold = await setBoldFormatting(page, false, formatState.bold)
+      formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+      formatState.quote = await setQuoteFormatting(page, true, formatState.quote, quoteStyle)
     } else {
       formatState.bold = await setBoldFormatting(page, false, formatState.bold)
       formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+      formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
     }
     await page.keyboard.insertText(block.text)
   }
 
   formatState.bold = await setBoldFormatting(page, false, formatState.bold)
   formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+  formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
   for (let index = 0; index < trailingEnterCount; index += 1) {
     await page.keyboard.press('Enter')
   }
@@ -1109,17 +1390,17 @@ async function insertBodyTextV4(
   return formatState
 }
 
-async function insertBodyContentWithImagesV4(page, content, photoPaths = []) {
+async function insertBodyContentWithImagesV4(page, content, photoPaths = [], quoteStyle = '') {
   updateUploadStage('fill-body', { stageLabel: 'fill body' })
   const parts = splitContentByImageMarkers(content)
   let insertedText = false
   const usedPhotoIndexes = new Set()
-  const formatState = { bold: null, fontSize: null }
+  const formatState = { bold: null, fontSize: null, quote: null }
 
   for (const [index, part] of parts.entries()) {
     if (part.type === 'text') {
       const nextPart = parts[index + 1]
-      await insertBodyTextV4(page, part.text, !insertedText, formatState, insertedText, nextPart?.type === 'image' ? 1 : 2)
+      await insertBodyTextV4(page, part.text, quoteStyle, !insertedText, formatState, insertedText, nextPart?.type === 'image' ? 1 : 2)
       insertedText = true
       continue
     }
@@ -1132,6 +1413,7 @@ async function insertBodyContentWithImagesV4(page, content, photoPaths = []) {
       await clickBodyField(page, true)
       formatState.bold = await setBoldFormatting(page, false, null)
       formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, null)
+      formatState.quote = await setQuoteFormatting(page, false, null)
       usedPhotoIndexes.add(part.index)
     }
   }
@@ -1867,7 +2149,7 @@ async function waitForPublishResult(page) {
   return page.url()
 }
 
-async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [], photoPaths = [], headless = true, scheduledAt = null }) {
+async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [], photoPaths = [], headless = true, quoteStyle = '', scheduledAt = null }) {
   if (!title || !String(title).trim()) throw new Error('블로그 제목이 필요합니다.')
   if (!content || !String(content).trim()) throw new Error('블로그 본문이 필요합니다.')
 
@@ -1917,7 +2199,7 @@ async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [
     await waitForEditorReady(page)
 
     await setTitleV5(page, title)
-    await insertBodyContentWithImagesV4(page, content, photoPaths)
+    await insertBodyContentWithImagesV4(page, content, photoPaths, quoteStyle)
 
     const targets = getEditorTargets(page)
     await openPublishDialogV2(page, targets)

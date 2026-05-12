@@ -28,6 +28,13 @@ import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { normalizeBlogTags } from '../utils/blogTags'
 import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
+import {
+  BLOG_HEADING_STYLE,
+  buildBlogHeadingPrefix,
+  getBlogHeadingStyleLabel,
+  isAutomaticBlogQuoteCategory,
+  resolveBlogHeadingStyle,
+} from '../utils/blogHeadingStyle'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import {
@@ -217,6 +224,13 @@ export default function ExtractionResultPage() {
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
   const [shortsUploadTargets, setShortsUploadTargets] = useState({ instagram: true, youtube: true })
+  const blogCategoryPath = String(platformConnections?.blog?.categoryPath || state.blogContent?.categoryPath || '').trim()
+  const blogSectionList = useMemo(() => ensureArray(state.blogContent?.sections), [state.blogContent?.sections])
+  const blogHeadingStyle = useMemo(
+    () => resolveBlogHeadingStyle(blogCategoryPath, blogSectionList),
+    [blogCategoryPath, blogSectionList]
+  )
+  const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogCategoryPath)
 
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
@@ -342,7 +356,8 @@ export default function ExtractionResultPage() {
           sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections))),
           tags
         )
-        const categoryPath = String(platformConnections?.blog?.categoryPath || '').trim()
+        const categoryPath = blogCategoryPath
+        const quoteStyle = blogHeadingStyle === BLOG_HEADING_STYLE.HEADING ? '' : blogHeadingStyle
         const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
           ? options.scheduledAtOverride
           : null
@@ -356,7 +371,7 @@ export default function ExtractionResultPage() {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags, categoryPath }),
+            body: JSON.stringify({ title, content: remoteContent, scheduledAt, tags, categoryPath, quoteStyle }),
           }, BLOG_UPLOAD_REQUEST_TIMEOUT_MS, 'Naver blog upload request')
           responseStatus = response.status
 
@@ -382,6 +397,9 @@ export default function ExtractionResultPage() {
           formData.append('showBrowser', getBlogUploadShowBrowser() ? 'true' : 'false')
           if (categoryPath) {
             formData.append('categoryPath', categoryPath)
+          }
+          if (quoteStyle) {
+            formData.append('quoteStyle', quoteStyle)
           }
           if (scheduledAt) {
             formData.append('scheduledAt', scheduledAt)
@@ -838,17 +856,17 @@ export default function ExtractionResultPage() {
   }, [activeMenu, checkBlogServer])
 
   // compileBlogBody: sections를 [IMG:N] 마커 포함 본문으로 생성
-  // 섹션 제목은 `## **...**` 로 감싸 데스크톱 RPA 가 SmartEditor 소제목 스타일(큰 글씨)을 토글하면서
-  // 동시에 볼드를 적용하도록 한다. 소제목 토글 실패 시에도 ** 마커는 그대로 살아 있어 볼드 처리는 보장된다.
+  // `입시 및 학습 전략 (글 위주)` 카테고리는 소제목 대신 인용구 마커(`>`)를 사용하고,
+  // 그 외 카테고리는 기존 `## **...**` 소제목 포맷을 유지한다.
   const compileBlogBody = useCallback((sections = []) => {
     return ensureArray(sections).map((s, i) => {
       const headingText = String(s.heading || '').trim()
-      const heading = headingText ? `## **${headingText}**\n` : ''
+      const heading = buildBlogHeadingPrefix(headingText, blogHeadingStyle)
       const content = sanitizeBlogBodyForDisplay(s.content || '')
       const imageMarker = `[IMG:${i + 1}]\n`
       return `${heading}${imageMarker}${content}`
     }).join('\n\n')
-  }, [])
+  }, [blogHeadingStyle])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     sanitizeBlogBodyForUpload(content || '')
@@ -858,9 +876,9 @@ export default function ExtractionResultPage() {
   useEffect(() => {
     if (blogContent) {
       if (!blogTitle) setBlogTitle(blogContent.title || '')
-      if (!blogBody) setBlogBody(compileBlogBody(ensureArray(blogContent.sections)))
+      setBlogBody(compileBlogBody(ensureArray(blogContent.sections)))
     }
-  }, [blogBody, blogContent, blogTitle, compileBlogBody])
+  }, [blogContent, blogTitle, compileBlogBody])
 
   // 마크다운 볼드를 HTML <strong>으로 직접 변환 (파서 의존 제거)
   const normalizeMd = (text) => {
@@ -1190,6 +1208,14 @@ export default function ExtractionResultPage() {
             </span>
             {blogServerStatus !== 'offline' && <RefreshCw size={12} />}
           </button>
+          {usesAutomaticBlogQuote && (
+            <div className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-text-muted">
+              <span>소제목 자동 스타일</span>
+              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary-light">
+                인용구 · {getBlogHeadingStyleLabel(blogHeadingStyle)}
+              </span>
+            </div>
+          )}
           <button
             onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogTagsToBody(blogBody || compileBlogBody(ensureArray(blogContent?.sections)), blogTags)}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
@@ -1258,9 +1284,26 @@ export default function ExtractionResultPage() {
                   blogImagesRef.current[index] = null
                 }
 
+                const headingNode = blogHeadingStyle === BLOG_HEADING_STYLE.LINE_QUOTE
+                    ? (
+                      <div className="mb-4 border-l-4 border-slate-300 bg-slate-50 px-4 py-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Quote</div>
+                        <div className="mt-1 text-2xl font-bold text-slate-900">“{section.heading}”</div>
+                      </div>
+                    )
+                    : blogHeadingStyle === BLOG_HEADING_STYLE.POSTIT
+                      ? (
+                        <div className="mb-4 inline-block -rotate-1 bg-yellow-100 px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
+                          <div className="text-lg font-bold text-yellow-900">{section.heading}</div>
+                        </div>
+                      )
+                      : (
+                        <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
+                      )
+
               return (
                 <section key={index} className="space-y-5">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">{section.heading}</h3>
+                  {headingNode}
 
                   {sectionImages.length > 0 && (
                     <div className="mb-4 space-y-4">
@@ -1268,8 +1311,12 @@ export default function ExtractionResultPage() {
                         const imageUrl = image?.imageUrl || null
                         const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || (imageIndex === 0 ? blogPngUrls[index] : null)
                         const imageKey = `${section.heading || index}-${image?.title || image?.source || 'image'}-${imageIndex}`
-                        const imageHeadline = deriveBlogHeadline(cleanCardText(image?.keyPhrase || section?.keyPhrase || ''), headingText)
-                        const imageDescription = deriveBlogImageDescription(image?.keyPhrase || '', headingText, section?.content || '')
+                        const imageHeadline = image?.overlayMode === 'headline-only'
+                          ? cleanCardText(section?.heading || image?.keyPhrase || '')
+                          : deriveBlogHeadline(cleanCardText(image?.keyPhrase || section?.keyPhrase || ''), headingText)
+                        const imageDescription = image?.overlayMode === 'headline-only'
+                          ? ''
+                          : deriveBlogImageDescription(image?.keyPhrase || '', headingText, section?.content || '')
 
                         return renderedImageUrl ? (
                           <img
@@ -1292,7 +1339,8 @@ export default function ExtractionResultPage() {
                             description={imageDescription}
                             accentColor={accentColor}
                             showTextOverlay={showBlogImageTextOverlay}
-                            variant="circle"
+                            variant={image?.variant || 'circle'}
+                            fontPreset={image?.overlayFont || 'pretendard'}
                             mode="modal"
                             containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
                           />

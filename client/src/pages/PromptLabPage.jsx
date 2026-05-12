@@ -628,6 +628,7 @@ export default function PromptLabPage() {
                 ? (await generateBlogImages(firstBlogSection, {
                     imageStyle: option.value,
                     mainColor: 'auto',
+                    categoryId: 'concept_digest',
                     extra: imageExtra,
                   }))?.[0] || null
                 : null,
@@ -649,6 +650,7 @@ export default function PromptLabPage() {
                 ? (await generateBlogImages(firstBlogSection, {
                     imageStyle: 'pastel',
                     mainColor: option.value,
+                    categoryId: 'concept_digest',
                     extra: imageExtra,
                   }))?.[0] || null
                 : null,
@@ -758,6 +760,13 @@ export default function PromptLabPage() {
             >
               <Sparkles size={14} />
               블로그 카테고리 비교
+            </a>
+            <a
+              href="/prompt-lab/concept-images"
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-medium text-primary shadow-sm transition-all hover:bg-primary/5"
+            >
+              <ImageIcon size={14} />
+              개념 정리 이미지 테스트
             </a>
             <button
               onClick={resetAll}

@@ -1,5 +1,6 @@
 const assert = require('assert')
 const { __private } = require('../src/naver-upload')
+const { buildBodyHtml, parseBlogBlocks } = require('../src/naver-blog-rpa-v2')
 
 async function testPopupRecoveryRetriesInterceptedClicks() {
   let sleepCalls = 0
@@ -604,6 +605,25 @@ async function testClickScheduledFinalPublishButtonPrefersDialogBottomButton() {
   delete global.MouseEvent
 }
 
+function testParseBlogBlocksRecognizesQuoteBlocks() {
+  const blocks = parseBlogBlocks('첫 문단\n\n> 인용 첫 줄\n> 인용 둘째 줄\n\n## 소제목')
+  assert.deepEqual(
+    blocks,
+    [
+      { type: 'paragraph', text: '첫 문단' },
+      { type: 'quote', text: '인용 첫 줄 인용 둘째 줄' },
+      { type: 'heading', text: '소제목' },
+    ]
+  )
+}
+
+function testBuildBodyHtmlRendersQuoteBlock() {
+  const html = buildBodyHtml('> 인용문')
+  assert.match(html, /<blockquote/)
+  assert.match(html, /인용문/)
+  assert.match(html, /border-left:4px solid/)
+}
+
 async function main() {
   await testPopupRecoveryRetriesInterceptedClicks()
   await testPopupRecoveryDoesNotRetryOtherErrors()
@@ -621,6 +641,8 @@ async function main() {
   await testActivateReservePublishModeByDomSkipsHeaderScheduleButton()
   await testClickPhotoButtonByDomPrefersToolbarPhotoButton()
   await testClickScheduledFinalPublishButtonPrefersDialogBottomButton()
+  testParseBlogBlocksRecognizesQuoteBlocks()
+  testBuildBodyHtmlRendersQuoteBlock()
   console.log('naver-upload tests passed')
 }
 

@@ -17,6 +17,33 @@ export const IMAGE_TEXT_WRAP_STYLE = {
   textWrap: 'balance',
 }
 
+export const BLOG_IMAGE_FONT_PRESETS = {
+  pretendard: {
+    family: 'Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
+    weight: 900,
+  },
+  bold: {
+    family: 'A2z, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
+    weight: 700,
+  },
+  dongle: {
+    family: 'TmoneyRoundWind, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
+    weight: 800,
+  },
+  handwriting: {
+    family: 'Maplestory, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
+    weight: 700,
+  },
+  gothic: {
+    family: 'KBODiaGothic, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
+    weight: 700,
+  },
+}
+
+export const getBlogImageFontPreset = (value = 'pretendard') => (
+  BLOG_IMAGE_FONT_PRESETS[value] || BLOG_IMAGE_FONT_PRESETS.pretendard
+)
+
 const BLOG_HEADLINE_MAX_LENGTH = 28
 const BLOG_DESCRIPTION_MAX_LENGTH = 34
 const VALUE_TOKEN_PATTERN = /(?:[$]\s?\d|\d[\d,]*(?:\.\d+)?\s?%)/

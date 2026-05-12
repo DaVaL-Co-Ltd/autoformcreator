@@ -1345,6 +1345,7 @@ ${parsedText}
           textOverlay: promptSettings.media.blogTextOverlay,
           imageTextOverlay: promptSettings.media.blogTextOverlay,
           mainColor: promptSettings.media.mainColor,
+          categoryId: blogContent?.categoryInfo?.finalCategoryId || recommendedBlogCategory?.finalCategoryId || null,
           extra: promptSettings.media.extra,
         })
         setBlogImages(generatedImages)

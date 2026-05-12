@@ -1,4 +1,4 @@
-import { IMAGE_TEXT_WRAP_STYLE } from '../utils/contentImageOverlay'
+import { IMAGE_TEXT_WRAP_STYLE, getBlogImageFontPreset } from '../utils/contentImageOverlay'
 
 const fallbackGradient = 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 55%, #fdf2f8 100%)'
 
@@ -61,18 +61,23 @@ const renderBalancedLines = (text, maxLineLength) => {
   ))
 }
 
-const renderCardHeading = (text, fontSize) => {
+const renderCardHeading = (text, fontSize, fontPreset = 'pretendard', textColor = 'inherit', withShadow = false) => {
   const clean = String(text || '').replace(/[\s,.:;!?/\\]+$/g, '').trim()
   if (!clean) return null
 
   const size = Math.min(Math.max(fontSize, 5), 28)
+  const font = getBlogImageFontPreset(fontPreset)
   return (
     <p
-      className="font-black text-gray-800 leading-tight"
+      className="leading-tight"
       style={{
         fontSize: `${size}px`,
         wordBreak: 'keep-all',
         overflowWrap: 'break-word',
+        fontFamily: font.family,
+        fontWeight: font.weight,
+        color: textColor,
+        textShadow: withShadow ? '0 3px 14px rgba(15, 23, 42, 0.38)' : 'none',
       }}
     >
       {renderBalancedLines(clean, Math.max(4, Math.floor(180 / size)))}
@@ -116,11 +121,14 @@ export function BlogImageArtwork({
   accentColor = '#6366f1',
   showTextOverlay = true,
   variant = 'circle',
+  fontPreset = 'pretendard',
   mode = 'result',
   containerClassName = '',
 }) {
   const isThumb = mode === 'thumb'
   const isPlain = variant === 'plain'
+  const isPosterTitle = variant === 'poster-title'
+  const isCircleTextOnly = variant === 'circle-text-only'
   const baseClassName = isThumb
     ? 'relative h-full w-full overflow-hidden bg-surface-light'
     : 'relative aspect-square overflow-hidden bg-surface-light'
@@ -132,12 +140,29 @@ export function BlogImageArtwork({
       style={!isThumb ? cardShadow : undefined}
     >
       <ImageLayer src={src} alt={alt} />
+      {showTextOverlay && isPosterTitle && (
+        <>
+          <div className={`absolute inset-0 ${isThumb ? 'bg-black/6' : 'bg-black/8'}`} />
+          <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-3' : 'p-8'}`}>
+            <div className={`${isThumb ? 'max-w-[76%]' : 'max-w-[68%]'} text-center`}>
+              {renderCardHeading(headline, isThumb ? 10 : 34, fontPreset, '#111827', false)}
+            </div>
+          </div>
+        </>
+      )}
+      {showTextOverlay && isCircleTextOnly && (
+        <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-2' : 'p-6'}`}>
+          <div className={`${isThumb ? 'w-[78%]' : 'w-[68%] max-w-[420px]'} aspect-square flex items-center justify-center text-center ${isThumb ? 'translate-y-[1.5%]' : 'translate-y-[2%]'}`}>
+            {renderCardHeading(headline, isThumb ? 9 : 38, fontPreset, '#111827', false)}
+          </div>
+        </div>
+      )}
       {showTextOverlay && isPlain && (
         <>
           <div className={`absolute inset-0 bg-gradient-to-t ${isThumb ? 'from-black/28 via-transparent to-transparent' : 'from-black/34 via-black/10 to-transparent'}`} />
           <div className={`absolute inset-x-0 bottom-0 ${isThumb ? 'p-2' : 'p-5'}`}>
             <div className={`${isThumb ? 'rounded-xl px-2.5 py-2' : 'rounded-[24px] px-5 py-4'} bg-white/92 border border-white/85 shadow-sm`}>
-              {renderCardHeading(headline, isThumb ? 7 : 22)}
+              {renderCardHeading(headline, isThumb ? 7 : 22, fontPreset, '#1f2937')}
               {description && (
                 <p
                   className={`${isThumb ? 'mt-1 text-[5px] leading-tight' : 'mt-2 text-[13px] leading-relaxed'} font-semibold text-gray-600`}
@@ -150,19 +175,15 @@ export function BlogImageArtwork({
           </div>
         </>
       )}
-      {showTextOverlay && !isPlain && (
+      {showTextOverlay && !isPlain && !isPosterTitle && !isCircleTextOnly && (
         <>
           <div className={`absolute inset-0 ${isThumb ? 'bg-black/8' : 'bg-black/10'}`} />
           <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-2' : 'p-6'}`}>
-            <div className={`${isThumb ? 'w-[72%] px-2 py-2 shadow' : 'w-[52%] max-w-[320px] px-5 py-5 shadow-xl'} aspect-square rounded-full bg-white/[0.94] flex flex-col items-center justify-center text-center`}>
-              {renderCardHeading(headline, isThumb ? 7 : 24)}
-              <div
-                className={`${isThumb ? 'w-4 h-0.5 mt-1 mb-1' : 'w-12 h-1 mt-3 mb-3'} rounded-full`}
-                style={{ background: accentColor }}
-              />
+            <div className={`${isThumb ? 'w-[78%] px-2 py-2 shadow' : 'w-[68%] max-w-[420px] px-6 py-6 shadow-xl'} aspect-square rounded-full bg-white/[0.94] flex flex-col items-center justify-center text-center`}>
+              {renderCardHeading(headline, isThumb ? 9 : (description ? 26 : 38), fontPreset, '#1f2937')}
               {description && (
                 <p
-                  className={`${isThumb ? 'text-[5px] leading-tight' : 'text-[13px] leading-relaxed'} text-gray-600 font-semibold`}
+                  className={`${isThumb ? 'mt-1 text-[5px] leading-tight' : 'mt-3 text-[13px] leading-relaxed'} text-gray-600 font-semibold`}
                   style={IMAGE_TEXT_WRAP_STYLE}
                 >
                   {renderBalancedLines(description, isThumb ? 14 : 14)}

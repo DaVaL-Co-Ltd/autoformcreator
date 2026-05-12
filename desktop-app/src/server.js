@@ -285,6 +285,9 @@ function createApp() {
       const categoryPath = typeof req.body.categoryPath === 'string'
         ? req.body.categoryPath.trim()
         : ''
+      const quoteStyle = typeof req.body.quoteStyle === 'string'
+        ? req.body.quoteStyle.trim()
+        : ''
       const scheduledAt = req.body.scheduledAt &&
         !['null', 'undefined', ''].includes(String(req.body.scheduledAt).trim().toLowerCase())
         ? req.body.scheduledAt
@@ -297,6 +300,7 @@ function createApp() {
         content,
         headless,
         photoPaths,
+        quoteStyle,
         scheduledAt,
         tags,
         title,
