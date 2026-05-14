@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import { IMAGE_TEXT_WRAP_STYLE, getBlogImageFontPreset } from '../utils/contentImageOverlay'
 
 const fallbackGradient = 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 55%, #fdf2f8 100%)'
@@ -112,6 +113,78 @@ function ImageLayer({ src, alt }) {
   )
 }
 
+function ConceptDigestCircleOverlay({ headline, fontPreset }) {
+  const containerRef = useRef(null)
+  const [size, setSize] = useState(500)
+  const cleanHeadline = String(headline || '').replace(/[\s,.:;!?/\\]+$/g, '').trim()
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return undefined
+
+    const measure = () => {
+      const width = el.getBoundingClientRect().width
+      if (width > 0) setSize(width)
+    }
+    measure()
+    const obs = new ResizeObserver(measure)
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  if (!cleanHeadline) return null
+  const font = getBlogImageFontPreset(fontPreset)
+  const circleSize = size * 0.66
+  const padding = size * 0.06
+  const fontSize = size * 0.07
+  const shadowBlur = size * 0.06
+  const shadowOffsetY = size * 0.012
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute inset-0 flex items-center justify-center"
+    >
+      <div
+        className="flex items-center justify-center text-center"
+        style={{
+          width: `${circleSize}px`,
+          height: `${circleSize}px`,
+          borderRadius: '50%',
+          backgroundColor: '#FFFFFF',
+          boxShadow: `0 ${shadowOffsetY}px ${shadowBlur}px rgba(15, 23, 42, 0.08)`,
+          paddingLeft: `${padding}px`,
+          paddingRight: `${padding}px`,
+          fontFamily: font.family,
+          fontWeight: font.weight,
+          color: '#111827',
+        }}
+      >
+        <p
+          style={{
+            fontSize: `${fontSize}px`,
+            lineHeight: 1.15,
+            margin: 0,
+            wordBreak: 'keep-all',
+            overflowWrap: 'break-word',
+            textWrap: 'balance',
+          }}
+        >
+          {cleanHeadline}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+const getPosterTitleSize = (isThumb, fontPreset) => {
+  if (fontPreset === 'knowledge') {
+    return isThumb ? 12 : 40
+  }
+
+  return isThumb ? 10 : 34
+}
+
 export function BlogImageArtwork({
   innerRef,
   src,
@@ -145,17 +218,16 @@ export function BlogImageArtwork({
           <div className={`absolute inset-0 ${isThumb ? 'bg-black/6' : 'bg-black/8'}`} />
           <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-3' : 'p-8'}`}>
             <div className={`${isThumb ? 'max-w-[76%]' : 'max-w-[68%]'} text-center`}>
-              {renderCardHeading(headline, isThumb ? 10 : 34, fontPreset, '#111827', false)}
+              {renderCardHeading(headline, getPosterTitleSize(isThumb, fontPreset), fontPreset, '#111827', false)}
             </div>
           </div>
         </>
       )}
       {showTextOverlay && isCircleTextOnly && (
-        <div className={`absolute inset-0 flex items-center justify-center ${isThumb ? 'p-2' : 'p-6'}`}>
-          <div className={`${isThumb ? 'w-[78%]' : 'w-[68%] max-w-[420px]'} aspect-square flex items-center justify-center text-center ${isThumb ? 'translate-y-[1.5%]' : 'translate-y-[2%]'}`}>
-            {renderCardHeading(headline, isThumb ? 9 : 38, fontPreset, '#111827', false)}
-          </div>
-        </div>
+        <ConceptDigestCircleOverlay
+          headline={headline}
+          fontPreset={fontPreset}
+        />
       )}
       {showTextOverlay && isPlain && (
         <>

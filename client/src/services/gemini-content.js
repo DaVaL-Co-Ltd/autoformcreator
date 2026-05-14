@@ -713,8 +713,6 @@ ${categoryGuide}
 - 글의 중심 목적과 전개 방식을 기준으로 고르세요.
 - "입시 및 학습 전략 (글 위주)"는 성적, 과목, 공부법, 실행 전략을 문단 중심으로 풀어 설명하는 글입니다.
 - "입시 및 학습 전략 (키워드 위주)"는 제도 변화, 전형 운영 포인트, 방향 전환을 핵심 키워드 중심으로 정리하는 글입니다.
-- "자료 나눔 및 공유"는 자료 제공, 신청, 다운로드, 마감 안내가 핵심일 때 고르세요.
-- "서비스 소개/서비스 마케팅"은 특정 서비스, 프로그램, 상담, 컨설팅 소개가 핵심일 때 고르세요.
 - JSON만 출력하세요.
 
 요약 데이터:
@@ -727,7 +725,7 @@ ${String(emphasis || '').trim() || '없음'}
 ${String(rawText || '').slice(0, 5000)}
 
 출력 스키마:
-{"categoryId":"service_promo","confidence":"high","reason":"한 문장 설명"}`
+{"categoryId":"admissions_strategy_style_1","confidence":"high","reason":"한 문장 설명"}`
 }
 
 export async function recommendBlogCategory(summary, rawText, emphasis, options = {}) {
@@ -830,7 +828,53 @@ function buildBlogCategoryInstruction(selection = null) {
 - "절호의 기회", "놓치지 마세요", "미래를 위한 중요한 투자"처럼 과장된 홍보 문구는 최소화하세요.
 - 같은 의미를 반복해서 설득하지 말고, 신청 판단에 필요한 사실 정보 중심으로 정리하세요.
 `
-    : selection.finalCategoryId === 'concept_digest'
+    : selection.finalCategoryId === 'admissions_strategy_style_1'
+      ? `
+- 이 카테고리는 본문 위에 별도의 "글 소개" 단락을 출력합니다. 반드시 blog.introduction 필드를 2~5문장 분량으로 채우세요.
+- blog.introduction 에는 제목, 소제목, 헤딩 표기를 넣지 말고, 본문 전체에 어떤 내용이 담겨 있는지 한눈에 알 수 있는 도입 글만 자연스러운 문단으로 작성하세요.
+- blog.introduction 은 본문 sections[].content 와 내용이 중복되지 않게, 전체 주제와 흐름만 안내하는 톤으로 쓰세요.
+- 본문 sections[].content 는 글이 흐르는 줄글로 작성하되, 각 문장은 한 줄에 하나씩 끝나도록 길이를 조절하세요.
+- 한 문장을 여러 줄로 쪼개지 말고, 문장 끝(., !, ?, 다., 요., 죠., 까?)이 명확하게 드러나도록 마침표/물음표/느낌표를 빠뜨리지 마세요.
+`
+      : selection.finalCategoryId === 'knowledge_insight'
+      ? `
+- 이 카테고리는 결과를 카드뉴스 형태로 보여줍니다. 각 섹션마다 sections[].cardSummary 필드를 반드시 채워주세요.
+- cardSummary.headline 은 해당 섹션의 가장 강한 주장이나 결론을 12자 안팎의 한 줄로 압축한 카피문이어야 합니다. 마침표·물음표·느낌표 1개까지만 허용합니다.
+- cardSummary.bullets 는 3~5개 항목 배열로, 각 항목은 한 줄 분량(20~35자)으로 압축해 작성합니다.
+- 불릿은 다음 패턴 중 자연스럽게 어울리는 형태로 작성하세요:
+  1) 주장형: "공부할 때 뇌 구조가 실제로 변한다"
+  2) 등식형: "신경가소성(neuroplasticity) = 뇌는 평생 바뀔 수 있음"
+  3) 인과/사례형: "저글링 연습 → 뇌 회색질 증가"
+- 불릿은 본문 sections[].content 의 흐름과 핵심 키워드, 등장하는 인물·연구·예시·수치를 분석해 추출하세요.
+- "다음은…", "이것이…", "여기서…" 같은 도입 어구는 쓰지 말고 명사구·단정문 위주로 정리하세요.
+- 본문을 읽지 않고 cardSummary 만 봐도 섹션의 주제와 근거를 즉시 이해할 수 있어야 합니다.
+- cardSummary 와 본문 content 는 짝꿍입니다. content 는 평소처럼 줄글로 작성하되, 카드 요약 라인이 본문에 등장하는 사실에 근거하도록 일관성을 유지하세요.
+`
+      : selection.finalCategoryId === 'admissions_strategy_style_2' || selection.finalCategoryId === 'book_promo'
+      ? `
+- 이 카테고리는 긴 줄글형 칼럼보다 "이모지 소제목 + 핵심 포인트 리스트 + 짧은 결론" 구조를 우선하세요.
+- 한 문단은 1~2문장, 길어도 3문장을 넘기지 마세요.
+- 본문은 가능한 한 아래 같은 흐름으로 구성하세요:
+  1) 짧은 도입 1~2문장
+  2) 이모지가 붙은 짧은 소제목
+  3) "👉", "✔", "✅", "📌", "⚠️" 같은 리스트 항목 2~5개
+  4) 적용 방법 또는 대응 포인트
+  5) "💡 마무리 한 줄" 또는 그에 준하는 짧은 결론
+- 소제목은 길게 설명하지 말고 짧은 블록형 제목을 사용하세요. 예:
+  - "📚 핵심 변화"
+  - "🧠 이렇게 준비하세요"
+  - "⚠️ 놓치기 쉬운 포인트"
+  - "💡 마무리 한 줄"
+- 줄글 설명보다 리스트를 우선하세요. 중요한 정보는 문단 속에 묻지 말고 한 줄 항목으로 분리하세요.
+- 체크리스트/포인트 항목은 한 줄 또는 두 줄 안에서 끝내세요.
+- 번호형 흐름이 필요한 경우 "1)", "2)" 또는 "첫째", "둘째" 같은 짧은 단계형 구조를 사용하세요.
+- "무엇이 바뀌었는지", "왜 중요한지", "어떻게 대응할지"가 바로 보이게 구성하세요.
+- 연재형 맥락이나 최근 변화 언급은 도입부 1~2문장 안에서만 짧게 처리하고, 본문은 바로 핵심 포인트 정리로 들어가세요.
+- 마무리는 일반적인 요약 문단보다 "👉 결론적으로 ...", "💡 결국 중요한 것은 ..." 같은 한 줄 메시지에 가깝게 쓰세요.
+- 도서 카테고리라면 위 형식을 유지하되, 책의 핵심 메시지·읽을 가치·독자에게 주는 시사점을 리스트형으로 정리하세요.
+- 도서 카테고리에서는 홍보성 수식보다 "이 책이 지금 왜 유효한가", "무엇을 얻을 수 있는가", "어디에 적용해 볼 수 있는가"를 짧은 포인트로 보여주세요.
+`
+      : selection.finalCategoryId === 'concept_digest'
       ? `
 - 교과서 개념 정리 카테고리는 일반 정보형 블로그나 SEO형 설명문이 아니라, 학생 대상 탐구형 학습 블로그로 작성하세요.
 - 글의 목표는 개념을 한 번에 많이 설명하는 것이 아니라, 학생이 예시를 따라오며 개념을 이해하고 스스로 생각해 보게 만드는 것입니다.
@@ -1053,12 +1097,17 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   "blog": {
     "title": "블로그 제목",
     "metaDescription": "메타 설명",
+    "introduction": "글 소개 (입시 및 학습 전략 글 위주 카테고리에서만 채움. 그 외에는 빈 문자열)",
     "sections": [
       {
         "heading": "섹션 제목",
         "keyPhrase": "핵심 키워드 또는 짧은 요약",
         "content": "섹션 본문",
-        "imagePrompt": "Image prompt in English"
+        "imagePrompt": "Image prompt in English",
+        "cardSummary": {
+          "headline": "지식 공유(카드뉴스) 카테고리 한정 — 카드 상단 한 줄 헤드라인",
+          "bullets": ["압축 불릿1", "압축 불릿2"]
+        }
       }
     ],
     "tags": ["태그"],
@@ -1139,7 +1188,7 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
 }
 
 const CHANNEL_SCHEMAS = {
-  blog: `"blog":{"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`,
+  blog: `"blog":{"title":"블로그 제목","metaDescription":"메타 설명","introduction":"글 소개","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English","cardSummary":{"headline":"카드 헤드라인","bullets":["불릿1","불릿2"]}}],"tags":["태그"],"summary":"글 요약"}`,
   newsletter: `"newsletter":{"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`,
   instagram: `"instagram":{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`,
   shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
@@ -1242,9 +1291,9 @@ ${buildBlogTitleRules()}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"블로그 제목","metaDescription":"메타 설명","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English"}],"tags":["태그"],"summary":"글 요약"}`
+{"title":"블로그 제목","metaDescription":"메타 설명","introduction":"글 소개","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English","cardSummary":{"headline":"카드 헤드라인","bullets":["불릿1","불릿2"]}}],"tags":["태그"],"summary":"글 요약"}`
 
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
+  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return withBlogCategoryMetadata(
     await finalizeBlogContent(parseJSON(result, { title: '블로그 생성 실패', sections: [], tags: [], summary: '' })),
     blogCategorySelection,
@@ -1264,7 +1313,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 ## 출력 스키마
 {"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`
 
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
+  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return parseJSON(result, { subject: '뉴스레터 생성 실패', keyPoints: [], body: '', dataHighlights: [] })
 }
 
@@ -1285,7 +1334,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 ## 출력 스키마
 {"title":"게시물 제목","body":"게시물 본문","caption":"이모지로 시작하는 짧은 문단형 인스타그램 캡션 본문(350~600자)","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`
 
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
+  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeInstagramContent(
     parseJSON(result, { title: '', body: '', caption: '', hashtags: [], cardTopics: [] }),
     { summary, rawText },
@@ -1312,7 +1361,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
 ## 출력 스키마
 {"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
-  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true })
+  const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(
     parseJSON(result, {
       title: '숏폼 대본 생성 실패',

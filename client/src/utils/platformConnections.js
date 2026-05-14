@@ -38,6 +38,7 @@ const DEFAULTS = {
 }
 
 const PLATFORM_KEYS = Object.keys(DEFAULTS)
+const hasDbClient = () => Boolean(supabase && typeof supabase.from === 'function')
 
 function cloneDefaults() {
   return {
@@ -96,6 +97,8 @@ function buildDbPayload(platform, connection) {
 }
 
 async function fetchDbRows() {
+  if (!hasDbClient()) return []
+
   const { data, error } = await supabase
     .from(TABLE_NAME)
     .select('platform, display_name, url')
@@ -199,6 +202,10 @@ export async function updateDisplay(platform, updates = {}) {
 
   writeLocal(all)
   notifyChange()
+
+  if (!hasDbClient()) {
+    return { persisted: 'local', value: all[platform] }
+  }
 
   try {
     const { error } = await supabase

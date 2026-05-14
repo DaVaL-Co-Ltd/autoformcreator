@@ -3,6 +3,7 @@
   deriveBlogHeadline,
   deriveBlogImageDescription,
   getBlogImageFontPreset,
+  isClosingBlogSection,
   wrapCardTextLines,
 } from './contentImageOverlay'
 import {
@@ -281,13 +282,20 @@ function renderCenteredText(ctx, lines, x, startY, lineHeight) {
 function drawPosterTitleText(ctx, width, height, headline, fontPreset = 'pretendard') {
   const size = getBaseSize(width, height)
   const preset = getBlogImageFontPreset(fontPreset)
-  const headlineFontSize = Math.max(46, Math.round(size * 0.088))
+  const headlineFontSize = fontPreset === 'knowledge'
+    ? Math.max(40, Math.round(size * 0.088))
+    : Math.max(46, Math.round(size * 0.088))
 
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.font = `${preset.weight} ${headlineFontSize}px ${preset.family}`
-  const headlineLines = wrapText(ctx, headline, width * 0.68, { splitLongWords: false })
+  const headlineLines = wrapText(
+    ctx,
+    headline,
+    width * (fontPreset === 'knowledge' ? 0.74 : 0.68),
+    { splitLongWords: false },
+  )
   const headlineLineHeight = Math.round(headlineFontSize * 1.18)
   const totalHeight = headlineLines.length * headlineLineHeight
   const startY = (height - totalHeight) / 2
@@ -305,20 +313,34 @@ function drawPosterTitleText(ctx, width, height, headline, fontPreset = 'pretend
 function drawCircleTitleTextOnly(ctx, width, height, headline, fontPreset = 'pretendard') {
   const size = getBaseSize(width, height)
   const preset = getBlogImageFontPreset(fontPreset)
-  const headlineFontSize = Math.max(52, Math.round(size * 0.09))
+  const circleSize = size * 0.66
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(width / 2, height / 2, circleSize / 2, 0, Math.PI * 2)
+  ctx.closePath()
+  ctx.fillStyle = '#FFFFFF'
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.08)'
+  ctx.shadowBlur = size * 0.04
+  ctx.shadowOffsetY = size * 0.008
+  ctx.fill()
+  ctx.restore()
+
+  const headlineFontSize = Math.max(36, Math.round(size * 0.07))
 
   ctx.save()
   ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
+  ctx.textBaseline = 'middle'
   ctx.font = `${preset.weight} ${headlineFontSize}px ${preset.family}`
-  const headlineLines = wrapText(ctx, headline, width * 0.56, { splitLongWords: false })
+  const headlineLines = wrapText(ctx, headline, circleSize * 0.86, { splitLongWords: false })
   const headlineLineHeight = Math.round(headlineFontSize * 1.18)
-  const totalHeight = headlineLines.length * headlineLineHeight
-  const startY = ((height - totalHeight) / 2) + (height * 0.01)
+
+  const totalBlockHeight = headlineLines.length * headlineLineHeight
+  const firstLineCenterY = (height / 2) - (totalBlockHeight / 2) + (headlineLineHeight / 2)
 
   ctx.fillStyle = '#111827'
   headlineLines.forEach((line, index) => {
-    const y = startY + (index * headlineLineHeight)
+    const y = firstLineCenterY + (index * headlineLineHeight)
     ctx.fillText(line, width / 2, y)
   })
   ctx.restore()
@@ -495,6 +517,14 @@ export async function renderBlogUploadImageDataUrl({
 }) {
   if (typeof document === 'undefined' || !imageUrl) return imageUrl
 
+  if (document.fonts?.ready) {
+    try {
+      await document.fonts.ready
+    } catch {
+      // 폰트 로딩 대기 실패 시에도 합성은 진행 (시스템 폰트로 폴백)
+    }
+  }
+
   const image = await loadImageElement(imageUrl)
   const width = image?.naturalWidth || image?.width || FALLBACK_SIZE
   const height = image?.naturalHeight || image?.height || FALLBACK_SIZE
@@ -544,10 +574,16 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
       return
     }
 
+    if (image?.overlayMode === 'none') {
+      uploads.push(sourceUrl)
+      pushedImages.add(image)
+      return
+    }
+
     const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
     const headingText = cleanCardText(section?.heading || '')
     const headline = image?.overlayMode === 'headline-only'
-      ? headingText || keyPhrase
+      ? cleanCardText(image?.overlayHeadline || headingText || keyPhrase)
       : deriveBlogHeadline(keyPhrase, headingText)
     const description = image?.overlayMode === 'headline-only'
       ? ''
@@ -580,6 +616,9 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
 
   for (let index = 0; index < sections.length; index += 1) {
     const section = sections[index] || {}
+    if (isClosingBlogSection(section?.heading)) {
+      continue
+    }
     const image = findBlogImageSource(blogImages, section, index)
     if (pushedImages.has(image)) {
       continue

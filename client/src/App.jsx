@@ -1,26 +1,34 @@
-﻿import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
 import Header from './components/Header'
 import ErrorDialog from './components/ErrorDialog.jsx'
 import ServiceGuideButton from './components/ServiceGuideButton.jsx'
-import LoginPage from './pages/LoginPage'
-import ExtractionPage from './pages/ExtractionPage'
-import ExtractionResultPage from './pages/ExtractionResultPage'
-import SettingsPage from './pages/SettingsPage'
-import ShortsViewerPage from './pages/ShortsViewerPage'
-import SubtitlePreviewPage from './pages/SubtitlePreviewPage'
-import TitlePreviewPage from './pages/TitlePreviewPage'
-import ContentPage from './pages/ContentPage'
-import DashboardPage from './pages/DashboardPage'
-import PromptLabPage from './pages/PromptLabPage'
-import BlogCategoryComparePage from './pages/BlogCategoryComparePage'
-import ConceptDigestImageLabPage from './pages/ConceptDigestImageLabPage'
-import ScheduledUploadsPage from './pages/ScheduledUploadsPage'
 import { useScheduledUploader } from './hooks/useScheduledUploader'
 import { Download, Loader2 } from 'lucide-react'
 import { DESKTOP_HELPER } from './constants/desktopHelper.js'
+
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const ExtractionPage = lazy(() => import('./pages/ExtractionPage'))
+const ExtractionResultPage = lazy(() => import('./pages/ExtractionResultPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const ContentPage = lazy(() => import('./pages/ContentPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const KnowledgeCardsTestPage = lazy(() => import('./pages/KnowledgeCardsTestPage'))
+const ScheduledUploadsPage = lazy(() => import('./pages/ScheduledUploadsPage'))
+
+function PageLoader() {
+  return (
+    <div className="min-h-[240px] flex items-center justify-center">
+      <Loader2 size={24} className="text-primary animate-spin" />
+    </div>
+  )
+}
+
+function LazyPage({ children }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>
+}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -47,20 +55,15 @@ function AppLayout() {
       <ServiceGuideButton />
       <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-background">
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/extraction" element={<ExtractionPage />} />
-          <Route path="/extraction/result" element={<ExtractionResultPage />} />
-          <Route path="/contents" element={<ContentPage />} />
-          <Route path="/contents/view" element={<ExtractionResultPage />} />
-          <Route path="/prompt-lab" element={<PromptLabPage />} />
-          <Route path="/prompt-lab/blog-category" element={<BlogCategoryComparePage />} />
-          <Route path="/prompt-lab/concept-images" element={<ConceptDigestImageLabPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/scheduled" element={<ScheduledUploadsPage />} />
-          <Route path="/shorts/view" element={<ShortsViewerPage />} />
-          <Route path="/subtitle-preview" element={<SubtitlePreviewPage />} />
-          <Route path="/title-preview" element={<TitlePreviewPage />} />
+          <Route path="/" element={<LazyPage><DashboardPage /></LazyPage>} />
+          <Route path="/dashboard" element={<LazyPage><DashboardPage /></LazyPage>} />
+          <Route path="/extraction" element={<LazyPage><ExtractionPage /></LazyPage>} />
+          <Route path="/extraction/result" element={<LazyPage><ExtractionResultPage /></LazyPage>} />
+          <Route path="/contents" element={<LazyPage><ContentPage /></LazyPage>} />
+          <Route path="/contents/view" element={<LazyPage><ExtractionResultPage /></LazyPage>} />
+          <Route path="/prompt-lab/knowledge-cards" element={<LazyPage><KnowledgeCardsTestPage /></LazyPage>} />
+          <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
+          <Route path="/scheduled" element={<LazyPage><ScheduledUploadsPage /></LazyPage>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -143,7 +146,10 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route
+        path="/login"
+        element={user ? <Navigate to="/" replace /> : <LazyPage><LoginPage /></LazyPage>}
+      />
       <Route
         path="/*"
         element={

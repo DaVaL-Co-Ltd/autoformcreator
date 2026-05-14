@@ -63,6 +63,20 @@ function isImageFile(file) {
   return ['.jpg', '.jpeg', '.png', '.webp'].includes(ext)
 }
 
+function isPlainTextFile(file) {
+  const ext = file.name?.toLowerCase().match(/\.[^.]+$/)?.[0]
+  return ext === '.txt'
+}
+
+function readPlainTextFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || '').trim())
+    reader.onerror = () => reject(new Error('TXT 파일을 읽지 못했습니다.'))
+    reader.readAsText(file, 'utf-8')
+  })
+}
+
 // Gemini 멀티모달 문서 분석용 base64 변환
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -158,6 +172,10 @@ ${geminiText}
 
 // 메인: LlamaParse + Gemini 병렬 분석 후 통합
 export async function parsePDF(file) {
+  if (isPlainTextFile(file)) {
+    return await readPlainTextFile(file)
+  }
+
   if (isImageFile(file)) {
     return await geminiParsePDF(file)
   }

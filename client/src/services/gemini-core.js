@@ -12,6 +12,26 @@ const MODELS = [
 // 모델별 429 발생 시각 추적 (60초 뒤 자동 해제)
 const rateLimitedUntil = new Map()
 
+function abortableDelay(ms, signal) {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
+  if (signal.aborted) return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    const onAbort = () => {
+      clearTimeout(timeoutId)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 function isRateLimited(model) {
   const until = rateLimitedUntil.get(model)
   if (!until) return false
@@ -28,9 +48,9 @@ function markRateLimited(model) {
 }
 
 // 429 재시도 대기
-async function waitForRateLimit(retryAfterMs = 5000) {
+async function waitForRateLimit(retryAfterMs = 5000, signal) {
   console.log(`[Gemini] Rate limit 감지, ${retryAfterMs / 1000}초 대기...`)
-  await new Promise(r => setTimeout(r, retryAfterMs))
+  await abortableDelay(retryAfterMs, signal)
 }
 
 async function readGeminiProxyResponse(response) {
@@ -56,10 +76,12 @@ export async function requestGeminiContent({
   tools,
   toolConfig,
   systemInstruction,
+  signal,
 }) {
   const response = await fetch(GEMINI_PROXY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       model,
       contents,
@@ -90,7 +112,7 @@ export function findInlineDataPart(data) {
 }
 
 export async function callGeminiWithFallback(prompt, options = {}) {
-  const { temperature = 0.3, maxOutputTokens = 65536, jsonMode = false } = options
+  const { temperature = 0.3, maxOutputTokens = 65536, jsonMode = false, signal } = options
 
   // rate limit에 걸린 모델은 뒤로 보내고, 가능한 모델부터 먼저 시도
   const availableModels = [
@@ -101,6 +123,9 @@ export async function callGeminiWithFallback(prompt, options = {}) {
   let lastError = null
 
   for (const model of availableModels) {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
     // 각 모델은 최대 2번 시도 (429 재시도 1회 포함)
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -112,6 +137,7 @@ export async function callGeminiWithFallback(prompt, options = {}) {
             maxOutputTokens,
             ...(jsonMode ? { responseMimeType: 'application/json' } : {}),
           },
+          signal,
         })
 
         // thinking 모델은 [thought, answer] 순서일 수 있어 thought 파트는 제외
@@ -144,7 +170,7 @@ export async function callGeminiWithFallback(prompt, options = {}) {
         if (statusCode === 429) {
           markRateLimited(model)
           if (attempt === 0) {
-            await waitForRateLimit(5000)
+            await waitForRateLimit(5000, signal)
             continue
           }
           console.warn(`[Gemini] ${model} 재시도 후에도 429, 다음 모델로 전환`)

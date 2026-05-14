@@ -20,8 +20,26 @@ const LOGIN_URL_PATTERN = /^https:\/\/nid\.naver\.com\/nidlogin\.login/i
 const EDITOR_READY_TIMEOUT_MS = 45000
 const PUBLISH_TIMEOUT_MS = 90000
 const EDITABLE_SELECTOR = '[contenteditable="true"], [role="textbox"], textarea, input[type="text"], input:not([type]), .se-title-text p, .se-section-text p, .se-text-paragraph'
-const HEADING_FONT_SIZE = '24'
-const BODY_FONT_SIZE = '15'
+const DEFAULT_HEADING_FONT_SIZE = '24'
+const DEFAULT_BODY_FONT_SIZE = '15'
+const DEFAULT_TITLE_FONT_SIZE = '19'
+const DIVIDER_MARKER = '[DIVIDER]'
+const BLOG_TEXT_STYLE_PRESETS = {
+  default: {
+    bodyFontSize: DEFAULT_BODY_FONT_SIZE,
+    headingBold: true,
+    headingFontSize: DEFAULT_HEADING_FONT_SIZE,
+    titleBold: null,
+    titleFontSize: null,
+  },
+  admissions_style_2: {
+    bodyFontSize: DEFAULT_BODY_FONT_SIZE,
+    headingBold: false,
+    headingFontSize: DEFAULT_BODY_FONT_SIZE,
+    titleBold: true,
+    titleFontSize: DEFAULT_TITLE_FONT_SIZE,
+  },
+}
 const QUOTE_STYLE_LABELS = {
   'line-quote': ['라인 & 따옴표', '라인&따옴표', '라인 따옴표'],
   postit: ['포스트잇'],
@@ -61,6 +79,11 @@ function normalizeQuoteStyle(value = '') {
     : ''
 }
 
+function getBlogTextStylePreset(value = '') {
+  const key = String(value || '').trim().toLowerCase()
+  return BLOG_TEXT_STYLE_PRESETS[key] ? key : 'default'
+}
+
 function parseBlogBlocks(content = '') {
   const lines = String(content || '').replace(/\r/g, '').split('\n')
   const blocks = []
@@ -84,6 +107,13 @@ function parseBlogBlocks(content = '') {
     if (!line) {
       flushParagraph()
       flushQuote()
+      continue
+    }
+
+    if (line === DIVIDER_MARKER) {
+      flushParagraph()
+      flushQuote()
+      blocks.push({ type: 'divider' })
       continue
     }
 
@@ -122,6 +152,10 @@ function parseBlogBlocks(content = '') {
 function buildBodyHtml(content = '') {
   const blocks = parseBlogBlocks(content)
   return blocks.map((block) => {
+    if (block.type === 'divider') {
+      return '<hr style="margin:24px 0;border:0;border-top:1px solid #d0d7de;" />'
+    }
+
     const text = escapeHtml(block.text)
     if (block.type === 'heading') {
       return `<p style="font-size:24px;font-weight:700;line-height:1.45;margin:24px 0 10px 0;">${text}</p>`
@@ -704,7 +738,7 @@ async function focusEditableEnd(page, selectors, clear = false) {
 }
 
 function buildBodyTextBlocks(content = '') {
-  return parseBlogBlocks(content).filter((block) => block.text)
+  return parseBlogBlocks(content).filter((block) => block.type === 'divider' || block.text)
 }
 
 async function setTitleV4(page, title) {
@@ -761,6 +795,28 @@ async function setTitleV5(page, title) {
   await page.keyboard.press('Control+A')
   await page.keyboard.insertText(stripMarkdown(title))
   await page.waitForTimeout(500)
+}
+
+async function applyTitleTextStyle(page, textStyleKey = 'default') {
+  const style = BLOG_TEXT_STYLE_PRESETS[getBlogTextStylePreset(textStyleKey)]
+  if (!style.titleFontSize && style.titleBold == null) {
+    return
+  }
+  const clicked = await clickTitleField(page)
+  const focused = clicked || await focusEditableEnd(page, TITLE_SELECTORS, false)
+  if (!focused) return
+
+  await page.keyboard.press('Control+A')
+  let fontSizeState = null
+  let boldState = null
+  if (style.titleFontSize) {
+    fontSizeState = await setFontSizeFormatting(page, style.titleFontSize, fontSizeState)
+  }
+  if (style.titleBold != null) {
+    boldState = await setBoldFormatting(page, style.titleBold, boldState)
+  }
+  await page.waitForTimeout(250)
+  await page.keyboard.press('ArrowRight').catch(() => {})
 }
 
 function getFormattingScopes(page) {
@@ -823,6 +879,36 @@ function getToolbarSelectors(kind) {
       'button.se-toolbar-item-quote',
       '.se-toolbar-item-quote button',
       '[class*="quote"] button',
+    ]
+  }
+
+  if (kind === 'divider') {
+    return [
+      'button[aria-label*="divider" i]',
+      '[role="button"][aria-label*="divider" i]',
+      'button[aria-label*="separator" i]',
+      '[role="button"][aria-label*="separator" i]',
+      'button[aria-label*="horizontal line" i]',
+      '[role="button"][aria-label*="horizontal line" i]',
+      'button[title*="divider" i]',
+      '[role="button"][title*="divider" i]',
+      'button[title*="separator" i]',
+      '[role="button"][title*="separator" i]',
+      '[data-name="divider"]',
+      '[data-name="separator"]',
+      '[data-command="divider"]',
+      '[data-command="separator"]',
+      '[data-tool="divider"]',
+      '[data-tool="separator"]',
+      '[data-click-area*="divider"]',
+      '[data-click-area*="separator"]',
+      '[data-click-area*="line"]',
+      'button.se-toolbar-item-line',
+      '.se-toolbar-item-line button',
+      'button.se-toolbar-item-divider',
+      '.se-toolbar-item-divider button',
+      '[class*="divider"] button',
+      '[class*="separator"] button',
     ]
   }
 
@@ -1249,6 +1335,203 @@ async function selectQuoteStyleOption(page, quoteStyle) {
   return false
 }
 
+async function clickDividerToolbarButton(scope) {
+  const selectors = [
+    'button[aria-label*="divider" i]',
+    '[role="button"][aria-label*="divider" i]',
+    'button[aria-label*="separator" i]',
+    '[role="button"][aria-label*="separator" i]',
+    'button[aria-label*="horizontal line" i]',
+    '[role="button"][aria-label*="horizontal line" i]',
+    'button[title*="divider" i]',
+    '[role="button"][title*="divider" i]',
+    'button[title*="separator" i]',
+    '[role="button"][title*="separator" i]',
+    '[data-name="divider"]',
+    '[data-name="separator"]',
+    '[data-command="divider"]',
+    '[data-command="separator"]',
+    '[data-tool="divider"]',
+    '[data-tool="separator"]',
+    '[data-click-area*="divider"]',
+    '[data-click-area*="separator"]',
+    '[data-click-area*="line"]',
+    'button.se-toolbar-item-line',
+    '.se-toolbar-item-line button',
+    'button.se-toolbar-item-divider',
+    '.se-toolbar-item-divider button',
+    '[class*="divider"] button',
+    '[class*="separator"] button',
+  ]
+
+  return scope.evaluate((dividerSelectors) => {
+    const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+    const isVisible = (element) => {
+      const rect = element.getBoundingClientRect()
+      const style = window.getComputedStyle(element)
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+    }
+    const labelOf = (element) => normalize([
+      element.textContent,
+      element.getAttribute?.('aria-label'),
+      element.getAttribute?.('title'),
+      element.getAttribute?.('data-name'),
+      element.getAttribute?.('data-command'),
+      element.getAttribute?.('data-tool'),
+      element.getAttribute?.('data-click-area'),
+      element.className,
+    ].filter(Boolean).join(' '))
+    const score = (element) => {
+      const label = labelOf(element)
+      if (label.includes('horizontal line')) return 100
+      if (label.includes('divider')) return 98
+      if (label.includes('separator')) return 96
+      if (label.includes('구분선')) return 94
+      if (label.includes('hr')) return 90
+      return 0
+    }
+
+    const button = dividerSelectors
+      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+      .filter((element) => element instanceof HTMLElement && isVisible(element))
+      .sort((left, right) => score(right) - score(left))
+      .find((element) => score(element) > 0)
+
+    if (!button) return false
+    button.click()
+    return true
+  }, selectors).catch(() => false)
+}
+
+async function selectFirstDividerStyle(page) {
+  for (const scope of getFormattingScopes(page)) {
+    const clicked = await scope.evaluate(() => {
+      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect()
+        const style = window.getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+      }
+      const hasPopupAncestor = (element) => {
+        let current = element.parentElement
+        while (current) {
+          const meta = normalize([
+            current.className,
+            current.getAttribute?.('role'),
+            current.getAttribute?.('data-name'),
+            current.getAttribute?.('data-tool'),
+          ].filter(Boolean).join(' '))
+          if (
+            meta.includes('popup') ||
+            meta.includes('popover') ||
+            meta.includes('layer') ||
+            meta.includes('dropdown') ||
+            meta.includes('menu') ||
+            meta.includes('list') ||
+            meta.includes('dialog')
+          ) {
+            return true
+          }
+          current = current.parentElement
+        }
+        return false
+      }
+      const labelOf = (element) => normalize([
+        element.textContent,
+        element.getAttribute?.('aria-label'),
+        element.getAttribute?.('title'),
+        element.getAttribute?.('data-name'),
+        element.getAttribute?.('data-command'),
+        element.getAttribute?.('data-tool'),
+        element.getAttribute?.('data-click-area'),
+        element.className,
+      ].filter(Boolean).join(' '))
+      const looksLikeDividerOption = (element) => {
+        const label = labelOf(element)
+        return (
+          label.includes('divider') ||
+          label.includes('separator') ||
+          label.includes('horizontal line') ||
+          label.includes('구분선') ||
+          label.includes('hr') ||
+          label.includes('line')
+        )
+      }
+
+      const popupElements = Array.from(document.querySelectorAll([
+        '[role="menu"] button',
+        '[role="menu"] [role="menuitem"]',
+        '[role="dialog"] button',
+        '[role="dialog"] [role="button"]',
+        '[class*="popup"] button',
+        '[class*="popover"] button',
+        '[class*="layer"] button',
+        '[class*="dropdown"] button',
+        '[class*="menu"] button',
+        '[class*="list"] button',
+        'li[role="menuitem"]',
+        'li button',
+        '[class*="divider"]',
+        '[class*="separator"]',
+        '[class*="line"]',
+      ].join(',')))
+        .filter((element) => element instanceof HTMLElement && isVisible(element))
+        .filter((element) => hasPopupAncestor(element))
+
+      const candidates = popupElements
+        .filter((element) => looksLikeDividerOption(element))
+        .sort((left, right) => {
+          const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
+          if (Math.abs(topDiff) > 2) return topDiff
+          return left.getBoundingClientRect().left - right.getBoundingClientRect().left
+        })
+
+      const fallbackCandidates = popupElements
+        .filter((element) => element.matches?.('button, [role="button"], [role="menuitem"]'))
+        .sort((left, right) => {
+          const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
+          if (Math.abs(topDiff) > 2) return topDiff
+          return left.getBoundingClientRect().left - right.getBoundingClientRect().left
+        })
+
+      const option = candidates[0] || fallbackCandidates[0]
+      if (!option) return false
+      option.scrollIntoView({ block: 'center', inline: 'center' })
+      option.click()
+      option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+      option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+      option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+      return true
+    }).catch(() => false)
+
+    if (clicked) {
+      await page.waitForTimeout(180)
+      return true
+    }
+  }
+
+  return false
+}
+
+async function insertDividerByToolbar(page) {
+  const clicked = await clickBodyField(page, true)
+  const focused = clicked || await focusEditableEnd(page, BODY_SELECTORS, false)
+  if (!focused) throw new Error('Naver blog body input was not found.')
+
+  for (const scope of getFormattingScopes(page)) {
+    const opened = await clickDividerToolbarButton(scope)
+    if (!opened) continue
+    await page.waitForTimeout(250)
+    if (await selectFirstDividerStyle(page)) {
+      await page.waitForTimeout(250)
+      await clickBodyField(page, true)
+      return true
+    }
+  }
+
+  return false
+}
+
 async function setBoldFormatting(page, enabled, currentState = null) {
   for (const scope of getFormattingScopes(page)) {
     const state = await findToolbarButtonStateByKind(scope, 'bold')
@@ -1344,11 +1627,13 @@ async function insertBodyTextV4(
   page,
   text,
   quoteStyle = '',
+  textStylePreset = 'default',
   clear = false,
   formatState = { bold: null, fontSize: null, quote: null },
   preferLast = false,
   trailingEnterCount = 2
 ) {
+  const style = BLOG_TEXT_STYLE_PRESETS[getBlogTextStylePreset(textStylePreset)]
   const clicked = await clickBodyField(page, preferLast)
   const focused = clicked || await focusEditableEnd(page, BODY_SELECTORS, clear)
   if (!focused) throw new Error('Naver blog body input was not found.')
@@ -1358,7 +1643,23 @@ async function insertBodyTextV4(
   if (clear) await page.keyboard.press('Control+A')
 
   for (const [index, block] of bodyBlocks.entries()) {
-    if (index > 0) {
+    if (block.type === 'divider') {
+      formatState.bold = await setBoldFormatting(page, false, formatState.bold)
+      formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
+      formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
+      if (index > 0) {
+        await page.keyboard.press('Enter')
+      }
+      const insertedDivider = await insertDividerByToolbar(page)
+      if (!insertedDivider) {
+        throw new Error('네이버 블로그 구분선 메뉴에서 첫 번째 스타일을 선택하지 못했습니다.')
+      }
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(200)
+      continue
+    }
+
+    if (index > 0 && bodyBlocks[index - 1]?.type !== 'divider') {
       await page.keyboard.press('Enter')
       if (block.type === 'heading') {
         await page.keyboard.press('Enter')
@@ -1366,22 +1667,22 @@ async function insertBodyTextV4(
     }
     if (block.type === 'heading') {
       formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
-      formatState.fontSize = await setFontSizeFormatting(page, HEADING_FONT_SIZE, formatState.fontSize)
-      formatState.bold = await setBoldFormatting(page, true, formatState.bold)
+      formatState.fontSize = await setFontSizeFormatting(page, style.headingFontSize, formatState.fontSize)
+      formatState.bold = await setBoldFormatting(page, style.headingBold, formatState.bold)
     } else if (block.type === 'quote') {
       formatState.bold = await setBoldFormatting(page, false, formatState.bold)
-      formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+      formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
       formatState.quote = await setQuoteFormatting(page, true, formatState.quote, quoteStyle)
     } else {
       formatState.bold = await setBoldFormatting(page, false, formatState.bold)
-      formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+      formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
       formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
     }
     await page.keyboard.insertText(block.text)
   }
 
   formatState.bold = await setBoldFormatting(page, false, formatState.bold)
-  formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, formatState.fontSize)
+  formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
   formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
   for (let index = 0; index < trailingEnterCount; index += 1) {
     await page.keyboard.press('Enter')
@@ -1390,17 +1691,18 @@ async function insertBodyTextV4(
   return formatState
 }
 
-async function insertBodyContentWithImagesV4(page, content, photoPaths = [], quoteStyle = '') {
+async function insertBodyContentWithImagesV4(page, content, photoPaths = [], quoteStyle = '', textStylePreset = 'default') {
   updateUploadStage('fill-body', { stageLabel: 'fill body' })
   const parts = splitContentByImageMarkers(content)
   let insertedText = false
   const usedPhotoIndexes = new Set()
   const formatState = { bold: null, fontSize: null, quote: null }
+  const style = BLOG_TEXT_STYLE_PRESETS[getBlogTextStylePreset(textStylePreset)]
 
   for (const [index, part] of parts.entries()) {
     if (part.type === 'text') {
       const nextPart = parts[index + 1]
-      await insertBodyTextV4(page, part.text, quoteStyle, !insertedText, formatState, insertedText, nextPart?.type === 'image' ? 1 : 2)
+      await insertBodyTextV4(page, part.text, quoteStyle, textStylePreset, !insertedText, formatState, insertedText, nextPart?.type === 'image' ? 1 : 2)
       insertedText = true
       continue
     }
@@ -1412,7 +1714,7 @@ async function insertBodyContentWithImagesV4(page, content, photoPaths = [], quo
       await page.waitForTimeout(500)
       await clickBodyField(page, true)
       formatState.bold = await setBoldFormatting(page, false, null)
-      formatState.fontSize = await setFontSizeFormatting(page, BODY_FONT_SIZE, null)
+      formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, null)
       formatState.quote = await setQuoteFormatting(page, false, null)
       usedPhotoIndexes.add(part.index)
     }
@@ -2149,7 +2451,17 @@ async function waitForPublishResult(page) {
   return page.url()
 }
 
-async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [], photoPaths = [], headless = true, quoteStyle = '', scheduledAt = null }) {
+async function uploadToNaverBlogV2({
+  title,
+  categoryPath = '',
+  content,
+  tags = [],
+  photoPaths = [],
+  headless = true,
+  quoteStyle = '',
+  textStylePreset = 'default',
+  scheduledAt = null,
+}) {
   if (!title || !String(title).trim()) throw new Error('블로그 제목이 필요합니다.')
   if (!content || !String(content).trim()) throw new Error('블로그 본문이 필요합니다.')
 
@@ -2199,7 +2511,8 @@ async function uploadToNaverBlogV2({ title, categoryPath = '', content, tags = [
     await waitForEditorReady(page)
 
     await setTitleV5(page, title)
-    await insertBodyContentWithImagesV4(page, content, photoPaths, quoteStyle)
+    await applyTitleTextStyle(page, textStylePreset)
+    await insertBodyContentWithImagesV4(page, content, photoPaths, quoteStyle, textStylePreset)
 
     const targets = getEditorTargets(page)
     await openPublishDialogV2(page, targets)

@@ -1,12 +1,36 @@
 import { findInlineDataPart, requestGeminiContent } from '../gemini-core'
 
-export async function generateImage(prompt, retries = 2) {
+function abortableDelay(ms, signal) {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
+  if (signal.aborted) return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    const onAbort = () => {
+      clearTimeout(timeoutId)
+      signal.removeEventListener('abort', onAbort)
+      reject(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+export async function generateImage(prompt, retries = 2, signal) {
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
     try {
       const data = await requestGeminiContent({
         model: 'gemini-2.5-flash-image',
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+        signal,
       })
       const imagePart = findInlineDataPart(data)
 
@@ -16,13 +40,14 @@ export async function generateImage(prompt, retries = 2) {
       const mimeType = imagePart.inlineData.mimeType || 'image/png'
       return `data:${mimeType};base64,${base64}`
     } catch (err) {
+      if (err?.name === 'AbortError') throw err
       if (String(err?.message || '').includes(': 429 -')) {
-        await new Promise(resolve => setTimeout(resolve, 5000))
+        await abortableDelay(5000, signal)
         continue
       }
 
       if (attempt === retries) throw err
-      await new Promise(resolve => setTimeout(resolve, 3000))
+      await abortableDelay(3000, signal)
     }
   }
 }

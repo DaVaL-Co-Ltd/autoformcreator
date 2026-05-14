@@ -1,10 +1,12 @@
 import { useBlocker } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 
-export default function NavigationBlockerModal({ when }) {
-  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+export default function NavigationBlockerModal({ when = false }) {
+  // 이 컴포넌트는 작업이 진행 중일 때만 부모에서 마운트해야 한다.
+  // 라우터가 한 번에 하나의 blocker 만 지원하므로 unmount 시 자동으로 해제된다.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => (
     when && currentLocation.pathname !== nextLocation.pathname
-  )
+  ))
 
   if (blocker.state !== 'blocked') return null
 

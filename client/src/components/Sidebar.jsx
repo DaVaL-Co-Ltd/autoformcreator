@@ -4,7 +4,7 @@ import { useAuth } from '../context/useAuth'
 
 const navItems = [
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출', description: 'AI 자동 생성' },
-  { to: '/prompt-lab', icon: Beaker, label: '프롬프트 테스트', description: '결과 비교 실험실' },
+  { to: '/prompt-lab/knowledge-cards', icon: Beaker, label: '지식 카드 테스트', description: '카드뉴스 실험실' },
   { to: '/settings', icon: Settings, label: '설정', description: '플랫폼 연동 관리' },
 ]
 

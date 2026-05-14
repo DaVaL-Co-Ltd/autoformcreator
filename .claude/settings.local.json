@@ -9,7 +9,9 @@
       "Read(//c/daval/upload_blog//**)",
       "Read(//c/daval/upload_blog/**)",
       "WebFetch(domain:developers.facebook.com)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:m.blog.naver.com)",
+      "WebFetch(domain:blog.naver.com)"
     ]
   }
 }

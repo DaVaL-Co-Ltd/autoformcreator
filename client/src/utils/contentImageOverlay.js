@@ -22,6 +22,10 @@ export const BLOG_IMAGE_FONT_PRESETS = {
     family: 'Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
     weight: 900,
   },
+  knowledge: {
+    family: "'SBAggro', 'Pretendard', Apple SD Gothic Neo, Malgun Gothic, sans-serif",
+    weight: 900,
+  },
   bold: {
     family: 'A2z, Pretendard, Apple SD Gothic Neo, Malgun Gothic, sans-serif',
     weight: 700,
@@ -46,6 +50,7 @@ export const getBlogImageFontPreset = (value = 'pretendard') => (
 
 const BLOG_HEADLINE_MAX_LENGTH = 28
 const BLOG_DESCRIPTION_MAX_LENGTH = 34
+const BLOG_TITLE_KEYWORD_MAX_LENGTH = 22
 const VALUE_TOKEN_PATTERN = /(?:[$]\s?\d|\d[\d,]*(?:\.\d+)?\s?%)/
 const WEAK_BLOG_KEYPHRASES = new Set([
   '중요성',
@@ -276,6 +281,51 @@ export const deriveBlogHeadline = (keyPhrase, heading) => {
   return limitBlogOverlayText(source, BLOG_HEADLINE_MAX_LENGTH)
 }
 
+export const deriveBlogTitleKeywordHeadline = (title = '') => {
+  const cleanTitle = trimCardTitleEnding(cleanCardText(title))
+  if (!cleanTitle) return ''
+
+  const primaryChunk = cleanTitle
+    .split(/[:|·•,/\\-]/)
+    .map((chunk) => trimCardTitleEnding(chunk))
+    .find(Boolean) || cleanTitle
+
+  const preferredTokens = primaryChunk
+    .split(/\s+/)
+    .map((token) => trimCardTitleEnding(token))
+    .filter(Boolean)
+    .filter((token) => token.length > 1 || /[A-Za-z0-9]/.test(token))
+
+  let keywordText = ''
+  for (const token of preferredTokens) {
+    const next = keywordText ? `${keywordText} ${token}` : token
+    if (next.length > BLOG_TITLE_KEYWORD_MAX_LENGTH && keywordText) break
+    keywordText = next
+    if (keywordText.length >= BLOG_TITLE_KEYWORD_MAX_LENGTH) break
+  }
+
+  return limitBlogOverlayText(
+    keywordText || primaryChunk,
+    BLOG_TITLE_KEYWORD_MAX_LENGTH,
+  )
+}
+
+const CLOSING_SECTION_PATTERNS = [
+  /(^|\s)마무리($|\s|하며|하기|하면서)/,
+  /^생각해\s?봅시다$/,
+  /^열린\s?마무리/,
+  /^맺음말/,
+  /^닫는\s?글/,
+  /^끝맺음/,
+  /^마지막으로/,
+]
+
+export function isClosingBlogSection(heading = '') {
+  const clean = String(heading || '').replace(/[\s,.:;!?/\\]+$/g, '').trim()
+  if (!clean) return false
+  return CLOSING_SECTION_PATTERNS.some((re) => re.test(clean))
+}
+
 export const deriveBlogImageDescription = (keyPhrase, heading, content) => {
   const subtitle = cleanCardText(heading)
     || getHeadingRemainder(heading, deriveBlogHeadline(keyPhrase, heading))
@@ -283,6 +333,68 @@ export const deriveBlogImageDescription = (keyPhrase, heading, content) => {
     || pickRepresentativeContentPhrase(content)
 
   return limitBlogOverlayText(subtitle, BLOG_DESCRIPTION_MAX_LENGTH)
+}
+
+const BLOG_SUPPLEMENT_MAX_LENGTH = 18
+const SUPPLEMENT_STOPWORDS = new Set([
+  '그리고', '하지만', '그러나', '또한', '또는', '예를', '들어', '이것', '저것', '그것',
+  '이번', '저번', '한번', '바로', '대해', '대한', '관련', '있는', '있다', '있습니다',
+  '합니다', '됩니다', '같은', '같이', '많은', '많이', '여러', '다양한', '주요', '핵심',
+])
+
+const isMeaningfulNounToken = (token = '') => {
+  if (!token) return false
+  if (token.length < 2 || token.length > 8) return false
+  if (SUPPLEMENT_STOPWORDS.has(token)) return false
+  if (/^[0-9.,]+$/.test(token)) return false
+  if (!/[가-힣A-Za-z]/.test(token)) return false
+  return true
+}
+
+const extractSupplementKeywordsFromText = (text = '', exclude = '') => {
+  const excludeNormalized = normalizeBlogKeyword(exclude)
+  const tokens = cleanCardText(text)
+    .replace(/[()[\]{}"'`~!@#$%^&*+=|\\<>?]/g, ' ')
+    .split(/[\s,./:;]+/)
+    .map((token) => trimCardTitleEnding(token))
+    .filter((token) => isMeaningfulNounToken(token))
+    .filter((token) => {
+      const normalized = normalizeBlogKeyword(token)
+      if (!normalized) return false
+      if (excludeNormalized && excludeNormalized.includes(normalized)) return false
+      if (excludeNormalized && normalized.includes(excludeNormalized)) return false
+      return true
+    })
+
+  const seen = new Set()
+  const unique = []
+  for (const token of tokens) {
+    const normalized = normalizeBlogKeyword(token)
+    if (seen.has(normalized)) continue
+    seen.add(normalized)
+    unique.push(token)
+    if (unique.length >= 2) break
+  }
+  return unique
+}
+
+export const deriveBlogImageSupplement = (keyPhrase, heading, content) => {
+  const headline = deriveBlogHeadline(keyPhrase, heading)
+  const remainder = getHeadingRemainder(heading, headline)
+  if (remainder && remainder.length <= BLOG_SUPPLEMENT_MAX_LENGTH) {
+    return remainder
+  }
+
+  const sources = [keyPhrase, heading, content].map((value) => cleanCardText(value)).filter(Boolean)
+  for (const source of sources) {
+    const keywords = extractSupplementKeywordsFromText(source, headline)
+    if (keywords.length) {
+      const joined = keywords.join(' · ')
+      return limitBlogOverlayText(joined, BLOG_SUPPLEMENT_MAX_LENGTH)
+    }
+  }
+
+  return ''
 }
 
 export const deriveInstagramDetailLines = (card = {}) => {

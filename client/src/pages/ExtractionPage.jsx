@@ -14,10 +14,18 @@ import {
   generateInstagramContent, generateShortsScript, recommendBlogCategory
 } from '../services/gemini-content'
 import { generateBlogImages } from '../services/cardImage'
+import { BlogImageArtwork } from '../components/contentImageOverlays'
+import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
+import {
+  cleanCardText,
+  deriveBlogHeadline,
+  deriveBlogImageDescription,
+} from '../utils/contentImageOverlay'
+import { renderBlogUploadImageDataUrl } from '../utils/uploadImageComposite'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
-import { findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
+import { callGeminiWithFallback, findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
   BLOG_CATEGORY_OPTIONS,
   getBlogCategoryProfile,
@@ -25,6 +33,43 @@ import {
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
+const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
+
+function buildSessionPersistedResultDraft(resultState = {}) {
+  return {
+    ...resultState,
+    fileBase64: null,
+    blogImages: null,
+    instagramImages: null,
+    shortsVideo: null,
+  }
+}
+
+function storeResultDraftSession(draftKey, resultState) {
+  if (typeof window === 'undefined' || !draftKey) return
+
+  const storageKey = `${RESULT_DRAFT_STORAGE_PREFIX}${draftKey}`
+  const persistedDraft = buildSessionPersistedResultDraft(resultState)
+
+  try {
+    sessionStorage.setItem(storageKey, JSON.stringify(persistedDraft))
+    return
+  } catch (error) {
+    const isQuotaError = error?.name === 'QuotaExceededError'
+    if (!isQuotaError) {
+      console.warn('[ExtractionPage] 결과 초안 세션 저장 실패', error)
+      return
+    }
+  }
+
+  try {
+    const draftKeys = Object.keys(sessionStorage).filter((key) => key.startsWith(RESULT_DRAFT_STORAGE_PREFIX))
+    draftKeys.forEach((key) => sessionStorage.removeItem(key))
+    sessionStorage.setItem(storageKey, JSON.stringify(persistedDraft))
+  } catch (error) {
+    console.warn('[ExtractionPage] 결과 초안 세션 저장 실패', error)
+  }
+}
 
 function apiFetch(path, options = {}) {
   return fetch(`${API_BASE}${path}`, {
@@ -33,6 +78,70 @@ function apiFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   })
+}
+
+function getBlogImagePreviewUrl(image) {
+  return image?.renderedImageUrl || image?.pngUrl || image?.imageUrl || null
+}
+
+function normalizeSingleThumbnail(images = [], preferredIndex = -1) {
+  const list = Array.isArray(images) ? images.map((image) => ({ ...image, isThumbnail: false })) : []
+  if (list.length === 0) return list
+  const safeIndex = preferredIndex >= 0 && preferredIndex < list.length ? preferredIndex : 0
+  list[safeIndex].isThumbnail = true
+  return list
+}
+
+function normalizeBlogThumbnailSelection({
+  uploadedImages = [],
+  generatedImages = [],
+  disabled = false,
+}) {
+  const safeUploaded = Array.isArray(uploadedImages) ? uploadedImages.map((image) => ({ ...image })) : []
+  const safeGenerated = Array.isArray(generatedImages) ? generatedImages.map((image) => ({ ...image })) : []
+
+  if (disabled) {
+    return {
+      uploadedImages: safeUploaded.map((image) => ({ ...image, isThumbnail: false })),
+      generatedImages: safeGenerated.map((image) => ({ ...image, isThumbnail: false })),
+    }
+  }
+
+  const selectedUploadedIndex = safeUploaded.findIndex((image) => image?.isThumbnail)
+  const selectedGeneratedIndex = safeGenerated.findIndex((image) => image?.isThumbnail)
+
+  if (selectedUploadedIndex >= 0) {
+    return {
+      uploadedImages: normalizeSingleThumbnail(safeUploaded, selectedUploadedIndex),
+      generatedImages: safeGenerated.map((image) => ({ ...image, isThumbnail: false })),
+    }
+  }
+
+  if (selectedGeneratedIndex >= 0) {
+    return {
+      uploadedImages: safeUploaded.map((image) => ({ ...image, isThumbnail: false })),
+      generatedImages: normalizeSingleThumbnail(safeGenerated, selectedGeneratedIndex),
+    }
+  }
+
+  if (safeUploaded.length > 0) {
+    return {
+      uploadedImages: normalizeSingleThumbnail(safeUploaded, 0),
+      generatedImages: safeGenerated.map((image) => ({ ...image, isThumbnail: false })),
+    }
+  }
+
+  if (safeGenerated.length > 0) {
+    return {
+      uploadedImages: safeUploaded,
+      generatedImages: normalizeSingleThumbnail(safeGenerated, 0),
+    }
+  }
+
+  return {
+    uploadedImages: safeUploaded,
+    generatedImages: safeGenerated,
+  }
 }
 
 function resolveMediaUrl(url) {
@@ -344,6 +453,7 @@ export default function ExtractionPage() {
   const [creditConfirm, setCreditConfirm] = useState(false) // 크레딧 소모 확인 팝업
   const [previewImage, setPreviewImage] = useState(null)
   const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
+  const [imageLightbox, setImageLightbox] = useState(null) // { kind: 'image', src } | { kind: 'knowledge', headline, bullets, imageUrl, index }
   const [shortsTab, setShortsTab] = useState('script') // 'script' | 'upload'
 
   // 프롬프트 설정 (각 Step별)
@@ -394,10 +504,13 @@ export default function ExtractionPage() {
   const [blogUploadedImages, setBlogUploadedImages] = useState([])
   const blogUploadedImagesRef = useRef([])
   const blogImageProcessingPromiseRef = useRef(Promise.resolve())
+  const pendingBlogImagesPromiseRef = useRef(null)
   const [processingBlogImages, setProcessingBlogImages] = useState(false)
   const [blogThumbnailDisabled, setBlogThumbnailDisabled] = useState(false)
   const [instagramImages, setInstagramImages] = useState(null)
   const [shortsVideo, setShortsVideo] = useState(null)
+  const [contentGenerationStage, setContentGenerationStage] = useState('')
+  const contentGenerationAbortRef = useRef(null)
 
   // Step 5: 숏폼 서브 상태
   const [avatarPrompt, setAvatarPrompt] = useState('')
@@ -413,6 +526,120 @@ export default function ExtractionPage() {
     subtitle: 2,
     video: 3,
   }
+
+  useEffect(() => {
+    let cancelled = false
+
+    const hydrateRenderedBlogImages = async () => {
+      const images = Array.isArray(blogImages) ? blogImages : []
+      const sections = Array.isArray(blogContent?.sections) ? blogContent.sections : []
+
+      if (!images.length || !sections.length) return
+
+      const needsRenderedPreview = images.some((image) => (
+        image
+        && image?.overlayMode !== 'none'
+        && image?.imageUrl
+        && !image?.renderedImageUrl
+        && !image?.pngUrl
+      ))
+
+      if (!needsRenderedPreview) return
+
+      const nextImages = await Promise.all(images.map(async (image, index) => {
+        if (!image || image?.overlayMode === 'none' || !image?.imageUrl || image?.renderedImageUrl || image?.pngUrl) {
+          return image
+        }
+
+        const section = sections.find((item) => item?.heading === image?.heading) || sections[index] || {}
+        const headingText = cleanCardText(section?.heading || image?.heading || '')
+        const keyPhrase = cleanCardText(image?.keyPhrase || section?.keyPhrase || '')
+        const headline = image?.overlayMode === 'headline-only'
+          ? cleanCardText(image?.overlayHeadline || headingText || keyPhrase)
+          : deriveBlogHeadline(keyPhrase, headingText)
+        const description = image?.overlayMode === 'headline-only'
+          ? ''
+          : deriveBlogImageDescription(image?.keyPhrase || '', headingText, section?.content || '')
+
+        try {
+          const renderedImageUrl = await renderBlogUploadImageDataUrl({
+            imageUrl: image.imageUrl,
+            headline,
+            description,
+            variant: image?.variant || 'circle',
+            fontPreset: image?.overlayFont || 'pretendard',
+          })
+
+          if (!renderedImageUrl || renderedImageUrl === image.imageUrl) {
+            return image
+          }
+
+          return {
+            ...image,
+            renderedImageUrl,
+            pngUrl: renderedImageUrl,
+          }
+        } catch {
+          return image
+        }
+      }))
+
+      if (cancelled) return
+
+      const changed = nextImages.some((image, index) => image !== images[index])
+      if (changed) {
+        setBlogImages(nextImages)
+      }
+    }
+
+    hydrateRenderedBlogImages()
+
+    return () => {
+      cancelled = true
+    }
+  }, [blogImages, blogContent])
+
+  const applyBlogThumbnailState = ({ uploadedImages = blogUploadedImagesRef.current, generatedImages = blogImages, disabled = blogThumbnailDisabled }) => {
+    const normalized = normalizeBlogThumbnailSelection({
+      uploadedImages,
+      generatedImages,
+      disabled,
+    })
+    blogUploadedImagesRef.current = normalized.uploadedImages
+    setBlogUploadedImages(normalized.uploadedImages)
+    setBlogImages(normalized.generatedImages)
+    return normalized
+  }
+
+  const setThumbnailDisabledState = (disabled) => {
+    setBlogThumbnailDisabled(disabled)
+    applyBlogThumbnailState({
+      uploadedImages: blogUploadedImagesRef.current,
+      generatedImages: blogImages,
+      disabled,
+    })
+  }
+
+  const selectBlogThumbnailCandidate = ({ source, index }) => {
+    const uploadedImages = blogUploadedImagesRef.current.map((image) => ({ ...image, isThumbnail: false }))
+    const generatedImages = (Array.isArray(blogImages) ? blogImages : []).map((image) => ({ ...image, isThumbnail: false }))
+
+    if (source === 'uploaded' && uploadedImages[index]) {
+      uploadedImages[index].isThumbnail = true
+    }
+
+    if (source === 'generated' && generatedImages[index]) {
+      generatedImages[index].isThumbnail = true
+    }
+
+    setBlogThumbnailDisabled(false)
+    applyBlogThumbnailState({
+      uploadedImages,
+      generatedImages,
+      disabled: false,
+    })
+  }
+
   const isShortsVideoReady =
     !!avatarConfirmed &&
     !!shortsScript &&
@@ -422,8 +649,6 @@ export default function ExtractionPage() {
 
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
-  const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
-
   const [retrying, setRetrying] = useState(null)
 
   const isBusy = !!(
@@ -442,6 +667,23 @@ export default function ExtractionPage() {
   }, [isBusy])
 
   const setStepLoading = (step, val) => setLoading(p => ({ ...p, [step]: val }))
+  const isContentGenerationCancelledError = (error) => (
+    error?.name === 'AbortError' || /aborted|abort|취소/i.test(String(error?.message || ''))
+  )
+
+  const resetContentGenerationFlowState = () => {
+    setRetrying(null)
+    setContentGenerationStage('')
+    setStepLoading('content', false)
+    setStepLoading('media', false)
+    pendingBlogImagesPromiseRef.current = null
+    contentGenerationAbortRef.current = null
+  }
+
+  const abortContentGeneration = () => {
+    contentGenerationAbortRef.current?.abort()
+    resetContentGenerationFlowState()
+  }
   const addStepErrors = (step, errs) => setStepErrors(p => ({ ...p, [step]: errs }))
   const clearStepErrors = (step) => setStepErrors(p => ({ ...p, [step]: null }))
   const removeStepError = (step, service, channel) => {
@@ -547,14 +789,14 @@ export default function ExtractionPage() {
   }
 
   const handleFile = (f) => {
-    const supportedExts = ['.pdf', '.hwp', '.hwpx', '.docx', '.doc', '.pptx', '.ppt', '.jpg', '.jpeg', '.png', '.webp']
+    const supportedExts = ['.pdf', '.hwp', '.hwpx', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.jpg', '.jpeg', '.png', '.webp']
     const ext = f?.name?.toLowerCase().match(/\.[^.]+$/)?.[0]
     if (f && ext && supportedExts.includes(ext)) {
       setFile(f)
       resetFromStep(2)
       clearStepErrors('upload')
     } else {
-      addStepErrors('upload', [{ service: 'upload', message: '지원되는 파일 형식: PDF, HWP, DOCX, PPTX, JPG, PNG, WEBP' }])
+      addStepErrors('upload', [{ service: 'upload', message: '지원되는 파일 형식: PDF, HWP, DOCX, PPTX, TXT, JPG, PNG, WEBP' }])
     }
   }
 
@@ -666,13 +908,49 @@ export default function ExtractionPage() {
     if (!config) return null
     if (!ensureBlogCategoryReady(channelKey === 'blog')) return null
 
-    const contentOptions = buildContentPromptOptions()
+    const contentOptions = { ...buildContentPromptOptions(), signal: options.signal }
     const result = await config.generate(summary, parsedText, emphasisText, contentOptions)
     config.setter(result)
     if (options.clearError !== false) {
       removeStepError('content', 'gemini', config.label)
     }
+    if (channelKey === 'blog' && result?.sections?.length && promptSettings.media.blogGenerateImages) {
+      setContentGenerationStage('image')
+      const generatedImages = await triggerBlogImageGenerationInBackground(result, options.signal)
+      if (Array.isArray(generatedImages)) {
+        setBlogImages(generatedImages)
+      }
+    }
     return result
+  }
+
+  const triggerBlogImageGenerationInBackground = (blogContentResult, signal) => {
+    if (!blogContentResult?.sections?.length) return
+    setStepLoading('media', true)
+    removeStepError('media', 'gemini', '블로그 이미지')
+    const task = generateBlogImages(blogContentResult.sections || [], {
+      title: blogContentResult?.title || '',
+      imageStyle: promptSettings.media.blogImageStyle,
+      textOverlay: promptSettings.media.blogTextOverlay,
+      imageTextOverlay: promptSettings.media.blogTextOverlay,
+      mainColor: promptSettings.media.mainColor,
+      categoryId: blogContentResult?.categoryInfo?.finalCategoryId || recommendedBlogCategory?.finalCategoryId || null,
+      extra: promptSettings.media.extra,
+      signal,
+    })
+      .catch((err) => {
+        if (isContentGenerationCancelledError(err)) return null
+        addStepErrors('media', [{ service: 'gemini', channel: '블로그 이미지', message: err?.message || '블로그 이미지 생성 실패' }])
+        return null
+      })
+      .finally(() => {
+        setStepLoading('media', false)
+        if (pendingBlogImagesPromiseRef.current === task) {
+          pendingBlogImagesPromiseRef.current = null
+        }
+      })
+    pendingBlogImagesPromiseRef.current = task
+    return task
   }
 
   const runSingleContentStep = async (channelKey) => {
@@ -685,20 +963,23 @@ export default function ExtractionPage() {
     setContentPreview(null)
     removeStepError('content', 'gemini', config.label)
     setRetrying(`content-${channelKey}`)
+    const abortController = new AbortController()
+    contentGenerationAbortRef.current = abortController
+    setContentGenerationStage('body')
 
     try {
-      const result = await generateContentChannel(channelKey)
+      const result = await generateContentChannel(channelKey, { signal: abortController.signal })
       if (!result) {
         addStepErrors('content', [{ service: 'gemini', channel: config.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' }])
         return
       }
       setCurrentStep(getNextVisibleStep(CONTENT_CHANNEL_STEPS[channelKey]))
     } catch (err) {
+      if (isContentGenerationCancelledError(err)) return
       addStepErrors('content', [{ service: 'gemini', channel: config.label, message: err.message || '생성 실패' }])
       showErrorAlert(config.actionLabel, err.message || '생성 실패')
     } finally {
-      setRetrying(null)
-      setStepLoading('content', false)
+      resetContentGenerationFlowState()
     }
   }
 
@@ -712,22 +993,35 @@ export default function ExtractionPage() {
     clearStepErrors('content')
     setContentPreview(null)
     resetFromStep(3)
+    setContentGenerationStage('body')
+    const abortController = new AbortController()
+    contentGenerationAbortRef.current = abortController
 
     const errors = []
     let anySuccess = false
 
     for (const channel of channels) {
+      if (abortController.signal.aborted) break
       setRetrying(`content-${channel.key}`)
       try {
-        const result = await generateContentChannel(channel.key, { clearError: false })
+        const result = await generateContentChannel(channel.key, { clearError: false, signal: abortController.signal })
         if (result) {
           anySuccess = true
         } else {
           errors.push({ service: 'gemini', channel: channel.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' })
         }
       } catch (err) {
+        if (isContentGenerationCancelledError(err)) {
+          resetContentGenerationFlowState()
+          return
+        }
         errors.push({ service: 'gemini', channel: channel.label, message: err.message || '생성 실패' })
       }
+    }
+
+    if (abortController.signal.aborted) {
+      resetContentGenerationFlowState()
+      return
     }
 
     if (errors.length > 0) {
@@ -737,8 +1031,7 @@ export default function ExtractionPage() {
     }
 
     if (anySuccess) setCurrentStep(getNextVisibleStep(6))
-    setRetrying(null)
-    setStepLoading('content', false)
+    resetContentGenerationFlowState()
   }
 
   // Step 3 재시도 — 실패한 채널을 각각 별도 API 호출
@@ -828,6 +1121,17 @@ export default function ExtractionPage() {
     } finally {
       setRetrying(null)
     }
+  }
+
+  const contentGenerationButtonLabel = contentGenerationStage === 'image'
+    ? '이미지 생성 중...'
+    : '본문 생성 중...'
+
+  const getChannelGenerationLabel = (channelKey) => {
+    if (contentGenerationStage === 'image' && (channelKey === 'blog' || channelKey === 'instagram')) {
+      return '이미지 생성 중...'
+    }
+    return '본문 생성 중...'
   }
 
   // 숏폼: 아바타 이미지 생성 (Gemini)
@@ -1173,7 +1477,6 @@ DO NOT:
     if (!verification?.issues?.length || !parsedText) return
     setFixingIssues(true)
     try {
-      const { callGeminiWithFallback } = await import('../services/gemini-core')
       const fixed = await callGeminiWithFallback(`아래 텍스트에서 발견된 이슈를 수정해주세요.
 
 ## 발견된 이슈
@@ -1222,8 +1525,6 @@ ${parsedText}
     const processingTask = (async () => {
       setProcessingBlogImages(true)
       const currentUploadedImages = blogUploadedImagesRef.current
-      const hasThumbnail = currentUploadedImages.some(image => image?.isThumbnail)
-      const shouldAutoSetThumbnail = !blogThumbnailDisabled && !hasThumbnail
 
       const nextImages = await Promise.all(imageFiles.map(async (imageFile, index) => {
         const dataUrl = await fileToBase64(imageFile)
@@ -1237,23 +1538,15 @@ ${parsedText}
           title: imageFile.name,
           heading: blogContent?.sections?.[targetIndex]?.heading || '',
           source: 'uploaded',
-          isThumbnail: shouldAutoSetThumbnail && index === 0,
+          isThumbnail: false,
         }
       }))
 
-      const mergedImages = [...currentUploadedImages, ...nextImages].map((image, index, images) => ({
-        ...image,
-        isThumbnail: blogThumbnailDisabled
-          ? false
-          : images.some(item => item?.isThumbnail)
-            ? !!image?.isThumbnail
-            : index === 0,
-      }))
-      blogUploadedImagesRef.current = mergedImages
-      setBlogUploadedImages(mergedImages)
-      if (!promptSettings.media.blogGenerateImages) {
-        setBlogImages(mergedImages)
-      }
+      applyBlogThumbnailState({
+        uploadedImages: [...currentUploadedImages, ...nextImages],
+        generatedImages: promptSettings.media.blogGenerateImages ? blogImages : [],
+        disabled: blogThumbnailDisabled,
+      })
       updatePrompt('media', 'blogAttachImages', true)
     })()
 
@@ -1331,6 +1624,14 @@ ${parsedText}
       : []
     let generatedImages = shouldGenerate ? blogImages : []
 
+    // 콘텐츠 생성 직후 백그라운드 이미지 생성이 실행 중이면 그 결과를 우선 기다린다.
+    if (shouldGenerate && pendingBlogImagesPromiseRef.current) {
+      const inflight = await pendingBlogImagesPromiseRef.current.catch(() => null)
+      if (Array.isArray(inflight) && inflight.length > 0) {
+        generatedImages = inflight
+      }
+    }
+
     const needsGeneratedImages =
       shouldGenerate &&
       (!Array.isArray(generatedImages) ||
@@ -1341,6 +1642,7 @@ ${parsedText}
       setStepLoading('media', true)
       try {
         generatedImages = await generateBlogImages(blogContent.sections || [], {
+          title: blogContent?.title || '',
           imageStyle: promptSettings.media.blogImageStyle,
           textOverlay: promptSettings.media.blogTextOverlay,
           imageTextOverlay: promptSettings.media.blogTextOverlay,
@@ -1358,9 +1660,17 @@ ${parsedText}
       }
     }
 
+    const normalized = normalizeBlogThumbnailSelection({
+      uploadedImages,
+      generatedImages: Array.isArray(generatedImages)
+        ? generatedImages.map((image) => ({ ...image, source: image?.source || 'generated' }))
+        : [],
+      disabled: blogThumbnailDisabled,
+    })
+
     const combinedImages = [
-      ...uploadedImages,
-      ...(Array.isArray(generatedImages) ? generatedImages.map(image => ({ ...image, source: image?.source || 'generated' })) : []),
+      ...normalized.uploadedImages,
+      ...normalized.generatedImages,
     ].filter(Boolean)
       .sort((a, b) => Number(!!b?.isThumbnail) - Number(!!a?.isThumbnail))
 
@@ -1418,11 +1728,7 @@ ${parsedText}
       window[RESULT_DRAFT_WINDOW_KEY] = drafts
     }
 
-    try {
-      sessionStorage.setItem(`${RESULT_DRAFT_STORAGE_PREFIX}${resultState.draftKey}`, JSON.stringify(resultState))
-    } catch (error) {
-      console.warn('[ExtractionPage] 결과 초안 세션 저장 실패', error)
-    }
+    storeResultDraftSession(resultState.draftKey, resultState)
 
     navigate('/extraction/result', {
       state: resultState,
@@ -1578,7 +1884,7 @@ ${parsedText}
           {[
             {
               key: 'generate',
-              label: '이미지 생성',
+              label: 'AI 이미지 생성 사용',
               selected: generateEnabled,
               onToggle: () => {
                 const next = !generateEnabled
@@ -1612,11 +1918,7 @@ ${parsedText}
             )
           })}
         </div>
-        {generateEnabled && attachEnabled && (
-          <p className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-primary-light">
-            첨부한 이미지 외에 글 내용에 맞는 AI 이미지가 추가로 생성됩니다.
-          </p>
-        )}
+        {/* 이미지 미리보기는 오른쪽 본문 영역 상단으로 이동했습니다. */}
         <input
           ref={blogImageInputRef}
           type="file"
@@ -1637,19 +1939,11 @@ ${parsedText}
             >
               <Upload size={12} /> 이미지 선택
             </button>
-            {blogUploadedImages.length > 0 ? (
+            {blogThumbnailCandidates.length > 0 ? (
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    const next = blogUploadedImages.map(image => ({ ...image, isThumbnail: false }))
-                    setBlogThumbnailDisabled(true)
-                    blogUploadedImagesRef.current = next
-                    setBlogUploadedImages(next)
-                    if (!generateEnabled) {
-                      setBlogImages(next)
-                    }
-                  }}
+                  onClick={() => setThumbnailDisabledState(true)}
                   className={`w-full rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
                     blogThumbnailDisabled
                       ? 'border-warning/30 bg-warning/10 text-warning'
@@ -1659,64 +1953,56 @@ ${parsedText}
                   썸네일 지정하지 않기
                 </button>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {blogUploadedImages.map((image, index) => (
-                    <div key={`${image.title}-${index}`} className={`group relative aspect-square overflow-hidden rounded-lg border bg-surface ${
+                  {blogThumbnailCandidates.map((image, index) => (
+                    <div key={`${image.sourceType}-${image.id || image.title || image.heading || index}`} className={`group relative aspect-square overflow-hidden rounded-lg border bg-surface ${
                       image.isThumbnail ? 'border-primary/60 ring-2 ring-primary/20' : 'border-border'
                     }`}>
-                      <img src={image.renderedImageUrl || image.imageUrl} alt={image.title || `첨부 이미지 ${index + 1}`} className="h-full w-full object-cover" />
                       <button
                         type="button"
-                        onClick={() => {
-                          const thumbnailId = image.id || `${image.title}-${index}`
-                          const next = blogUploadedImages.map((item, itemIndex) => ({
-                            ...item,
-                            isThumbnail: (item.id || `${item.title}-${itemIndex}`) === thumbnailId,
-                          }))
-                          setBlogThumbnailDisabled(false)
-                          blogUploadedImagesRef.current = next
-                          setBlogUploadedImages(next)
-                          if (!generateEnabled) {
-                            setBlogImages(next)
-                          }
-                        }}
+                        onClick={() => setImageLightbox({ kind: 'image', src: image.previewUrl })}
+                        className="absolute inset-0"
+                        aria-label={`${image.sourceLabel} ${index + 1} 크게 보기`}
+                      >
+                        <img src={image.previewUrl} alt={image.title || image.heading || `${image.sourceLabel} ${index + 1}`} className="h-full w-full object-cover" />
+                      </button>
+                      <span className="absolute left-2 top-2 rounded-full bg-black/65 px-2 py-1 text-[11px] font-medium text-white">
+                        {image.sourceLabel}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => selectBlogThumbnailCandidate({ source: image.sourceType, index: image.sourceIndex })}
                         className={`absolute bottom-0 left-0 right-0 px-2 py-2 text-center text-xs font-medium transition-colors ${
                           image.isThumbnail
-                            ? 'bg-black/70 text-white'
+                            ? 'bg-primary text-white'
                             : 'bg-black/70 text-white hover:bg-primary'
                         }`}
                         aria-label="블로그 썸네일로 지정"
                       >
                         {image.isThumbnail ? '현재 썸네일' : '썸네일 지정'}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const next = blogUploadedImages.filter((_, imageIndex) => imageIndex !== index)
-                            .map((item, itemIndex, items) => ({
-                              ...item,
-                              isThumbnail: blogThumbnailDisabled
-                                ? false
-                                : items.some(candidate => candidate?.isThumbnail)
-                                  ? !!item?.isThumbnail
-                                  : itemIndex === 0,
-                            }))
-                          blogUploadedImagesRef.current = next
-                          setBlogUploadedImages(next)
-                          if (!generateEnabled) {
-                            setBlogImages(next.length ? next : null)
-                          }
-                        }}
-                        className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                        aria-label="첨부 이미지 삭제"
-                      >
-                        <XCircle size={13} />
-                      </button>
+                      {image.sourceType === 'uploaded' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextUploaded = blogUploadedImages.filter((_, imageIndex) => imageIndex !== image.sourceIndex)
+                            applyBlogThumbnailState({
+                              uploadedImages: nextUploaded,
+                              generatedImages: blogImages,
+                              disabled: blogThumbnailDisabled,
+                            })
+                          }}
+                          className="absolute right-1 top-1 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                          aria-label="첨부 이미지 삭제"
+                        >
+                          <XCircle size={13} />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-text-muted">아직 첨부한 이미지가 없습니다.</p>
+              <p className="text-xs text-text-muted">아직 썸네일로 선택할 이미지가 없습니다.</p>
             )}
           </div>
         )}
@@ -1738,6 +2024,34 @@ ${parsedText}
   // 콘텐츠 채널 단계는 품질 관리를 위해 고정 번호로 분리한다.
   const displayStepNum = (id) => id
   const showLegacyContentStep = false
+
+  const blogThumbnailCandidates = (() => {
+    const normalized = normalizeBlogThumbnailSelection({
+      uploadedImages: blogUploadedImages,
+      generatedImages: Array.isArray(blogImages) ? blogImages : [],
+      disabled: blogThumbnailDisabled,
+    })
+
+    const uploadedCandidates = normalized.uploadedImages.map((image, index) => ({
+      ...image,
+      previewUrl: getBlogImagePreviewUrl(image),
+      sourceType: 'uploaded',
+      sourceLabel: '첨부 이미지',
+      sourceIndex: index,
+    }))
+
+    const generatedCandidates = normalized.generatedImages.map((image, index) => ({
+      ...image,
+      previewUrl: getBlogImagePreviewUrl(image),
+      sourceType: 'generated',
+      sourceLabel: 'AI 생성 이미지',
+      sourceIndex: index,
+    }))
+
+    return [...uploadedCandidates, ...generatedCandidates]
+      .filter((image) => image.previewUrl)
+      .sort((a, b) => Number(!!b?.isThumbnail) - Number(!!a?.isThumbnail))
+  })()
 
   return (
     <div className="w-full">
@@ -1932,11 +2246,11 @@ ${parsedText}
                 onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
+                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.webp,text/plain,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
                 <Upload size={28} className="mx-auto mb-3 text-text-muted" />
                 <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
 
-                <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, 이미지(JPG/PNG/WEBP) 지원</p>
+                <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, TXT, 이미지(JPG/PNG/WEBP) 지원</p>
               </div>
             )
           ) : (
@@ -2143,6 +2457,7 @@ ${parsedText}
         const errObj = stepErrors.content?.find(e => e.channel === (row.errorLabel || row.label))
         const failed = !row.data && !!errObj
         const generating = retrying === `content-${row.key}` || retrying === `regen-${row.key}` || retrying === `${errObj?.service}-${errObj?.channel}`
+        const generatingLabel = getChannelGenerationLabel(row.key)
         const isAvailable = currentStep >= row.stepId || !!row.data
         return (
           <div key={row.key} id={`step-${row.stepId}`} className="flex gap-4 items-stretch">
@@ -2238,6 +2553,11 @@ ${parsedText}
                       <CheckCircle size={14} /> 완료 {row.detail ? `· ${row.detail}` : ''}
                     </span>
                   )}
+                  {(row.key === 'blog' || row.key === 'instagram') && generating && contentGenerationStage === 'image' && (
+                    <span className="text-xs font-medium flex items-center gap-1 text-primary">
+                      <Loader2 size={14} className="animate-spin" /> 이미지 생성 중...
+                    </span>
+                  )}
                   {failed && (
                     <span className="text-xs font-medium flex items-center gap-1 text-danger">
                       <XCircle size={14} /> 실패
@@ -2249,7 +2569,7 @@ ${parsedText}
                     className={`${row.data ? 'px-3 py-1.5 bg-surface-light text-text-muted hover:bg-surface hover:text-text border border-border' : 'px-4 py-2 bg-primary text-white hover:bg-primary-dark'} text-sm font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-2`}
                   >
                     {generating
-                      ? <><Loader2 size={14} className="animate-spin" /> 생성중...</>
+                      ? <><Loader2 size={14} className="animate-spin" /> {generatingLabel}</>
                       : row.data
                         ? <><RefreshCw size={14} /> 재생성</>
                         : failed
@@ -2257,6 +2577,15 @@ ${parsedText}
                           : <><Sparkles size={14} /> 생성</>
                     }
                   </button>
+                  {generating && (
+                    <button
+                      type="button"
+                      onClick={abortContentGeneration}
+                      className="px-3 py-2 rounded-lg border border-danger/30 bg-danger/5 text-sm font-medium text-danger transition-all hover:bg-danger/10"
+                    >
+                      작업 중단
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2280,9 +2609,6 @@ ${parsedText}
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
-                      {blogCategoryInfo && (
-                        <BlogCategoryAutoSummary info={blogCategoryInfo} />
-                      )}
                       {blogContent.sections?.map((sec, i) => (
                         <div key={i} className="border-l-2 border-primary/30 pl-3">
                           <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
@@ -2605,22 +2931,42 @@ ${parsedText}
               )
             })()}
             {currentStep === 3 && !hasAnyContent && (
-              <button
-                onClick={runContentGeneration}
-                disabled={loading.content || loading.analysis || loading.summary}
-                className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
-              >
-                {loading.content ? <><Loader2 size={14} className="animate-spin" /> 순차 생성중...</> : <><Sparkles size={14} /> 선택 채널 생성</>}
-              </button>
+              <>
+                <button
+                  onClick={runContentGeneration}
+                  disabled={loading.content || loading.analysis || loading.summary}
+                  className="px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center gap-2"
+                >
+                  {loading.content ? <><Loader2 size={14} className="animate-spin" /> {contentGenerationButtonLabel}</> : <><Sparkles size={14} /> 선택 채널 생성</>}
+                </button>
+                {loading.content && (
+                  <button
+                    onClick={abortContentGeneration}
+                    className="px-3 py-2 bg-danger/10 text-danger text-sm font-medium rounded-lg hover:bg-danger/20 transition-all flex items-center gap-2 border border-danger/20"
+                  >
+                    <XCircle size={14} /> 중단
+                  </button>
+                )}
+              </>
             )}
             {hasAnyContent && (
-              <button
-                onClick={runContentGeneration}
-                disabled={loading.content || loading.analysis || loading.summary}
-                className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
-              >
-                {loading.content ? <><Loader2 size={12} className="animate-spin" /> 순차 재생성중...</> : <><RefreshCw size={12} /> 선택 채널 재생성</>}
-              </button>
+              <>
+                <button
+                  onClick={runContentGeneration}
+                  disabled={loading.content || loading.analysis || loading.summary}
+                  className="px-3 py-1.5 bg-surface-light text-text-muted text-sm font-medium rounded-lg hover:bg-surface hover:text-text disabled:opacity-50 transition-all flex items-center gap-1.5 border border-border"
+                >
+                  {loading.content ? <><Loader2 size={12} className="animate-spin" /> {contentGenerationButtonLabel}</> : <><RefreshCw size={12} /> 선택 채널 재생성</>}
+                </button>
+                {loading.content && (
+                  <button
+                    onClick={abortContentGeneration}
+                    className="px-3 py-1.5 bg-danger/10 text-danger text-sm font-medium rounded-lg hover:bg-danger/20 transition-all flex items-center gap-1.5 border border-danger/20"
+                  >
+                    <XCircle size={12} /> 중단
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -2965,6 +3311,55 @@ ${parsedText}
       </div>
       </div>{/* 스텝 카드 끝 */}
       </div>{/* 메인 레이아웃 끝 */}
+      {imageLightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setImageLightbox(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] flex items-center justify-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {imageLightbox.kind === 'knowledge' ? (
+              <div className="w-[min(80vh,80vw)]">
+                <KnowledgeInsightCard
+                  index={imageLightbox.index || 0}
+                  headline={imageLightbox.headline}
+                  bullets={imageLightbox.bullets}
+                  imageUrl={imageLightbox.imageUrl}
+                />
+              </div>
+            ) : imageLightbox.kind === 'artwork' ? (
+              <div className="w-[min(80vh,80vw)] aspect-square rounded-lg overflow-hidden shadow-2xl">
+                <BlogImageArtwork
+                  src={imageLightbox.src}
+                  alt={imageLightbox.alt}
+                  headline={imageLightbox.headline}
+                  description={imageLightbox.description}
+                  showTextOverlay={imageLightbox.showTextOverlay}
+                  variant={imageLightbox.variant}
+                  fontPreset={imageLightbox.fontPreset}
+                  mode="result"
+                />
+              </div>
+            ) : (
+              <img
+                src={imageLightbox.src}
+                alt="블로그 이미지 미리보기"
+                className="max-h-[90vh] max-w-[90vw] rounded-lg shadow-2xl object-contain"
+              />
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setImageLightbox(null)}
+            className="absolute top-6 right-6 rounded-full bg-white/90 p-2 text-gray-900 shadow hover:bg-white"
+            aria-label="닫기"
+          >
+            <XCircle size={20} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

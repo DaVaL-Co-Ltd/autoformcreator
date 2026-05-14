@@ -288,6 +288,9 @@ function createApp() {
       const quoteStyle = typeof req.body.quoteStyle === 'string'
         ? req.body.quoteStyle.trim()
         : ''
+      const textStylePreset = typeof req.body.textStylePreset === 'string'
+        ? req.body.textStylePreset.trim()
+        : ''
       const scheduledAt = req.body.scheduledAt &&
         !['null', 'undefined', ''].includes(String(req.body.scheduledAt).trim().toLowerCase())
         ? req.body.scheduledAt
@@ -301,6 +304,7 @@ function createApp() {
         headless,
         photoPaths,
         quoteStyle,
+        textStylePreset,
         scheduledAt,
         tags,
         title,

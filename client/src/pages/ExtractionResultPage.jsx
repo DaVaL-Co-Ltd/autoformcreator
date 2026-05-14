@@ -36,15 +36,18 @@ import {
   resolveBlogHeadingStyle,
 } from '../utils/blogHeadingStyle'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
+import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import {
   cleanCardText,
   deriveBlogHeadline,
   deriveBlogImageDescription,
+  isClosingBlogSection,
 } from '../utils/contentImageOverlay'
 import {
   sanitizeBlogBodyForDisplay,
   sanitizeBlogBodyForUpload,
+  splitSentencesForBlogProse,
 } from '../utils/blogBodySanitizer'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
 import {
@@ -59,6 +62,7 @@ const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
 const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
 const BLOG_UPLOAD_SERVER = getBlogUploadServerBase()
 const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
+const BLOG_DIVIDER_MARKER = '[DIVIDER]'
 
 const ensureArray = (value) => Array.isArray(value) ? value : []
 const escapeHtml = (value = '') => String(value)
@@ -115,12 +119,57 @@ const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
 const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 
-const attachRenderedImageUrls = (images, urls) => ensureArray(images).map((image, index) => {
-  const renderedImageUrl = urls[index] || image?.renderedImageUrl || image?.pngUrl || null
-  return renderedImageUrl
-    ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
-    : image
-})
+const attachRenderedImageUrls = (images, urls, options = {}) => {
+  const list = ensureArray(images).map((image) => ({ ...image }))
+  const nextUrls = ensureArray(urls)
+
+  if (!options.blogSections) {
+    return list.map((image, index) => {
+      const renderedImageUrl = nextUrls[index] || image?.renderedImageUrl || image?.pngUrl || null
+      return renderedImageUrl
+        ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
+        : image
+    })
+  }
+
+  const sections = ensureArray(options.blogSections)
+  const consumed = new Set()
+  const generatedIndexes = list.reduce((acc, image, index) => {
+    if (image?.source !== 'uploaded') {
+      acc.push(index)
+    }
+    return acc
+  }, [])
+
+  nextUrls.forEach((url, sectionIndex) => {
+    if (!url) return
+    const section = sections[sectionIndex] || {}
+    let targetIndex = -1
+
+    if (section?.heading) {
+      targetIndex = generatedIndexes.find((index) => (
+        !consumed.has(index) &&
+        list[index]?.heading &&
+        list[index].heading === section.heading
+      ))
+    }
+
+    if (targetIndex < 0) {
+      targetIndex = generatedIndexes.find((index) => !consumed.has(index))
+    }
+
+    if (targetIndex < 0) return
+
+    consumed.add(targetIndex)
+    list[targetIndex] = {
+      ...list[targetIndex],
+      renderedImageUrl: url,
+      pngUrl: url,
+    }
+  })
+
+  return list
+}
 
 function readResultDraft(draftKey) {
   if (typeof window === 'undefined' || !draftKey) return null
@@ -159,6 +208,13 @@ function getDistinctRawShortsUrl(videoData = {}) {
 }
 
 async function captureElementPng(el, label) {
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    try {
+      await document.fonts.ready
+    } catch {
+      // 일부 환경에서 fonts.ready가 거부될 수 있으나 캡쳐 자체는 계속 진행
+    }
+  }
   return withTimeout(
     () => domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }),
     BLOG_IMAGE_CAPTURE_TIMEOUT_MS,
@@ -218,19 +274,27 @@ export default function ExtractionResultPage() {
   const [uploadError, setUploadError] = useState(null)
   const [extractionId, setExtractionId] = useState(null)
   const [scheduleDialog, setScheduleDialog] = useState({ open: false, platform: 'blog', content: {} })
-  const [blogServerStatus, setBlogServerStatus] = useState('checking') // checking | online | offline
+  const [blogServerStatus, setBlogServerStatus] = useState('idle') // idle | checking | online | offline
   const [blogUploadResult, setBlogUploadResult] = useState(null) // { url } | null
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
   const [shortsUploadTargets, setShortsUploadTargets] = useState({ instagram: true, youtube: true })
   const blogCategoryPath = String(platformConnections?.blog?.categoryPath || state.blogContent?.categoryPath || '').trim()
+  // AI 가 자동 선택한 카테고리 ID(`admissions_strategy_style_1` 등)는 categoryInfo 에 들어있다.
+  // 네이버 폴더 경로(blogCategoryPath)와 별도로 스타일 결정용으로 사용한다.
+  const blogStylingCategoryId = String(
+    blogCategoryPath
+    || state.blogContent?.categoryInfo?.finalCategoryId
+    || ''
+  ).trim()
   const blogSectionList = useMemo(() => ensureArray(state.blogContent?.sections), [state.blogContent?.sections])
   const blogHeadingStyle = useMemo(
-    () => resolveBlogHeadingStyle(blogCategoryPath, blogSectionList),
-    [blogCategoryPath, blogSectionList]
+    () => resolveBlogHeadingStyle(blogStylingCategoryId, blogSectionList),
+    [blogStylingCategoryId, blogSectionList]
   )
-  const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogCategoryPath)
+  const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogStylingCategoryId)
+  const usesKnowledgeInsightCards = blogStylingCategoryId === 'knowledge_insight'
 
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
@@ -343,7 +407,7 @@ export default function ExtractionResultPage() {
         setBlogUploadResult(null)
         const capturedBlogImageUrls = await convertBlogImagesToPng()
         const blogImagesForUpload = capturedBlogImageUrls.some(Boolean)
-          ? attachRenderedImageUrls(blogImages, capturedBlogImageUrls)
+          ? attachRenderedImageUrls(blogImages, capturedBlogImageUrls, { blogSections: ensureArray(blogContent?.sections) })
           : blogImages
         const uploadImageUrls = await buildBlogUploadImageDataUrls({
           blogImages: blogImagesForUpload,
@@ -352,8 +416,9 @@ export default function ExtractionResultPage() {
 
         const title = blogTitle || blogContent?.title || ''
         const tags = normalizeBlogTags(blogContent)
+        const uploadBody = compileKnowledgeInsightUploadBody(ensureArray(blogContent?.sections))
         const content = appendBlogTagsToBody(
-          sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections))),
+          uploadBody || sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction)),
           tags
         )
         const categoryPath = blogCategoryPath
@@ -794,14 +859,14 @@ export default function ExtractionResultPage() {
       }
     }
     setBlogPngUrls(urls)
-    const nextBlogImages = attachRenderedImageUrls(blogImages, urls)
+    const nextBlogImages = attachRenderedImageUrls(blogImages, urls, { blogSections: ensureArray(blogContent?.sections) })
     setBlogImages(nextBlogImages)
     if (extractionId) {
       updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
         .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
     }
     return urls
-  }, [blogImages, extractionId])
+  }, [blogContent, blogImages, extractionId])
 
   // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
@@ -836,47 +901,81 @@ export default function ExtractionResultPage() {
 
   useEffect(() => {
     if (!extractionId || !blogPngUrls.some(Boolean)) return
-    const nextBlogImages = attachRenderedImageUrls(blogImages, blogPngUrls)
+    const nextBlogImages = attachRenderedImageUrls(blogImages, blogPngUrls, { blogSections: ensureArray(blogContent?.sections) })
     updateExtractionMedia(extractionId, { blogImages: nextBlogImages })
       .catch(err => console.warn('[블로그 렌더링 이미지 저장 실패]', err))
-  }, [blogImages, blogPngUrls, extractionId])
+  }, [blogContent, blogImages, blogPngUrls, extractionId])
 
   // 네이버 블로그 업로드 서버 상태 확인
-  const checkBlogServer = useCallback(() => {
+  const checkBlogServer = useCallback(async () => {
     setBlogServerStatus('checking')
-    // 블로그 탭일 때만 상태 체크
-    if (activeMenu !== 'blog' || USE_REMOTE_BLOG_PUBLISH) { setBlogServerStatus('offline'); return }
-    fetch(`${BLOG_UPLOAD_SERVER}/`, { method: 'GET', signal: AbortSignal.timeout(2000), targetAddressSpace: 'loopback' })
-      .then(r => setBlogServerStatus(r.ok ? 'online' : 'offline'))
-      .catch(() => setBlogServerStatus('offline'))
+    if (activeMenu !== 'blog' || USE_REMOTE_BLOG_PUBLISH) {
+      setBlogServerStatus('offline')
+      return
+    }
+
+    const status = await getDesktopHelperStatus()
+    setBlogServerStatus(status ? 'online' : 'offline')
   }, [activeMenu])
   useEffect(() => {
-    if (activeMenu === 'blog') checkBlogServer()
-    else setBlogServerStatus('offline')
-  }, [activeMenu, checkBlogServer])
+    if (activeMenu !== 'blog') {
+      setBlogServerStatus('idle')
+    }
+  }, [activeMenu])
 
   // compileBlogBody: sections를 [IMG:N] 마커 포함 본문으로 생성
   // `입시 및 학습 전략 (글 위주)` 카테고리는 소제목 대신 인용구 마커(`>`)를 사용하고,
   // 그 외 카테고리는 기존 `## **...**` 소제목 포맷을 유지한다.
-  const compileBlogBody = useCallback((sections = []) => {
-    return ensureArray(sections).map((s, i) => {
+  // 줄글 카테고리는 [글 소개] → [IMG] → [인용구] → [본문] 순서(Pattern A)로 배치하고
+  // 본문은 문장 단위로 빈 줄을 넣어 줄글 가독성을 높인다.
+  const compileBlogBody = useCallback((sections = [], introduction = '') => {
+    const isProseCategory = usesAutomaticBlogQuote
+    let imageCounter = 0
+    const sectionsText = ensureArray(sections).map((s) => {
       const headingText = String(s.heading || '').trim()
+      const baseContent = sanitizeBlogBodyForDisplay(s.content || '')
+      const content = isProseCategory ? splitSentencesForBlogProse(baseContent) : baseContent
+      if (isClosingBlogSection(headingText)) {
+        return content
+      }
+      imageCounter += 1
       const heading = buildBlogHeadingPrefix(headingText, blogHeadingStyle)
-      const content = sanitizeBlogBodyForDisplay(s.content || '')
-      const imageMarker = `[IMG:${i + 1}]\n`
-      return `${heading}${imageMarker}${content}`
+      const imageMarker = `[IMG:${imageCounter}]\n`
+      return isProseCategory
+        ? `${imageMarker}${heading}${content}`
+        : `${heading}${imageMarker}${content}`
     }).join('\n\n')
-  }, [blogHeadingStyle])
+
+    if (!isProseCategory) return sectionsText
+
+    const introText = splitSentencesForBlogProse(sanitizeBlogBodyForDisplay(introduction || ''))
+    return introText ? `${introText}\n\n${sectionsText}` : sectionsText
+  }, [blogHeadingStyle, usesAutomaticBlogQuote])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     sanitizeBlogBodyForUpload(content || '')
   ), [])
 
+  const compileKnowledgeInsightUploadBody = useCallback((sections = []) => {
+    if (!usesKnowledgeInsightCards || USE_REMOTE_BLOG_PUBLISH) return ''
+
+    return ensureArray(sections)
+      .map((section, index) => {
+        const heading = buildBlogHeadingPrefix(section?.heading, blogHeadingStyle)
+        const keyPhrase = section?.keyPhrase ? `${section.keyPhrase}\n\n` : ''
+        const imageMarker = `[IMG:${index + 1}]\n`
+        const body = sanitizeBlogUploadContent(section?.content || section?.body || '')
+        return `${heading}${imageMarker}${keyPhrase}${body}`.trim()
+      })
+      .filter(Boolean)
+      .join(`\n\n${BLOG_DIVIDER_MARKER}\n\n`)
+  }, [blogHeadingStyle, sanitizeBlogUploadContent, usesKnowledgeInsightCards])
+
   // blogTitle / blogBody 초기화 (blogContent 로드 시)
   useEffect(() => {
     if (blogContent) {
       if (!blogTitle) setBlogTitle(blogContent.title || '')
-      setBlogBody(compileBlogBody(ensureArray(blogContent.sections)))
+      setBlogBody(compileBlogBody(ensureArray(blogContent.sections), blogContent.introduction))
     }
   }, [blogContent, blogTitle, compileBlogBody])
 
@@ -1178,36 +1277,47 @@ export default function ExtractionResultPage() {
           <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             type="button"
-            onClick={() => (
-              blogServerStatus === 'offline'
-                ? navigate('/settings?section=desktop-helper')
-                : checkBlogServer()
-            )}
+            onClick={() => checkBlogServer()}
             className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
               blogServerStatus === 'online'
                 ? 'border-border text-text-muted hover:text-text hover:border-primary/40'
                 : blogServerStatus === 'checking'
                   ? 'border-warning/30 text-warning hover:border-warning/50'
-                  : 'border-danger/30 text-danger hover:bg-danger/5'
+                  : blogServerStatus === 'offline'
+                    ? 'border-danger/30 text-danger hover:bg-danger/5'
+                    : 'border-border text-text-muted hover:text-text hover:border-primary/40'
             }`}
-            title={blogServerStatus === 'offline' ? '설정으로 이동' : '서버 상태 새로고침'}
+            title="블로그 서버 상태 확인"
           >
             <span className={`w-2 h-2 rounded-full ${
               blogServerStatus === 'online'
                 ? 'bg-success'
                 : blogServerStatus === 'checking'
                   ? 'bg-warning animate-pulse'
-                  : 'bg-danger'
+                  : blogServerStatus === 'offline'
+                    ? 'bg-danger'
+                    : 'bg-text-muted/50'
             }`} />
             <span>
               {blogServerStatus === 'online'
                 ? '블로그 서버 연결됨'
                 : blogServerStatus === 'checking'
                   ? '블로그 서버 확인 중...'
-                  : '블로그 서버 연결 필요'}
+                  : blogServerStatus === 'offline'
+                    ? '블로그 서버 연결 필요'
+                    : '블로그 서버 상태 확인'}
             </span>
-            {blogServerStatus !== 'offline' && <RefreshCw size={12} />}
+            <RefreshCw size={12} />
           </button>
+          {blogServerStatus === 'offline' && (
+            <button
+              type="button"
+              onClick={() => navigate('/settings?section=desktop-helper')}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-danger/30 text-sm text-danger hover:bg-danger/5 transition-colors"
+            >
+              설정으로 이동
+            </button>
+          )}
           {usesAutomaticBlogQuote && (
             <div className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-text-muted">
               <span>소제목 자동 스타일</span>
@@ -1217,7 +1327,7 @@ export default function ExtractionResultPage() {
             </div>
           )}
           <button
-            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogTagsToBody(blogBody || compileBlogBody(ensureArray(blogContent?.sections)), blogTags)}`)}
+            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogTagsToBody(blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction), blogTags)}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
           >
             {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
@@ -1253,6 +1363,13 @@ export default function ExtractionResultPage() {
             )}
           </div>
           <div className="p-6 sm:p-8 space-y-10">
+            {usesAutomaticBlogQuote && blogContent?.introduction && (
+              <div className="prose prose-gray max-w-none text-gray-700 leading-8">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                  {normalizeMd(splitSentencesForBlogProse(stripResultCtaText(sanitizeBlogBodyForDisplay(blogContent.introduction))))}
+                </ReactMarkdown>
+              </div>
+            )}
             {(() => {
               const blogImageList = ensureArray(blogImages)
               const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
@@ -1264,11 +1381,55 @@ export default function ExtractionResultPage() {
               }
 
               return ensureArray(blogContent?.sections).map((section, index) => {
-                const matchedImages = blogImageList.filter(img =>
+                if (usesKnowledgeInsightCards) {
+                  const cardSummary = section?.cardSummary || {}
+                  const cardHeadline = String(cardSummary.headline || section?.heading || '').trim()
+                  const cardBullets = Array.isArray(cardSummary.bullets)
+                    ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
+                    : []
+                  const matchedKnowledgeImage = ensureArray(blogImages).find((img) =>
+                    img?.heading && section?.heading && img.heading === section.heading
+                  ) || ensureArray(blogImages)[index] || null
+                  const cornerImageUrl =
+                    matchedKnowledgeImage?.renderedImageUrl
+                    || matchedKnowledgeImage?.pngUrl
+                    || matchedKnowledgeImage?.imageUrl
+                    || null
+                  const sectionHeadingText = String(section?.heading || '').trim()
+                  const sectionContent = stripResultCtaText(sanitizeBlogBodyForDisplay(section?.content || ''))
+                  const isLastKnowledgeSection = index === ensureArray(blogContent?.sections).length - 1
+                  return (
+                    <section key={`knowledge-section-${index}`} className="space-y-5">
+                      {sectionHeadingText && (
+                        <h3 className="text-2xl font-bold text-gray-900">{sectionHeadingText}</h3>
+                      )}
+                      <div className="flex justify-center">
+                        <KnowledgeInsightCard
+                          index={index}
+                          headline={cardHeadline}
+                          bullets={cardBullets}
+                          imageUrl={cornerImageUrl}
+                        />
+                      </div>
+                      {sectionContent && (
+                        <div className="prose prose-gray max-w-none text-gray-700 leading-8">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                            {normalizeMd(sectionContent)}
+                          </ReactMarkdown>
+                        </div>
+                      )}
+                      {!isLastKnowledgeSection && (
+                        <hr className="border-t border-gray-300 mt-6" />
+                      )}
+                    </section>
+                  )
+                }
+                const isClosing = isClosingBlogSection(section?.heading)
+                const matchedImages = isClosing ? [] : blogImageList.filter(img =>
                   img?.heading && section.heading && img.heading === section.heading &&
                   (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl)
                 )
-                const fallbackImage = blogImageList[index] || null
+                const fallbackImage = isClosing ? null : (blogImageList[index] || null)
                 const sectionImages = matchedImages.length
                   ? matchedImages
                   : fallbackImage
@@ -1284,17 +1445,25 @@ export default function ExtractionResultPage() {
                   blogImagesRef.current[index] = null
                 }
 
-                const headingNode = blogHeadingStyle === BLOG_HEADING_STYLE.LINE_QUOTE
+                const headingNode = isClosing
+                  ? null
+                  : blogHeadingStyle === BLOG_HEADING_STYLE.LINE_QUOTE
                     ? (
-                      <div className="mb-4 border-l-4 border-slate-300 bg-slate-50 px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Quote</div>
-                        <div className="mt-1 text-2xl font-bold text-slate-900">“{section.heading}”</div>
+                      <div className="my-6">
+                        <div className="border-t border-gray-300" />
+                        <div className="px-6 py-5 text-center">
+                          <div className="font-serif text-5xl leading-none text-gray-300">“</div>
+                          <div className="mt-1 text-base italic text-gray-700 leading-relaxed">
+                            {section.heading}
+                          </div>
+                        </div>
+                        <div className="border-b border-gray-300" />
                       </div>
                     )
                     : blogHeadingStyle === BLOG_HEADING_STYLE.POSTIT
                       ? (
-                        <div className="mb-4 inline-block -rotate-1 bg-yellow-100 px-5 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.12)]">
-                          <div className="text-lg font-bold text-yellow-900">{section.heading}</div>
+                        <div className="mb-4 inline-block -rotate-1 bg-yellow-100 px-5 py-4 shadow-[0_8px_18px_rgba(15,23,42,0.10)] rounded-sm">
+                          <div className="text-base font-medium text-yellow-900 leading-relaxed">{section.heading}</div>
                         </div>
                       )
                       : (
@@ -1303,16 +1472,19 @@ export default function ExtractionResultPage() {
 
               return (
                 <section key={index} className="space-y-5">
-                  {headingNode}
+                  {!usesAutomaticBlogQuote && headingNode}
 
                   {sectionImages.length > 0 && (
                     <div className="mb-4 space-y-4">
                       {sectionImages.map((image, imageIndex) => {
                         const imageUrl = image?.imageUrl || null
-                        const renderedImageUrl = image?.renderedImageUrl || image?.pngUrl || (imageIndex === 0 ? blogPngUrls[index] : null)
                         const imageKey = `${section.heading || index}-${image?.title || image?.source || 'image'}-${imageIndex}`
+                        const hideTextOverlay = image?.overlayMode === 'none'
+                        const renderedImageUrl = hideTextOverlay
+                          ? null
+                          : (image?.renderedImageUrl || image?.pngUrl || (imageIndex === 0 ? blogPngUrls[index] : null))
                         const imageHeadline = image?.overlayMode === 'headline-only'
-                          ? cleanCardText(section?.heading || image?.keyPhrase || '')
+                          ? cleanCardText(image?.overlayHeadline || section?.heading || image?.keyPhrase || '')
                           : deriveBlogHeadline(cleanCardText(image?.keyPhrase || section?.keyPhrase || ''), headingText)
                         const imageDescription = image?.overlayMode === 'headline-only'
                           ? ''
@@ -1326,32 +1498,52 @@ export default function ExtractionResultPage() {
                             className="w-full max-w-xl rounded-xl shadow-sm"
                           />
                         ) : imageUrl ? (
-                          <BlogImageArtwork
-                            key={imageKey}
-                            innerRef={el => {
-                              if (imageIndex === (generatedArtworkIndex >= 0 ? generatedArtworkIndex : 0)) {
-                                blogImagesRef.current[index] = el
-                              }
-                            }}
-                            src={imageUrl}
-                            alt={section.heading || `블로그 이미지 ${index + 1}`}
-                            headline={imageHeadline}
-                            description={imageDescription}
-                            accentColor={accentColor}
-                            showTextOverlay={showBlogImageTextOverlay}
-                            variant={image?.variant || 'circle'}
-                            fontPreset={image?.overlayFont || 'pretendard'}
-                            mode="modal"
-                            containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
-                          />
+                          hideTextOverlay ? (
+                            <img
+                              key={imageKey}
+                              ref={el => {
+                                if (imageIndex === (generatedArtworkIndex >= 0 ? generatedArtworkIndex : 0)) {
+                                  blogImagesRef.current[index] = el
+                                }
+                              }}
+                              src={imageUrl}
+                              alt={image?.title || section.heading || `블로그 이미지 ${index + 1}-${imageIndex + 1}`}
+                              className="block w-full max-w-xl rounded-xl shadow-sm"
+                            />
+                          ) : (
+                            <BlogImageArtwork
+                              key={imageKey}
+                              innerRef={el => {
+                                if (imageIndex === (generatedArtworkIndex >= 0 ? generatedArtworkIndex : 0)) {
+                                  blogImagesRef.current[index] = el
+                                }
+                              }}
+                              src={imageUrl}
+                              alt={section.heading || `블로그 이미지 ${index + 1}`}
+                              headline={imageHeadline}
+                              description={imageDescription}
+                              accentColor={accentColor}
+                              showTextOverlay={showBlogImageTextOverlay}
+                              variant={image?.variant || 'circle'}
+                              fontPreset={image?.overlayFont || 'pretendard'}
+                              mode="modal"
+                              containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
+                            />
+                          )
                         ) : null
                       })}
                     </div>
                   )}
 
+                  {usesAutomaticBlogQuote && headingNode}
+
                   <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                      {normalizeMd(stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || '')))}
+                      {normalizeMd(
+                        usesAutomaticBlogQuote
+                          ? splitSentencesForBlogProse(stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || '')))
+                          : stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || ''))
+                      )}
                     </ReactMarkdown>
                   </div>
                 </section>
@@ -1723,18 +1915,6 @@ export default function ExtractionResultPage() {
               className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors disabled:opacity-50"
             >
               <Download size={10} /> 다운로드
-            </button>
-            <button
-              onClick={() => navigate('/shorts/view', { state: {
-                combinedVideoUrl: videoUrl,
-                sceneTimings: timings,
-                scenes: shortsScript?.scenes || [],
-                narrations: shortsNarration || [],
-                title: `${shortsScript?.title || '쇼츠 영상'} (${versionLabel})`,
-              }})}
-              className="flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
-            >
-              <ExternalLink size={10} /> 크게 보기
             </button>
           </div>
         )}

@@ -6,6 +6,7 @@ import {
   getStylePrompt,
   pickPalette,
 } from './commonImageRules'
+import { deriveBlogHeadline, deriveBlogTitleKeywordHeadline } from '../../utils/contentImageOverlay'
 
 const BLOG_AUTO_COLOR_PALETTES = [
   'Color palette: muted slate blue, dusty navy, cool gray accents, soft mist highlights.',
@@ -16,6 +17,15 @@ const BLOG_AUTO_COLOR_PALETTES = [
   'Color palette: muted blush, rose taupe, sand beige, cocoa accents.',
 ]
 
+const ADMISSIONS_KEYWORD_COLOR_PALETTES = [
+  'Color palette: bright ivory, pale sage, soft eucalyptus, muted moss accents.',
+  'Color palette: light buttercream, warm sand, pale apricot, desaturated terracotta accents.',
+  'Color palette: airy powder blue, pale sky, mist gray, soft steel accents.',
+  'Color palette: light blush beige, pale rose, warm cream, muted cocoa accents.',
+  'Color palette: soft mint cream, pale celadon, light oatmeal, muted olive accents.',
+  'Color palette: light dove gray, pale lavender gray, cool white, muted navy accents.',
+]
+
 const BLOG_VISUAL_VARIATIONS = [
   { icons: 'books, pencils, paper scrolls, reading glasses, study notes' },
   { icons: 'calculator, ruler, compass, geometric shapes, graph paper' },
@@ -23,18 +33,41 @@ const BLOG_VISUAL_VARIATIONS = [
   { icons: 'notebook, graduation cap, star, clock, abacus' },
   { icons: 'trophy, target, checklist, heart, pencil case' },
 ]
+const ADMISSIONS_STRATEGY_LONGFORM_CATEGORY_ID = 'admissions_strategy_style_1'
+const ADMISSIONS_STRATEGY_KEYWORD_CATEGORY_ID = 'admissions_strategy_style_2'
+const KNOWLEDGE_INSIGHT_CATEGORY_ID = 'knowledge_insight'
+const BOOK_PROMO_CATEGORY_ID = 'book_promo'
+const LATIN_NUMBER_ONLY_PROMPT = 'TEXT RULE: avoid readable text whenever possible. If text must appear on books, posters, notes, computer screens, whiteboards, signs, stationery, clothing, or props, it may contain only English alphabet letters A-Z or a-z and numeric digits 0-9. Absolutely no Hangul, no Korean words, no Japanese, no Chinese, no Arabic, no Cyrillic, and no other writing systems.'
+const KNOWLEDGE_INSIGHT_CUTOUT_RULE = 'BACKGROUND RULE: create the subject as an isolated cutout on a pure white background, or transparent-looking background if supported. Do not draw a scene, room, sky, desk surface, paper sheet, color wash, pattern, gradient, shadow box, or decorative backdrop behind it. The white area should act like removable empty background around the object.'
+const KNOWLEDGE_INSIGHT_EMOJI_STYLE = 'Create a clean emoji-like educational icon illustration with thick outlines, simple shapes, clear silhouette, flat or lightly stepped colors, and low visual complexity. It should feel closer to a friendly sticker or textbook-side emoticon than to a pastel painting, watercolor illustration, or detailed poster artwork.'
+const KNOWLEDGE_INSIGHT_WHITE_BG_THRESHOLD = 245
 
-const CONCEPT_DIGEST_CIRCLE_RATIO = 'about 68% of the canvas width and height'
+const CONCEPT_DIGEST_EMPTY_CENTER_RULE = 'CRITICAL LAYOUT RULE: the central area covering the inner 70% by 70% of the square canvas must be completely empty — no motifs, no objects, no decorations, no badges, no circles, no white plates, no text containers, just the smooth solid-color background. The app will place its own white circle and text on top of this central area later, so any object you draw there will be hidden or look broken. Place the four motifs ONLY in the four outer corners, each motif kept strictly inside the outer 15% band measured from the nearest two canvas edges. Do not let any motif cross into the inner 70% empty zone. Use a single smooth solid-color background that fills the entire canvas behind the motifs.'
+
+const CONCEPT_DIGEST_SHARED_RULES = 'Do not create separate circle badges, square badges, frames, or panels around the motifs. Do not draw any white circle, white disc, or white title plate anywhere on the canvas. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.'
+
+const ADMISSIONS_KEYWORD_LAYOUT_RULE = 'Create a square educational poster with a bright, low-saturation background. Use a smooth solid-color field or a very soft blended color wash only. Keep the center visually calm and readable so the app can place one bold headline directly in the middle of the image. Do not draw any white circle, white disc, white badge, title panel, text box, translucent plate, or reserved text container. Keep supporting motifs away from the central 45% by 45% zone and bias them toward the outer edges so the centered headline remains fully readable. Avoid chalkboard texture, notebook texture, lined paper, graph paper, check patterns, repeated doodles, stickers, collage layouts, decorative borders, and busy classroom clutter. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.'
 
 const CONCEPT_DIGEST_THEME_PROMPTS = {
-  math: `Create a simple math-study poster with a centered white circle title area on a square canvas. Put topic-related math motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a compass, ruler, graph line, geometric sketch, or formula symbol. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  science: `Create a simple science-study poster with a centered white circle title area on a square canvas. Put topic-related science motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a beaker, microscope, atom icon, leaf-energy diagram, or experiment symbol. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  korean: `Create a simple Korean language study poster with a centered white circle title area on a square canvas. Put topic-related reading and language motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as an open book, fountain pen, reading symbol, or text-flow visual cue. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  social: `Create a simple social-studies poster with a centered white circle title area on a square canvas. Put topic-related social motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a map, globe, chart, civic symbol, or economy icon. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  english: `Create a simple English-study poster with a centered white circle title area on a square canvas. Put topic-related English-learning motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a dictionary, reading symbol, speech bubble icon, or flash-card motif. Use a smooth solid-color background that matches the motifs. Avoid any readable letters. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  history: `Create a simple history-study poster with a centered white circle title area on a square canvas. Put topic-related history motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as an old map silhouette, artifact, document icon, or timeline cue. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  computing: `Create a simple computing-study poster with a centered white circle title area on a square canvas. Put topic-related computing motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a circuit line, logic block, laptop silhouette, or algorithm flow icon. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
-  generic: `Create a simple textbook-study poster with a centered white circle title area on a square canvas. Put topic-related study motifs near the outer corners and keep them farther from the circle than before. If a motif would overlap the circle, allow the motif to sit on top of the circle instead of being hidden. Use simple motifs such as a pencil, ruler, notebook symbol, or learning object. Use a smooth solid-color background that matches the motifs. Do not create separate circle badges, square badges, frames, or panels around the motifs. Keep the center clean enough for a large white circle title area. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
+  math: `Create a simple math-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a compass, ruler, graph line, geometric sketch, or formula symbol. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  science: `Create a simple science-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a beaker, microscope, atom icon, leaf-energy diagram, or experiment symbol. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  korean: `Create a simple Korean language study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as an open book, fountain pen, reading symbol, or text-flow visual cue. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  social: `Create a simple social-studies poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a map, globe, chart, civic symbol, or economy icon. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  english: `Create a simple English-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a dictionary, reading symbol, speech bubble icon, or flash-card motif. Avoid any readable letters. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  history: `Create a simple history-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as an old map silhouette, artifact, document icon, or timeline cue. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  computing: `Create a simple computing-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a circuit line, logic block, laptop silhouette, or algorithm flow icon. ${CONCEPT_DIGEST_SHARED_RULES}`,
+  generic: `Create a simple textbook-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a pencil, ruler, notebook symbol, or learning object. ${CONCEPT_DIGEST_SHARED_RULES}`,
+}
+
+const KNOWLEDGE_INSIGHT_THEME_MOTIFS = {
+  math: 'a formula notebook, compass, graph curve, geometric sketch, or number-pattern object',
+  science: 'a beaker, microscope, atom visual, leaf-energy science cue, or experiment object',
+  korean: 'an open book, fountain pen, reading cue, text-flow symbol, or literature-study object',
+  social: 'a map, globe, civic symbol, chart, economy cue, or society-related study object',
+  english: 'a dictionary, reading cue, speech bubble symbol, listening-study object, or flash-card motif without readable text',
+  history: 'an old map silhouette, artifact, document cue, timeline object, or history-study symbol',
+  computing: 'a circuit line, logic block, laptop silhouette, algorithm-flow cue, or computing-study object',
+  generic: 'a notebook, pencil, study note, planner, magnifier, or one clear learning-related object',
 }
 
 const CONCEPT_DIGEST_THEME_KEYWORDS = [
@@ -51,10 +84,10 @@ function describeConceptDigestTopic(section = {}) {
   const topic = String(section?.keyPhrase || section?.heading || '').trim()
 
   if (!topic) {
-    return 'Use one single study-related motif that directly represents the lesson topic.'
+    return 'Use one single study-related motif that directly represents the lesson topic, placed only in a corner of the canvas.'
   }
 
-  return `Choose simple visual motifs that are directly and specifically related to the lesson topic "${topic}". Put the four motifs in the four corners of the square canvas, farther from the white circle than before. For each corner, imagine a diagonal line from that corner to the center, locate the point where that diagonal touches the white circle edge, and place the motif in the band between the corner and that touch point, but biased toward the outer edge so it stays more separate from the circle. If a motif overlaps the circle, let the motif sit on top of the circle rather than hiding it. Do not add a separate background plate, badge, frame, circle, or square behind any motif. Do not pin the motif tightly to the corner if that would make it too small or too hidden. Do not fall back to generic subject icons unless the topic is too abstract. If the topic is about Fibonacci sequence, prefer a spiral, number growth pattern, shell-like mathematical spiral, or geometric sequence visual. If the topic is about photosynthesis, prefer a leaf, sunlight, chloroplast-like cell diagram, plant growth, or light-to-energy science visual. Keep the motifs literal, educational, and easy to recognize at a glance. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`
+  return `Choose simple visual motifs that are directly and specifically related to the lesson topic "${topic}". Place exactly four motifs, one in each of the four corners of the square canvas, with each motif kept strictly inside the outer 15% band measured from the nearest two canvas edges. The inner 70% by 70% central area must remain completely empty — no motif may cross into it. Do not add a separate background plate, badge, frame, circle, or square behind any motif. Do not fall back to generic subject icons unless the topic is too abstract. If the topic is about Fibonacci sequence, prefer a spiral, number growth pattern, shell-like mathematical spiral, or geometric sequence visual. If the topic is about photosynthesis, prefer a leaf, sunlight, chloroplast-like cell diagram, plant growth, or light-to-energy science visual. Keep the motifs literal, educational, and easy to recognize at a glance. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`
 }
 
 function inferConceptDigestTheme(section = {}, options = {}) {
@@ -94,9 +127,47 @@ function getBlogImageVersionConfig(options = {}) {
       variant: 'circle-text-only',
       overlayMode: 'headline-only',
       overlayFont: 'pretendard',
-      layoutPrompt: `Create a square educational cover with one smooth solid-color background and one perfectly centered white circle title area. Keep this white circle size fixed across outputs. Put the four illustrations in the four corners of the square canvas, but position them farther from the circle than before and closer to the outer edges. For each corner, imagine a diagonal from that corner to the center, find the point where the diagonal meets the circle edge, and place the illustration in the band between the corner and that point while biasing it toward the outside edge. If an illustration overlaps the circle, let it sit on top of the circle rather than being hidden. Do not create separate circle badges, square badges, framed labels, or sticker-like panels around each illustration. Do not place important objects inside the circle. Avoid chalkboard texture, notebook texture, graph paper, lined paper, check patterns, repeated doodles, many small props, decorative borders, collage layouts, stickers, confetti, wallpaper-like textures, or busy classroom clutter. The result should feel like a clean school poster cover with a stable circular center and simple corner motifs. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`,
+      layoutPrompt: `Create a square educational cover with one smooth solid-color background filling the entire canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} The app will overlay its own white circle and headline text on the empty central area afterward, so anything you draw inside the inner 70% area will be hidden or look wrong. Avoid chalkboard texture, notebook texture, graph paper, lined paper, check patterns, repeated doodles, many small props, decorative borders, collage layouts, stickers, confetti, wallpaper-like textures, or busy classroom clutter. The result should feel like a clean school poster cover with a fully empty stable center and simple corner motifs only. ${CONCEPT_DIGEST_SHARED_RULES}`,
       subjectTheme,
       subjectPrompt: CONCEPT_DIGEST_THEME_PROMPTS[subjectTheme] || CONCEPT_DIGEST_THEME_PROMPTS.generic,
+    }
+  }
+
+  if (options.categoryId === ADMISSIONS_STRATEGY_KEYWORD_CATEGORY_ID) {
+    const subjectTheme = inferConceptDigestTheme(options.section, options)
+    return {
+      version: 'image_keyword',
+      variant: 'poster-title',
+      overlayMode: 'headline-only',
+      overlayFont: 'knowledge',
+      layoutPrompt: `${ADMISSIONS_KEYWORD_LAYOUT_RULE} The centered headline will be added directly on top of the image afterward, so the middle of the canvas must stay visually simple and free of high-contrast objects.`,
+      subjectTheme,
+      subjectPrompt: CONCEPT_DIGEST_THEME_PROMPTS[subjectTheme] || CONCEPT_DIGEST_THEME_PROMPTS.generic,
+    }
+  }
+
+  if (options.categoryId === KNOWLEDGE_INSIGHT_CATEGORY_ID) {
+    const subjectTheme = inferConceptDigestTheme(options.section, options)
+    return {
+      version: 'knowledge-insight-corner',
+      variant: 'plain',
+      overlayMode: 'none',
+      overlayFont: options.overlayFont || 'pretendard',
+      subjectTheme,
+      layoutPrompt: 'Create a compact square illustration asset intended to be placed at the lower-right corner of a knowledge card. Keep the main subject concentrated in the lower-right half of the canvas, leaving generous empty space around it. Do not design a full poster, do not center the subject, do not fill the whole frame, and do not add a text panel, badge, frame, border, sticker sheet, or decorative background scene.',
+      subjectPrompt: KNOWLEDGE_INSIGHT_THEME_MOTIFS[subjectTheme] || KNOWLEDGE_INSIGHT_THEME_MOTIFS.generic,
+    }
+  }
+
+  if (isHumanSceneBlogCategory(options)) {
+    return {
+      version: 'human-photo-scene',
+      variant: 'plain',
+      overlayMode: 'none',
+      overlayFont: options.overlayFont || 'pretendard',
+      subjectTheme: 'generic',
+      layoutPrompt: 'Fill the entire square canvas with one coherent human-centered scene. Do not leave a reserved text area. Do not add title plates, badges, quote cards, empty circles, poster frames, or any designed text container.',
+      subjectPrompt: '',
     }
   }
 
@@ -112,15 +183,116 @@ function getBlogImageVersionConfig(options = {}) {
 }
 
 function getBlogPalette(section, options = {}) {
+  if (isAdmissionsStrategyKeywordCategory(options)) {
+    return options.mainColor && options.mainColor !== 'auto' && COLOR_PROMPTS[options.mainColor]
+      ? COLOR_PROMPTS[options.mainColor]
+      : pickPalette(`${section.heading}|${section.keyPhrase || ''}|${options.imageStyle || ''}|admissions-keyword`, ADMISSIONS_KEYWORD_COLOR_PALETTES)
+  }
+
   return options.mainColor && options.mainColor !== 'auto' && COLOR_PROMPTS[options.mainColor]
     ? COLOR_PROMPTS[options.mainColor]
     : pickPalette(`${section.heading}|${section.keyPhrase || ''}|${options.imageStyle || ''}|blog`, BLOG_AUTO_COLOR_PALETTES)
 }
 
+async function loadDataUrlImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('지식공유 이미지 로딩에 실패했습니다.'))
+    image.src = dataUrl
+  })
+}
+
+async function removeWhiteBackgroundFromDataUrl(dataUrl) {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return dataUrl
+  if (!String(dataUrl || '').startsWith('data:image/')) return dataUrl
+
+  try {
+    const image = await loadDataUrlImage(dataUrl)
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth || image.width
+    canvas.height = image.naturalHeight || image.height
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
+    if (!ctx) return dataUrl
+
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const { data } = frame
+
+    for (let i = 0; i < data.length; i += 4) {
+      const red = data[i]
+      const green = data[i + 1]
+      const blue = data[i + 2]
+      const alpha = data[i + 3]
+
+      if (alpha === 0) continue
+
+      const minChannel = Math.min(red, green, blue)
+      const maxChannel = Math.max(red, green, blue)
+
+      if (minChannel >= KNOWLEDGE_INSIGHT_WHITE_BG_THRESHOLD) {
+        data[i + 3] = 0
+        continue
+      }
+
+      if (maxChannel >= 235 && (maxChannel - minChannel) <= 18) {
+        const whiteness = (red + green + blue) / 3
+        const fadeRatio = Math.max(0, Math.min(1, (245 - whiteness) / 10))
+        data[i + 3] = Math.round(alpha * fadeRatio)
+      }
+    }
+
+    ctx.putImageData(frame, 0, 0)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return dataUrl
+  }
+}
+
+function isAdmissionsStrategyLongformCategory(options = {}) {
+  return options.categoryId === ADMISSIONS_STRATEGY_LONGFORM_CATEGORY_ID
+}
+
+function isBookPromoCategory(options = {}) {
+  return options.categoryId === BOOK_PROMO_CATEGORY_ID
+}
+
+function isHumanSceneBlogCategory(options = {}) {
+  return isAdmissionsStrategyLongformCategory(options) || isBookPromoCategory(options)
+}
+
+function isAdmissionsStrategyKeywordCategory(options = {}) {
+  return options.categoryId === ADMISSIONS_STRATEGY_KEYWORD_CATEGORY_ID
+}
+
+function isKnowledgeInsightCategory(options = {}) {
+  return options.categoryId === KNOWLEDGE_INSIGHT_CATEGORY_ID
+}
+
+function buildAdmissionsStrategySectionContext(section = {}) {
+  const heading = String(section?.heading || '').trim()
+  const keyPhrase = String(section?.keyPhrase || '').trim()
+  const content = String(section?.content || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 280)
+
+  return [
+    heading ? `Section heading: "${heading}".` : '',
+    keyPhrase ? `Key phrase: "${keyPhrase}".` : '',
+    content ? `Match this section content closely: "${content}".` : '',
+  ].filter(Boolean).join(' ')
+}
+
 function buildBlogImagePrompt(section, options = {}, index = 0) {
   const mergedOptions = { ...options, section }
   const versionConfig = getBlogImageVersionConfig(mergedOptions)
-  const styleHint = versionConfig.version === 'image_keyword'
+  const isHumanSceneCategory = isHumanSceneBlogCategory(options)
+  const isKnowledgeInsight = isKnowledgeInsightCategory(options)
+  const styleHint = isKnowledgeInsight
+    ? KNOWLEDGE_INSIGHT_EMOJI_STYLE
+    : versionConfig.version === 'image_keyword'
     ? getStylePrompt(options.imageStyle, 'Simple poster background style with a flat solid-color field, minimal shading, one clean educational motif, and a very uncluttered composition.')
     : getStylePrompt(options.imageStyle)
   const isPhotoStyle = options.imageStyle === 'photo'
@@ -130,35 +302,75 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
   const topicPrompt = versionConfig.version === 'image_keyword'
     ? describeConceptDigestTopic(section)
     : ''
-  const mediumHint = isPhotoStyle
+  const sectionContext = isHumanSceneCategory
+    ? buildAdmissionsStrategySectionContext(section)
+    : ''
+  const mediumHint = isHumanSceneCategory
+    ? (isPhotoStyle
+      ? 'Generate a 1:1 square photorealistic human-centered education photo for a Korean admissions and study-strategy blog image'
+      : 'Generate a 1:1 square anime-inspired human-centered education illustration for a Korean admissions and study-strategy blog image')
+    : isKnowledgeInsight
+    ? 'Generate a 1:1 square educational illustration asset for the lower-right corner of a Korean knowledge-sharing card'
+    : isPhotoStyle
     ? 'Generate a 1:1 square realistic photo for a Korean education blog image'
     : 'Generate a 1:1 square illustration for a Korean education blog image'
-  const sceneHint = isPhotoStyle
+  const sceneHint = isHumanSceneCategory
+    ? (isPhotoStyle
+      ? `Show one or two believable Korean people whose role matches the section, such as a student, parent, teacher, counselor, tutor, or mentor, inside one coherent real study scene. The action, facial expression, props, and location must clearly match the section topic and advice. Use real classrooms, libraries, desks, school corridors, counseling rooms, campus spaces, notebooks, exam papers, planners, or laptops only when they fit the section context. ${sectionContext} The full square frame must read as one authentic camera photograph, not a poster, collage, pattern sheet, or graphic card.`
+      : `Show one or two Korean human characters in one coherent anime-inspired study scene that matches the section. The characters should look like students, parents, teachers, counselors, tutors, or mentors depending on the section topic. Their action, expression, clothing, props, and background must visually express the advice in the section. Use study desks, books, laptops, planners, exam sheets, libraries, classrooms, or counseling scenes only when they fit the section context. ${sectionContext} The full square frame must read as one polished animation-style key visual with human presence, not as icons, symbols, abstract patterns, or a poster layout.`)
+    : isKnowledgeInsight
+    ? `${versionConfig.subjectPrompt || 'Use one small educational motif related to the section topic.'} Use only one main motif, or at most two tightly related motifs, that directly match the section's idea "${section.heading}" and key phrase "${section.keyPhrase || section.heading}". The motif should feel like a clean textbook-side illustration, not a decorative wallpaper. If the section is about a study habit, use a directly relevant object such as a planner, notebook, timer, memory cue, or review cycle visual. If the section is about a social, humanities, or science idea, choose a literal symbol or object that represents that exact concept. Keep the motif compact, readable, visually weighted toward the lower-right area of the square, and easy to recognize at a glance like a sticker or emoticon.`
+    : isPhotoStyle
     ? `Show one authentic full-bleed real-world education photo related to "${section.heading}", such as students studying, a teacher guiding a class, a real classroom, a real school hallway, a library, a campus building, notebooks on a real desk, or hands-on learning materials. The image must look like it was captured with a camera in a real school or study environment, with one continuous photographic scene filling the entire square frame. Do not use tiled backgrounds, poster layouts, split zones, abstract patterns, or graphic panels.`
     : `${versionConfig.subjectPrompt || `Use only one or two simple study motifs such as ${variation.icons}, and keep them small and sparse rather than spread across the whole composition.`} ${topicPrompt}`
-  const styleConstraint = isPhotoStyle
+  const styleConstraint = isHumanSceneCategory
+    ? (isPhotoStyle
+      ? 'Use consistent documentary-style realism across the whole article: real human proportions, natural skin, authentic lighting, believable interiors, and camera-photo detail. Avoid illustration, CG, poster design, split layouts, infographic treatment, and decorative pattern backgrounds.'
+      : 'Use consistent anime-style or animation-key-visual treatment across the whole article: expressive human characters, clean linework, polished shading, cinematic composition, and a believable study environment. Avoid realistic photo texture, generic icon posters, abstract pattern sheets, flat symbol-only layouts, and non-human compositions.')
+    : isKnowledgeInsight
+    ? `Do not generate a full background scene, landscape, room, poster, or card layout. Do not put the subject in the center. Do not use people unless the concept absolutely requires a human action, and even then keep the figure simple and secondary. Avoid text, labels, many mini icons, repeated decorations, notebook paper textures, stickers, and collage composition. Prefer a single isolated object or one tiny object pair with bold linework and simplified color blocking. ${KNOWLEDGE_INSIGHT_CUTOUT_RULE} The result should behave like one contextual lower-right corner illustration asset.`
+    : isPhotoStyle
     ? 'Prefer realistic human presence, real interiors, natural classroom lighting, believable school furniture, real books and stationery, and genuine documentary-style composition. The whole image should read as a single real photograph rather than a designed card.'
     : versionConfig.version === 'image_keyword'
       ? 'No realistic photos, no people. Keep the illustration flat, simple, and poster-like. Prefer one clear object, broad empty space, and a smooth solid-color background that supports the main object. Do not use notebook lines, paper textures, check patterns, chalkboard grain, or many mini icons.'
       : 'No realistic photos, no people. Cute Korean educational style with a clean full-bleed composition.'
+  const textRulePrompt = isHumanSceneCategory ? LATIN_NUMBER_ONLY_PROMPT : NO_LETTER_PROMPT
 
-  return `${mediumHint} about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. ${sceneHint} ${versionConfig.layoutPrompt} ${DOM_TEXT_OVERLAY_PROMPT} ${NO_LETTER_PROMPT} ${styleConstraint} If the selected style suggests a solid color or subtle pattern background, keep it visually simple and readable under DOM text overlays.${extraHint}`
+  return `${mediumHint} about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. ${sceneHint} ${versionConfig.layoutPrompt} ${DOM_TEXT_OVERLAY_PROMPT} ${textRulePrompt} ${styleConstraint} If the selected style suggests a solid color or subtle pattern background, keep it visually simple and readable under DOM text overlays.${extraHint}`
 }
 
 export async function generateBlogImages(sections, options = {}) {
-  const reuseSingleBackground = options.textOverlay !== 'without-text'
+  const reuseSingleBackground = !isHumanSceneBlogCategory(options)
+    && !isAdmissionsStrategyKeywordCategory(options)
+    && !isKnowledgeInsightCategory(options)
+    && options.textOverlay !== 'without-text'
   const allSections = sections.filter(Boolean)
   const targetSections = reuseSingleBackground ? allSections.slice(0, 1) : allSections
+  const sharedOverlayHeadline = isAdmissionsStrategyKeywordCategory(options)
+    ? deriveBlogTitleKeywordHeadline(options.title || '')
+    : ''
+  const resolveOverlayHeadline = (section = {}) => {
+    if (isAdmissionsStrategyKeywordCategory(options)) {
+      return deriveBlogHeadline(section.keyPhrase || '', section.heading || '')
+        || deriveBlogTitleKeywordHeadline(options.title || '')
+    }
+
+    return sharedOverlayHeadline
+  }
 
   const results = []
   for (let i = 0; i < targetSections.length; i += 1) {
     const section = targetSections[i]
     try {
-      const imageUrl = await generateImage(buildBlogImagePrompt(section, options, i))
+      const generatedImageUrl = await generateImage(buildBlogImagePrompt(section, options, i), 2, options.signal)
+      const imageUrl = isKnowledgeInsightCategory(options)
+        ? await removeWhiteBackgroundFromDataUrl(generatedImageUrl)
+        : generatedImageUrl
       results.push({
         heading: section.heading,
         imageUrl,
         keyPhrase: section.keyPhrase || section.heading,
+        overlayHeadline: resolveOverlayHeadline(section) || undefined,
         style: 'overlay',
         variant: getBlogImageVersionConfig({ ...options, section }).variant,
         overlayMode: getBlogImageVersionConfig({ ...options, section }).overlayMode,
@@ -171,6 +383,7 @@ export async function generateBlogImages(sections, options = {}) {
         heading: section.heading,
         imageUrl: null,
         keyPhrase: section.keyPhrase || section.heading,
+        overlayHeadline: resolveOverlayHeadline(section) || undefined,
         style: 'overlay',
         variant: getBlogImageVersionConfig({ ...options, section }).variant,
         overlayMode: getBlogImageVersionConfig({ ...options, section }).overlayMode,
@@ -187,6 +400,7 @@ export async function generateBlogImages(sections, options = {}) {
       heading: section.heading,
       imageUrl: sharedImage,
       keyPhrase: section.keyPhrase || section.heading,
+      overlayHeadline: resolveOverlayHeadline(section) || undefined,
       style: 'overlay',
       variant: results[0]?.variant || getBlogImageVersionConfig(options).variant,
       overlayMode: results[0]?.overlayMode || getBlogImageVersionConfig(options).overlayMode,

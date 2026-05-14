@@ -30,11 +30,15 @@ const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
 const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 15000
+const BLOG_DIVIDER_MARKER = '[DIVIDER]'
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
 const apiHeaders = (extra = {}) => ({
   'Content-Type': 'application/json',
   ...extra,
 })
+const BLOG_TEXT_STYLE_PRESET = {
+  ADMISSIONS_KEYWORD: 'admissions_style_2',
+}
 
 function stripMarkdown(md) {
   return sanitizeBlogBodyForUpload(md)
@@ -62,11 +66,20 @@ export async function uploadToBlog(extractionId, options = {}) {
   const blogConnection = getPlatformConnections()?.blog || {}
   const categoryPath = String(blogConnection.categoryPath || blog.categoryPath || '').trim()
   const sections = Array.isArray(blog.sections) ? blog.sections : []
-  const headingStyle = resolveBlogHeadingStyle(categoryPath, sections)
+  // 스타일 결정용 카테고리 ID 는 네이버 폴더 경로와 별개로 categoryInfo 에서 보완 폴백.
+  const stylingCategoryId = String(categoryPath || blog?.categoryInfo?.finalCategoryId || '').trim()
+  const headingStyle = resolveBlogHeadingStyle(stylingCategoryId, sections)
   const quoteStyle = headingStyle === BLOG_HEADING_STYLE.HEADING ? '' : headingStyle
+  const textStylePreset = stylingCategoryId === 'admissions_strategy_style_2'
+    ? BLOG_TEXT_STYLE_PRESET.ADMISSIONS_KEYWORD
+    : ''
   let rawContent = ''
 
   if (sections.length) {
+    const joinDelimiter = !USE_REMOTE_BLOG_PUBLISH && stylingCategoryId === 'knowledge_insight'
+      ? `\n\n${BLOG_DIVIDER_MARKER}\n\n`
+      : '\n\n'
+
     rawContent = sections
       .map((section, index) => {
         const heading = buildBlogHeadingPrefix(section.heading, headingStyle)
@@ -75,7 +88,7 @@ export async function uploadToBlog(extractionId, options = {}) {
         const body = section.content || section.body || ''
         return `${heading}${imageMarker}${keyPhrase}${body}`
       })
-      .join('\n\n')
+      .join(joinDelimiter)
   }
 
   if (!rawContent) {
@@ -109,6 +122,7 @@ export async function uploadToBlog(extractionId, options = {}) {
           tags: normalizedTags,
           categoryPath,
           quoteStyle,
+          textStylePreset,
         }),
       },
       BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
@@ -139,6 +153,9 @@ export async function uploadToBlog(extractionId, options = {}) {
   }
   if (quoteStyle) {
     formData.append('quoteStyle', quoteStyle)
+  }
+  if (textStylePreset) {
+    formData.append('textStylePreset', textStylePreset)
   }
   if (scheduledAt) {
     formData.append('scheduledAt', scheduledAt)

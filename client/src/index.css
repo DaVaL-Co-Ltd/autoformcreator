@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* 카드뉴스용 SB Aggro 패밀리 (로컬 파일) */
+@font-face {
+  font-family: 'SBAggro';
+  src: url('/fonts/SBAggroL.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SBAggro';
+  src: url('/fonts/SBAggroM.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SBAggro';
+  src: url('/fonts/SBAggroB.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @font-face {
   font-family: 'Maplestory';
   src: url('https://cdn.jsdelivr.net/gh/fonts-archive/Maplestory/Maplestory-Bold.woff2') format('woff2'),
