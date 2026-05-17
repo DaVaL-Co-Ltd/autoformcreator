@@ -12,6 +12,8 @@ const DEFAULTS = {
     displayName: '블로그 바로가기',
     url: 'https://m.blog.naver.com/PostList.naver?blogId=onlyjungdw',
     categoryPath: '',
+    footerHeading: '더 많은 콘텐츠는 여기에서 만나보세요.',
+    footerLinks: null,
     connectedAt: null,
   },
   newsletter: {
@@ -42,7 +44,12 @@ const hasDbClient = () => Boolean(supabase && typeof supabase.from === 'function
 
 function cloneDefaults() {
   return {
-    blog: { ...DEFAULTS.blog },
+    blog: {
+      ...DEFAULTS.blog,
+      footerLinks: Array.isArray(DEFAULTS.blog.footerLinks)
+        ? DEFAULTS.blog.footerLinks.map((link) => ({ ...link }))
+        : DEFAULTS.blog.footerLinks,
+    },
     newsletter: { ...DEFAULTS.newsletter },
     instagram: { ...DEFAULTS.instagram },
     shorts: { ...DEFAULTS.shorts },

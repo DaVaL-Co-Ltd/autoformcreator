@@ -12,6 +12,7 @@ import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.j
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite.js'
 import { sanitizeBlogBodyForUpload } from '../utils/blogBodySanitizer.js'
 import { getAll as getPlatformConnections } from '../utils/platformConnections.js'
+import { appendBlogFooterText, getBlogFooterConfig } from '../utils/blogFooterLinks.js'
 import {
   BLOG_HEADING_STYLE,
   buildBlogHeadingPrefix,
@@ -63,7 +64,12 @@ export async function uploadToBlog(extractionId, options = {}) {
   if (!blog) throw new Error('블로그 콘텐츠가 없습니다')
 
   const title = blog.title || blog.uploadTitle || '제목 없음'
-  const blogConnection = getPlatformConnections()?.blog || {}
+  const platformConnections = getPlatformConnections() || {}
+  const blogConnection = platformConnections.blog || {}
+  const savedBlogFooterEnabled = ext.data?.blogFooterEnabled ?? ext.blogFooterEnabled
+  const blogFooterConfig = savedBlogFooterEnabled === false
+    ? { heading: '', links: [], hasCustomLinks: false }
+    : getBlogFooterConfig(platformConnections)
   const categoryPath = String(blogConnection.categoryPath || blog.categoryPath || '').trim()
   const sections = Array.isArray(blog.sections) ? blog.sections : []
   // 스타일 결정용 카테고리 ID 는 네이버 폴더 경로와 별개로 categoryInfo 에서 보완 폴백.
@@ -76,7 +82,8 @@ export async function uploadToBlog(extractionId, options = {}) {
   let rawContent = ''
 
   if (sections.length) {
-    const joinDelimiter = !USE_REMOTE_BLOG_PUBLISH && stylingCategoryId === 'knowledge_insight'
+    const isCardNewsCategory = stylingCategoryId === 'knowledge_insight' || stylingCategoryId === 'interview_prep'
+    const joinDelimiter = !USE_REMOTE_BLOG_PUBLISH && isCardNewsCategory
       ? `\n\n${BLOG_DIVIDER_MARKER}\n\n`
       : '\n\n'
 
@@ -103,7 +110,7 @@ export async function uploadToBlog(extractionId, options = {}) {
     throw new Error('블로그 제목 또는 본문이 없습니다')
   }
 
-  const normalizedContent = stripMarkdown(rawContent)
+  const normalizedContent = appendBlogFooterText(stripMarkdown(rawContent), blogFooterConfig)
   const normalizedTags = normalizeBlogTags(blog)
   const scheduledAt = Object.prototype.hasOwnProperty.call(options, 'scheduledAtOverride')
     ? options.scheduledAtOverride

@@ -8,9 +8,11 @@ import {
   Instagram,
   Link,
   MonitorDown,
+  Plus,
   RefreshCw,
   Save,
   Share2,
+  Trash2,
   User,
   X,
   Youtube,
@@ -32,6 +34,7 @@ import {
 import { validateGeminiEnvironment } from '../services/geminiValidation.js'
 import { getAll, loadAll as loadPlatformConnections, updateDisplay } from '../utils/platformConnections'
 import { getBlogUploadShowBrowser, setBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
+import { buildBlogFooterDraft, createEmptyBlogFooterLink } from '../utils/blogFooterLinks.js'
 
 const sections = [
   { id: 'desktop-helper', label: '블로그 서버 설치', icon: MonitorDown },
@@ -40,7 +43,13 @@ const sections = [
   { id: 'account', label: '계정', icon: User },
 ]
 
-const VALID_SECTION_IDS = new Set(sections.map((section) => section.id))
+const visibleSections = [
+  ...sections.slice(0, 3),
+  { id: 'blog_footer', label: '블로그 하단 링크', icon: FileText },
+  ...sections.slice(3),
+]
+
+const VALID_SECTION_IDS = new Set(visibleSections.map((section) => section.id))
 
 const FOOTER_PLATFORMS = [
   {
@@ -217,6 +226,8 @@ export default function SettingsPage() {
     }, {})
   })
   const [footerSavedKey, setFooterSavedKey] = useState(null)
+  const [blogFooterDraft, setBlogFooterDraft] = useState(() => buildBlogFooterDraft(getAll()))
+  const [blogFooterSaved, setBlogFooterSaved] = useState(false)
 
   const [platformStatuses, setPlatformStatuses] = useState({
     blog: { state: 'loading', connected: false, helperReachable: false, chromiumReady: false },
@@ -288,6 +299,7 @@ export default function SettingsPage() {
           return accumulator
         }, {})
       )
+      setBlogFooterDraft(buildBlogFooterDraft(all))
     })()
 
     return () => {
@@ -374,6 +386,47 @@ export default function SettingsPage() {
     setTimeout(() => {
       setFooterSavedKey((currentKey) => (currentKey === key ? null : currentKey))
     }, 1500)
+  }
+
+  const handleBlogFooterLinkChange = (linkId, field, value) => {
+    setBlogFooterDraft((previous) => ({
+      ...previous,
+      links: previous.links.map((link) => (
+        link.id === linkId ? { ...link, [field]: value } : link
+      )),
+    }))
+  }
+
+  const handleAddBlogFooterLink = () => {
+    setBlogFooterDraft((previous) => ({
+      ...previous,
+      links: [...previous.links, createEmptyBlogFooterLink()],
+    }))
+  }
+
+  const handleRemoveBlogFooterLink = (linkId) => {
+    setBlogFooterDraft((previous) => {
+      const nextLinks = previous.links.filter((link) => link.id !== linkId)
+      return {
+        ...previous,
+        links: nextLinks.length > 0 ? nextLinks : [createEmptyBlogFooterLink()],
+      }
+    })
+  }
+
+  const handleBlogFooterSave = async () => {
+    await updateDisplay('blog', {
+      footerHeading: String(blogFooterDraft.heading || '').trim(),
+      footerLinks: blogFooterDraft.links
+        .map((link) => ({
+          id: link.id,
+          label: String(link.label || '').trim(),
+          url: String(link.url || '').trim(),
+        }))
+        .filter((link) => link.label || link.url),
+    })
+    setBlogFooterSaved(true)
+    setTimeout(() => setBlogFooterSaved(false), 1500)
   }
 
   const handleChangePassword = () => {
@@ -501,7 +554,7 @@ export default function SettingsPage() {
     <div className="flex gap-6 max-w-7xl mx-auto w-full">
       <div className="w-56 shrink-0">
         <div className="bg-surface rounded-2xl border border-border p-2 space-y-1 sticky top-0 shadow-sm">
-          {sections.map(({ id, label, icon }) => {
+          {visibleSections.map(({ id, label, icon }) => {
             const SectionIcon = icon
 
             return (
@@ -853,6 +906,100 @@ export default function SettingsPage() {
             <p className="mt-5 rounded-lg border border-border bg-surface-light p-3 text-xs text-text-muted">
               여기서 설정한 표시 이름과 URL은 뉴스레터 미리보기와 복사 본문 하단 링크에 반영됩니다.
             </p>
+          </div>
+        )}
+
+        {activeSection === 'blog_footer' && (
+          <div className="bg-surface rounded-2xl border border-border p-6 shadow-sm">
+            <h3 className="text-base font-semibold text-text mb-1">블로그 하단 공통 링크</h3>
+            <p className="text-sm text-text-muted mb-6">
+              블로그 본문 마지막에 공통으로 붙일 안내 문구와 링크를 따로 설정합니다.
+              저장하면 결과 화면, 복사 본문, 네이버 업로드 본문에 같은 값이 들어갑니다.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-text-muted">안내 문구</label>
+                <input
+                  type="text"
+                  value={blogFooterDraft.heading}
+                  onChange={(event) => setBlogFooterDraft((previous) => ({ ...previous, heading: event.target.value }))}
+                  placeholder="예: 더 많은 콘텐츠는 여기에서 만나보세요."
+                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="space-y-3">
+                {blogFooterDraft.links.map((link, index) => (
+                  <div key={link.id} className="rounded-xl border border-border bg-surface-light p-4">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.4fr_auto]">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-text-muted">링크 이름</label>
+                        <input
+                          type="text"
+                          value={link.label}
+                          onChange={(event) => handleBlogFooterLinkChange(link.id, 'label', event.target.value)}
+                          placeholder={`예: 공통 링크 ${index + 1}`}
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-text-muted">URL</label>
+                        <input
+                          type="url"
+                          value={link.url}
+                          onChange={(event) => handleBlogFooterLinkChange(link.id, 'url', event.target.value)}
+                          placeholder="https://example.com/..."
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveBlogFooterLink(link.id)}
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text hover:bg-white"
+                        >
+                          <Trash2 size={13} />
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleAddBlogFooterLink}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs font-medium text-text hover:bg-surface-light"
+                >
+                  <Plus size={13} />
+                  링크 추가
+                </button>
+
+                <div className="flex items-center gap-3">
+                  {blogFooterSaved && (
+                    <span className="inline-flex items-center gap-1 text-xs text-success">
+                      <CheckCircle size={14} />
+                      저장됨
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleBlogFooterSave()}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white hover:bg-primary-dark"
+                  >
+                    <Save size={13} />
+                    저장
+                  </button>
+                </div>
+              </div>
+
+              <p className="rounded-lg border border-border bg-surface-light p-3 text-xs text-text-muted">
+                링크를 모두 지우고 저장하면 블로그 하단 공통 링크를 숨길 수 있습니다.
+              </p>
+            </div>
           </div>
         )}
 

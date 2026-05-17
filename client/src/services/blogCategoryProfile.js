@@ -138,7 +138,7 @@ export const BLOG_CATEGORY_PROFILES = {
   },
   interview_prep: {
     id: 'interview_prep',
-    label: '학생부/대입면접 준비',
+    label: '대입면접 준비',
     goal: '면접 준비 방향과 답변 포인트를 실전형으로 제공합니다.',
     titlePattern: '면접 주제 + 학과/상황 + 준비 포인트',
     introPattern: '면접에서 무엇을 평가하는지부터 설명합니다.',

@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "utf8:shell": "powershell -NoExit -ExecutionPolicy Bypass -File .\\scripts\\enable-utf8.ps1"
+  },
   "dependencies": {
     "playwright": "^1.59.1"
   }

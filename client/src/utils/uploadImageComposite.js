@@ -549,6 +549,7 @@ export async function renderBlogUploadImageDataUrl({
 export async function buildBlogUploadImageDataUrls({ blogImages = [], sections = [] }) {
   const list = Array.isArray(blogImages) ? blogImages : []
   const thumbnailImage = list.find((image) => image?.isThumbnail && getImageUrl(image)) || null
+  const sectionImages = list.filter((image) => !image?.isThumbnail)
 
   if (typeof document === 'undefined') {
     return [...list]
@@ -619,7 +620,7 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
     if (isClosingBlogSection(section?.heading)) {
       continue
     }
-    const image = findBlogImageSource(blogImages, section, index)
+    const image = findBlogImageSource(sectionImages, section, index)
     if (pushedImages.has(image)) {
       continue
     }

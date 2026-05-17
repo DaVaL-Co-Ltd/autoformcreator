@@ -1,11 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom'
-import { Sparkles, Settings, LogOut, X, ChevronRight, Beaker } from 'lucide-react'
+import { Sparkles, Settings, LogOut, X, ChevronRight } from 'lucide-react'
 import { useAuth } from '../context/useAuth'
 
 const navItems = [
   { to: '/extraction', icon: Sparkles, label: '콘텐츠 추출', description: 'AI 자동 생성' },
-  { to: '/prompt-lab/knowledge-cards', icon: Beaker, label: '지식 카드 테스트', description: '카드뉴스 실험실' },
-  { to: '/settings', icon: Settings, label: '설정', description: '플랫폼 연동 관리' },
+  { to: '/settings', icon: Settings, label: '설정', description: '플랫폼 연결 관리' },
 ]
 
 export default function Sidebar({ onClose }) {

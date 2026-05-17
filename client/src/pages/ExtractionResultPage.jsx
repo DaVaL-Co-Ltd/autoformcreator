@@ -56,6 +56,7 @@ import {
   getInstagramOverlayLines,
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
+import { appendBlogFooterText, getBlogFooterConfig } from '../utils/blogFooterLinks'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
@@ -294,7 +295,7 @@ export default function ExtractionResultPage() {
     [blogStylingCategoryId, blogSectionList]
   )
   const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogStylingCategoryId)
-  const usesKnowledgeInsightCards = blogStylingCategoryId === 'knowledge_insight'
+  const isCardNewsCategory = blogStylingCategoryId === 'knowledge_insight' || blogStylingCategoryId === 'interview_prep'
 
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
@@ -417,9 +418,12 @@ export default function ExtractionResultPage() {
         const title = blogTitle || blogContent?.title || ''
         const tags = normalizeBlogTags(blogContent)
         const uploadBody = compileKnowledgeInsightUploadBody(ensureArray(blogContent?.sections))
-        const content = appendBlogTagsToBody(
-          uploadBody || sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction)),
-          tags
+        const content = appendBlogFooterText(
+          appendBlogTagsToBody(
+            uploadBody || sanitizeBlogUploadContent(blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction)),
+            tags
+          ),
+          blogFooterConfig
         )
         const categoryPath = blogCategoryPath
         const quoteStyle = blogHeadingStyle === BLOG_HEADING_STYLE.HEADING ? '' : blogHeadingStyle
@@ -829,6 +833,11 @@ export default function ExtractionResultPage() {
   const [instagramImages, setInstagramImages] = useState(initialInstagramImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
+  // 카드뉴스 시각화는 카테고리 + 실제 이미지 생성 결과가 모두 있을 때만 적용한다.
+  // 사용자가 이미지 생성 옵션을 끄고 본문만 만든 경우 일반 섹션 렌더로 폴백된다.
+  const hasGeneratedBlogImages = Array.isArray(blogImages)
+    && blogImages.some((img) => img?.imageUrl || img?.renderedImageUrl || img?.pngUrl)
+  const usesKnowledgeInsightCards = isCardNewsCategory && hasGeneratedBlogImages
   const showBlogImageTextOverlay = (blogContent?.imageTextOverlay || 'with-text') !== 'without-text'
   const shortsVideoRef = useRef(null)
   const shortsAudioRefs = useRef([])
@@ -1149,6 +1158,10 @@ export default function ExtractionResultPage() {
       isSvg: false,
     }
   })
+  const blogFooterEnabled = state.blogFooterEnabled !== false
+  const blogFooterConfig = blogFooterEnabled
+    ? getBlogFooterConfig(platformConnections)
+    : { heading: '', links: [], hasCustomLinks: false }
 
   const copyNewsletterHtml = async () => {
     const keyPoints = ensureArray(newsletterContent?.keyPoints)
@@ -1327,7 +1340,13 @@ export default function ExtractionResultPage() {
             </div>
           )}
           <button
-            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogTagsToBody(blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction), blogTags)}`)}
+            onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogFooterText(
+              appendBlogTagsToBody(
+                blogBody || compileBlogBody(ensureArray(blogContent?.sections), blogContent?.introduction),
+                blogTags
+              ),
+              blogFooterConfig
+            )}`)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
           >
             {copied ? <CheckCircle size={14} className="text-success" /> : <Copy size={14} />}
@@ -1372,6 +1391,8 @@ export default function ExtractionResultPage() {
             )}
             {(() => {
               const blogImageList = ensureArray(blogImages)
+              const thumbnailImage = blogImageList.find((image) => image?.isThumbnail && (image?.imageUrl || image?.renderedImageUrl || image?.pngUrl)) || null
+              const sectionImageList = blogImageList.filter((image) => !image?.isThumbnail)
               const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
               const accentPalette = {
                 'bg-[#FFF3E0]': '#e57a00',
@@ -1379,17 +1400,59 @@ export default function ExtractionResultPage() {
                 'bg-[#E3F2FD]': '#1565c0',
                 'bg-[#F3E5F5]': '#7b1fa2',
               }
+              const thumbnailHeading = cleanCardText(thumbnailImage?.overlayHeadline || blogContent?.title || '')
+              const thumbnailDescription = thumbnailImage?.overlayMode === 'headline-only'
+                ? ''
+                : deriveBlogImageDescription(
+                  thumbnailImage?.keyPhrase || '',
+                  cleanCardText(blogContent?.title || ''),
+                  blogContent?.introduction || ensureArray(blogContent?.sections)[0]?.content || '',
+                )
 
-              return ensureArray(blogContent?.sections).map((section, index) => {
+              return (
+                <>
+                  {thumbnailImage && (
+                    <div className="mb-8 space-y-4">
+                      {thumbnailImage?.renderedImageUrl || thumbnailImage?.pngUrl ? (
+                        <img
+                          src={thumbnailImage.renderedImageUrl || thumbnailImage.pngUrl}
+                          alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+                          className="w-full max-w-xl rounded-xl shadow-sm"
+                        />
+                      ) : thumbnailImage?.imageUrl ? (
+                        thumbnailImage?.overlayMode === 'none' ? (
+                          <img
+                            src={thumbnailImage.imageUrl}
+                            alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+                            className="block w-full max-w-xl rounded-xl shadow-sm"
+                          />
+                        ) : (
+                          <BlogImageArtwork
+                            src={thumbnailImage.imageUrl}
+                            alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+                            headline={thumbnailHeading}
+                            description={thumbnailDescription}
+                            accentColor="#6366f1"
+                            showTextOverlay={showBlogImageTextOverlay}
+                            variant={thumbnailImage?.variant || 'circle'}
+                            fontPreset={thumbnailImage?.overlayFont || 'pretendard'}
+                            mode="modal"
+                            containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
+                          />
+                        )
+                      ) : null}
+                    </div>
+                  )}
+                  {ensureArray(blogContent?.sections).map((section, index) => {
                 if (usesKnowledgeInsightCards) {
                   const cardSummary = section?.cardSummary || {}
                   const cardHeadline = String(cardSummary.headline || section?.heading || '').trim()
                   const cardBullets = Array.isArray(cardSummary.bullets)
                     ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
                     : []
-                  const matchedKnowledgeImage = ensureArray(blogImages).find((img) =>
+                  const matchedKnowledgeImage = sectionImageList.find((img) =>
                     img?.heading && section?.heading && img.heading === section.heading
-                  ) || ensureArray(blogImages)[index] || null
+                  ) || sectionImageList[index] || null
                   const cornerImageUrl =
                     matchedKnowledgeImage?.renderedImageUrl
                     || matchedKnowledgeImage?.pngUrl
@@ -1425,11 +1488,11 @@ export default function ExtractionResultPage() {
                   )
                 }
                 const isClosing = isClosingBlogSection(section?.heading)
-                const matchedImages = isClosing ? [] : blogImageList.filter(img =>
+                const matchedImages = isClosing ? [] : sectionImageList.filter(img =>
                   img?.heading && section.heading && img.heading === section.heading &&
                   (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl)
                 )
-                const fallbackImage = isClosing ? null : (blogImageList[index] || null)
+                const fallbackImage = isClosing ? null : (sectionImageList[index] || null)
                 const sectionImages = matchedImages.length
                   ? matchedImages
                   : fallbackImage
@@ -1548,12 +1611,33 @@ export default function ExtractionResultPage() {
                   </div>
                 </section>
               )
-              })
+                  })}
+                </>
+              )
             })()}
             {blogTagText && (
               <p className="text-sm leading-relaxed text-text-muted">
                 {blogTagText}
               </p>
+            )}
+            {blogFooterConfig.links.length > 0 && (
+              <div className="pt-6 border-t border-border">
+                <p className="text-sm font-medium text-text mb-3">{blogFooterConfig.heading}</p>
+                <div className="flex flex-col gap-2">
+                  {blogFooterConfig.links.map((link) => (
+                    <a
+                      key={link.id}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex w-fit items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-primary hover:bg-surface-light"
+                    >
+                      <ExternalLink size={14} />
+                      {link.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </article>

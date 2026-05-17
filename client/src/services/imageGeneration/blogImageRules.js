@@ -36,6 +36,8 @@ const BLOG_VISUAL_VARIATIONS = [
 const ADMISSIONS_STRATEGY_LONGFORM_CATEGORY_ID = 'admissions_strategy_style_1'
 const ADMISSIONS_STRATEGY_KEYWORD_CATEGORY_ID = 'admissions_strategy_style_2'
 const KNOWLEDGE_INSIGHT_CATEGORY_ID = 'knowledge_insight'
+const INTERVIEW_PREP_CATEGORY_ID = 'interview_prep'
+const CARD_NEWS_CATEGORY_IDS = new Set([KNOWLEDGE_INSIGHT_CATEGORY_ID, INTERVIEW_PREP_CATEGORY_ID])
 const BOOK_PROMO_CATEGORY_ID = 'book_promo'
 const LATIN_NUMBER_ONLY_PROMPT = 'TEXT RULE: avoid readable text whenever possible. If text must appear on books, posters, notes, computer screens, whiteboards, signs, stationery, clothing, or props, it may contain only English alphabet letters A-Z or a-z and numeric digits 0-9. Absolutely no Hangul, no Korean words, no Japanese, no Chinese, no Arabic, no Cyrillic, and no other writing systems.'
 const KNOWLEDGE_INSIGHT_CUTOUT_RULE = 'BACKGROUND RULE: create the subject as an isolated cutout on a pure white background, or transparent-looking background if supported. Do not draw a scene, room, sky, desk surface, paper sheet, color wash, pattern, gradient, shadow box, or decorative backdrop behind it. The white area should act like removable empty background around the object.'
@@ -146,7 +148,7 @@ function getBlogImageVersionConfig(options = {}) {
     }
   }
 
-  if (options.categoryId === KNOWLEDGE_INSIGHT_CATEGORY_ID) {
+  if (CARD_NEWS_CATEGORY_IDS.has(options.categoryId)) {
     const subjectTheme = inferConceptDigestTheme(options.section, options)
     return {
       version: 'knowledge-insight-corner',
@@ -267,7 +269,7 @@ function isAdmissionsStrategyKeywordCategory(options = {}) {
 }
 
 function isKnowledgeInsightCategory(options = {}) {
-  return options.categoryId === KNOWLEDGE_INSIGHT_CATEGORY_ID
+  return CARD_NEWS_CATEGORY_IDS.has(options.categoryId)
 }
 
 function buildAdmissionsStrategySectionContext(section = {}) {

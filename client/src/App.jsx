@@ -15,7 +15,6 @@ const ExtractionResultPage = lazy(() => import('./pages/ExtractionResultPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
-const KnowledgeCardsTestPage = lazy(() => import('./pages/KnowledgeCardsTestPage'))
 const ScheduledUploadsPage = lazy(() => import('./pages/ScheduledUploadsPage'))
 
 function PageLoader() {
@@ -61,7 +60,6 @@ function AppLayout() {
           <Route path="/extraction/result" element={<LazyPage><ExtractionResultPage /></LazyPage>} />
           <Route path="/contents" element={<LazyPage><ContentPage /></LazyPage>} />
           <Route path="/contents/view" element={<LazyPage><ExtractionResultPage /></LazyPage>} />
-          <Route path="/prompt-lab/knowledge-cards" element={<LazyPage><KnowledgeCardsTestPage /></LazyPage>} />
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
           <Route path="/scheduled" element={<LazyPage><ScheduledUploadsPage /></LazyPage>} />
           <Route path="*" element={<Navigate to="/" replace />} />
