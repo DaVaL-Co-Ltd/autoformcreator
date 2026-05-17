@@ -1,0 +1,82 @@
+{
+  "target": {
+    "id": "885c95d7fced49bba5cb230ca5a3e332",
+    "name": "Jace",
+    "kind": "talking_photo"
+  },
+  "matchedToken": "Jace",
+  "variants": [
+    {
+      "id": "726a2f45007c41da89f4fde587796ece",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/d0ebbb5a3ef4431ebbfae3edd9ab5a61/d1a5206f63a74f28853e8cd6e9c43d07.WEBP?Expires=1779219033&Signature=p1waTs8NjUJhye57n9jGpfI5pfVLQSrMSkkAKXAsGebm3e5sDe6WFbZ0BCSfALWtKiowacs~k-cVShBerGMRCDqwVIYBCwBcuy3xuBj-cqKVMjutt--qJqiAdZq8glH6xqLqLVAVTIEO09T~~rDC1b-Yv8KTP-tX71ymxL0DPUmU63TiH~OBX-SLH191t-prkEviQW3MoN3Zd~lxZGaBmaZ~oydmtMfbiCHbt-wj7W7BvKNCwiZZsNezqSZ76sjso4B8BaRkKHAc-nz4xqJ7cbA~6gL80ZsB0~uWnWbTbGv85lnaygFh8c8X6yyGuJ1YDz7~U7T5XoHDXF5ZSPiRmw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "0893ea6525994226a96b654cd729b742",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/b81ba0a67f0e4c58a64805aaae0c6e61/2f6248899d334873ae8077ab2289e18c.WEBP?Expires=1779614904&Signature=A4OO6OyZxg5asyw8a-5TgfJyY2x-PiEarfZK1vzaqqYAo-Ic4~l1zIFEnoso8CH8mqqYAt9NaCFK2FZh579D5H7bF3LTnI75~GJ7ViH1K1vICFTF~VO1mtvr1VjVweElmIP1QtNRScmCJUY5nHfFG6cu6OzOHLlNGhhR0hzqZ9w86KVu106KJNy0xb7KUfVy7sAB7CwUS53ts0HX46TMro1H-5Ov-XiZmUOneHOJVPFbSwdZQJWRcckSofuub-3p7YoIUTMLE3A0QLZySOGLLbocqvGhpLanGYOekG7S2JomTfDdknyXGlHjt1qswpfRUFevopplbvbgoAvzLNMpYA__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "440f2af83f58425ab54a3f163a7dfd52",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/a85de461e6c343df8e79d67da3ce18ef/249e85277c164f1483d188e34800044a.WEBP?Expires=1779219021&Signature=MvEAsJOxYBTWCPmsG6QXab~wScFzYkro5xz-KTbBbNpIA0QLoXO4YXJqUD8iFmzeeIA0NB6DaWIYoA8X5iJ7nLyGJuw9SZuw-UgxV6pISGYh-DiYtyeSsaKAUr9FwadmDyT7tDgP5iIuZ05zqtwnneCVaPekJ2xEum0Z~iYrPmyCS018U43XRyBmZOl1xBh6o8AwO4bVJrQehpUmDTd7GEz1VzrLEDWvgY4wfBXCCX6bD~4VwmCYKnY-BN8kwLBUE-PjbsYQi2tO9jn0oNylzUEdPlMhXCGN9fdlcxK31fjIjdDPQzrY-pzZ9wOElYHHwAuw22Gb7OTiugx7bcpD1g__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "0d67157b8c3c40a3b381dc60d0f2614e",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/a79770717619483abcc2646f93510b9c/50929697db9f4aa5a76bfd4f99f902c6.WEBP?Expires=1779614932&Signature=O4ijdAFQzMX9utejIinBQ8iYAsajpYkuBRn1LkTMnGzm860eTaT087vpNBGTKXfihS7ynG-bwOpGnnPj5lHniL9~Jw2Py3~411B8L2XmmNhl8GjnCGxYBmcd9T4sFV5Z7jFHLqefxPRxDRzsBzcnPJ~61EdaClqwRlSKngGB4eT3CE51UGtxK8nFzCHvXILnajOKI02Ex1~J-vJxWy6KwG1EfWI0EJPzC4Lbav8P-3HwuuB6jfQ52iHjDonwyvyO3fIL0iVMRmOZ04wma83XWWPCz4EYaqT65fTxPMmwt~1MoTQOQa6LvaeWAdjZYORYSoT7tGJvXGf8mGCEl4aScQ__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "0422aded0ed04303a58090c7dc321c46",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/a31b0298cd5445f2ba2f2496405ecdc9/42eb304fd7a04565bde5c9d1a409bf83.WEBP?Expires=1779615043&Signature=JI9MPfzQ~sb7d1rjhfqAQP46f1YLje8ao7O9gk~kExjqo5fKmu52Iw5FtgsOCijA2Or3yKR~lkWT7vt8ZJsmFbAQ1xx-CI2tYmBlgupTzDWftRg5a-pYphS3dJE7si-nN25c-kFpOLsO~MGnTBswlwwAduk~INsl0R8wfwoUBQ3IiCl79bXkJqc0-e6EWWuvRZVL0QZp8jFimE2m3IgvO9Q1UZ9SGDS9x8xKPoVNukzTyvTwdoC4xNFZ-~ztsWzBbfGRjgztkFkSkQnav1U96uGiiI3wt6yYyXZOGHJRurbAwrwhgFHyyKgd8unhV244NY684uFoLU-h6iqeE8yYBw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "885c95d7fced49bba5cb230ca5a3e332",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/80ef569c34b745d4ae5faaede4a050b6/947192cc17bc4d2caca272239feff9de.WEBP?Expires=1779614933&Signature=DCdWn2aS0sbG1tPGiwe961IwytKflsDIQmIfi4yQ4wEmq-0fhfTwIUPI87r3G51Y-eLUpNwxgVzCDKt8~w-z2uZ8-2X0m30ztAtzS1nQKkMdMyF1KPR72-sPK-e55W-CPKJTkC0vD-b26s06OvLvjE7cw5FHjHIMk7iKW1qXHDSCPe1wJklCAJmA0CcfJL1xcSlKwbknYmftaSOJChnm2rsFgp5hfIDM5sP8rSuEFzi9whc-SNOLJ0-L1lsoy8armszNcgPh9JwzzZO~d7AlR-4VehiyxHa-hv2JvLddzxaaI3J0LC2rqmEpZPTtOUh~KyMLkPho3gbS8nTLyIwgzw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": true
+    },
+    {
+      "id": "c2467fb03d714a2dbb83670b09f7d7e8",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/7adc62c5ae834d64900cdd4c7f4d4139/d48a132719454a7e9c8cee4d2a47bea9.WEBP?Expires=1779614906&Signature=j26os8omrwH6WUVrwJFA7yfOOPAseTIXj-UQXcLSAJ84qA5tXyT~ixHTwCM9qwwdt4-lXtNni05GTW4~CQEMnrB7LKvxbQB-2dsixAfgV44G4JHcOK~9vP14UZ7bY6TLOwNzWnxaJQewxQo8Qyq3b-zhVmSgQgNUbb1NY1AksDA9kmOb1Lvh9qKN9LgIjNL1Jn2WHLhG7TEUpws8eJcUFhlyrEuY1KaZedK4TU1tRFAXFOC-sCHbXNPyjVKmn8vNTCntK4dqxYOQ2mG-xVhRyrogqeMS7BxLh6rrG3OsSfNwwVn1IDFrySQVlRJ8iqDrE5GIXca~lHZW20raG8V6Vw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "b4276af9d49b4502b097b914a51e5f7e",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/6c5fb87b14574dbb97e4f06fdedbd55c/ae93a3b714354432b59c7dc31b51720b.WEBP?Expires=1779614906&Signature=dt3btUuRB5sKRIA6gJlUDpgJW4ue7pEfNY4fS5D9cvuQ0iunTyJRVR3MO1BJYxxG6kxcBbs0AfseSquCBKY6MCeitrOTw3qvHzHtb3mioFF48b2gyQ0-ipVYy031-WiGE-YDH1pRrIQhvKAguy-Usf7o8nHlP7n1pI04e7gTBI7KeQXp53uU7CEHb6DpQvwNrkedrGfXufUrcWPD8GGuuJ0Yfu0Z89aTd2gsgsM3XKw50m-q8rMW-hU0Kd~cCDfNZ6AHzIGRyt3Fxqyfq8Eoyto8qheT17onToiio4LvYzTOEXchnNhm2BYhwMBzxd4NTThrRgKMyanKs0KXBgO-Qw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "f55a98c799b84d859469982014ab9e3c",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/609c4893018d498dbad6937c9b5dd37e/fa681ff6a6e5466c9511bbee07cb67f5.WEBP?Expires=1779614933&Signature=biTTzZnt7ImrLgGSIl9wFCoHN5g9dKjZQxUGGZrHDpX~hFIwdsqY2BE4ooXr8kPiVkESw-1EyJk0w2bp8xyRWGhDhvfjy469sOsPY98VTXj6iZ5~T4FbRzimeqDK4bMwywcUL4XUwN5TJ3PBvmDT4Tbc3pXO-VMFR6ulY8tplcYll77~rWlHEP7jd~nywFzwrgLZt2JvxKJrGR3q8F9FLxpqy2CCLG2eJn4yWUXqN30tcJSO4BqQ30ncYaNNPq54wP1tHrQO7Qhh78cQFFZHv6acXdUFlywCI2KEvws2ItMVvfntVPd6LwysXQDxfvpEwzOJkz5THmy-1mxpTDM8MA__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "a07a45d3627045cfb401f51a3facc805",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/4ea903d85c2e40039bb19d78b93d31a3/0a907868184e4cbb9d735cdbd693e0ee.WEBP?Expires=1779614907&Signature=VVwfB2ItecG1W2o4mwlYT1juG5YpkooCWE85V62qlZ8B0PkxtkDZaRTtEIrsUvYQPC51qt7OpsJnDXnCSLP-nprdTv07Y4KYLwsE~wI2q5HLUjdPSmm0Bt5iP875oNm6X8O7q4CoWZ8et~5aWKOO42IQqgSdBI85KRw6UfyYI8hPSNwaxNbk-MDvHvS-8CkrgE6uDXKBxohMcI8iGuUdKgdeqzu4P9h58NHgo4LaGLNdGYjlfQbNJ9NaD2oeTk-fYa~q1ze458UJYF~pISWceIMSvx9aLxicG~OMKFboxjEZbuAL0JOpVWJNTWcTE169L0Bem8JcBHi0IK4ZL58L6w__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "98514c36beb94007a1ab493d583cf5c6",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/33dea5daac52451a969949287d008883/e7d4d69aa4144ccca3036b46a5b29d6a.WEBP?Expires=1779219023&Signature=RmElGQKRnNjU-sgr-tKeo0rBgL8-PSBmwgROCUbNBnZSWIVzohdzpUf6CchutusQQGTMOtEo62gE17ZYQHUKPZIJJzjno~G-~FzYkX4XWK5BH9fqIGS6mzkztvdbclG4nmD4zHmtTdb8VmSFP6TZRtk8ns-iGklupnJtFhWjawIREa7Pc5pwAqKeIvcw~fCUghqlH7LEWammmnVhLy5UrjClHopRTsUlue2L2kD~o~w57hy4BoBAMZtt4yu7yO0cfpdQE5M7QniiqtLndENvZHqLasXq5PvQUbsRwLMNU8m9V3ZDiwg3V4-TQMhqaDVuAgkYNKWct1R-rAQIKXV8Pg__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "f3db5b47238c4a4ba58885d24a3f1faa",
+      "name": "Jace",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/12581699173749f9841f08cb8d9e8aeb/e1ce19ccc2ae4fe691b1d3bb761a9849.WEBP?Expires=1779615046&Signature=k1CowHsWRVX~x4cav0Koj63~0-sfm4zoWCzvnh0tOlxL4iONc-spJKCkg-Rqxogkud6eOy0B9~qabTV2vSYMUzMG7GLZihsAGXxeaAfD8jyCIcds2YOb1-IT5trdCrhcOizR863HcCxrsZ-Q4nAcBkfyGU8gtKlnGMhu6882DP~F4K0QwpWVbS4W8VGWlBBh1EkW9CHqGKr9BRfQOmrlc~L5WyadrGrlUYQPlPD6f~5FH1mOBrSaBrlLFxdeFXVnmpg7HSw4GauL7P-UdfA2gkcaXRrB8nchyNTiXHP3E4VpsG9biWLXlsVVMPg-t1Ohuv3lpcKSKvDvKnMzt4GBwg__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    }
+  ]
+}

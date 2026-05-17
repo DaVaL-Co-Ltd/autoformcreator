@@ -1,0 +1,80 @@
+{
+  "conceptId": "study_dialogue",
+  "conceptLabel": "남녀 제자 공부 스타일 토크",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 20.3,
+  "promptLength": 5210,
+  "conceptExtra": "컨셉: 남녀 제자 공부 스타일 토크\n요약: 두 제자가 같은 공간에서 번갈아 대화하며 공부 스타일 차이·학습 전략을 풀어줌\n연출 방향: 남자 제자·여자 제자가 번갈아 등장. 한 화면에 한 명씩만 보임 (HeyGen 제약). 같은 영상 안에서는 같은 배경 1장을 공유 (sharedBackground) — 카페·스터디룸·도서관 같은 친근한 공간. 매 영상 생성 시 Gemini 가 새 분위기로 다시 만듦. 씬마다 한 명씩 카메라 정면. speakerSide 가 left 면 화면 좌측에 배치(offset.x = -0.30), right 면 우측(offset.x = +0.30). 같은 공간에 마주 앉아 대화하는 느낌. 대화 흐름: 첫 발화자가 자기 고민·방법 공유 → 상대가 자기 방식 응답 → 차이 정리 → 마지막 발화자가 시청자에게 댓글 유도. 말투는 친근한 또래 대화체. 자극·비교·우열 표현 금지. \"나는 이렇게 해, 너는 어때?\" \"오, 너는 그렇게 하는구나\" 같은 공감·존중 톤. 자막은 2~3 단어 키워드. CTA 는 마지막 씬에 자연스럽게.",
+  "rawText": "{\n  \"title\": \"2026 의대 입시, 너는 어떻게 생각해?\",\n  \"duration\": \"25\",\n  \"hook\": \"2026학년도 의대 입시, 정말 큰 변화가 찾아왔어!\",\n  \"sharedBackground\": {\n    \"visualDescription\": \"Cozy, modern university library study area with warm lighting, empty wooden tables and chairs, soft background blur, no people, peaceful and focused atmosphere, vertical 9:16.\"\n  },\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"5\",\n      \"layout\": \"dialogue-shared-bg\",\n      \"speakerSide\": \"left\",\n      \"narration\": \"야, 2026학년도 대입에서 의대 정원이 전년 대비 약 2배나 늘어난대. 진짜 엄청난 변화지 않아?\",\n      \"visualDescription\": \"Male student on left, looking slightly off-camera as if addressing a person to his right, engaged and slightly surprised expression, chest-up framing in a modern, bright study cafe.\",\n      \"textOverlay\": \"의대 정원 2배 확대\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"5\",\n      \"layout\": \"dialogue-shared-bg\",\n      \"speakerSide\": \"right\",\n      \"narration\": \"응, 나도 그 얘기 들었어. 최상위권 학생들의 의대 쏠림이 더 심해질 것 같더라. 상위 1% 학생들 선호도가 작년 대비 12.4%나 올랐대.\",\n      \"visualDescription\": \"Female student on right, responding with a thoughtful expression, looking slightly off-camera to her left, chest-up framing in the same study cafe, sharing the background.\",\n      \"textOverlay\": \"상위 1% 의대 선호\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"5\",\n      \"layout\": \"dialogue-shared-bg\",\n      \"speakerSide\": \"left\",\n      \"narration\": \"정원이 늘었는데도 지원자가 많아서 그런가, 수능 1등급 컷이 작년보다 1점이나 상승했대. 경쟁이 더 치열해진 것 같아.\",\n      \"visualDescription\": \"Male student on left, leaning slightly forward, expressing concern, looking towards the right, chest-up framing in the shared study cafe.\",\n      \"textOverlay\": \"수능 1등급 컷 1점 상승\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"5\",\n      \"layout\": \"dialogue-shared-bg\",\n      \"speakerSide\": \"right\",\n      \"narration\": \"맞아. 그래도 학생부 종합전형 비중은 작년과 비슷하게 유지되고, 논술 전형 모집 인원은 소폭 줄었다고 하더라.\",\n      \"visualDescription\": \"Female student on right, nodding in agreement, offering additional information, looking towards the left, chest-up framing in the shared study cafe.\",\n      \"textOverlay\": \"학종 유지, 논술 감소\"\n    },\n    {\n      \"sceneNumber\": 5,\n      \"duration\": \"5\",\n      \"layout\": \"dialogue-shared-bg\",\n      \"speakerSide\": \"left\",\n      \"narration\": \"이런 의대 쏠림 현상이 당분간 계속될 거래. 우리도 본인 성적에 맞는 전형 조합을 잘 설계해야 할 것 같아. 너는 어떻게 준비하고 있어?\",\n      \"visualDescription\": \"Male student on left, looking directly at the camera with a serious yet encouraging expression, gesturing slightly, chest-up framing in the shared study cafe.\",\n      \"textOverlay\": \"정밀한 전략 필요\"\n    }\n  ],\n  \"cta\": \"2026 의대 입시, 여러분은 어떻게 준비하고 계신가요? 댓글로 공유해주세요!\",\n  \"thumbnailPrompt\": \"Two diverse students, one male and one female, in a modern, cozy study cafe, looking thoughtfully at a tablet displaying graphs, with a headline '2026 Med School Admissions' in a bright, engaging style, vertical 9:16.\",\n  \"uploadTitle\": \"2026 의대 정원 2배 확대! 입시 전략은?\",\n  \"uploadDescription\": \"2026학년도 대입에서 의대 정원이 전년 대비 약 2배 확대됩니다. 이로 인해 상위 1% 학생들의 의대 선호도가 12.4% 상승했으며, 수능 1등급 컷도 1점 올랐습니다. 학생부 종합전형 비중은 유지되고 논술 전형은 소폭 감소했습니다. 전문가들은 의대 쏠림 현상이 지속될 것으로 예상하며, 수험생과 학부모는 본인 성적과 지원 전형을 정밀하게 설계해야 한다고 조언합니다. 여러분의 2026 의대 입시 전략은 무엇인가요? 댓글로 함께 이야기 나눠봐요!\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대입시\",\n    \"#2026대입\",\n    \"#의대정원확대\",\n    \"#수능\",\n    \"#학생부종합전형\",\n    \"#논술전형\",\n    \"#입시전략\",\n    \"#공부스타그램\",\n    \"#고3\"\n  ]\n}",
+  "parsed": {
+    "title": "2026 의대 입시, 너는 어떻게 생각해?",
+    "duration": "25",
+    "hook": "2026학년도 의대 입시, 정말 큰 변화가 찾아왔어!",
+    "sharedBackground": {
+      "visualDescription": "Cozy, modern university library study area with warm lighting, empty wooden tables and chairs, soft background blur, no people, peaceful and focused atmosphere, vertical 9:16."
+    },
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "5",
+        "layout": "dialogue-shared-bg",
+        "speakerSide": "left",
+        "narration": "야, 2026학년도 대입에서 의대 정원이 전년 대비 약 2배나 늘어난대. 진짜 엄청난 변화지 않아?",
+        "visualDescription": "Male student on left, looking slightly off-camera as if addressing a person to his right, engaged and slightly surprised expression, chest-up framing in a modern, bright study cafe.",
+        "textOverlay": "의대 정원 2배 확대"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "5",
+        "layout": "dialogue-shared-bg",
+        "speakerSide": "right",
+        "narration": "응, 나도 그 얘기 들었어. 최상위권 학생들의 의대 쏠림이 더 심해질 것 같더라. 상위 1% 학생들 선호도가 작년 대비 12.4%나 올랐대.",
+        "visualDescription": "Female student on right, responding with a thoughtful expression, looking slightly off-camera to her left, chest-up framing in the same study cafe, sharing the background.",
+        "textOverlay": "상위 1% 의대 선호"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "5",
+        "layout": "dialogue-shared-bg",
+        "speakerSide": "left",
+        "narration": "정원이 늘었는데도 지원자가 많아서 그런가, 수능 1등급 컷이 작년보다 1점이나 상승했대. 경쟁이 더 치열해진 것 같아.",
+        "visualDescription": "Male student on left, leaning slightly forward, expressing concern, looking towards the right, chest-up framing in the shared study cafe.",
+        "textOverlay": "수능 1등급 컷 1점 상승"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "5",
+        "layout": "dialogue-shared-bg",
+        "speakerSide": "right",
+        "narration": "맞아. 그래도 학생부 종합전형 비중은 작년과 비슷하게 유지되고, 논술 전형 모집 인원은 소폭 줄었다고 하더라.",
+        "visualDescription": "Female student on right, nodding in agreement, offering additional information, looking towards the left, chest-up framing in the shared study cafe.",
+        "textOverlay": "학종 유지, 논술 감소"
+      },
+      {
+        "sceneNumber": 5,
+        "duration": "5",
+        "layout": "dialogue-shared-bg",
+        "speakerSide": "left",
+        "narration": "이런 의대 쏠림 현상이 당분간 계속될 거래. 우리도 본인 성적에 맞는 전형 조합을 잘 설계해야 할 것 같아. 너는 어떻게 준비하고 있어?",
+        "visualDescription": "Male student on left, looking directly at the camera with a serious yet encouraging expression, gesturing slightly, chest-up framing in the shared study cafe.",
+        "textOverlay": "정밀한 전략 필요"
+      }
+    ],
+    "cta": "2026 의대 입시, 여러분은 어떻게 준비하고 계신가요? 댓글로 공유해주세요!",
+    "thumbnailPrompt": "Two diverse students, one male and one female, in a modern, cozy study cafe, looking thoughtfully at a tablet displaying graphs, with a headline '2026 Med School Admissions' in a bright, engaging style, vertical 9:16.",
+    "uploadTitle": "2026 의대 정원 2배 확대! 입시 전략은?",
+    "uploadDescription": "2026학년도 대입에서 의대 정원이 전년 대비 약 2배 확대됩니다. 이로 인해 상위 1% 학생들의 의대 선호도가 12.4% 상승했으며, 수능 1등급 컷도 1점 올랐습니다. 학생부 종합전형 비중은 유지되고 논술 전형은 소폭 감소했습니다. 전문가들은 의대 쏠림 현상이 지속될 것으로 예상하며, 수험생과 학부모는 본인 성적과 지원 전형을 정밀하게 설계해야 한다고 조언합니다. 여러분의 2026 의대 입시 전략은 무엇인가요? 댓글로 함께 이야기 나눠봐요!",
+    "hashtags": [
+      "#Shorts",
+      "#의대입시",
+      "#2026대입",
+      "#의대정원확대",
+      "#수능",
+      "#학생부종합전형",
+      "#논술전형",
+      "#입시전략",
+      "#공부스타그램",
+      "#고3"
+    ]
+  }
+}

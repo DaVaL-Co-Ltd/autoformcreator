@@ -1,0 +1,82 @@
+{
+  "target": {
+    "id": "a5454d8b999d4e5f87f486605465aae4",
+    "name": "Alexa",
+    "kind": "talking_photo"
+  },
+  "matchedToken": "Alexa",
+  "variants": [
+    {
+      "id": "62b02a920a78424e94f63f2ddb85dc99",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/ed678c8922e744429ad7fa04bf558d2c/d51c5fb9492d4d9f99d1b51981ecca95.WEBP?Expires=1779614721&Signature=AA4dAVZfnR3EzCagLQalaXIIvW5I-qvRzfhdWbUNfA9ZXSeC-TiOZITp0jVj28o2Ppva56hJvQeGfHD3yPs~BB9vmIiE4Ykof78NiBlRyrYGWibOb1rHjc1yzd-X5hoSyBpF5Kxq~Esfjz6mV6bZRPhCO8nHye42Yoppy9LAH0WDSdXkGkbJcmpdLVSx4hqrFssNQaCFdx~VgDn2AmLMfKqrZRu-9h4Vq2PxC1bIr5Er2SYrR-vmKGAUJp4G5TM1roqX9m75MA0WBLRdyi0-9we3lMPOS63~1swwhKtZ~qx7u1VFFMdRkO2Jz9RuoAsBHtf~LCa~22JG2lLO144Yuw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "62bc0097e3ec4154bd8133e73c6ff12d",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/c499d6edc83648f19e7619322f6c4978/1986de3e3aac4d3788d99a319321484f.WEBP?Expires=1779614721&Signature=qHuP3p5JpKonBAvnFpwsWjafdC7ZGo6pj9zKTIiKQmj5ll3eUIWLUJ-33LvN87ZhGmPWZqvy~lbI1WKCzdvrZr-P74MPew19x7V~2ZmsQ8aQK5rdaxU5~ItQoEggsYHpq-HBQlbvJm-EqGaFiQHUxt8yvtsTSaPwaC~9e8G-OSut9Pwhy2ljf-MJWzalUSGGgy7eS5p2eC7k37wsKB8ky3TEh-NDB2U1xcx9W4J3Zk3TG2hddtGcwzDO-Mgq-hKIN~xRKqxFg4lDZR~skOcBU14Qf0X0AdUrPanTk8puDsaSIYIa7g8somSjQtfOfkuEbR~B3cIAldCswHKF3N9hCQ__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "a5454d8b999d4e5f87f486605465aae4",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/b81ecd3f96274a89b7fedfdefae05bbe/2b6b17d8fa8847e59700795125b3dcda.WEBP?Expires=1779614721&Signature=DfKZ3pcSCsl3Qi0HgFGMgCwfssOO8JR8zsfLkEykMNOJ8yEhUtC1F7KM7RqOp7HB7wv~BGjQXyZSxNjIH5ThRnuMiewiEMJYjs2HGsUeXSo2VFG5rlIO04E0jY-8RcQ5DvG-ErIGLL-XczMjeFW7GPy8iJVTx4oN4F2r4joUK50wgOPRB9cGvgn2GGVPD9ehorhMm55D4bMSeo0EHur3T-nplLaczZ95-VxVZSO2Eil4x-a7HKXBxYMP3smxmSRSSiCD9MkFfwwkY3gApB3cPigwCeEqSrXwEmBDP21zxhUxYBUDsEQhKknfX5TCF74vbs0HlUIg~n93-eNWAIrt5Q__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": true
+    },
+    {
+      "id": "10e2042ed6b04649af6421221795e75c",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/b44d81d3cbbd4057a379e784ee5ec025/e12dabccbdde46b8803a89789569ee6e.WEBP?Expires=1779614721&Signature=GzbvvmGORbKYvSf2QmWh2~FZO9Z20rjuXMqPObOPByvyVCyDCcY4DOux2Kqj-Mwvxu~0XeOnevdHbTON3CyDQbN3eSSHjhDXeI9veLxNs6GguFdtnYioVZUMQ7yQ-UyWgrtAs71DR7T08eR0sFVnuRqeimK8IZGc4An0DjalzS4MmY0PJyPU4jjquxZXsU8kou~Z~UFVKUsT6BsT7u6yqZKh2Y5R3hiqV~YHUzTG5NNBvXdkoQqUm29oOigZfEgV0RxvD0SpNKE4zt~CgKUdHcdblJKRvhpGvCtSwJyhLJDx5DR-xJb1ibXnnWRSut8QaRZQS9VKAQvYTNafZIItdg__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "8813a91ea46847cd80baffbaa5f2b17e",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/b24a599687924c0ca97fde92a6ee4b0b/0e41f82927ec486997db48a022cbe4fe.WEBP?Expires=1779236843&Signature=BJAPSOsTTAd3R62~AJhlNx7HSldxnvfFUhhUoQxwtFeI918W9BHhLArnAI0Lv4d8~cB2qNaKfgdreDLScEanyxDG6gcCcem4syeWXigK5VtfrFpqHeMs9UKjIXTzWVwe0IwsNViDnhZmhdQox4RrzUm~8I0JWifqFhawoTjEsWI04w0ubNfwfXscOBtYqDeChIXEOBdL1Quw6WHuoVJHGc0OCVMEJLdjIlLnvtJXac5spztXdBwdTVU6Zx3qjkBh982O2CpxMAf9AY97SxGnKohZgRN6QYLHsvLfs9qdcP4niwSKS82JN80Dsz7LwbDa-TodZT-tgMLoKPYJ8X7QAQ__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "04e3819affbe42f3ba0b8df2688f1576",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/99db6c669d99404e95a41496abc5da62/799e7e6abc564523b8447e07ac0845d5.WEBP?Expires=1779614722&Signature=kZwNcCfgMJNd~Oe6NUPwLIBbqy584jeG1eKpp6jvkUwW6kPjRJ08JPt7rVpOeShGJuOGwavJ7L~xueVk2QNAx59mWUuoe~kgemkNBC5ccQ5GMS~x6LYdk1~gDyf8b3Cg8getq47rTgDdgPgDlimnEGqePQhe3AxUHN5LkU2gXtfZeageEYI~XclZYT3aTzJ6o~p-doF1wiqCNSc6fsR68a1JLTNhmGy3NbL8Ut6somJ5QnjF8oaE0qqQpz4DIQcK1zMdmvmTQgkAOAznYt9UWblKEAxs7HKJtDxxquA5duVRtYMVtqrK2Ry0MApS1ISc8Af1BzJx4Asccd~1oE~L9A__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "d4a53ea25a724aacb252c5e6f273b6e4",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/930c2013ae6b4858960962e4e77d8b5f/8f10ae03bddd4a7d8b0d59492ebb8f90.WEBP?Expires=1779614672&Signature=qQ7dLaQ31MHBSLflwoJkhvNpSig~FUG6XO1cAf5Tyg6Od4HXps8wxkZZyrj8MH1L3bhH1Rf2Mls6h1c0A7QEa2JGuLiuwfJYtykznoTITyM2iOaOCW4~jQBd1XnCcQ64Mv5M~LIvkBU8Y5IS611z59aOsDsluiygtj~t~yZ-oARIGqcNdELomHM5DW4DQh~8VGp8o0w9v3dPdGuOaeqXLv6suJADFBd8iv5uJpYH4PgqP8y0UWw-ndNpycoRXXutLGLoLIkczek7~~xeM3hJP8poB2fEux85gOufEMMenLrdU9H8KcOzEtXs6Cr154PPuRxq5Znmb4AvVZww0DFSFQ__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "057d99ff22cc47a9be6d5773cb46e2e0",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/731cd98ae37d42dfb9426e12006b9ddd/bd402df8c2534bf98ed9f215e4604284.WEBP?Expires=1779614656&Signature=Vy6dLUsebRkJzBZLFcu7vXXvPMqzXfzdJCk~SWKhpTHvuuxHhJr1QMMSFyplrWSKRsKADQfZOQ9IP~AUdT8Yy0Wtwv1HWJypjqFw1sbnjmDfW~ACydE00W73WFaJOCTjXvfw5bt7D2OaK80YntTaFCQRlHtsouM3MoIhHTcKCG1zyYQWWin2tnftN1~0FuV1Z0zqCkY17c-ApuHjcu0YP5adVHnFUkpjaVyz400PbgULg8GNR90q4RkgYHd1VPmAuJZ7AsdiyJf4OlL9T5AmhdBZT1MRNXDKb2SJDiEHUWTURsliQRceoQDNkhNLO3fIRQM702TB6QiJLdTdY7Z4fA__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "dac36601dd9447a7a41d88b37dbac8d6",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/68a9abbba6c14699b7001e1ae0ca0966/d377a92e9c054671865e862aceb9876a.WEBP?Expires=1779614722&Signature=YgwjbOaGH~A0oQWXyb5l4Seexn9md8S1zwGSHcR3EuyDdNOSCyXoeoDGlVKJ4g5T0JA6eItbRbBw7Paoz4fmypPWKeNHE36GDOwnVvR90aAk~jg32i~VAZGARqISApAVreCXewMxCYANbO7tL43NfIfwJyzt0laUdhNrzC0HsOubI2-6f~u6y3OJTohBvghoflj9f914h1z6tlw-KhIBErw4hy9iazhwZMfvkjoFFJuacjWFdFk6ZaQuw58HaeSnD7ik-UgpgNSuuAfxeaeuCy3H06HQuXYbkYcFLNAQLOTSvd0wWkDU3GMO~JIL6rwkAgVHQq67hA38AKQum4Jucg__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "539574131395485aac85c015c72cecb0",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/464cc56a86744319b206c9d2cf9e1f33/50d19cbd77914cf1972270266fc47915.WEBP?Expires=1779614722&Signature=lr6dmeFvH7GyG~jUkbBCO4yS4-~pED0dFWFZVweWRQbi5lZH1H6HxmTpZur9t-iJD23BJowz79DLnRFMjh3BbrkwDAwZ64HMZpAxU9u~DhgKd7FMDa3t42G60UVM47qb2N0BsDZwMTFBPbkTvrg6g7ERiDe2tncA4oJp1yIoZgW7~cV-z2B7Heuanyj9sWYXSigRyQN3QyCVn486sAs-aqazVuwU7TRxCf4JQj-Ghdaqy4nwTZqB0hSDEY1S-X61qLjqw1X3iJd9YhUrDpmFMxu8yl2BvKrpLWbOExT6VKP~bhNjj4rHd-piYLf64dqQgMvRTSpHuwvcy6pqkvdB4A__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "7e16d04300e74074bc77e7c0bfb97e87",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/0ba79b947de14937846b978f4f6e5d63/f55cd963c6004c25bd16f9220f181c79.WEBP?Expires=1779614723&Signature=dGPbWyWCGGOqSIk9on5iL8lJX2kxQ1cA4YZPsOTIamZjc1Mbu-nBAYMd3fSqAzEMzSzJC3WikOQOwUQlW1gDC8lyetUoPssdEDUn2VrEJ0h5DicMw6zDTVjviTYuX1~0aLYzTHF3uYhD9d1nID9voiLloRHeIjsSb5knr0aqW1chluCbrLVDhAbQb5I33W21QCbclqR1vge0a5sp4G0qQ3XY1OxQX7FZ5iS9~ErsJP~rAIw7Md5p7woV8mm0MI-lGk4iAbZqRuLR6Wynf5aqLnjT8NsVz8rZQ6o77NUHEhVaznw5DIi2ixpsVkWGpPtUalT2Zu3R7zNlsnkjNSNFvg__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    },
+    {
+      "id": "7a9c3518725e4f788b61df77e7d36c34",
+      "name": "Alexa",
+      "preview_image_url": "https://files2.heygen.ai/talking_photo/059b560f7c254f9a8c08b6edbc23e5ab/5642b77de90d471a9ff67d561b5c09a0.WEBP?Expires=1779614723&Signature=RY1NO0RVNXqXVEjjn2qPCmA8d8sgLLj2iKDcXaIdqmEQ9NJllAq~Cc-OuPXYEi1fHBs7Y6JgP6ngagXrUrl3iE7FLdbD6WJfa6ZOCaIyDD5BlcW4Hcv47OEUaTtZCI1A43YM5CMY7gw7X~~LUXW0c8t~OBc1Zx2CODvw3qBNB38yWf4IDsTIy8qUFT8Qks0EudCAHK-05o-SZgKOBZ60gfymfL-N8ESO4NFhaQQ871g5sypk-pO-Xmnw3wpVTG3tW2qGgFL7hHN0hSFPUHT8K6WYClXODAhXEm8ECwlwfkE~VcvPCFqDbxGtT4aJjVg-m7ipmRCekpBMAxSPYUv-uw__&Key-Pair-Id=K38HBHX5LX3X2H",
+      "is_current": false
+    }
+  ]
+}

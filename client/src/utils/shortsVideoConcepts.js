@@ -3,7 +3,15 @@
 // 가능한 경우 어울리는 프리셋 아바타도 추천한다.
 // preferredAvatarIds 가 1개면 솔로 컨셉, 2개 이상이면 멀티 아바타 컨셉.
 // useStandardEndpoint: true 이면 솔로여도 /v2/video/generate 로 만든다 ($1/분, 자동 연출 X).
+// sceneAvatarIds (선택): 같은 인물의 HeyGen Photo Avatar variant 들을 씬마다 순환시킨다.
+//   - 솔로 컨셉(preferredAvatarIds 1개) 위에 얹는 옵션이라 useMultiAvatar 분기는 타지 않는다.
+//   - 씬 수가 배열 길이보다 많으면 mod 순환.
+//   - 정의되지 않으면 preferredAvatarIds[0] 만 사용 (기존 동작).
 // testScript 는 컨셉 테스트용 약 15초 분량 대본.
+// 아바타 ID 는 heygenAvatars.js 의 단일 진실 소스(HEYGEN_AVATAR_IDS) 에서만 참조한다.
+// (단 sceneAvatarIds 는 같은 인물의 variant 라 raw 문자열로 작성한다.)
+
+import { HEYGEN_AVATAR_IDS } from './heygenAvatars'
 
 export const SHORTS_VIDEO_CONCEPTS = [
   {
@@ -11,7 +19,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
     label: '동완쌤 1퍼센트 입시 데이터 브리핑',
     summary: '공신력 있는 통계로 입시 정책 변화를 분석',
     direction: '신뢰감 있는 정장 차림과 전문적인 말투. 인트로/아웃트로는 동완쌤 풀화면. 중간 데이터 씬은 좌상단 PIP + 인포그래픽 배경. 채널 권위 강화에 초점.',
-    preferredAvatarIds: ['bd28ab87ed834bf5a72a5923536182c6'],
+    preferredAvatarIds: [HEYGEN_AVATAR_IDS.dongwan_ssaem],
     useStandardEndpoint: true,
     testScript: {
       title: '의대 선호도 1퍼센트의 진실',
@@ -57,7 +65,13 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '편집은 빠른 컷 전환과 강한 키워드 자막(2~3단어). 트렌디한 쇼츠 영상미.',
       '저장·공유를 자연스럽게 유도하는 CTA로 마무리.',
     ].join(' '),
-    preferredAvatarIds: ['885c95d7fced49bba5cb230ca5a3e332'],
+    preferredAvatarIds: [HEYGEN_AVATAR_IDS.male_student],
+    // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용".
+    // 모든 씬에 동일한 "Jace" variant 1종 적용 — 영상 1개 안에서 배경 일관성 유지.
+    // 기본 male_student (해변 선베드) 가 컨셉의 "아늑한 방" 가이드와 안 맞아 실내 variant 로 override.
+    sceneAvatarIds: [
+      '0893ea6525994226a96b654cd729b742', // 창가 소파 앉음, 회색 맨투맨, 컵 — "소파에 기대거나" 가이드 매칭
+    ],
     useStandardEndpoint: true,
     testScript: {
       title: '동완쌤 전수 수행평가 치트키 3',
@@ -95,7 +109,15 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '컷 전환은 빠르고 매끄럽게. 같은 인물이 다른 장소에서 이어 말하는 느낌.',
       '말투는 친근하고 조곤조곤한 브이로그 톤. 청소년 팬덤 형성과 시각 만족 우선.',
     ].join(' '),
-    preferredAvatarIds: ['a5454d8b999d4e5f87f486605465aae4'],
+    preferredAvatarIds: [HEYGEN_AVATAR_IDS.female_student],
+    // 컨셉 가이드: "씬마다 배경 장소가 바뀌는 브이로그 흐름: 새벽 침실 → 공부 책상 → 카페·거실 → 저녁 책상".
+    // 같은 인물 "Alexa" 의 variant 4종을 씬마다 다른 배경으로 순환 적용해 브이로그 톤 구현.
+    sceneAvatarIds: [
+      '62bc0097e3ec4154bd8133e73c6ff12d', // 씬 1: 창가 침실, 핑크 니트 — 새벽 침실
+      'd4a53ea25a724aacb252c5e6f273b6e4', // 씬 2: 계단 앉음, 베이지 가디건 — 공부 자리 대용
+      '8813a91ea46847cd80baffbaa5f2b17e', // 씬 3: 카페 앉음, 컵 — 카페 코너
+      '04e3819affbe42f3ba0b8df2688f1576', // 씬 4: 소파 앉음, 크림 가디건 — 저녁 거실 마무리
+    ],
     useStandardEndpoint: true,
     testScript: {
       title: '상위 0.1퍼센트 갓생 루틴',
@@ -134,7 +156,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '강아지 캐릭터성을 위해 매 씬 또는 마무리에 "멍" 추임새 자연스럽게. 자막은 2~3 단어 키워드로 짧고 굵게.',
       'CTA는 강요 없이 부드럽게 — 친구한테 도움될 만한 영상으로 공유 유도, 다음 용어 신청 댓글 유도.',
     ].join(' '),
-    preferredAvatarIds: ['f51d84b6b19645dbbeedf326379be949'],
+    preferredAvatarIds: [HEYGEN_AVATAR_IDS.dog_student],
     useStandardEndpoint: true,
     testScript: {
       title: '수시 6장 같이 알아보자 (멍)',
@@ -178,8 +200,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '자막은 2~3 단어 키워드. CTA 는 마지막 씬에 자연스럽게.',
     ].join(' '),
     preferredAvatarIds: [
-      '885c95d7fced49bba5cb230ca5a3e332',
-      'a5454d8b999d4e5f87f486605465aae4',
+      HEYGEN_AVATAR_IDS.male_student,
+      HEYGEN_AVATAR_IDS.female_student,
     ],
     testScript: {
       title: '나의 공부 스타일, 너는 어때?',
@@ -222,7 +244,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '"이거 모르면 자녀 손해 봐요" 같은 위협·자극 표현 절대 금지. 데이터·수치·정책 분석은 동완쌤(briefing_dongwan) 영역이므로, 같은 정보도 "그러니 어머님은 이렇게 하시면 돼요" 식의 학부모 행동 가이드로 번역.',
       'CTA는 강요 없이 부드럽게 — 주변 어머님께 살짝 전해주세요 정도. 맘카페·학부모 단톡방 공유를 자연스럽게 유도.',
     ].join(' '),
-    preferredAvatarIds: ['1e32ee05d0154a989d3e2214efaeed75'],
+    preferredAvatarIds: [HEYGEN_AVATAR_IDS.fry_ssaem],
     useStandardEndpoint: true,
     testScript: {
       title: '수능 D-100, 어머님은 이것만 기억하세요',
@@ -266,11 +288,11 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '자막은 2~3 단어 키워드 (Q번호 + 정답). 빠른 컷 전환 + 중독성 있는 효과음 느낌.',
     ].join(' '),
     preferredAvatarIds: [
-      'bd28ab87ed834bf5a72a5923536182c6',
-      '1e32ee05d0154a989d3e2214efaeed75',
-      '885c95d7fced49bba5cb230ca5a3e332',
-      'a5454d8b999d4e5f87f486605465aae4',
-      'f51d84b6b19645dbbeedf326379be949',
+      HEYGEN_AVATAR_IDS.dongwan_ssaem,
+      HEYGEN_AVATAR_IDS.fry_ssaem,
+      HEYGEN_AVATAR_IDS.male_student,
+      HEYGEN_AVATAR_IDS.female_student,
+      HEYGEN_AVATAR_IDS.dog_student,
     ],
     testScript: {
       title: '입시 OX 퀴즈 5문제',
@@ -319,8 +341,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '위협·자극 표현 금지. AI 활용 역량 시연으로 채널 정체성을 강화하는 메타 메시지를 첫 씬 인트로에 자연스럽게 녹임.',
     ].join(' '),
     preferredAvatarIds: [
-      'bd28ab87ed834bf5a72a5923536182c6',
-      'a5454d8b999d4e5f87f486605465aae4',
+      HEYGEN_AVATAR_IDS.dongwan_ssaem,
+      HEYGEN_AVATAR_IDS.female_student,
     ],
     testScript: {
       title: 'AI 면접관 모의 면접 — 의대 자기소개 편',

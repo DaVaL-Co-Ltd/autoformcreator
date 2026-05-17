@@ -29,95 +29,6 @@ function getSubtitleStyleOption(style) {
   return SHORTS_SUBTITLE_STYLE_OPTIONS.find((option) => option.value === style) || SHORTS_SUBTITLE_STYLE_OPTIONS[0]
 }
 
-function isAnimalOrCharacterAvatar(avatar) {
-  const text = [avatar?.name || '', avatar?.subjectPrompt || '', avatar?.description || '']
-    .join(' ')
-    .toLowerCase()
-
-  if (!text.trim()) return false
-
-  const keywords = [
-    'animal',
-    'character',
-    'cartoon',
-    'mascot',
-    'creature',
-    'pet',
-    'dog',
-    'cat',
-    'puppy',
-    'kitten',
-    'rabbit',
-    'bunny',
-    'bear',
-    'tiger',
-    'lion',
-    'fox',
-    'wolf',
-    'hamster',
-    'otter',
-    'bird',
-    'penguin',
-    'duck',
-    'chick',
-    'frog',
-    'panda',
-    'koala',
-    'monkey',
-    'horse',
-    'deer',
-    'elephant',
-    'zebra',
-    'giraffe',
-    'cow',
-    'pig',
-    'sheep',
-    'goat',
-    'dinosaur',
-    'dragon',
-    'owl',
-    'mouse',
-    'squirrel',
-    '동물',
-    '강아지',
-    '고양이',
-    '토끼',
-    '곰',
-    '호랑이',
-    '사자',
-    '여우',
-    '늑대',
-    '햄스터',
-    '수달',
-    '새',
-    '펭귄',
-    '오리',
-    '병아리',
-    '개구리',
-    '판다',
-    '코알라',
-    '원숭이',
-    '말',
-    '사슴',
-    '코끼리',
-    '얼룩말',
-    '기린',
-    '젖소',
-    '돼지',
-    '양',
-    '염소',
-    '공룡',
-    '드래곤',
-    '부엉이',
-    '쥐',
-    '다람쥐',
-    '캐릭터',
-    '마스코트',
-  ]
-
-  return keywords.some((keyword) => text.includes(keyword))
-}
-
 function countDataSignals(text) {
   const source = String(text || '')
   if (!source.trim()) return 0
@@ -177,7 +88,6 @@ export function buildShortsVideoAgentPrompt({
   extraPrompt = '',
   videoStyle = 'avatar',
   narrationTone = 'auto',
-  voiceStyle = 'auto',
 }) {
   const fontOption = getSubtitleFontOption(subtitleFont)
   const styleOption = getSubtitleStyleOption(subtitleStyle)
@@ -185,13 +95,9 @@ export function buildShortsVideoAgentPrompt({
   const sceneLines = buildSceneLines(script)
   const avatarName = avatar?.name || ''
   const avatarKind = avatar?.kind || 'avatar'
-  const isAnimalAvatar = isAnimalOrCharacterAvatar(avatar)
-  const resolvedVoiceInstruction =
-    voiceStyle && voiceStyle !== 'auto'
-      ? `Voice direction: ${voiceStyle}. Keep the same single narrator voice across the entire video, with stable identity, stable tone, and stable pitch from scene to scene. Avoid abrupt changes in timbre, age impression, or energy between scenes.`
-      : isAnimalAvatar
-        ? 'Use a cute, lovable Korean character voice that matches a friendly animal mascot, but keep it soft, warm, and comfortable to hear. Prefer a gentle medium pitch over a very high or squeaky voice. Keep the same single narrator voice across the entire video with consistent pitch, tone, and character identity.'
-        : 'Use one consistent Korean narrator voice for the entire video. Prefer a warm, natural, pleasant voice with a slightly lower and more comfortable medium-low pitch. Avoid overly high-pitched, sharp, squeaky, or childish delivery. Keep the same speaker identity, tone, and pitch stable across every scene.'
+  // 음성 캐릭터·톤은 아바타에 미리 묶인 HeyGen voice 가 결정한다.
+  // 프롬프트에서는 voice 의 일관성만 강제하고, 특성 지시는 넣지 않는다.
+  const resolvedVoiceInstruction = 'Keep the same single narrator voice across the entire video with consistent identity, tone, and pitch from scene to scene.'
 
   return [
     'Create a polished vertical 9:16 YouTube Shorts video in Korean.',

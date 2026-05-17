@@ -1,0 +1,47 @@
+{
+  "error": null,
+  "data": {
+    "total_count": 3,
+    "avatar_group_list": [
+      {
+        "id": "cfdf4447704f4e44b92cd984dd9b28cc",
+        "name": "후라이쌤",
+        "created_at": 1778939727,
+        "num_looks": 2,
+        "preview_image": "https://files2.heygen.ai/temporary_user_photar/89e1a2925943472081b9de76be6ba605/image.jpg?Expires=1779544517&Signature=lnijPJWeseNjW0CJ9QWTGjfSmW~CrBzxPz52BqT4SmNLf4oKghcdaq2UXpHy3LZ2p3kRyOEHDEdLhgYP0mu~7-SZMsQo2c~TDw9F3mdnSKbS~lp4aYN~PslmXJ~6wUemchnQ~j~OXwBNv2~7~sQKUcVKwxcfLXV7C8HhkVxRBIPPSVuqC2xXrnzDoW675HD7pjyVTHHihofpBwpYd00MUYDiWo2qLMSASyZlswnEfaZHkta-aK4ACDO8bCq025z8CRGbHhu5wOiedFzrsTyoNWR~JdAU9f0i5O8nDO6jTw72zVCSjINNWVoJUtkHk8Gu1LV-OgtpCsNMOs-MlJLeNw__&Key-Pair-Id=K38HBHX5LX3X2H",
+        "group_type": "PHOTO",
+        "train_status": "empty",
+        "default_voice_id": "3a6f4521058a436ebf97d42152dae017",
+        "phota_ready": false,
+        "phota_training": false,
+        "phota_train_length": 0
+      },
+      {
+        "id": "f51d84b6b19645dbbeedf326379be949",
+        "name": "제자 강아지",
+        "created_at": 1778751557,
+        "num_looks": 1,
+        "preview_image": "https://files2.heygen.ai/temporary_user_photar/bf9845f01fdd41d690f447012f8132fc/image.jpg?Expires=1779356327&Signature=jaT-aAgQ7ART58tYEWadUdmjeXNOAIsS7Tanp1nWYIlrDolEHvjnBAi1m5BTF9JNddm0wnyPejLhCZkBzOTnfan171KXOqbaqBbTwSAuVlpArxSDvV4MOFvPoWWladzuCq1XMM7oqUZQk16nANHtdR0PgE41ZTpzSlL7pkjl1-Ve~CbSn3So3-Ad4J4gQ8JIqjMRcKlRsTYPoex4b74w2DqvRg0RPe42aDP8laQZiToE2Om3hye3y-Jm2WGH5KzMo4pZk-rN4uf8ayVIu46YLmvaf3yCZJN-CvYQWc~Wz64y458g8LgR87nWr9uTwYVhRySWUlnv~LYqjT9aXgJ3kA__&Key-Pair-Id=K38HBHX5LX3X2H",
+        "group_type": "PHOTO",
+        "train_status": "empty",
+        "default_voice_id": "aceb4659b9e7420483800bbf698e9e24",
+        "phota_ready": false,
+        "phota_training": false,
+        "phota_train_length": 0
+      },
+      {
+        "id": "e173e545a897462cb3979eece141d6ed",
+        "name": "동완쌤",
+        "created_at": 1778738900,
+        "num_looks": 3,
+        "preview_image": "https://files2.heygen.ai/temporary_user_photar/8e84a558ce704f08ba1d6f9fd9a8b31a/image.jpg?Expires=1779343581&Signature=ZJaAIGy~R~u4q88Jnni~DBJGlL9Y7ZXj~DY1hjcVk-tx7IgqlgjFn9jnXxAcV34xyvB~0cBkjhkSn2S-13xcR0zM2o-Bf9U01bFBWIIpmSFSWWMeZrBXBgywQHBYxXU6UzcTSR-Zi8Lpq9e3~YDFbyty3Gt1Q~S0JHclENOVX-fcL7P8QdJpbaz62ShVEi-gshdg1TiU8KG9W6t65CdIyNNxjbp7Gl3shVE6ESJprB1e1q8Mr4V1nyhsQML5Nx~b7PuCPzsuN9NfCOG8vKcFZ1cJEAFoFNVePwhetSHtuWZcOPsYsJHNx~jDElve3wVU1MSp-S9sLoAWbfDORmW9Yg__&Key-Pair-Id=K38HBHX5LX3X2H",
+        "group_type": "PHOTO",
+        "train_status": "empty",
+        "default_voice_id": "8da71a32beeb45ffa0182276233333c6",
+        "phota_ready": false,
+        "phota_training": false,
+        "phota_train_length": 0
+      }
+    ]
+  }
+}

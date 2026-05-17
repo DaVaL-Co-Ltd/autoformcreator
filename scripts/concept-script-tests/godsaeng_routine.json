@@ -1,0 +1,65 @@
+{
+  "conceptId": "godsaeng_routine",
+  "conceptLabel": "미녀 제자 상위 0.1퍼센트 갓생 루틴",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 19,
+  "promptLength": 5002,
+  "conceptExtra": "컨셉: 미녀 제자 상위 0.1퍼센트 갓생 루틴\n요약: 시각적으로 아름다운 공부 환경 + AI 플래너 활용 브이로그\n연출 방향: 여자 제자 아바타를 영상 내내 풀화면 유지. PIP·차트·자막 박스 등 그래픽 요소는 최소화. 씬마다 배경 장소가 바뀌는 브이로그 흐름: 새벽 침실 → 공부 책상 → 카페·거실 → 저녁 책상. 깔끔한 데스크테리어, 미학적 영상미, 따뜻한 자연광이 일관된 톤. 컷 전환은 빠르고 매끄럽게. 같은 인물이 다른 장소에서 이어 말하는 느낌. 말투는 친근하고 조곤조곤한 브이로그 톤. 청소년 팬덤 형성과 시각 만족 우선.",
+  "rawText": "{\n  \"title\": \"2026 의대 입시, 갓생 루틴으로 정복!\",\n  \"duration\": \"25\",\n  \"hook\": \"2026학년도 의대 입시, 정말 역대급 경쟁률이라는데, 저만의 갓생 루틴으로 준비하고 있어요.\",\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"6\",\n      \"layout\": \"full-vlog\",\n      \"narration\": \"의대 정원이 작년 대비 약 2배나 늘었지만, 오히려 최상위권의 의대 쏠림이 더 강해졌다고 해요.\",\n      \"visualDescription\": \"A young Korean female student, neatly dressed in comfortable loungewear, sits at a minimalist wooden desk in her sunlit bedroom at dawn, meticulously organizing her AI planner tablet with a focused expression, soft warm light illuminates her face from the side.\",\n      \"textOverlay\": \"의대 정원 2배 확대!\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"7\",\n      \"layout\": \"full-vlog\",\n      \"narration\": \"실제로 상위 1% 학생들의 의대 선호도는 작년 대비 12.4% 상승했고, 저처럼 의대를 1순위로 선택한 친구들이 정말 많아요.\",\n      \"visualDescription\": \"The same student is now intensely focused on her textbooks and notes at a clean, aesthetic study desk in a bright, modern study room, surrounded by neatly stacked books and a small plant, natural light streaming through a large window.\",\n      \"textOverlay\": \"상위 1% 의대 선호도 12.4% 상승\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"6\",\n      \"layout\": \"full-vlog\",\n      \"narration\": \"정원이 늘어도 지원자가 함께 늘면서 수능 1등급 컷은 작년보다 1점이나 상승했대요. 한 문제의 중요성이 더 커진 거죠.\",\n      \"visualDescription\": \"The student is comfortably seated in a cozy, sunlit cafe corner, sipping a latte while reviewing notes on her tablet, a thoughtful expression on her face, with soft bokeh background of other cafe patrons.\",\n      \"textOverlay\": \"수능 1등급 컷 1점 상승\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"6\",\n      \"layout\": \"full-vlog\",\n      \"narration\": \"학종 비중은 큰 변화 없고 논술 전형은 소폭 줄었으니, 저에게 맞는 전형 조합을 정밀하게 설계해야 해요.\",\n      \"visualDescription\": \"In the evening, the student is at her desk again, illuminated by a warm, soft desk lamp, meticulously planning her study schedule in a planner, surrounded by neatly organized study materials, a determined yet calm look on her face.\",\n      \"textOverlay\": \"나만의 입시 전략 설계!\"\n    }\n  ],\n  \"cta\": \"여러분만의 갓생 루틴이나 입시 꿀팁이 있다면 댓글로 공유해주세요!\",\n  \"thumbnailPrompt\": \"A young Korean female student with a determined yet calm expression, sitting at a clean, aesthetic study desk, surrounded by neatly organized books and an AI planner, bathed in warm natural light, with a subtle overlay of '2026 의대 입시' text.\",\n  \"uploadTitle\": \"2026 의대 입시, 갓생 루틴으로 정복하는 법!\",\n  \"uploadDescription\": \"2026학년도 의대 정원 확대 소식에 많은 수험생들이 긴장하고 있죠? 정원이 약 2배 늘었지만, 최상위권의 의대 쏠림이 가속화되고 수능 1등급 컷도 1점 상승하며 경쟁이 더욱 치열해졌어요. 상위 1% 학생들의 의대 선호도가 12.4%나 올랐다고 하니, 저도 저만의 갓생 루틴으로 빈틈없이 준비하고 있답니다. 학생부 종합전형과 논술 전형의 변화까지 고려한 저의 입시 전략을 함께 확인해보고, 여러분만의 꿀팁도 공유해주세요!\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대입시\",\n    \"#2026수능\",\n    \"#갓생루틴\",\n    \"#공부브이로그\",\n    \"#입시전략\",\n    \"#수능준비\",\n    \"#의대정원\",\n    \"#공부자극\",\n    \"#공부팁\",\n    \"#수험생\"\n  ]\n}",
+  "parsed": {
+    "title": "2026 의대 입시, 갓생 루틴으로 정복!",
+    "duration": "25",
+    "hook": "2026학년도 의대 입시, 정말 역대급 경쟁률이라는데, 저만의 갓생 루틴으로 준비하고 있어요.",
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "6",
+        "layout": "full-vlog",
+        "narration": "의대 정원이 작년 대비 약 2배나 늘었지만, 오히려 최상위권의 의대 쏠림이 더 강해졌다고 해요.",
+        "visualDescription": "A young Korean female student, neatly dressed in comfortable loungewear, sits at a minimalist wooden desk in her sunlit bedroom at dawn, meticulously organizing her AI planner tablet with a focused expression, soft warm light illuminates her face from the side.",
+        "textOverlay": "의대 정원 2배 확대!"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "7",
+        "layout": "full-vlog",
+        "narration": "실제로 상위 1% 학생들의 의대 선호도는 작년 대비 12.4% 상승했고, 저처럼 의대를 1순위로 선택한 친구들이 정말 많아요.",
+        "visualDescription": "The same student is now intensely focused on her textbooks and notes at a clean, aesthetic study desk in a bright, modern study room, surrounded by neatly stacked books and a small plant, natural light streaming through a large window.",
+        "textOverlay": "상위 1% 의대 선호도 12.4% 상승"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "6",
+        "layout": "full-vlog",
+        "narration": "정원이 늘어도 지원자가 함께 늘면서 수능 1등급 컷은 작년보다 1점이나 상승했대요. 한 문제의 중요성이 더 커진 거죠.",
+        "visualDescription": "The student is comfortably seated in a cozy, sunlit cafe corner, sipping a latte while reviewing notes on her tablet, a thoughtful expression on her face, with soft bokeh background of other cafe patrons.",
+        "textOverlay": "수능 1등급 컷 1점 상승"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "6",
+        "layout": "full-vlog",
+        "narration": "학종 비중은 큰 변화 없고 논술 전형은 소폭 줄었으니, 저에게 맞는 전형 조합을 정밀하게 설계해야 해요.",
+        "visualDescription": "In the evening, the student is at her desk again, illuminated by a warm, soft desk lamp, meticulously planning her study schedule in a planner, surrounded by neatly organized study materials, a determined yet calm look on her face.",
+        "textOverlay": "나만의 입시 전략 설계!"
+      }
+    ],
+    "cta": "여러분만의 갓생 루틴이나 입시 꿀팁이 있다면 댓글로 공유해주세요!",
+    "thumbnailPrompt": "A young Korean female student with a determined yet calm expression, sitting at a clean, aesthetic study desk, surrounded by neatly organized books and an AI planner, bathed in warm natural light, with a subtle overlay of '2026 의대 입시' text.",
+    "uploadTitle": "2026 의대 입시, 갓생 루틴으로 정복하는 법!",
+    "uploadDescription": "2026학년도 의대 정원 확대 소식에 많은 수험생들이 긴장하고 있죠? 정원이 약 2배 늘었지만, 최상위권의 의대 쏠림이 가속화되고 수능 1등급 컷도 1점 상승하며 경쟁이 더욱 치열해졌어요. 상위 1% 학생들의 의대 선호도가 12.4%나 올랐다고 하니, 저도 저만의 갓생 루틴으로 빈틈없이 준비하고 있답니다. 학생부 종합전형과 논술 전형의 변화까지 고려한 저의 입시 전략을 함께 확인해보고, 여러분만의 꿀팁도 공유해주세요!",
+    "hashtags": [
+      "#Shorts",
+      "#의대입시",
+      "#2026수능",
+      "#갓생루틴",
+      "#공부브이로그",
+      "#입시전략",
+      "#수능준비",
+      "#의대정원",
+      "#공부자극",
+      "#공부팁",
+      "#수험생"
+    ]
+  }
+}

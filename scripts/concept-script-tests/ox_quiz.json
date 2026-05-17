@@ -1,0 +1,76 @@
+{
+  "conceptId": "ox_quiz",
+  "conceptLabel": "전 인물 총출동 입시 상식 OX 퀴즈",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 14.6,
+  "promptLength": 5163,
+  "conceptExtra": "컨셉: 전 인물 총출동 입시 상식 OX 퀴즈\n요약: 다섯 인물이 같은 무대에서 번갈아 등장해 OX 퀴즈를 내고 즉시 정답을 풀어주는 시리즈\n연출 방향: 5명 (동완쌤·후라이쌤·남자 제자·여자 제자·강아지 제자) 이 한 영상에서 모두 등장. 같은 영상 안에서는 같은 배경 1장 공유 (sharedBackground) — 퀴즈쇼 무대 느낌. 매 영상 생성 시 Gemini 가 새 분위기로 다시 만듦. 한 화면에 1명씩만 등장 (HeyGen 제약). 카메라 정면, 중앙 배치, 풀샷 유지. 씬마다 다른 인물이 차례로 퀴즈를 내고 곧바로 정답까지 짧게 풀어줌 (Q + A 한 씬 안에). 3초 안에 마무리. 말투는 친근한 쇼호스트 톤. 강아지는 \"멍\" 추임새 자연스럽게. 위협·자극 표현 금지, 댓글 유도형 마무리. 자막은 2~3 단어 키워드 (Q번호 + 정답). 빠른 컷 전환 + 중독성 있는 효과음 느낌.",
+  "rawText": "{\n  \"title\": \"2026 의대 입시 OX 퀴즈\",\n  \"duration\": \"26\",\n  \"hook\": \"2026 의대 입시, 얼마나 알고 있나요? OX 퀴즈로 확인해 보세요!\",\n  \"sharedBackground\": {\n    \"visualDescription\": \"Vibrant Korean quiz show studio stage with soft pastel lighting, a clean rounded podium, friendly bright atmosphere, vertical 9:16 composition, no people visible, no text overlays, no logos\"\n  },\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"4\",\n      \"layout\": \"quiz-shared-bg\",\n      \"narration\": \"첫 번째 문제! 2026학년도 의대 정원은 전년 대비 약 2배 늘었다. 정답은 O! 맞습니다.\",\n      \"visualDescription\": \"Dongwan teacher center stage as MC opening the quiz, confident warm smile, chest-up framing, vibrant quiz show background\",\n      \"textOverlay\": \"Q1 · 정답 O\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"4\",\n      \"layout\": \"quiz-shared-bg\",\n      \"narration\": \"두 번째 문제! 상위 1% 학생들의 의대 선호도는 작년 대비 12.4% 감소했다. 정답은 X! 오히려 12.4% 상승했어요.\",\n      \"visualDescription\": \"Frysaem in the same quiz studio, playful friendly expression, chest-up framing, vibrant quiz show background\",\n      \"textOverlay\": \"Q2 · 정답 X\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"4\",\n      \"layout\": \"quiz-shared-bg\",\n      \"narration\": \"세 번째 문제! 의대 정원 확대에도 수능 1등급 컷은 작년보다 1점 하락했다. 정답은 X! 오히려 1점 상승했습니다.\",\n      \"visualDescription\": \"Male student in the same quiz studio, energetic friendly tone, chest-up framing, vibrant quiz show background\",\n      \"textOverlay\": \"Q3 · 정답 X\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"4\",\n      \"layout\": \"quiz-shared-bg\",\n      \"narration\": \"네 번째 문제! 학생부 종합전형의 비중은 2026학년도에 크게 줄었다. 정답은 X! 작년과 유사하게 유지되었어요.\",\n      \"visualDescription\": \"Female student in the same quiz studio, bright cheerful expression, chest-up framing, vibrant quiz show background\",\n      \"textOverlay\": \"Q4 · 정답 X\"\n    },\n    {\n      \"sceneNumber\": 5,\n      \"duration\": \"4\",\n      \"layout\": \"quiz-shared-bg\",\n      \"narration\": \"멍! 마지막 문제! 논술 전형 모집 인원은 2026학년도에 크게 늘었다. 정답은 X! 소폭 감소했습니다.\",\n      \"visualDescription\": \"Cute dog student in the same quiz studio wagging tail, friendly closing tone, chest-up framing, vibrant quiz show background\",\n      \"textOverlay\": \"Q5 · 정답 X\"\n    }\n  ],\n  \"cta\": \"몇 개 맞췄어? 댓글에 적어줘, 다음 편에서 또 풀어줄게!\",\n  \"thumbnailPrompt\": \"A cheerful Dongwan teacher standing center stage in a vibrant Korean quiz show studio, pointing to a large 'O' or 'X' sign, with a confident smile. The background is brightly lit with pastel colors, and the framing is chest-up, vertical 9:16.\",\n  \"uploadTitle\": \"2026 의대 입시 OX 퀴즈! 정원 확대, 경쟁률, 학종 변화까지!\",\n  \"uploadDescription\": \"2026학년도 의대 입시, 과연 얼마나 알고 계신가요? 대규모 정원 확대부터 경쟁률 변화, 그리고 학종과 논술 전형의 트렌드까지, 핵심 정보들을 OX 퀴즈로 재미있게 풀어봤습니다! 의대 쏠림 현상 속에서 나에게 맞는 입시 전략을 세우는 데 도움이 될 중요한 사실들을 지금 바로 확인해보세요. 과연 몇 문제나 맞출 수 있을까요? 댓글로 정답 개수를 알려주세요!\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대입시\",\n    \"#2026의대\",\n    \"#의대정원확대\",\n    \"#입시전략\",\n    \"#수능\",\n    \"#학종\",\n    \"#논술\",\n    \"#입시정보\",\n    \"#공부팁\",\n    \"#대학입시\"\n  ]\n}",
+  "parsed": {
+    "title": "2026 의대 입시 OX 퀴즈",
+    "duration": "26",
+    "hook": "2026 의대 입시, 얼마나 알고 있나요? OX 퀴즈로 확인해 보세요!",
+    "sharedBackground": {
+      "visualDescription": "Vibrant Korean quiz show studio stage with soft pastel lighting, a clean rounded podium, friendly bright atmosphere, vertical 9:16 composition, no people visible, no text overlays, no logos"
+    },
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "4",
+        "layout": "quiz-shared-bg",
+        "narration": "첫 번째 문제! 2026학년도 의대 정원은 전년 대비 약 2배 늘었다. 정답은 O! 맞습니다.",
+        "visualDescription": "Dongwan teacher center stage as MC opening the quiz, confident warm smile, chest-up framing, vibrant quiz show background",
+        "textOverlay": "Q1 · 정답 O"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "4",
+        "layout": "quiz-shared-bg",
+        "narration": "두 번째 문제! 상위 1% 학생들의 의대 선호도는 작년 대비 12.4% 감소했다. 정답은 X! 오히려 12.4% 상승했어요.",
+        "visualDescription": "Frysaem in the same quiz studio, playful friendly expression, chest-up framing, vibrant quiz show background",
+        "textOverlay": "Q2 · 정답 X"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "4",
+        "layout": "quiz-shared-bg",
+        "narration": "세 번째 문제! 의대 정원 확대에도 수능 1등급 컷은 작년보다 1점 하락했다. 정답은 X! 오히려 1점 상승했습니다.",
+        "visualDescription": "Male student in the same quiz studio, energetic friendly tone, chest-up framing, vibrant quiz show background",
+        "textOverlay": "Q3 · 정답 X"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "4",
+        "layout": "quiz-shared-bg",
+        "narration": "네 번째 문제! 학생부 종합전형의 비중은 2026학년도에 크게 줄었다. 정답은 X! 작년과 유사하게 유지되었어요.",
+        "visualDescription": "Female student in the same quiz studio, bright cheerful expression, chest-up framing, vibrant quiz show background",
+        "textOverlay": "Q4 · 정답 X"
+      },
+      {
+        "sceneNumber": 5,
+        "duration": "4",
+        "layout": "quiz-shared-bg",
+        "narration": "멍! 마지막 문제! 논술 전형 모집 인원은 2026학년도에 크게 늘었다. 정답은 X! 소폭 감소했습니다.",
+        "visualDescription": "Cute dog student in the same quiz studio wagging tail, friendly closing tone, chest-up framing, vibrant quiz show background",
+        "textOverlay": "Q5 · 정답 X"
+      }
+    ],
+    "cta": "몇 개 맞췄어? 댓글에 적어줘, 다음 편에서 또 풀어줄게!",
+    "thumbnailPrompt": "A cheerful Dongwan teacher standing center stage in a vibrant Korean quiz show studio, pointing to a large 'O' or 'X' sign, with a confident smile. The background is brightly lit with pastel colors, and the framing is chest-up, vertical 9:16.",
+    "uploadTitle": "2026 의대 입시 OX 퀴즈! 정원 확대, 경쟁률, 학종 변화까지!",
+    "uploadDescription": "2026학년도 의대 입시, 과연 얼마나 알고 계신가요? 대규모 정원 확대부터 경쟁률 변화, 그리고 학종과 논술 전형의 트렌드까지, 핵심 정보들을 OX 퀴즈로 재미있게 풀어봤습니다! 의대 쏠림 현상 속에서 나에게 맞는 입시 전략을 세우는 데 도움이 될 중요한 사실들을 지금 바로 확인해보세요. 과연 몇 문제나 맞출 수 있을까요? 댓글로 정답 개수를 알려주세요!",
+    "hashtags": [
+      "#Shorts",
+      "#의대입시",
+      "#2026의대",
+      "#의대정원확대",
+      "#입시전략",
+      "#수능",
+      "#학종",
+      "#논술",
+      "#입시정보",
+      "#공부팁",
+      "#대학입시"
+    ]
+  }
+}

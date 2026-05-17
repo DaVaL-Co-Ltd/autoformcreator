@@ -28,6 +28,16 @@ client/public/test*.mp4
 output/
 portfolio/
 
+# 임시 모듈 우회 폴더 (Node ESM 확장자 패치용)
+.tmp-concept-test/
+
+# 영상 생성 테스트 산출물 (mp4 들은 너무 큼)
+scripts/concept-video-tests/
+scripts/concept-video-tests-pip/
+scripts/concept-video-tests-agent/
+scripts/concept-video-tests-*.log
+scripts/avatar-variants/preview-images/
+
 # 네이버 세션 쿠키 (절대 커밋 금지)
 tools/naver-cookies.json
 

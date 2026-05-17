@@ -476,7 +476,7 @@ app.post('/api/heygen/upload-test-avatar', async (req, res) => {
   }
 })
 
-// ===== HeyGen Upload Asset (base64 or filePath ??binary ??HeyGen) =====
+// ===== HeyGen Upload Asset (base64 or filePath → binary → HeyGen) =====
 app.post('/api/heygen/upload-asset', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -504,7 +504,7 @@ app.post('/api/heygen/upload-asset', async (req, res) => {
   }
 })
 
-// ===== HeyGen Avatar Group ?앹꽦 (image_key ??talking_photo_id) =====
+// ===== HeyGen Avatar Group 생성 (image_key → talking_photo_id) =====
 app.post('/api/heygen/avatar-group/create', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
@@ -791,6 +791,224 @@ function escapeXml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// ===== Shorts vlog background: Gemini 이미지 생성 + HeyGen 업로드 =====
+// body: { visualDescription, sceneNumber? }
+// returns: { image_key, url }
+const VLOG_MOOD_VARIATIONS = [
+  'warm beige and cream color palette',
+  'cool white and soft sage color palette',
+  'pastel pink and dusty rose color palette',
+  'soft mint and cream color palette',
+  'muted cream and oat tone palette',
+  'warm honey and amber color palette',
+]
+app.post('/api/heygen/shorts-vlog-background', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured' })
+  if (!geminiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not configured' })
+
+  try {
+    const { visualDescription = '', sceneNumber = 1 } = req.body || {}
+    if (!visualDescription) return res.status(400).json({ error: 'visualDescription required' })
+    // sceneNumber 는 파일명에 들어가므로 path traversal 방어용으로 정수만 허용.
+    const sceneNumberSafe = Math.max(0, Math.floor(Number(sceneNumber)) || 0)
+
+    // 매번 다른 분위기 위해 랜덤 시드 키워드 추가
+    const seedMood = VLOG_MOOD_VARIATIONS[Math.floor(Math.random() * VLOG_MOOD_VARIATIONS.length)]
+    const prompt = `${visualDescription}, ${seedMood}, vertical 9:16 composition, no people visible, no text overlays, no logos, no watermarks, professional vlog photography, high quality realistic photo`
+
+    // Gemini 이미지 생성 호출
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`
+    const geminiBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+    }
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody),
+    })
+    const geminiData = await geminiRes.json()
+    if (!geminiRes.ok) {
+      return res.status(geminiRes.status).json({ error: 'Gemini image failed', detail: geminiData })
+    }
+    const parts = geminiData?.candidates?.[0]?.content?.parts || []
+    const imagePart = parts.find((p) => p.inlineData?.data)
+    if (!imagePart) {
+      return res.status(500).json({ error: 'Gemini did not return an image', detail: parts.slice(0, 2) })
+    }
+    const buffer = Buffer.from(imagePart.inlineData.data, 'base64')
+    const mimeType = imagePart.inlineData.mimeType || 'image/png'
+
+    // 디스크 저장 (디버그용)
+    const outputDir2 = path.join(__dirname, '..', 'output')
+    if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
+    const ts = Date.now()
+    const filename = `shorts_vlog_bg_${sceneNumberSafe}_${ts}.png`
+    const localPath = path.join(outputDir2, filename)
+    fs.writeFileSync(localPath, buffer)
+
+    // HeyGen 자산 업로드
+    const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': mimeType },
+      body: buffer,
+    })
+    const uploadData = await uploadRes.json()
+    if (!uploadRes.ok) {
+      return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
+    }
+    const imageKey = uploadData.data?.image_key || uploadData.data?.id
+
+    res.json({
+      image_key: imageKey,
+      url: uploadData.data?.url,
+      localPath: `/output/${filename}`,
+      seedMood,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== Shorts PIP-safe background: 좌상단 PIP 영역 비우고 인포그래픽 생성 + HeyGen 업로드 =====
+// body: { headline, value, subtitle, chartType: 'bar'|'pie'|'line', theme?: 'navy'|'cream' }
+// returns: { image_key, url, localPath }
+app.post('/api/heygen/shorts-pip-background', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+
+  try {
+    const { headline = '', value = '', subtitle = '', chartType = 'bar', theme = 'navy' } = req.body || {}
+
+    const W = 720, H = 1280
+    const canvas = createCanvas(W, H)
+    const ctx = canvas.getContext('2d')
+
+    // 테마 — 가독성 우선, 채도 낮은 톤을 기본으로 한다.
+    // 'navy' 는 호환성을 위해 유지하지만 신규 컨텐츠는 베이지/웜그레이/크림 권장.
+    const themePalettes = {
+      beige:      { bg1: '#F5EFE6', bg2: '#EAE3D5', text: '#3A322A', accent: '#A8693C', sub: '#7A6A56' },
+      'warm-gray':{ bg1: '#EDEAE5', bg2: '#DCD7D0', text: '#3A3733', accent: '#8A7A6A', sub: '#6E6661' },
+      cream:      { bg1: '#FAF6EF', bg2: '#F1E7D2', text: '#2A1F0A', accent: '#D4A540', sub: '#7C6940' },
+      navy:       { bg1: '#0F1B2D', bg2: '#1A2D4A', text: '#FFFFFF', accent: '#F4C534', sub: '#7C8FA8' },
+    }
+    const palette = themePalettes[theme] || themePalettes.beige
+
+    // 그라데이션 배경
+    const grad = ctx.createLinearGradient(0, 0, 0, H)
+    grad.addColorStop(0, palette.bg1)
+    grad.addColorStop(1, palette.bg2)
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, W, H)
+
+    // PIP 안전 영역 (그리지 않음): x=0~290, y=0~330. 가이드 라인만 살짝 (디버그용 — 실 배포 전 끄기 권장)
+    // ctx.strokeStyle = palette.accent; ctx.globalAlpha = 0.15; ctx.strokeRect(0, 0, 290, 330); ctx.globalAlpha = 1
+
+    // PIP 영역 우측에 작은 헤드라인 (씬 주제)
+    ctx.font = 'bold 30px Pretendard'
+    ctx.fillStyle = palette.accent
+    ctx.textAlign = 'left'
+    ctx.fillText(headline, 310, 80)
+
+    // 헤드라인 밑에 얇은 밑줄
+    ctx.fillStyle = palette.accent
+    ctx.fillRect(310, 100, 80, 4)
+
+    // 부제 (PIP 옆 또는 메인 영역 상단)
+    if (subtitle) {
+      ctx.font = '22px Pretendard'
+      ctx.fillStyle = palette.sub
+      ctx.fillText(subtitle, 310, 140)
+    }
+
+    // === 메인 영역 (PIP 아래쪽) ===
+    // 큰 숫자/값 강조
+    ctx.font = 'bold 140px Pretendard'
+    ctx.fillStyle = palette.accent
+    ctx.textAlign = 'center'
+    ctx.fillText(value, W / 2, 580)
+
+    // 차트
+    const chartY = 700
+    const chartH = 200
+    if (chartType === 'bar') {
+      // 막대 3개 (이전·현재·예측 느낌)
+      const bars = [{ x: 100, w: 120, h: 80 }, { x: 280, w: 120, h: 140 }, { x: 460, w: 120, h: 180 }]
+      bars.forEach(b => {
+        ctx.fillStyle = palette.accent
+        ctx.globalAlpha = 0.3 + (b.h / 200) * 0.7
+        ctx.fillRect(b.x, chartY + chartH - b.h, b.w, b.h)
+      })
+      ctx.globalAlpha = 1
+    } else if (chartType === 'pie') {
+      // 50/50 분할 원
+      const cx = W / 2, cy = chartY + chartH / 2, r = 90
+      ctx.fillStyle = palette.sub
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = palette.accent
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.fill()
+      ctx.strokeStyle = palette.bg1; ctx.lineWidth = 4; ctx.stroke()
+    } else if (chartType === 'line') {
+      // 우상향 라인
+      ctx.strokeStyle = palette.accent
+      ctx.lineWidth = 6
+      ctx.beginPath()
+      ctx.moveTo(80, chartY + 180)
+      ctx.lineTo(260, chartY + 140)
+      ctx.lineTo(440, chartY + 70)
+      ctx.lineTo(620, chartY + 20)
+      ctx.stroke()
+      // 점들
+      ctx.fillStyle = palette.accent
+      ;[ [80,180],[260,140],[440,70],[620,20] ].forEach(([x,y]) => {
+        ctx.beginPath(); ctx.arc(x, chartY + y, 10, 0, Math.PI * 2); ctx.fill()
+      })
+    }
+
+    // 하단 75% 이하는 플랫폼 UI 가 덮으므로 비워두거나 워터마크만
+    ctx.font = '20px Pretendard'
+    ctx.fillStyle = palette.sub
+    ctx.globalAlpha = 0.6
+    ctx.textAlign = 'center'
+    ctx.fillText('1퍼센트 입시 데이터 브리핑', W / 2, 940)
+    ctx.globalAlpha = 1
+
+    // PNG 버퍼 생성
+    const buffer = canvas.toBuffer('image/png')
+
+    // 디스크 저장 (디버그용)
+    const outputDir2 = path.join(__dirname, '..', 'output')
+    if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
+    const ts = Date.now()
+    const filename = `shorts_pip_bg_${ts}.png`
+    const localPath = path.join(outputDir2, filename)
+    fs.writeFileSync(localPath, buffer)
+
+    // HeyGen 으로 자산 업로드
+    const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'image/png' },
+      body: buffer,
+    })
+    const uploadData = await uploadRes.json()
+    if (!uploadRes.ok) {
+      return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
+    }
+    const imageKey = uploadData.data?.image_key || uploadData.data?.id
+    const heygenUrl = uploadData.data?.url
+
+    res.json({
+      image_key: imageKey,
+      url: heygenUrl,
+      localPath: `/output/${filename}`,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== Upload infographic images to HeyGen and return the asset URL =====
 app.post('/api/infographic/upload-to-heygen', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
@@ -826,7 +1044,7 @@ function splitNarration(text, maxCharsPerLine = 18) {
     // Prefer punctuation or spaces for natural wrapping.
     let cut = -1
     for (let i = Math.min(maxCharsPerLine, remaining.length) - 1; i >= Math.floor(maxCharsPerLine * 0.5); i--) {
-      if (/[.!??귨펽,\s]/.test(remaining[i])) { cut = i + 1; break }
+      if (/[.!?。！？、，,\s]/.test(remaining[i])) { cut = i + 1; break }
     }
     if (cut === -1) cut = maxCharsPerLine
     chunks.push(remaining.slice(0, cut).trim())
@@ -885,7 +1103,7 @@ function generateTitleOverlay(text, design, palette, outputPath) {
   ctx.font = `${fontSize}px Pretendard`
   ctx.textAlign = 'left'
 
-  // 以꾨컮轅?
+  // 줄바꿈
   const lines = []
   let remaining = text
   while (remaining.length > 0) {
@@ -1231,7 +1449,7 @@ app.post('/api/remotion/upload-to-heygen', async (req, res) => {
 // ===== Static file serving for output/ =====
 const outputDir = path.join(__dirname, '..', 'output')
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
-// ngrok 臾대즺 寃쎄퀬 ?섏씠吏 ?고쉶: Content-Type??媛뺤젣 ?ㅼ젙
+// ngrok 무료 경고 페이지 우회: Content-Type을 강제로 설정
 app.use('/output', (req, res, next) => {
   const ext = path.extname(req.path).toLowerCase()
   const mimeMap = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.png': 'image/png', '.jpg': 'image/jpeg' }
@@ -1240,7 +1458,7 @@ app.use('/output', (req, res, next) => {
   next()
 }, express.static(outputDir))
 
-// ===== File upload ??public URL =====
+// ===== File upload → public URL =====
 app.post('/api/output/upload', (req, res) => {
   const MAX_UPLOAD = 100 * 1024 * 1024 // 100MB
   const chunks = []

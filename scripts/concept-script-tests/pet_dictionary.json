@@ -1,0 +1,80 @@
+{
+  "conceptId": "pet_dictionary",
+  "conceptLabel": "입시 강아지의 30초 용어 사전",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 15.4,
+  "promptLength": 4967,
+  "conceptExtra": "컨셉: 입시 강아지의 30초 용어 사전\n요약: 귀여운 강아지가 학생들에게 입시 용어를 친절하게 풀어주는 시리즈\n연출 방향: 안경 쓴 강아지 아바타를 영상 내내 풀샷으로 유지. 차트·PIP·다른 인물 컷 금지. 배경은 따뜻한 조명의 같은 아늑한 책상. 한 영상 안에서는 같은 공간만 사용하고, 씬마다 카메라 앵글·자세만 살짝 변화 (정면 → 살짝 사이드 → 클로즈업 → 다시 정면). 시청 타깃은 학생. 또래 친구가 알려주듯 친근한 반말 톤이지만, \"쪽팔려\", \"망해\", \"손해 봐\" 같은 위협·자극 표현은 절대 금지. \"같이 알아보자\", \"처음엔 다 헷갈려\", \"내가 쉽게 풀어줄게\" 같은 공감·도움 베이스로만 진행. 한 영상에 용어 1개를 깊게 다룸. 구조: 공감 훅 → 정의 → 친절한 꿀팁 → 예시 → 따뜻한 한 줄 마무리. 강아지 캐릭터성을 위해 매 씬 또는 마무리에 \"멍\" 추임새 자연스럽게. 자막은 2~3 단어 키워드로 짧고 굵게. CTA는 강요 없이 부드럽게 — 친구한테 도움될 만한 영상으로 공유 유도, 다음 용어 신청 댓글 유도.",
+  "rawText": "{\n  \"title\": \"2026 의대 정원 확대, 입시 트렌드 같이 알아보자 멍!\",\n  \"duration\": \"27\",\n  \"hook\": \"2026학년도 의대 정원이 엄청 늘었다는 소식, 다들 들었지? 멍.\",\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"2026학년도 의대 정원이 엄청 늘었다는 소식, 다들 들었지? 멍.\",\n      \"visualDescription\": \"Cute dog with round glasses sitting at a warm-lit wooden desk, cozy bookshelf background with soft bokeh, friendly chest-up framing, gentle welcoming expression.\",\n      \"textOverlay\": \"의대 정원 확대\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"작년보다 약 2배나 늘어났는데, 이게 입시에 어떤 영향을 줄지 궁금할 거야, 멍.\",\n      \"visualDescription\": \"Same dog at the same cozy desk, slight side angle, tilting head curiously toward camera, same warm lighting and room continuity.\",\n      \"textOverlay\": \"정원 2배 확대\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"최상위권 학생들의 의대 선호도가 작년 대비 12.4%나 올랐대, 멍.\",\n      \"visualDescription\": \"Close-up of the same dog speaking softly with a gentle paw gesture, same warm desk lighting, same cozy room mood, looking a bit serious but empathetic.\",\n      \"textOverlay\": \"의대 선호도 12.4% UP\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"정원이 늘었지만 지원자도 많아져서, 수능 1등급 컷이 작년보다 1점 올랐어, 멍.\",\n      \"visualDescription\": \"Same dog back to friendly chest-up shot at the same desk, soft encouraging smile, same warm room continuity, looking thoughtful.\",\n      \"textOverlay\": \"수능 1등급 컷 1점 상승\"\n    },\n    {\n      \"sceneNumber\": 5,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"그래도 학생부 종합전형 비중은 작년이랑 비슷하게 유지됐고, 논술은 조금 줄었어, 멍.\",\n      \"visualDescription\": \"Same dog, slightly more relaxed pose, reassuring expression, same cozy desk and lighting.\",\n      \"textOverlay\": \"학종 유지, 논술 감소\"\n    },\n    {\n      \"sceneNumber\": 6,\n      \"duration\": \"3\",\n      \"layout\": \"full\",\n      \"narration\": \"이제는 본인 성적과 전형을 정밀하게 설계하는 게 더 중요해졌어, 멍!\",\n      \"visualDescription\": \"Same dog wagging tail gently, warm closing expression, same cozy desk and lighting, encouraging gesture.\",\n      \"textOverlay\": \"전략적 입시 설계\"\n    }\n  ],\n  \"cta\": \"더 궁금한 입시 정보는 댓글로 알려줘, 멍!\",\n  \"thumbnailPrompt\": \"A cute dog avatar with round glasses sitting at a warm-lit wooden desk, looking directly at the camera with a friendly, encouraging expression, with the text '2026 의대 정원 확대' overlaid.\",\n  \"uploadTitle\": \"2026 의대 정원 확대, 입시 트렌드 변화 같이 알아보자 멍!\",\n  \"uploadDescription\": \"2026학년도 대입에서 가장 큰 변화, 바로 의대 정원 확대 소식이야! 멍. 작년 대비 약 2배 늘어난 의대 정원이 입시에 어떤 영향을 미쳤는지, 그리고 앞으로 어떻게 준비해야 할지 입시 강아지가 쉽게 설명해 줄게. 최상위권 학생들의 의대 선호도가 12.4%나 오르고, 수능 1등급 컷도 1점 상승했다는 사실! 하지만 학생부 종합전형 비중은 유지되고 논술은 소폭 감소했어. 이제는 본인 성적과 지원 전형을 정밀하게 설계하는 게 정말 중요해졌어. 멍. 이 영상이 너의 입시 전략에 도움이 되길 바라! 더 궁금한 입시 용어나 정보가 있다면 댓글로 남겨줘!\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대정원확대\",\n    \"#2026입시\",\n    \"#입시정보\",\n    \"#수능\",\n    \"#학생부종합전형\",\n    \"#논술전형\",\n    \"#입시전략\",\n    \"#수험생\",\n    \"#입시트렌드\"\n  ]\n}",
+  "parsed": {
+    "title": "2026 의대 정원 확대, 입시 트렌드 같이 알아보자 멍!",
+    "duration": "27",
+    "hook": "2026학년도 의대 정원이 엄청 늘었다는 소식, 다들 들었지? 멍.",
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "4",
+        "layout": "full",
+        "narration": "2026학년도 의대 정원이 엄청 늘었다는 소식, 다들 들었지? 멍.",
+        "visualDescription": "Cute dog with round glasses sitting at a warm-lit wooden desk, cozy bookshelf background with soft bokeh, friendly chest-up framing, gentle welcoming expression.",
+        "textOverlay": "의대 정원 확대"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "4",
+        "layout": "full",
+        "narration": "작년보다 약 2배나 늘어났는데, 이게 입시에 어떤 영향을 줄지 궁금할 거야, 멍.",
+        "visualDescription": "Same dog at the same cozy desk, slight side angle, tilting head curiously toward camera, same warm lighting and room continuity.",
+        "textOverlay": "정원 2배 확대"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "4",
+        "layout": "full",
+        "narration": "최상위권 학생들의 의대 선호도가 작년 대비 12.4%나 올랐대, 멍.",
+        "visualDescription": "Close-up of the same dog speaking softly with a gentle paw gesture, same warm desk lighting, same cozy room mood, looking a bit serious but empathetic.",
+        "textOverlay": "의대 선호도 12.4% UP"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "4",
+        "layout": "full",
+        "narration": "정원이 늘었지만 지원자도 많아져서, 수능 1등급 컷이 작년보다 1점 올랐어, 멍.",
+        "visualDescription": "Same dog back to friendly chest-up shot at the same desk, soft encouraging smile, same warm room continuity, looking thoughtful.",
+        "textOverlay": "수능 1등급 컷 1점 상승"
+      },
+      {
+        "sceneNumber": 5,
+        "duration": "4",
+        "layout": "full",
+        "narration": "그래도 학생부 종합전형 비중은 작년이랑 비슷하게 유지됐고, 논술은 조금 줄었어, 멍.",
+        "visualDescription": "Same dog, slightly more relaxed pose, reassuring expression, same cozy desk and lighting.",
+        "textOverlay": "학종 유지, 논술 감소"
+      },
+      {
+        "sceneNumber": 6,
+        "duration": "3",
+        "layout": "full",
+        "narration": "이제는 본인 성적과 전형을 정밀하게 설계하는 게 더 중요해졌어, 멍!",
+        "visualDescription": "Same dog wagging tail gently, warm closing expression, same cozy desk and lighting, encouraging gesture.",
+        "textOverlay": "전략적 입시 설계"
+      }
+    ],
+    "cta": "더 궁금한 입시 정보는 댓글로 알려줘, 멍!",
+    "thumbnailPrompt": "A cute dog avatar with round glasses sitting at a warm-lit wooden desk, looking directly at the camera with a friendly, encouraging expression, with the text '2026 의대 정원 확대' overlaid.",
+    "uploadTitle": "2026 의대 정원 확대, 입시 트렌드 변화 같이 알아보자 멍!",
+    "uploadDescription": "2026학년도 대입에서 가장 큰 변화, 바로 의대 정원 확대 소식이야! 멍. 작년 대비 약 2배 늘어난 의대 정원이 입시에 어떤 영향을 미쳤는지, 그리고 앞으로 어떻게 준비해야 할지 입시 강아지가 쉽게 설명해 줄게. 최상위권 학생들의 의대 선호도가 12.4%나 오르고, 수능 1등급 컷도 1점 상승했다는 사실! 하지만 학생부 종합전형 비중은 유지되고 논술은 소폭 감소했어. 이제는 본인 성적과 지원 전형을 정밀하게 설계하는 게 정말 중요해졌어. 멍. 이 영상이 너의 입시 전략에 도움이 되길 바라! 더 궁금한 입시 용어나 정보가 있다면 댓글로 남겨줘!",
+    "hashtags": [
+      "#Shorts",
+      "#의대정원확대",
+      "#2026입시",
+      "#입시정보",
+      "#수능",
+      "#학생부종합전형",
+      "#논술전형",
+      "#입시전략",
+      "#수험생",
+      "#입시트렌드"
+    ]
+  }
+}

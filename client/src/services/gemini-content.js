@@ -1,4 +1,5 @@
 ﻿import { callGeminiWithFallback, parseJSON } from './gemini-core'
+import { findShortsVideoConcept } from '../utils/shortsVideoConcepts'
 import { normalizeBlogTags } from '../utils/blogTags'
 import {
   getBlogCategoryLabel,
@@ -850,6 +851,46 @@ function buildBlogCategoryInstruction(selection = null) {
 - 본문을 읽지 않고 cardSummary 만 봐도 섹션의 주제와 근거를 즉시 이해할 수 있어야 합니다.
 - cardSummary 와 본문 content 는 짝꿍입니다. content 는 평소처럼 줄글로 작성하되, 카드 요약 라인이 본문에 등장하는 사실에 근거하도록 일관성을 유지하세요.
 `
+      : selection.finalCategoryId === 'interview_prep'
+      ? `
+- 이 카테고리는 대입면접 준비 글입니다. 원문 성격을 먼저 판단해 두 흐름 중 하나로 작성하세요.
+  - (A) 학과/계열별 분리형: 원문에 학과·전공·계열이 2개 이상 등장하거나, 분야별 예상 질문·답변 포인트가 정리돼 있는 경우
+  - (B) 준비 매뉴얼형: 원문이 면접 절차, 자세, 마음가짐, 단계별 준비 팁 중심인 경우
+- 두 흐름 공통 규칙:
+  - 도입부(introduction 또는 첫 섹션)에서는 "면접관이 무엇을 평가하는지"를 1~2문장으로 명확히 짚으세요.
+  - 단순 지식 암기가 아니라 사고 과정, 문제 해결 능력, 사회적 가치 연결을 평가한다는 점을 본문 흐름 속에서 자연스럽게 드러내세요.
+  - 마지막 섹션 제목은 "정리" 또는 "마무리"로 두고, "추천 답변은 참고용이며 자신의 경험과 가치관을 자신의 언어로 재구성해야 진정성을 보여줄 수 있다"는 메시지를 반드시 포함하세요.
+  - 한 섹션 본문은 3~5문장 이내로 압축하고, 빠르게 훑어볼 수 있는 정보형 포맷을 유지하세요.
+
+- (A) 학과/계열별 분리형 규칙:
+  - 섹션 heading 은 학과·전공 단위로 번호를 붙여 분리하세요. 예: "1) 건축학·건축공학과", "2) 기계·로봇공학과", "3) 경영학"
+  - 한 섹션 본문은 두 블록으로 구성합니다:
+    1) "면접 문항 예시" — 3~5개의 예상 질문을 한 줄에 하나씩 나열
+    2) "추천 답변 포인트" — 각 질문에 대응하는 답변 방향 3~5개를 짧은 줄로 정리
+  - 추천 답변 포인트는 다음 황금 흐름을 따르세요: "개념 정리 → 시사·사회 연계 → 본인 경험·가치관".
+  - 학과별 특성 키워드(예: CSR, 신소재, CAR-T, IoT, 기회비용, CSR 등)는 한 줄로 간결하게 정의 + 의미 부여하세요.
+  - 질문/답변 포인트는 한 문단에 묻지 말고 한 줄에 하나씩 분리해 가독성을 유지하세요.
+
+- (B) 준비 매뉴얼형 규칙:
+  - 섹션 heading 은 준비 단계 단위로 번호를 붙이세요. 예: "1. 면접은 이미 시작됐다", "2. 면접 당일, 마음가짐부터 다져라", "3. 면접 절차 & 유의사항"
+  - 각 단계 본문은 짧은 한 문단 + 실전 행동 항목 리스트로 구성하세요. 리스트 머리에는 "👉", "✔", "📌" 같은 짧은 마커를 자유롭게 사용해도 좋습니다.
+  - 행동 항목은 학교 자원 활용, 가족 모의 면접, 거울 연습, 영상 촬영, 입실 자세, 시선 처리, 말투/속도 조절 같은 구체적 디테일까지 포함하세요.
+  - 단계 사이가 자연스럽게 이어지도록 "면접은 이미 시작됐다 → 당일 마음가짐 → 절차 → 마무리" 흐름을 유지하세요.
+  - 1~2개 섹션 정도는 짧은 명언을 인용해 동기 부여 톤을 더해도 좋습니다(과하지 않게, 출처를 함께 표기).
+
+- 카드뉴스 시각화 규칙 (지식 공유 카드뉴스와 동일 포맷):
+  - 모든 섹션에 sections[].cardSummary 를 반드시 채워주세요.
+  - cardSummary.headline 은 12자 안팎의 한 줄 카피로, (A) 학과별 글이면 학과·전공 핵심 키워드 압축, (B) 매뉴얼형 글이면 단계 한 줄 메시지를 담으세요. 마침표·물음표·느낌표는 1개까지만 허용합니다.
+  - cardSummary.bullets 는 3~5개 항목 배열로, 각 항목은 한 줄(20~35자) 분량으로 압축하세요.
+  - 불릿은 다음 패턴 중 자연스럽게 어울리는 형태를 따르세요:
+    1) 주장형: "단순 암기 X, 사고 흐름이 평가 기준"
+    2) 등식형: "CSR = 이익 + 지속가능성·사회 신뢰"
+    3) 인과/사례형: "예산 관리 경험 → 회계 신뢰성 강조"
+  - (A) 학과별 글의 cardSummary.bullets 는 추천 답변 포인트 핵심 줄을 압축한 형태로 정리하세요.
+  - (B) 매뉴얼형 글의 cardSummary.bullets 는 그 단계의 실전 행동·체크 포인트를 압축한 형태로 정리하세요.
+  - cardSummary 만 봐도 섹션의 평가 포인트와 답변/준비 방향을 즉시 이해할 수 있어야 합니다.
+  - 본문 sections[].content 는 평소 흐름대로 작성하되, 카드 요약 라인이 본문에 등장하는 사실과 일치하도록 일관성을 유지하세요.
+`
       : selection.finalCategoryId === 'admissions_strategy_style_2' || selection.finalCategoryId === 'book_promo'
       ? `
 - 이 카테고리는 긴 줄글형 칼럼보다 "이모지 소제목 + 핵심 포인트 리스트 + 짧은 결론" 구조를 우선하세요.
@@ -981,7 +1022,6 @@ function buildBlogBodyLineBreakRules() {
 - For "A: B" content, keep it on one line when B is one sentence.
 - For "A: B, C, D" content, keep it on one line if B/C/D are short. If the comma-separated items are long or explanatory, write "A:" and put the item text on the next line.
 
-## 釉붾줈洹?蹂몃Ц 以꾨컮轅?洹쒖튃
 ## 블로그 본문 줄바꿈 규칙
 - sections[].content에서는 새 섹션을 만들 정도는 아니지만 내용의 흐름이 바뀌는 지점에 줄바꿈을 넣으세요.
 - 일정, 기간, 대상, 준비물, 요청 방법, 핵심 변화처럼 제목과 값이 이어지는 내용은 "항목:" 다음 줄에 실제 내용을 적으세요.
@@ -1341,7 +1381,25 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   )
 }
 
+function buildShortsConceptFewShot(conceptId) {
+  const concept = findShortsVideoConcept(conceptId)
+  if (!concept?.testScript) return ''
+  return `
+## 컨셉 출력 포맷 예시
+선택된 컨셉: ${concept.label}
+아래 testScript 는 이 컨셉의 정확한 JSON 출력 포맷 예시입니다.
+scenes[].layout, sharedBackground, scenes[].infographic, scenes[].speakerSide 같은
+메타필드 패턴을 그대로 따라하세요. narration / visualDescription / textOverlay 는
+현재 입력 데이터 기반으로 새로 작성하되 layout 등의 메타필드는 예시와 동일한 구조로 채우세요.
+
+\`\`\`json
+${JSON.stringify(concept.testScript, null, 2)}
+\`\`\`
+`
+}
+
 export async function generateShortsScript(summary, rawText, emphasis, options = {}) {
+  const fewShot = buildShortsConceptFewShot(options.videoConceptId)
   const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 20~30초 분량의 숏폼 대본을 작성하세요.
 
 ## 공통 규칙
@@ -1351,15 +1409,24 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
+## 씬 메타필드 규칙 (영상 합성용)
+- layout 후보: 'full' (풀화면 1인), 'pip-tl' (좌상단 PIP + 인포그래픽 배경), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
+- 'pip-tl' 을 쓰면 scenes[].infographic 필드(headline, value, subtitle, chartType, theme) 를 반드시 같이 채우세요. chartType 후보: 'bar' | 'pie' | 'line'. theme 후보: 'beige' (채도 낮은 따뜻한 베이지 + 차콜 텍스트 — 기본·추천), 'warm-gray' (웜 그레이 + 차콜), 'cream' (크림 + 골드 액센트). 가독성 우선이라 'navy' 같은 채도 높은 톤은 피하세요.
+- 'dialogue-shared-bg' 와 'quiz-shared-bg' 를 쓰면 최상위 sharedBackground.visualDescription 필드를 한 번 채우고, 각 씬은 동일한 sharedBackground 를 공유한다고 가정하세요.
+- 'dialogue-shared-bg' 를 쓰면 각 씬에 speakerSide ('left' 또는 'right') 를 명시하세요.
+- 'full-vlog' 를 쓰면 scenes[].visualDescription 에 씬마다 다른 장소·시간대 배경을 영어로 상세히 묘사하세요.
+- 컨셉이 선택되지 않았다면 모든 씬을 'full' layout 으로 통일하세요.
+- visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요.
+
 ## 업로드 메타데이터 규칙
 - uploadTitle: 60자 이내
 - uploadDescription: 200~400자
 - hashtags: 8~12개 배열, #Shorts 포함
-
+${fewShot}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
+{"title":"숏폼 제목","duration":"20","hook":"첫 문장","sharedBackground":{"visualDescription":"공유 배경 영어 묘사. 공유 배경 layout 을 쓰지 않으면 생략 가능"},"scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이","speakerSide":"left","infographic":{"headline":"핵심 라벨","value":"+12.4%","subtitle":"부가 설명","chartType":"bar","theme":"beige"}}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(

@@ -1,0 +1,73 @@
+{
+  "conceptId": "parent_mental_care",
+  "conceptLabel": "후라이쌤·반려동물 학부모 멘탈 케어",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 16.2,
+  "promptLength": 5251,
+  "conceptExtra": "컨셉: 후라이쌤·반려동물 학부모 멘탈 케어\n요약: 학부모의 불안을 위로하며 입시 정보를 따뜻하게 풀어주는 토크\n연출 방향: 후라이쌤 아바타를 영상 내내 풀샷으로 유지. PIP·차트·다른 인물 컷 금지. 배경은 따뜻한 조명의 거실 또는 창가. 한 영상 안에서는 같은 공간만 사용하고, 씬마다 카메라 앵글·자세만 살짝 변화 (정면 미디엄샷 → 살짝 사이드 → 클로즈업 → 다시 정면). 배경에 반려견이 졸고 있거나 옆에 앉아있는 모습이 자연스럽게 비치도록 — 힐링감을 위한 보조 요소. 시청 타깃은 입시생 자녀를 둔 어머님. 강사 톤(가르침·지시)이 아닌 \"마음 알아주는 따뜻한 어른\" 포지션. \"어머님, 오늘도 정말 고생 많으셨죠?\" 같은 동료 어른 말투. 핵심 결은 \"위로 → 입시 시스템 정보\". 학부모의 불안을 먼저 인정·위로한 뒤, 그 불안을 덜어줄 시스템·일정·행동 가이드를 따뜻하게 전달 → 정보가 위로의 형태로 전달되는 구조. \"이거 모르면 자녀 손해 봐요\" 같은 위협·자극 표현 절대 금지. 데이터·수치·정책 분석은 동완쌤(briefing_dongwan) 영역이므로, 같은 정보도 \"그러니 어머님은 이렇게 하시면 돼요\" 식의 학부모 행동 가이드로 번역. CTA는 강요 없이 부드럽게 — 주변 어머님께 살짝 전해주세요 정도. 맘카페·학부모 단톡방 공유를 자연스럽게 유도.",
+  "rawText": "{\n  \"title\": \"2026 의대 정원 확대와 입시 트렌드\",\n  \"duration\": \"25\",\n  \"hook\": \"어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠?\",\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"5\",\n      \"layout\": \"full\",\n      \"narration\": \"어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠? 정말 고생 많으셨어요.\",\n      \"visualDescription\": \"A warm Korean middle-aged woman avatar (teacher-like, kind expression) sitting on a cozy beige sofa in a sunlit living room, a small dog napping peacefully on a cushion beside her, looking directly at the camera with an empathetic smile, chest-up framing.\",\n      \"textOverlay\": \"2026 의대 정원 2배 확대\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"5\",\n      \"layout\": \"full\",\n      \"narration\": \"의대 정원이 약 2배 늘면서, 상위 1% 학생들의 의대 선호도가 작년 대비 12.4%나 더 높아졌다고 해요.\",\n      \"visualDescription\": \"The same woman avatar on the same cozy sofa in the sunlit living room, slightly turned to a side angle, with a gentle, understanding expression, hands gently folded, the dog still resting nearby.\",\n      \"textOverlay\": \"의대 선호도 12.4% 상승\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"5\",\n      \"layout\": \"full\",\n      \"narration\": \"정원이 늘었지만, 지원자도 함께 늘어 수능 1등급 컷은 작년보다 1점 올랐어요. 그만큼 경쟁이 치열해진 거죠.\",\n      \"visualDescription\": \"A close-up of the same woman avatar speaking warmly with a reassuring hand gesture, same sunlit living room background, maintaining the cozy mood.\",\n      \"textOverlay\": \"수능 1등급 컷 1점 상승\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"5\",\n      \"layout\": \"full\",\n      \"narration\": \"하지만 학생부 종합전형 비중은 유지되고, 논술 전형은 소폭 줄었으니, 우리 아이에게 맞는 전형을 꼼꼼히 살펴보는 게 중요해요.\",\n      \"visualDescription\": \"The same woman avatar back to a chest-up shot on the same sofa, offering a gentle, encouraging smile, the dog still peacefully beside her in the consistent sunlit living room.\",\n      \"textOverlay\": \"학종 유지, 논술 소폭 감소\"\n    },\n    {\n      \"sceneNumber\": 5,\n      \"duration\": \"5\",\n      \"layout\": \"full\",\n      \"narration\": \"복잡한 입시 상황 속에서도, 어머님의 따뜻한 격려와 현명한 전략 설계가 우리 아이에게 가장 큰 힘이 될 거예요.\",\n      \"visualDescription\": \"The same woman avatar with a soft, warm, concluding expression on the same sofa, gently nodding, the dog curled up beside her, maintaining the serene and cozy living room mood.\",\n      \"textOverlay\": \"현명한 전략 설계가 중요\"\n    }\n  ],\n  \"cta\": \"주변 어머님들께도 이 정보를 살짝 전해주세요.\",\n  \"thumbnailPrompt\": \"A warm Korean middle-aged woman avatar (teacher-like, kind expression) sitting on a cozy sofa in a sunlit living room with a sleeping dog beside her, looking directly at the camera with a reassuring smile, text overlay '2026 의대 정원 확대' prominent.\",\n  \"uploadTitle\": \"2026 의대 정원 2배 확대! 어머님, 우리 아이 입시 전략은?\",\n  \"uploadDescription\": \"어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠? 정원이 약 2배 늘었지만, 상위권 의대 쏠림이 가속화되고 수능 1등급 컷도 1점 상승했어요. 하지만 학생부 종합전형은 유지되고 논술 전형은 소폭 줄었으니, 우리 아이에게 맞는 전형을 꼼꼼히 살펴보는 현명한 전략이 중요합니다. 불안한 마음은 잠시 내려놓고, 따뜻한 격려와 함께 우리 아이의 미래를 함께 설계해봐요. 주변 어머님들과도 이 정보를 살짝 나눠보세요.\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대정원\",\n    \"#2026입시\",\n    \"#입시전략\",\n    \"#학부모고민\",\n    \"#수능\",\n    \"#학종\",\n    \"#논술\",\n    \"#입시정보\",\n    \"#엄마마음\",\n    \"#후라이쌤\"\n  ]\n}",
+  "parsed": {
+    "title": "2026 의대 정원 확대와 입시 트렌드",
+    "duration": "25",
+    "hook": "어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠?",
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "5",
+        "layout": "full",
+        "narration": "어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠? 정말 고생 많으셨어요.",
+        "visualDescription": "A warm Korean middle-aged woman avatar (teacher-like, kind expression) sitting on a cozy beige sofa in a sunlit living room, a small dog napping peacefully on a cushion beside her, looking directly at the camera with an empathetic smile, chest-up framing.",
+        "textOverlay": "2026 의대 정원 2배 확대"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "5",
+        "layout": "full",
+        "narration": "의대 정원이 약 2배 늘면서, 상위 1% 학생들의 의대 선호도가 작년 대비 12.4%나 더 높아졌다고 해요.",
+        "visualDescription": "The same woman avatar on the same cozy sofa in the sunlit living room, slightly turned to a side angle, with a gentle, understanding expression, hands gently folded, the dog still resting nearby.",
+        "textOverlay": "의대 선호도 12.4% 상승"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "5",
+        "layout": "full",
+        "narration": "정원이 늘었지만, 지원자도 함께 늘어 수능 1등급 컷은 작년보다 1점 올랐어요. 그만큼 경쟁이 치열해진 거죠.",
+        "visualDescription": "A close-up of the same woman avatar speaking warmly with a reassuring hand gesture, same sunlit living room background, maintaining the cozy mood.",
+        "textOverlay": "수능 1등급 컷 1점 상승"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "5",
+        "layout": "full",
+        "narration": "하지만 학생부 종합전형 비중은 유지되고, 논술 전형은 소폭 줄었으니, 우리 아이에게 맞는 전형을 꼼꼼히 살펴보는 게 중요해요.",
+        "visualDescription": "The same woman avatar back to a chest-up shot on the same sofa, offering a gentle, encouraging smile, the dog still peacefully beside her in the consistent sunlit living room.",
+        "textOverlay": "학종 유지, 논술 소폭 감소"
+      },
+      {
+        "sceneNumber": 5,
+        "duration": "5",
+        "layout": "full",
+        "narration": "복잡한 입시 상황 속에서도, 어머님의 따뜻한 격려와 현명한 전략 설계가 우리 아이에게 가장 큰 힘이 될 거예요.",
+        "visualDescription": "The same woman avatar with a soft, warm, concluding expression on the same sofa, gently nodding, the dog curled up beside her, maintaining the serene and cozy living room mood.",
+        "textOverlay": "현명한 전략 설계가 중요"
+      }
+    ],
+    "cta": "주변 어머님들께도 이 정보를 살짝 전해주세요.",
+    "thumbnailPrompt": "A warm Korean middle-aged woman avatar (teacher-like, kind expression) sitting on a cozy sofa in a sunlit living room with a sleeping dog beside her, looking directly at the camera with a reassuring smile, text overlay '2026 의대 정원 확대' prominent.",
+    "uploadTitle": "2026 의대 정원 2배 확대! 어머님, 우리 아이 입시 전략은?",
+    "uploadDescription": "어머님, 2026학년도 의대 정원 확대 소식에 마음 많이 복잡하시죠? 정원이 약 2배 늘었지만, 상위권 의대 쏠림이 가속화되고 수능 1등급 컷도 1점 상승했어요. 하지만 학생부 종합전형은 유지되고 논술 전형은 소폭 줄었으니, 우리 아이에게 맞는 전형을 꼼꼼히 살펴보는 현명한 전략이 중요합니다. 불안한 마음은 잠시 내려놓고, 따뜻한 격려와 함께 우리 아이의 미래를 함께 설계해봐요. 주변 어머님들과도 이 정보를 살짝 나눠보세요.",
+    "hashtags": [
+      "#Shorts",
+      "#의대정원",
+      "#2026입시",
+      "#입시전략",
+      "#학부모고민",
+      "#수능",
+      "#학종",
+      "#논술",
+      "#입시정보",
+      "#엄마마음",
+      "#후라이쌤"
+    ]
+  }
+}

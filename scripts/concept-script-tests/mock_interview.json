@@ -1,0 +1,81 @@
+{
+  "conceptId": "mock_interview",
+  "conceptLabel": "AI 가상 인물 미래 대입 면접 미리보기",
+  "model": "gemini-2.5-flash",
+  "elapsedSec": 16.4,
+  "promptLength": 5719,
+  "conceptExtra": "컨셉: AI 가상 인물 미래 대입 면접 미리보기\n요약: 동완쌤이 AI 면접관 역할로 빈출 질문을 묻고, 제자가 학과 맞춤형으로 답해주는 면접 시뮬레이션 시리즈\n연출 방향: 두 아바타(동완쌤 면접관 + 제자 응시자) 가 등장하되, 한 화면에 1명씩만 비치도록 1인 교차 컷으로 진행 — 같은 프레임에 두 명을 합성하지 말 것 (HeyGen 제약). 면접관 컷 ↔ 응시자 컷이 교대로 나오며, 두 사람 모두 같은 면접실 공간에 있는 것처럼 visualDescription 에 \"same interview room continuity\" 를 매 씬 명시. 동완쌤은 단정한 정장 + 차분한 면접관 톤, 제자는 단정한 셔츠 + 살짝 긴장한 응시자 자세로 대조 명확하게. 시리즈 시그너처는 비주얼·인트로 일관성으로만 표현 — EP 번호·회차·Q1·Q2 같은 자막 절대 금지. 시청자가 썸네일·오프닝만 보고 \"어 이 시리즈\" 알아보게. 매 영상 첫 씬은 동완쌤 면접관 컷에서 \"AI 면접관한테 모의 면접 해봤어.\" 류 시그너처 인트로 한 마디로 시작 → 시리즈 정체성. 응시자 자기소개는 영상 주제(학과) 에 맞춰 매번 다르게: \"저는 의대 입시를 준비하는 ○○입니다\" / \"저는 공대 입시를 준비하는 ○○입니다\" 식. 학과 키워드가 영상 주제를 자연스럽게 드러냄. 구조: 메타 훅 → 면접 질문 → 응시자 답변 → 동완쌤 인사이트 한 줄 → 호기심 갭 CTA. 답을 끝까지 다 공개하지 않고 \"여러분이라면? 댓글로\" 식으로 댓글 유도. 위협·자극 표현 금지. AI 활용 역량 시연으로 채널 정체성을 강화하는 메타 메시지를 첫 씬 인트로에 자연스럽게 녹임.",
+  "rawText": "{\n  \"title\": \"AI 면접관 모의 면접 - 2026 의대 입시 핵심\",\n  \"duration\": \"21\",\n  \"hook\": \"AI 면접관과 2026 의대 입시 트렌드를 미리 살펴봤어.\",\n  \"scenes\": [\n    {\n      \"sceneNumber\": 1,\n      \"duration\": \"3\",\n      \"layout\": \"full\",\n      \"narration\": \"AI 면접관과 2026 의대 입시 트렌드를 미리 살펴봤어.\",\n      \"visualDescription\": \"A male avatar (Dongwan teacher) in a clean dark navy suit, sitting upright in a calm modern interview room with soft neutral lighting and a subtle wood-panel background, chest-up framing, confident professional expression, same interview room continuity.\",\n      \"textOverlay\": \"AI 모의 면접: 2026 의대 입시\"\n    },\n    {\n      \"sceneNumber\": 2,\n      \"duration\": \"3\",\n      \"layout\": \"full\",\n      \"narration\": \"2026학년도 의대 정원 확대, 어떤 변화를 가져왔을까요?\",\n      \"visualDescription\": \"A male avatar (Dongwan teacher) in the same interview room, slight forward lean toward camera as if asking the candidate, calm interviewer tone, same neutral lighting and same wood-panel background, chest-up framing, same interview room continuity.\",\n      \"textOverlay\": \"의대 정원 2배 확대, 변화는?\"\n    },\n    {\n      \"sceneNumber\": 3,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"의대 정원이 전년 대비 약 2배 늘면서 상위 1% 학생의 의대 선호도가 12.4% 상승했어요.\",\n      \"visualDescription\": \"A female student avatar in a neat white blouse seated across from the interviewer in the same interview room, slightly nervous but composed candidate posture, hands folded on the desk, same neutral lighting and same wood-panel background continuity, chest-up framing.\",\n      \"textOverlay\": \"상위 1% 의대 선호도 12.4% 상승\"\n    },\n    {\n      \"sceneNumber\": 4,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"정원이 늘었지만 지원자도 함께 늘어 수능 1등급 컷이 작년보다 1점 상승했죠.\",\n      \"visualDescription\": \"A male avatar (Dongwan teacher) back to chest-up shot in the same interview room, gentle confident smile sharing an insight, same neutral lighting and same wood-panel background continuity.\",\n      \"textOverlay\": \"수능 1등급 컷 작년 대비 1점 상승\"\n    },\n    {\n      \"sceneNumber\": 5,\n      \"duration\": \"4\",\n      \"layout\": \"full\",\n      \"narration\": \"학생부 종합전형 비중은 유지되었고, 논술 전형 모집 인원은 소폭 감소했습니다.\",\n      \"visualDescription\": \"A female student avatar in the same interview room, maintaining a composed posture while providing information, same neutral lighting and same wood-panel background continuity, chest-up framing.\",\n      \"textOverlay\": \"학종 유지, 논술 소폭 감소\"\n    },\n    {\n      \"sceneNumber\": 6,\n      \"duration\": \"3\",\n      \"layout\": \"full\",\n      \"narration\": \"여러분은 2026 의대 입시, 어떻게 준비할 건가요? 댓글로 알려주세요.\",\n      \"visualDescription\": \"A male avatar (Dongwan teacher) in a warm closing chest-up shot in the same interview room, slight inviting gesture toward camera, same neutral lighting and same wood-panel background continuity.\",\n      \"textOverlay\": \"여러분의 전략은? 댓글로!\"\n    }\n  ],\n  \"cta\": \"2026 의대 입시 전략, 여러분의 생각은? 댓글로 알려주세요.\",\n  \"thumbnailPrompt\": \"A professional male avatar (Dongwan teacher) in a dark navy suit, sitting in a modern interview room, looking directly at the camera with a confident yet thoughtful expression. A subtle digital interface element or 'AI' text hint in the background. Text overlay: '2026 의대 입시'.\",\n  \"uploadTitle\": \"AI 면접관 모의 면접 - 2026 의대 입시 핵심\",\n  \"uploadDescription\": \"2026학년도 대입에서 가장 큰 변화, 바로 의대 정원 확대인데요. AI 면접관과 함께 2026 의대 입시 트렌드를 미리 살펴봤습니다. 의대 정원이 전년 대비 약 2배 늘면서 상위 1% 학생의 의대 선호도가 12.4% 상승했고, 수능 1등급 컷도 작년보다 1점 올랐습니다. 학생부 종합전형 비중은 유지되고 논술 전형은 소폭 감소했습니다. 이처럼 치열해진 의대 입시, 여러분은 어떻게 준비할 건가요? 댓글로 여러분의 전략을 공유해주세요!\",\n  \"hashtags\": [\n    \"#Shorts\",\n    \"#의대입시\",\n    \"#2026대입\",\n    \"#의대정원\",\n    \"#입시전략\",\n    \"#수능\",\n    \"#학종\",\n    \"#논술\",\n    \"#AI면접\",\n    \"#입시트렌드\",\n    \"#공부법\"\n  ]\n}",
+  "parsed": {
+    "title": "AI 면접관 모의 면접 - 2026 의대 입시 핵심",
+    "duration": "21",
+    "hook": "AI 면접관과 2026 의대 입시 트렌드를 미리 살펴봤어.",
+    "scenes": [
+      {
+        "sceneNumber": 1,
+        "duration": "3",
+        "layout": "full",
+        "narration": "AI 면접관과 2026 의대 입시 트렌드를 미리 살펴봤어.",
+        "visualDescription": "A male avatar (Dongwan teacher) in a clean dark navy suit, sitting upright in a calm modern interview room with soft neutral lighting and a subtle wood-panel background, chest-up framing, confident professional expression, same interview room continuity.",
+        "textOverlay": "AI 모의 면접: 2026 의대 입시"
+      },
+      {
+        "sceneNumber": 2,
+        "duration": "3",
+        "layout": "full",
+        "narration": "2026학년도 의대 정원 확대, 어떤 변화를 가져왔을까요?",
+        "visualDescription": "A male avatar (Dongwan teacher) in the same interview room, slight forward lean toward camera as if asking the candidate, calm interviewer tone, same neutral lighting and same wood-panel background, chest-up framing, same interview room continuity.",
+        "textOverlay": "의대 정원 2배 확대, 변화는?"
+      },
+      {
+        "sceneNumber": 3,
+        "duration": "4",
+        "layout": "full",
+        "narration": "의대 정원이 전년 대비 약 2배 늘면서 상위 1% 학생의 의대 선호도가 12.4% 상승했어요.",
+        "visualDescription": "A female student avatar in a neat white blouse seated across from the interviewer in the same interview room, slightly nervous but composed candidate posture, hands folded on the desk, same neutral lighting and same wood-panel background continuity, chest-up framing.",
+        "textOverlay": "상위 1% 의대 선호도 12.4% 상승"
+      },
+      {
+        "sceneNumber": 4,
+        "duration": "4",
+        "layout": "full",
+        "narration": "정원이 늘었지만 지원자도 함께 늘어 수능 1등급 컷이 작년보다 1점 상승했죠.",
+        "visualDescription": "A male avatar (Dongwan teacher) back to chest-up shot in the same interview room, gentle confident smile sharing an insight, same neutral lighting and same wood-panel background continuity.",
+        "textOverlay": "수능 1등급 컷 작년 대비 1점 상승"
+      },
+      {
+        "sceneNumber": 5,
+        "duration": "4",
+        "layout": "full",
+        "narration": "학생부 종합전형 비중은 유지되었고, 논술 전형 모집 인원은 소폭 감소했습니다.",
+        "visualDescription": "A female student avatar in the same interview room, maintaining a composed posture while providing information, same neutral lighting and same wood-panel background continuity, chest-up framing.",
+        "textOverlay": "학종 유지, 논술 소폭 감소"
+      },
+      {
+        "sceneNumber": 6,
+        "duration": "3",
+        "layout": "full",
+        "narration": "여러분은 2026 의대 입시, 어떻게 준비할 건가요? 댓글로 알려주세요.",
+        "visualDescription": "A male avatar (Dongwan teacher) in a warm closing chest-up shot in the same interview room, slight inviting gesture toward camera, same neutral lighting and same wood-panel background continuity.",
+        "textOverlay": "여러분의 전략은? 댓글로!"
+      }
+    ],
+    "cta": "2026 의대 입시 전략, 여러분의 생각은? 댓글로 알려주세요.",
+    "thumbnailPrompt": "A professional male avatar (Dongwan teacher) in a dark navy suit, sitting in a modern interview room, looking directly at the camera with a confident yet thoughtful expression. A subtle digital interface element or 'AI' text hint in the background. Text overlay: '2026 의대 입시'.",
+    "uploadTitle": "AI 면접관 모의 면접 - 2026 의대 입시 핵심",
+    "uploadDescription": "2026학년도 대입에서 가장 큰 변화, 바로 의대 정원 확대인데요. AI 면접관과 함께 2026 의대 입시 트렌드를 미리 살펴봤습니다. 의대 정원이 전년 대비 약 2배 늘면서 상위 1% 학생의 의대 선호도가 12.4% 상승했고, 수능 1등급 컷도 작년보다 1점 올랐습니다. 학생부 종합전형 비중은 유지되고 논술 전형은 소폭 감소했습니다. 이처럼 치열해진 의대 입시, 여러분은 어떻게 준비할 건가요? 댓글로 여러분의 전략을 공유해주세요!",
+    "hashtags": [
+      "#Shorts",
+      "#의대입시",
+      "#2026대입",
+      "#의대정원",
+      "#입시전략",
+      "#수능",
+      "#학종",
+      "#논술",
+      "#AI면접",
+      "#입시트렌드",
+      "#공부법"
+    ]
+  }
+}
