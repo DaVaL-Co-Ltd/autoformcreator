@@ -51,6 +51,11 @@ const CONCEPT_DIGEST_SHARED_RULES = 'Do not create separate circle badges, squar
 
 const ADMISSIONS_KEYWORD_LAYOUT_RULE = 'Create a square educational poster with a bright, low-saturation background. Use a smooth solid-color field or a very soft blended color wash only. Keep the center visually calm and readable so the app can place one bold headline directly in the middle of the image. Do not draw any white circle, white disc, white badge, title panel, text box, translucent plate, or reserved text container. Keep supporting motifs away from the central 45% by 45% zone and bias them toward the outer edges so the centered headline remains fully readable. Avoid chalkboard texture, notebook texture, lined paper, graph paper, check patterns, repeated doodles, stickers, collage layouts, decorative borders, and busy classroom clutter. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.'
 
+// Default fallback (카테고리 미지정) 전용 규칙.
+// 디자인 톤: 4개 코너에 부드러운 organic blob + 각 코너에 한 개씩 학습 모티프, 중앙 70% 는 크림/연한 단색 빈 공간.
+// 흰 원형 + 키워드 텍스트는 앱이 DOM 으로 덧붙이므로 빈 공간은 반드시 비워야 한다.
+const DEFAULT_CARDNEWS_LAYOUT_RULE = 'CRITICAL LAYOUT RULE: the inner 70% by 70% center area must remain completely empty and visually calm with one clean light cream or ivory tone, because the app will place its own white circle and a centered keyword on top afterward — anything drawn in that inner zone will be hidden or look broken. Add soft organic blob shapes that use the chosen color palette only in the four outer corners, hugging the canvas edges and never crossing into the inner 70% empty zone. Place exactly four simple study motifs, one in each corner region, sitting on top of the colored corner blobs, with each motif kept inside the outer 18% band measured from the nearest two canvas edges. Use hand-drawn outline illustration style with clean linework, soft pastel fills, gentle matte surfaces, and no shading complexity. Do not add any white circle, title plate, text panel, badge, frame, sticker sheet, collage layout, or busy decorative background. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.'
+
 const CONCEPT_DIGEST_THEME_PROMPTS = {
   math: `Create a simple math-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a compass, ruler, graph line, geometric sketch, or formula symbol. ${CONCEPT_DIGEST_SHARED_RULES}`,
   science: `Create a simple science-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a beaker, microscope, atom icon, leaf-energy diagram, or experiment symbol. ${CONCEPT_DIGEST_SHARED_RULES}`,
@@ -174,14 +179,16 @@ function getBlogImageVersionConfig(options = {}) {
     }
   }
 
+  // Default fallback: 4-코너 organic blob + 모서리 학습 모티프 + 중앙 키워드 오버레이
+  const subjectTheme = inferConceptDigestTheme(options.section, options)
   return {
-    version: 'version1',
-    variant: 'circle',
-    overlayMode: 'headline-description',
+    version: 'default_keyword',
+    variant: 'circle-text-only',
+    overlayMode: 'headline-only',
     overlayFont: options.overlayFont || 'pretendard',
-    subjectTheme: 'generic',
-    layoutPrompt: 'Fill the full canvas with a cohesive composition. DO NOT leave an empty center for text. DO NOT add any placeholder panel, blurred box, translucent square, floating frame, empty badge, or reserved text area.',
-    subjectPrompt: '',
+    subjectTheme,
+    layoutPrompt: DEFAULT_CARDNEWS_LAYOUT_RULE,
+    subjectPrompt: KNOWLEDGE_INSIGHT_THEME_MOTIFS[subjectTheme] || KNOWLEDGE_INSIGHT_THEME_MOTIFS.generic,
   }
 }
 
@@ -293,16 +300,19 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
   const versionConfig = getBlogImageVersionConfig(mergedOptions)
   const isHumanSceneCategory = isHumanSceneBlogCategory(options)
   const isKnowledgeInsight = isKnowledgeInsightCategory(options)
+  const isDefaultKeyword = versionConfig.version === 'default_keyword'
   const styleHint = isKnowledgeInsight
     ? KNOWLEDGE_INSIGHT_EMOJI_STYLE
     : versionConfig.version === 'image_keyword'
     ? getStylePrompt(options.imageStyle, 'Simple poster background style with a flat solid-color field, minimal shading, one clean educational motif, and a very uncluttered composition.')
+    : isDefaultKeyword
+    ? getStylePrompt(options.imageStyle, 'Hand-drawn outline illustration style with soft pastel fills, clean linework, gentle matte surfaces, and a calm minimal composition with generous empty space in the center.')
     : getStylePrompt(options.imageStyle)
   const isPhotoStyle = options.imageStyle === 'photo'
   const variation = BLOG_VISUAL_VARIATIONS[index % BLOG_VISUAL_VARIATIONS.length]
   const paletteDesc = getBlogPalette(section, options)
   const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
-  const topicPrompt = versionConfig.version === 'image_keyword'
+  const topicPrompt = (versionConfig.version === 'image_keyword' || isDefaultKeyword)
     ? describeConceptDigestTopic(section)
     : ''
   const sectionContext = isHumanSceneCategory
@@ -334,6 +344,8 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
     ? `Do not generate a full background scene, landscape, room, poster, or card layout. Do not put the subject in the center. Do not use people unless the concept absolutely requires a human action, and even then keep the figure simple and secondary. Avoid text, labels, many mini icons, repeated decorations, notebook paper textures, stickers, and collage composition. Prefer a single isolated object or one tiny object pair with bold linework and simplified color blocking. ${KNOWLEDGE_INSIGHT_CUTOUT_RULE} The result should behave like one contextual lower-right corner illustration asset.`
     : isPhotoStyle
     ? 'Prefer realistic human presence, real interiors, natural classroom lighting, believable school furniture, real books and stationery, and genuine documentary-style composition. The whole image should read as a single real photograph rather than a designed card.'
+    : isDefaultKeyword
+      ? 'No realistic photos, no people. Keep four corner motifs only — never fill the inner 70% center area. Soft organic blob shapes in the four corners use the chosen palette color. Hand-drawn outline illustration with soft pastel fills, clean linework, gentle matte surfaces, and a calm uncluttered composition. Do not use notebook lines, paper textures, check patterns, chalkboard grain, white plates, badges, or text containers.'
     : versionConfig.version === 'image_keyword'
       ? 'No realistic photos, no people. Keep the illustration flat, simple, and poster-like. Prefer one clear object, broad empty space, and a smooth solid-color background that supports the main object. Do not use notebook lines, paper textures, check patterns, chalkboard grain, or many mini icons.'
       : 'No realistic photos, no people. Cute Korean educational style with a clean full-bleed composition.'
@@ -354,6 +366,12 @@ export async function generateBlogImages(sections, options = {}) {
     : ''
   const resolveOverlayHeadline = (section = {}) => {
     if (isAdmissionsStrategyKeywordCategory(options)) {
+      return deriveBlogHeadline(section.keyPhrase || '', section.heading || '')
+        || deriveBlogTitleKeywordHeadline(options.title || '')
+    }
+
+    const versionConfig = getBlogImageVersionConfig({ ...options, section })
+    if (versionConfig.overlayMode === 'headline-only') {
       return deriveBlogHeadline(section.keyPhrase || '', section.heading || '')
         || deriveBlogTitleKeywordHeadline(options.title || '')
     }

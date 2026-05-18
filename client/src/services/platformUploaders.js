@@ -72,6 +72,13 @@ export async function uploadToBlog(extractionId, options = {}) {
     : getBlogFooterConfig(platformConnections)
   const categoryPath = String(blogConnection.categoryPath || blog.categoryPath || '').trim()
   const sections = Array.isArray(blog.sections) ? blog.sections : []
+  const blogImagesList = ext.data?.blogImages || ext.blogImages || []
+  const hasThumbnailImage = Array.isArray(blogImagesList)
+    && blogImagesList.some((img) => img?.isThumbnail && (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl))
+  // 썸네일이 있으면 buildBlogUploadImageDataUrls 가 uploads[0] 에 썸네일을 넣고
+  // 섹션 이미지를 uploads[1..] 에 넣는다. 그래서 본문 마커도 동일한 오프셋을 따라야
+  // 섹션 i 의 마커가 자기 자신의 이미지를 가리키게 된다.
+  const imageMarkerOffset = hasThumbnailImage ? 2 : 1
   // 스타일 결정용 카테고리 ID 는 네이버 폴더 경로와 별개로 categoryInfo 에서 보완 폴백.
   const stylingCategoryId = String(categoryPath || blog?.categoryInfo?.finalCategoryId || '').trim()
   const headingStyle = resolveBlogHeadingStyle(stylingCategoryId, sections)
@@ -87,15 +94,19 @@ export async function uploadToBlog(extractionId, options = {}) {
       ? `\n\n${BLOG_DIVIDER_MARKER}\n\n`
       : '\n\n'
 
-    rawContent = sections
+    const sectionBlock = sections
       .map((section, index) => {
         const heading = buildBlogHeadingPrefix(section.heading, headingStyle)
         const keyPhrase = section.keyPhrase ? `${section.keyPhrase}\n\n` : ''
-        const imageMarker = `[IMG:${index + 1}]\n`
+        const imageMarker = `[IMG:${index + imageMarkerOffset}]\n`
         const body = section.content || section.body || ''
         return `${heading}${imageMarker}${keyPhrase}${body}`
       })
       .join(joinDelimiter)
+
+    // 썸네일이 있으면 본문 최상단에 별도 마커로 삽입해 [썸네일]-[섹션1 제목]-[섹션1 이미지]-...
+    // 순서를 보장한다. 썸네일이 없으면 기존처럼 섹션 마커가 [IMG:1] 부터 시작한다.
+    rawContent = hasThumbnailImage ? `[IMG:1]\n\n${sectionBlock}` : sectionBlock
   }
 
   if (!rawContent) {

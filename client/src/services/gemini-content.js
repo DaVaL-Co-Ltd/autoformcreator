@@ -1122,6 +1122,7 @@ ${buildInstagramCaptionRules()}
 
 ## 뉴스레터 규칙
 - 첫 인사말은 자연스럽게 작성하되, 과장되거나 광고 같은 문구는 피하세요.
+- subject, preheader, greeting, headline, keyPoints, body, closingNote 어느 필드에서도 markdown bold/emphasis(**, *, __, _) 를 절대 사용하지 마세요. 모든 텍스트는 강조 표시 없이 평문으로만 작성하세요.
 
 ## 블로그 규칙
 - 섹션은 3개 이상 구성하세요.
@@ -1347,6 +1348,7 @@ export async function generateNewsletterContent(summary, rawText, emphasis, opti
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실은 추가하지 마세요.
 - 뉴스레터 본문은 메일 복사에 적합하도록 읽기 쉽게 구성하세요.
+- subject, preheader, greeting, headline, keyPoints, body, closingNote 어느 필드에서도 markdown bold/emphasis(**, *, __, _) 를 절대 사용하지 마세요. 모든 텍스트는 강조 표시 없이 평문으로만 작성하세요.
 
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 

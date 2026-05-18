@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink,
-  Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff
+  Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff, X, ZoomIn
 } from 'lucide-react'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { domToPng } from 'modern-screenshot'
@@ -13,7 +13,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
-import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest } from '../utils/platformFormatter'
+import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest, stripMarkdownEmphasis } from '../utils/platformFormatter'
 import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 import {
   getAll as getPlatformConnections,
@@ -118,7 +118,7 @@ const appendBlogTagsToBody = (content = '', tags = []) => {
   if (!trimmedContent) return tagText
   if (trimmedContent.includes(tagText)) return trimmedContent
 
-  return `${trimmedContent}\n\n${tagText}`
+  return `${trimmedContent}\n\n\n${tagText}`
 }
 
 const stripResultCtaText = (value) => {
@@ -303,6 +303,16 @@ export default function ExtractionResultPage() {
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
   const [shortsUploadTargets, setShortsUploadTargets] = useState({ instagram: true, youtube: true })
+  const [previewImage, setPreviewImage] = useState(null) // { url, alt } | null
+
+  useEffect(() => {
+    if (!previewImage) return undefined
+    const handleKey = (event) => {
+      if (event.key === 'Escape') setPreviewImage(null)
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [previewImage])
   const blogCategoryPath = String(platformConnections?.blog?.categoryPath || state.blogContent?.categoryPath || '').trim()
   // AI 가 자동 선택한 카테고리 ID(`admissions_strategy_style_1` 등)는 categoryInfo 에 들어있다.
   // 네이버 폴더 경로(blogCategoryPath)와 별도로 스타일 결정용으로 사용한다.
@@ -1058,9 +1068,9 @@ export default function ExtractionResultPage() {
         const s = storedStatus[ch]
         if (!s) return
         if (typeof s === 'string') {
-          statusMap[ch] = s
+          statusMap[ch] = s === 'uploaded' ? 'done' : s
         } else if (typeof s === 'object') {
-          if (s.status) statusMap[ch] = s.status
+          if (s.status) statusMap[ch] = s.status === 'uploaded' ? 'done' : s.status
           if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt, uploadTargets: s.uploadTargets }
         }
       })
@@ -1173,8 +1183,11 @@ export default function ExtractionResultPage() {
     : { heading: '', links: [], hasCustomLinks: false }
 
   const copyNewsletterHtml = async () => {
-    const keyPoints = ensureArray(newsletterContent?.keyPoints)
-    const dataHighlights = ensureArray(newsletterContent?.dataHighlights)
+    const keyPoints = ensureArray(newsletterContent?.keyPoints).map((p) => stripMarkdownEmphasis(p))
+    const subjectText = stripMarkdownEmphasis(newsletterContent?.subject || '')
+    const headlineText = stripMarkdownEmphasis(newsletterContent?.headline || '') || subjectText
+    const preheaderText = stripMarkdownEmphasis(newsletterContent?.preheader || '')
+    const bodyText = stripMarkdownEmphasis(newsletterContent?.body || '')
 
     const keyPointsHtml = keyPoints.length > 0
       ? `
@@ -1201,30 +1214,6 @@ export default function ExtractionResultPage() {
         </tr>`
       : ''
 
-    const dataHighlightsHtml = dataHighlights.length > 0
-      ? `
-        <tr>
-          <td style="padding:0 32px 24px 32px;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-              <tr>
-                ${dataHighlights.map((item) => `
-                  <td valign="top" width="${Math.floor(100 / dataHighlights.length)}%" style="padding:${dataHighlights.length > 1 ? '0 6px' : '0'};">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;">
-                      <tr>
-                        <td style="padding:18px 12px;text-align:center;">
-                          <div style="font-size:24px;line-height:30px;font-weight:800;color:#2563eb;">${escapeHtml(item.value || '')}</div>
-                          <div style="margin-top:6px;font-size:12px;line-height:18px;color:#6b7280;">${escapeHtml(item.label || '')}</div>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                `).join('')}
-              </tr>
-            </table>
-          </td>
-        </tr>`
-      : ''
-
     const fullHtml = `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f7f8fb;padding:24px 0;margin:0;">
         <tr>
@@ -1232,8 +1221,8 @@ export default function ExtractionResultPage() {
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e6e9f0;">
               <tr>
                 <td style="padding:32px 32px 28px 32px;background:linear-gradient(90deg,#eff6ff 0%,#f8fbff 100%);text-align:center;">
-                  <div style="font-size:28px;line-height:36px;font-weight:800;color:#111827;">${escapeHtml(newsletterContent?.headline || newsletterContent?.subject || '')}</div>
-                  ${newsletterContent?.preheader ? `<div style="margin-top:10px;font-size:14px;line-height:22px;color:#6b7280;">${escapeHtml(newsletterContent.preheader)}</div>` : ''}
+                  <div style="font-size:28px;line-height:36px;font-weight:800;color:#111827;">${escapeHtml(headlineText)}</div>
+                  ${preheaderText ? `<div style="margin-top:10px;font-size:14px;line-height:22px;color:#6b7280;">${escapeHtml(preheaderText)}</div>` : ''}
                 </td>
               </tr>
               <tr>
@@ -1243,11 +1232,10 @@ export default function ExtractionResultPage() {
               </tr>
               ${keyPointsHtml}
               <tr>
-                <td style="padding:0 32px 24px 32px;font-size:14px;line-height:26px;color:#4b5563;">
-                  ${nlToBr(newsletterContent?.body || '')}
+                <td style="padding:0 32px 32px 32px;font-size:14px;line-height:26px;color:#4b5563;">
+                  ${nlToBr(bodyText)}
                 </td>
               </tr>
-              ${dataHighlightsHtml}
             </table>
           </td>
         </tr>
@@ -1267,9 +1255,86 @@ export default function ExtractionResultPage() {
     }
   }
 
+  const openImagePreview = useCallback((url, alt) => {
+    if (!url) return
+    setPreviewImage({ url, alt: alt || '미리보기' })
+  }, [])
+
+  const ImagePreviewStrip = ({ images, label, columns = 6 }) => {
+    if (!Array.isArray(images) || images.length === 0) return null
+    const colsClass = columns >= 6 ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'
+    return (
+      <div className="bg-surface rounded-2xl border border-border p-4 space-y-3">
+        <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
+          <ZoomIn size={13} />
+          <span>{label} ({images.length}장)</span>
+          <span className="text-[10px] opacity-70">— 클릭하면 확대됩니다</span>
+        </div>
+        <div className={`grid gap-2 ${colsClass}`}>
+          {images.map((image, idx) => (
+            <button
+              key={`preview-${idx}-${image.alt}`}
+              type="button"
+              onClick={() => openImagePreview(image.url, image.alt)}
+              disabled={!image.url}
+              className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              title={image.alt}
+            >
+              {image.url ? (
+                <>
+                  <img
+                    src={image.url}
+                    alt={image.alt}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                    <ZoomIn size={18} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
+                  </div>
+                </>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-surface-light text-[10px] text-text-muted">
+                  준비 중...
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   const renderBlog = () => {
     const blogTags = normalizeBlogTags(blogContent)
     const blogTagText = buildBlogTagText(blogTags)
+    const previewBlogImageList = (() => {
+      const list = []
+      const blogImageList = ensureArray(blogImages)
+      const seen = new Set()
+      const push = (url, alt) => {
+        if (!url || seen.has(url)) return
+        seen.add(url)
+        list.push({ url, alt })
+      }
+      const thumb = blogImageList.find((img) => img?.isThumbnail && (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl))
+      if (thumb) {
+        push(thumb.renderedImageUrl || thumb.pngUrl || thumb.imageUrl, '블로그 썸네일')
+      }
+      const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
+      ensureArray(blogContent?.sections).forEach((section, index) => {
+        const png = blogPngUrls[index]
+        if (png) {
+          push(png, section?.heading || `블로그 이미지 ${index + 1}`)
+          return
+        }
+        const match = sectionImageList.find((img) =>
+          img?.heading && section?.heading && img.heading === section.heading
+        ) || sectionImageList[index]
+        const url = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl
+        if (url) push(url, section?.heading || `블로그 이미지 ${index + 1}`)
+      })
+      return list
+    })()
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1351,6 +1416,12 @@ export default function ExtractionResultPage() {
           </div>
         </div>
 
+        <ImagePreviewStrip
+          images={previewBlogImageList}
+          label="블로그 이미지 미리보기"
+          columns={6}
+        />
+
         <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
           <div className="p-6 sm:p-8 border-b border-border">
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
@@ -1405,14 +1476,22 @@ export default function ExtractionResultPage() {
                         <img
                           src={thumbnailImage.renderedImageUrl || thumbnailImage.pngUrl}
                           alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
-                          className="w-full max-w-xl rounded-xl shadow-sm"
+                          className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+                          onClick={() => openImagePreview(
+                            thumbnailImage.renderedImageUrl || thumbnailImage.pngUrl,
+                            thumbnailImage?.title || blogContent?.title || '블로그 썸네일',
+                          )}
                         />
                       ) : thumbnailImage?.imageUrl ? (
                         thumbnailImage?.overlayMode === 'none' ? (
                           <img
                             src={thumbnailImage.imageUrl}
                             alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
-                            className="block w-full max-w-xl rounded-xl shadow-sm"
+                            className="block w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+                            onClick={() => openImagePreview(
+                              thumbnailImage.imageUrl,
+                              thumbnailImage?.title || blogContent?.title || '블로그 썸네일',
+                            )}
                           />
                         ) : (
                           <BlogImageArtwork
@@ -1546,7 +1625,8 @@ export default function ExtractionResultPage() {
                             key={imageKey}
                             src={renderedImageUrl}
                             alt={image?.title || section.heading || `블로그 이미지 ${index + 1}-${imageIndex + 1}`}
-                            className="w-full max-w-xl rounded-xl shadow-sm"
+                            className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+                            onClick={() => openImagePreview(renderedImageUrl, image?.title || section.heading || `블로그 이미지 ${index + 1}`)}
                           />
                         ) : imageUrl ? (
                           hideTextOverlay ? (
@@ -1559,7 +1639,8 @@ export default function ExtractionResultPage() {
                               }}
                               src={imageUrl}
                               alt={image?.title || section.heading || `블로그 이미지 ${index + 1}-${imageIndex + 1}`}
-                              className="block w-full max-w-xl rounded-xl shadow-sm"
+                              className="block w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+                              onClick={() => openImagePreview(imageUrl, image?.title || section.heading || `블로그 이미지 ${index + 1}`)}
                             />
                           ) : (
                             <BlogImageArtwork
@@ -1646,6 +1727,19 @@ export default function ExtractionResultPage() {
         }) || ensureArray(instagramImages)[0]
       )
     const currentCardPngUrl = currentInstagramImage?.renderedImageUrl || currentInstagramImage?.pngUrl || instaPngUrls[instaSlide] || null
+    const previewInstagramImageList = cards.map((card, idx) => {
+      const cardNumber = getInstagramCardNumber(card, idx)
+      const cardImage = card?.isCaptionCta
+        ? (ensureArray(instagramImages)[ensureArray(instagramImages).length - 1] || ensureArray(instagramImages)[0])
+        : (
+          ensureArray(instagramImages).find((image, i) => {
+            const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
+            return imageCardNumber === cardNumber
+          }) || ensureArray(instagramImages)[0]
+        )
+      const url = cardImage?.renderedImageUrl || cardImage?.pngUrl || instaPngUrls[idx] || null
+      return { url, alt: card?.title || card?.heading || `인스타 카드 ${cardNumber}` }
+    })
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(buildInstagramCaption(instagramContent))
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
@@ -1712,21 +1806,41 @@ export default function ExtractionResultPage() {
           </div>
         </div>
 
+        <ImagePreviewStrip
+          images={previewInstagramImageList}
+          label="인스타 카드 미리보기"
+          columns={6}
+        />
+
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
           <div className="space-y-4 sm:w-[440px] sm:shrink-0">
             <div className="bg-white rounded-[28px] p-4 shadow-xl border border-gray-100">
-              <div className="rounded-[28px] overflow-hidden bg-gray-100">
+              <button
+                type="button"
+                onClick={() => openImagePreview(
+                  currentCardPngUrl,
+                  currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`,
+                )}
+                disabled={!currentCardPngUrl}
+                className="block w-full rounded-[28px] overflow-hidden bg-gray-100 disabled:cursor-default group relative"
+                title={currentCardPngUrl ? '클릭하여 확대' : ''}
+              >
                 {currentCardPngUrl ? (
-                  <img
-                    src={currentCardPngUrl}
-                    alt={currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
-                    className="block w-full h-auto"
-                    loading="lazy"
-                  />
+                  <>
+                    <img
+                      src={currentCardPngUrl}
+                      alt={currentInstagramImage?.heading || current?.title || current?.heading || `인스타 카드 ${currentCardNumber}`}
+                      className="block w-full h-auto"
+                      loading="lazy"
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none">
+                      <ZoomIn size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                    </div>
+                  </>
                 ) : (
                   renderInstaCardArt(current, instaSlide, false)
                 )}
-              </div>
+              </button>
             </div>
 
             <div className="flex items-center justify-between">
@@ -1794,7 +1908,14 @@ export default function ExtractionResultPage() {
     )
   }
 
-  const renderNewsletter = () => (
+  const renderNewsletter = () => {
+    const nlSubject = stripMarkdownEmphasis(newsletterContent?.subject || '')
+    const nlHeadline = stripMarkdownEmphasis(newsletterContent?.headline || newsletterContent?.subject || '')
+    const nlPreheader = stripMarkdownEmphasis(newsletterContent?.preheader || '')
+    const nlBody = stripMarkdownEmphasis(newsletterContent?.body || '')
+    const nlKeyPoints = ensureArray(newsletterContent?.keyPoints).map((p) => stripMarkdownEmphasis(p))
+
+    return (
     <div className="max-w-3xl mx-auto space-y-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div />
@@ -1802,7 +1923,7 @@ export default function ExtractionResultPage() {
           <button
             type="button"
             onClick={() => {
-              navigator.clipboard.writeText(newsletterContent?.subject || '')
+              navigator.clipboard.writeText(nlSubject)
               flashCopied('newsletter-subject')
             }}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
@@ -1831,26 +1952,26 @@ export default function ExtractionResultPage() {
           <p className="text-xs ml-3 flex-1 truncate">
             <span className="font-bold text-text">제목 :</span>
             {' '}
-            <span className="text-text-muted">{newsletterContent?.subject}</span>
+            <span className="text-text-muted">{nlSubject}</span>
           </p>
         </div>
 
         <div id="newsletter-export">
           <div className="bg-gradient-to-r from-primary/10 to-primary/5 px-8 py-8 text-center">
-            <h2 className="text-xl font-bold text-text">{newsletterContent?.headline || newsletterContent?.subject}</h2>
-            {newsletterContent?.preheader && (
-              <p className="text-sm text-text-muted mt-2">{newsletterContent.preheader}</p>
+            <h2 className="text-xl font-bold text-text">{nlHeadline}</h2>
+            {nlPreheader && (
+              <p className="text-sm text-text-muted mt-2">{nlPreheader}</p>
             )}
           </div>
 
           <div className="px-8 py-6 space-y-5">
             <p className="text-sm text-text">{FIXED_NEWSLETTER_GREETING}</p>
 
-            {ensureArray(newsletterContent?.keyPoints).length > 0 && (
+            {nlKeyPoints.length > 0 && (
               <div className="bg-primary/5 rounded-lg p-5 border border-primary/10">
                 <p className="text-xs font-bold text-primary-light mb-3 uppercase tracking-wide">KEY POINTS</p>
                 <ul className="space-y-2.5">
-                  {ensureArray(newsletterContent?.keyPoints).map((point, i) => (
+                  {nlKeyPoints.map((point, i) => (
                     <li key={i} className="text-sm text-text flex items-start gap-2.5">
                       <CheckCircle size={15} className="text-primary shrink-0 mt-0.5" />
                       {point}
@@ -1860,23 +1981,13 @@ export default function ExtractionResultPage() {
               </div>
             )}
 
-            <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{newsletterContent?.body}</div>
-
-            {ensureArray(newsletterContent?.dataHighlights).length > 0 && (
-              <div className="grid grid-cols-2 gap-3 py-2">
-                {ensureArray(newsletterContent?.dataHighlights).map((d, i) => (
-                  <div key={i} className="bg-surface-light rounded-xl p-4 border border-border text-center">
-                    <p className="text-2xl font-bold text-primary-light">{d.value}</p>
-                    <p className="text-xs text-text-muted mt-1">{d.label}</p>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="text-sm text-text-muted leading-7 whitespace-pre-wrap">{nlBody}</div>
           </div>
         </div>
       </div>
     </div>
-  )
+    )
+  }
 
   const sceneTimings = shortsVideo?.sceneTimings || []
 
@@ -2447,6 +2558,35 @@ export default function ExtractionResultPage() {
           setScheduleInfo(p => { const n = { ...p }; delete n[platform]; return n })
         } : undefined}
       />
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPreviewImage(null)
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+            aria-label="닫기"
+          >
+            <X size={20} />
+          </button>
+          <div className="relative max-w-[92vw] max-h-[92vh] flex flex-col items-center gap-3">
+            <img
+              src={previewImage.url}
+              alt={previewImage.alt}
+              className="max-w-[92vw] max-h-[84vh] object-contain rounded-xl shadow-2xl"
+            />
+            {previewImage.alt && (
+              <p className="text-sm text-white/80 text-center max-w-[92vw] truncate">
+                {previewImage.alt}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

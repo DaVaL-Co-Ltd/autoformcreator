@@ -73,10 +73,10 @@ export function appendBlogFooterText(content = '', footerConfig = {}) {
 
   if (links.length === 0) return trimmedContent
 
-  const footerText = `${heading}\n${links.map((link) => `${link.label}: ${link.url}`).join('\n')}`.trim()
+  const footerText = `${heading}\n\n${links.map((link) => `${link.label}: ${link.url}`).join('\n\n')}`.trim()
   if (!footerText) return trimmedContent
   if (!trimmedContent) return footerText
   if (trimmedContent.includes(footerText)) return trimmedContent
 
-  return `${trimmedContent}\n\n${footerText}`
+  return `${trimmedContent}\n\n\n${footerText}`
 }

@@ -48,7 +48,6 @@ const {
   clickFinalPublishButton,
   clickPublishButton,
   configureScheduledPublish,
-  fillTags: fillPublishDialogTags,
   getEditorTargets,
   getPublishDialogTargets,
   openPublishDialog,
@@ -61,6 +60,18 @@ function stripMarkdown(value = '') {
     .replace(/[*_`~>|[\](){}]/g, '')
     .replace(/\r/g, '')
     .trim()
+}
+
+// Naver SmartEditor 는 줄 앞에 emoji + 일반 공백 패턴이 오면 자동 리스트/단락 분리로
+// 인식해 emoji 뒤에서 줄을 끊는 경향이 있다. 공백을 NBSP 로 치환하면 시각적으로는 동일하지만
+// auto-format 트리거를 회피할 수 있다.
+const LEADING_EMOJI_SPACE_RE =
+  /^([\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+)([ \t]+)/u
+
+function preserveLeadingEmojiSpace(value = '') {
+  const text = String(value || '')
+  if (!LEADING_EMOJI_SPACE_RE.test(text)) return text
+  return text.replace(LEADING_EMOJI_SPACE_RE, (_, emoji, space) => `${emoji}${' '.repeat(space.length)}`)
 }
 
 function escapeHtml(value = '') {
@@ -1678,7 +1689,7 @@ async function insertBodyTextV4(
       formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
       formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
     }
-    await page.keyboard.insertText(block.text)
+    await page.keyboard.insertText(preserveLeadingEmojiSpace(block.text))
   }
 
   formatState.bold = await setBoldFormatting(page, false, formatState.bold)
@@ -2518,8 +2529,9 @@ async function uploadToNaverBlogV2({
     await openPublishDialogV2(page, targets)
     await selectPublishCategory(page, targets, categoryPath)
 
-    updateUploadStage('fill-tags', { stageLabel: 'fill tags', tagCount: tags.length })
-    await fillPublishDialogTags(page, targets, tags)
+    // 본문에 입력된 해시태그(#태그) 가 Naver SmartEditor 에 의해 자동으로 발행 다이얼로그
+    // 태그 칩으로 동기화되므로, 여기서 fillPublishDialogTags 로 다시 입력하면 칩이 중복된다.
+    // tags 파라미터는 호환을 위해 시그니처에 남기되 별도 입력 단계는 수행하지 않는다.
 
     if (scheduledAt) {
       updateUploadStage('configure-schedule', { stageLabel: 'configure schedule', scheduledAt })
