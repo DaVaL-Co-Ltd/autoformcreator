@@ -1,12 +1,64 @@
-// 인스타그램 카드 이미지는 지식 공유(카드뉴스) 디자인으로 렌더하되,
-// 우하단 코너 일러스트를 사용하지 않으므로 별도의 Gemini 이미지를 생성하지 않는다.
-// 단, 결과 페이지의 카드별 cardNumber 매칭과 DOM 캡처 후 renderedImageUrl 첨부 흐름이
-// 동작하려면 카드 개수만큼의 placeholder 항목이 필요하므로 빈 imageUrl 로 채워 반환한다.
+import { generateImage } from './commonImageRules'
+import {
+  KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT,
+  KNOWLEDGE_INSIGHT_CUTOUT_RULE,
+  KNOWLEDGE_INSIGHT_EMOJI_STYLE,
+  KNOWLEDGE_INSIGHT_THEME_MOTIFS,
+  inferConceptDigestTheme,
+  removeWhiteBackgroundFromDataUrl,
+} from './blogImageRules'
 
-export async function generateInstagramImages(cards) {
+function buildSectionFromCard(card = {}) {
+  return {
+    heading: String(card?.title || card?.headline || card?.heading || '').trim(),
+    keyPhrase: String(card?.dataPoint || card?.subtitle || card?.headline || '').trim(),
+    content: String(card?.content || card?.summary || '').trim(),
+  }
+}
+
+function buildInstagramCornerPrompt(card, options = {}) {
+  const section = buildSectionFromCard(card)
+  const theme = inferConceptDigestTheme(section, options)
+  const subjectPrompt = KNOWLEDGE_INSIGHT_THEME_MOTIFS[theme] || KNOWLEDGE_INSIGHT_THEME_MOTIFS.generic
+  const topicHint = section.heading
+    ? `directly and specifically related to "${section.heading}"${section.keyPhrase ? ` and key idea "${section.keyPhrase}"` : ''}`
+    : 'related to one clear study concept'
+  const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
+
+  return [
+    'Generate a 1:1 square educational illustration asset for the lower-right corner of a Korean knowledge-sharing card.',
+    KNOWLEDGE_INSIGHT_EMOJI_STYLE,
+    KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT,
+    `Use one main motif, or at most two tightly related motifs, ${topicHint}. Prefer ${subjectPrompt}.`,
+    'Do not generate a full background scene, landscape, room, poster, or card layout. Do not put the subject in the center. Do not use people unless the concept absolutely requires a human action, and even then keep the figure simple and secondary. Avoid text, labels, many mini icons, repeated decorations, notebook paper textures, stickers, and collage composition. Prefer a single isolated object or one tiny object pair with bold linework and simplified color blocking.',
+    KNOWLEDGE_INSIGHT_CUTOUT_RULE,
+    'Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.',
+  ].join(' ') + extraHint
+}
+
+export async function generateInstagramImages(cards, options = {}) {
   const safeCards = Array.isArray(cards) ? cards : []
-  return safeCards.map((card, idx) => ({
-    cardNumber: card?.cardNumber || idx + 1,
-    imageUrl: null,
-  }))
+  const results = []
+  for (let i = 0; i < safeCards.length; i += 1) {
+    const card = safeCards[i] || {}
+    const cardNumber = card?.cardNumber || i + 1
+    try {
+      const generatedImageUrl = await generateImage(buildInstagramCornerPrompt(card, options), 2, options.signal)
+      const imageUrl = await removeWhiteBackgroundFromDataUrl(generatedImageUrl)
+      results.push({ cardNumber, imageUrl })
+    } catch {
+      results.push({ cardNumber, imageUrl: null })
+    }
+  }
+  // buildInstagramDisplayCards 가 cardTopics 뒤에 CTA 카드 1개를 더 붙이므로,
+  // 결과 페이지 캡처 흐름에서 CTA 카드의 PNG 가 instagramImages 와 매칭되도록
+  // CTA placeholder 항목을 함께 추가한다. CTA 자체는 코너 일러스트가 없으므로 imageUrl 은 null.
+  if (results.length > 0) {
+    results.push({
+      cardNumber: results.length + 1,
+      imageUrl: null,
+      isCaptionCta: true,
+    })
+  }
+  return results
 }

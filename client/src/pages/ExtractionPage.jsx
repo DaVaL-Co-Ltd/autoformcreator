@@ -3062,6 +3062,19 @@ ${parsedText}
                     <div className="space-y-3">
                       <h4 className="text-base font-bold text-text">{newsletterContent.subject}</h4>
                       {newsletterContent.preheader && <p className="text-xs text-text-muted">{newsletterContent.preheader}</p>}
+                      {Array.isArray(newsletterContent.keyPoints) && newsletterContent.keyPoints.length > 0 && (
+                        <div className="bg-primary/5 rounded-lg p-3 border border-primary/10">
+                          <p className="text-[11px] font-bold text-primary-light mb-2 uppercase tracking-wide">KEY POINTS</p>
+                          <ul className="space-y-1.5">
+                            {newsletterContent.keyPoints.map((point, i) => (
+                              <li key={i} className="text-sm text-text flex items-start gap-2">
+                                <CheckCircle size={14} className="text-primary shrink-0 mt-0.5" />
+                                <span>{point}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       {newsletterContent.body && <p className="text-sm text-text-muted whitespace-pre-wrap leading-6">{newsletterContent.body}</p>}
                     </div>
                   )}

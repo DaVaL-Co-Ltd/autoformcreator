@@ -40,8 +40,9 @@ const INTERVIEW_PREP_CATEGORY_ID = 'interview_prep'
 const CARD_NEWS_CATEGORY_IDS = new Set([KNOWLEDGE_INSIGHT_CATEGORY_ID, INTERVIEW_PREP_CATEGORY_ID])
 const BOOK_PROMO_CATEGORY_ID = 'book_promo'
 const LATIN_NUMBER_ONLY_PROMPT = 'TEXT RULE: avoid readable text whenever possible. If text must appear on books, posters, notes, computer screens, whiteboards, signs, stationery, clothing, or props, it may contain only English alphabet letters A-Z or a-z and numeric digits 0-9. Absolutely no Hangul, no Korean words, no Japanese, no Chinese, no Arabic, no Cyrillic, and no other writing systems.'
-const KNOWLEDGE_INSIGHT_CUTOUT_RULE = 'BACKGROUND RULE: create the subject as an isolated cutout on a pure white background, or transparent-looking background if supported. Do not draw a scene, room, sky, desk surface, paper sheet, color wash, pattern, gradient, shadow box, or decorative backdrop behind it. The white area should act like removable empty background around the object.'
-const KNOWLEDGE_INSIGHT_EMOJI_STYLE = 'Create a clean emoji-like educational icon illustration with thick outlines, simple shapes, clear silhouette, flat or lightly stepped colors, and low visual complexity. It should feel closer to a friendly sticker or textbook-side emoticon than to a pastel painting, watercolor illustration, or detailed poster artwork.'
+export const KNOWLEDGE_INSIGHT_CUTOUT_RULE = 'BACKGROUND RULE: create the subject as an isolated cutout on a pure white background, or transparent-looking background if supported. Do not draw a scene, room, sky, desk surface, paper sheet, color wash, pattern, gradient, shadow box, or decorative backdrop behind it. The white area should act like removable empty background around the object.'
+export const KNOWLEDGE_INSIGHT_EMOJI_STYLE = 'Create a clean emoji-like educational icon illustration with thick outlines, simple shapes, clear silhouette, flat or lightly stepped colors, and low visual complexity. It should feel closer to a friendly sticker or textbook-side emoticon than to a pastel painting, watercolor illustration, or detailed poster artwork.'
+export const KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT = 'Create a compact square illustration asset intended to be placed at the lower-right corner of a knowledge card. Keep the main subject concentrated in the lower-right half of the canvas, leaving generous empty space around it. Do not design a full poster, do not center the subject, do not fill the whole frame, and do not add a text panel, badge, frame, border, sticker sheet, or decorative background scene.'
 const KNOWLEDGE_INSIGHT_WHITE_BG_THRESHOLD = 245
 
 const CONCEPT_DIGEST_EMPTY_CENTER_RULE = 'CRITICAL LAYOUT RULE: the central area covering the inner 70% by 70% of the square canvas must be completely empty — no motifs, no objects, no decorations, no badges, no circles, no white plates, no text containers, just the smooth solid-color background. The app will place its own white circle and text on top of this central area later, so any object you draw there will be hidden or look broken. Place the four motifs ONLY in the four outer corners, each motif kept strictly inside the outer 15% band measured from the nearest two canvas edges. Do not let any motif cross into the inner 70% empty zone. Use a single smooth solid-color background that fills the entire canvas behind the motifs.'
@@ -61,7 +62,7 @@ const CONCEPT_DIGEST_THEME_PROMPTS = {
   generic: `Create a simple textbook-study poster on a square canvas. ${CONCEPT_DIGEST_EMPTY_CENTER_RULE} Use simple corner motifs such as a pencil, ruler, notebook symbol, or learning object. ${CONCEPT_DIGEST_SHARED_RULES}`,
 }
 
-const KNOWLEDGE_INSIGHT_THEME_MOTIFS = {
+export const KNOWLEDGE_INSIGHT_THEME_MOTIFS = {
   math: 'a formula notebook, compass, graph curve, geometric sketch, or number-pattern object',
   science: 'a beaker, microscope, atom visual, leaf-energy science cue, or experiment object',
   korean: 'an open book, fountain pen, reading cue, text-flow symbol, or literature-study object',
@@ -92,7 +93,7 @@ function describeConceptDigestTopic(section = {}) {
   return `Choose simple visual motifs that are directly and specifically related to the lesson topic "${topic}". Place exactly four motifs, one in each of the four corners of the square canvas, with each motif kept strictly inside the outer 15% band measured from the nearest two canvas edges. The inner 70% by 70% central area must remain completely empty — no motif may cross into it. Do not add a separate background plate, badge, frame, circle, or square behind any motif. Do not fall back to generic subject icons unless the topic is too abstract. If the topic is about Fibonacci sequence, prefer a spiral, number growth pattern, shell-like mathematical spiral, or geometric sequence visual. If the topic is about photosynthesis, prefer a leaf, sunlight, chloroplast-like cell diagram, plant growth, or light-to-energy science visual. Keep the motifs literal, educational, and easy to recognize at a glance. Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.`
 }
 
-function inferConceptDigestTheme(section = {}, options = {}) {
+export function inferConceptDigestTheme(section = {}, options = {}) {
   if (options.subjectTheme && CONCEPT_DIGEST_THEME_PROMPTS[options.subjectTheme]) {
     return options.subjectTheme
   }
@@ -205,7 +206,7 @@ async function loadDataUrlImage(dataUrl) {
   })
 }
 
-async function removeWhiteBackgroundFromDataUrl(dataUrl) {
+export async function removeWhiteBackgroundFromDataUrl(dataUrl) {
   if (typeof document === 'undefined' || typeof Image === 'undefined') return dataUrl
   if (!String(dataUrl || '').startsWith('data:image/')) return dataUrl
 

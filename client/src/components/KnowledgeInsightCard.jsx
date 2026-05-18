@@ -2,10 +2,12 @@
 // 배경 스타일을 인덱스 기반으로 결정해 카드마다 변주를 준다.
 // imageUrl 이 전달되면 우하단에 본문 관련 대표 이미지를 함께 배치한다.
 
+const CARD_WRAPPER_CLASS = 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center'
+
 const BACKGROUND_STYLES = [
-  // 0. 회색 격자 종이 (11.png 스타일)
+  // 0. 회색 격자 종이
   {
-    wrapper: 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center',
+    wrapper: CARD_WRAPPER_CLASS,
     wrapperStyle: {
       backgroundColor: '#dbe1e4',
       backgroundImage:
@@ -13,20 +15,67 @@ const BACKGROUND_STYLES = [
       backgroundSize: '24px 24px',
     },
   },
-  // 1. 베이지 단색 (12.png 스타일)
+  // 1. 베이지 단색
   {
-    wrapper: 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center',
+    wrapper: CARD_WRAPPER_CLASS,
     wrapperStyle: { backgroundColor: '#f4ece1' },
   },
-  // 2. 연파스텔 핑크
+  // 2. 연파스텔 핑크 + 도트 패턴
   {
-    wrapper: 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center',
-    wrapperStyle: { backgroundColor: '#fbe8ec' },
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: {
+      backgroundColor: '#fbe8ec',
+      backgroundImage: 'radial-gradient(rgba(220, 120, 150, 0.18) 1.5px, transparent 1.5px)',
+      backgroundSize: '20px 20px',
+    },
   },
-  // 3. 연민트
+  // 3. 연민트 단색
   {
-    wrapper: 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center',
+    wrapper: CARD_WRAPPER_CLASS,
     wrapperStyle: { backgroundColor: '#e1f2ec' },
+  },
+  // 4. 스카이 블루 단색
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: { backgroundColor: '#e0f2fe' },
+  },
+  // 5. 라벤더 + 대각선 줄무늬
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: {
+      backgroundColor: '#ede9fe',
+      backgroundImage:
+        'repeating-linear-gradient(45deg, rgba(167, 139, 250, 0.14) 0, rgba(167, 139, 250, 0.14) 1.5px, transparent 1.5px, transparent 14px)',
+    },
+  },
+  // 6. 소프트 피치 단색
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: { backgroundColor: '#ffedd5' },
+  },
+  // 7. 버터 옐로우 + 가로 라인
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: {
+      backgroundColor: '#fef3c7',
+      backgroundImage:
+        'linear-gradient(to bottom, rgba(245, 158, 11, 0.12) 1px, transparent 1px)',
+      backgroundSize: '100% 18px',
+    },
+  },
+  // 8. 라일락 단색
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: { backgroundColor: '#f3e8ff' },
+  },
+  // 9. 아쿠아 + 도트 패턴
+  {
+    wrapper: CARD_WRAPPER_CLASS,
+    wrapperStyle: {
+      backgroundColor: '#ccfbf1',
+      backgroundImage: 'radial-gradient(rgba(20, 184, 166, 0.16) 1.3px, transparent 1.3px)',
+      backgroundSize: '22px 22px',
+    },
   },
 ]
 
