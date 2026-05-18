@@ -1,3 +1,5 @@
+import { supabase, BUCKETS } from './supabase'
+
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
 function buildChannels(data) {
@@ -57,10 +59,76 @@ async function apiRequest(path, options = {}) {
   return data
 }
 
+function isLocalOutputUrl(url) {
+  if (!url || typeof url !== 'string') return false
+  if (url.startsWith('/output/')) return true
+  try {
+    const u = new URL(url)
+    const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+    return isLocalhost && u.pathname.startsWith('/output/')
+  } catch {
+    return false
+  }
+}
+
+function resolveBrowserFetchUrl(url) {
+  if (url.startsWith('/output/')) {
+    if (API_BASE) return `${API_BASE}${url}`
+    return url
+  }
+  return url
+}
+
+async function uploadShortsVideoIfLocal(shortsVideo) {
+  if (!shortsVideo || typeof shortsVideo !== 'object') return shortsVideo
+  const candidate = shortsVideo.url || shortsVideo.videoUrl || shortsVideo.combinedVideoUrl
+  if (!candidate || !isLocalOutputUrl(candidate)) return shortsVideo
+
+  if (!supabase) {
+    console.warn('[saveExtraction] Supabase 클라이언트 미초기화로 로컬 영상을 업로드하지 못함. VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY 환경변수를 설정하세요.')
+    return null
+  }
+
+  try {
+    const fetchUrl = resolveBrowserFetchUrl(candidate)
+    const response = await fetch(fetchUrl)
+    if (!response.ok) throw new Error(`로컬 영상 로드 실패 (${response.status})`)
+    const blob = await response.blob()
+
+    const extFromType = blob.type.split('/')[1] || ''
+    const ext = (extFromType.replace('quicktime', 'mov') || 'mp4').replace(/[^a-z0-9]/gi, '') || 'mp4'
+    const objectPath = `shorts_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+    const { error: uploadError } = await supabase.storage.from(BUCKETS.VIDEOS).upload(objectPath, blob, {
+      contentType: blob.type || 'video/mp4',
+      upsert: false,
+    })
+    if (uploadError) throw new Error(uploadError.message)
+
+    const { data: pub } = supabase.storage.from(BUCKETS.VIDEOS).getPublicUrl(objectPath)
+    const publicUrl = pub?.publicUrl
+    if (!publicUrl) throw new Error('Supabase Storage public URL을 가져오지 못했습니다.')
+
+    return {
+      ...shortsVideo,
+      url: publicUrl,
+      videoUrl: publicUrl,
+      combinedVideoUrl: publicUrl,
+    }
+  } catch (err) {
+    console.error('[saveExtraction] 영상 Supabase Storage 업로드 실패, 영상 제외:', err)
+    return null
+  }
+}
+
 export async function saveExtraction(data) {
+  const payload = { ...(data || {}) }
+  if (payload.shortsVideo) {
+    payload.shortsVideo = await uploadShortsVideoIfLocal(payload.shortsVideo)
+  }
   const item = await apiRequest('/api/extractions', {
     method: 'POST',
-    body: JSON.stringify(data || {}),
+    body: JSON.stringify(payload),
   })
   return item?.id
 }

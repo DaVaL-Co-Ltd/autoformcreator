@@ -12,6 +12,7 @@
   },
   "rewrites": [
     { "source": "/downloads/(.*)", "destination": "/downloads/$1" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

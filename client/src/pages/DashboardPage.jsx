@@ -41,7 +41,7 @@ const platforms = [
   },
   {
     key: 'shorts',
-    label: '유튜브 쇼츠/릴스',
+    label: '유튜브 쇼츠',
     icon: Film,
     emoji: '🎬',
     color: 'text-red-500',
@@ -126,7 +126,7 @@ export default function DashboardPage() {
     blog: '네이버 블로그',
     newsletter: '뉴스레터',
     instagram: '인스타그램',
-    shorts: '유튜브 쇼츠/릴스',
+    shorts: '유튜브 쇼츠',
   }
   const statusBadge = {
     not_uploaded: { label: '미업로드', className: 'bg-surface-light text-text-muted' },

@@ -1,9 +1,6 @@
-// 5개 프리셋 아바타에 대해 짧은 자기소개 영상을 HeyGen 으로 생성하고
+// 6개 프리셋 아바타에 대해 짧은 자기소개 영상을 HeyGen 으로 생성하고
 // mp3 만 추출해 client/public/voice-previews/ 에 저장한다.
 // 한 번만 실행하고 결과 파일을 영구 캐싱한다.
-// 아바타·보이스 ID 의 단일 진실 소스는 client/src/utils/heygenAvatars.js 이며,
-// Node 격리상 여기서는 같은 값을 별도 보관한다. ID 변경 시 양쪽 동기화 필요.
-// (cat_student 는 5인 체제 운영상 통합 관리에서 제외했고, 여기서는 일회성 데이터로만 남겨둔다.)
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -31,7 +28,7 @@ const exec = promisify(execFile)
 
 const PRESETS = [
   { id: 'dongwan_ssaem', avatarId: 'bd28ab87ed834bf5a72a5923536182c6', voiceId: '8da71a32beeb45ffa0182276233333c6', text: '안녕하세요. 입시 전문가 동완쌤이에요.' },
-  { id: 'fry_ssaem', avatarId: 'cfdf4447704f4e44b92cd984dd9b28cc', voiceId: '3a6f4521058a436ebf97d42152dae017', text: '안녕하세요. 후라이쌤이에요.' },
+  { id: 'fry_ssaem', avatarId: '1e32ee05d0154a989d3e2214efaeed75', voiceId: '3a6f4521058a436ebf97d42152dae017', text: '안녕하세요. 후라이쌤이에요.' },
   { id: 'male_student', avatarId: '885c95d7fced49bba5cb230ca5a3e332', voiceId: '3097f9a8fd3b4340b6bbe913177b378f', text: '공부, 효율적으로 해야죠!' },
   { id: 'female_student', avatarId: 'a5454d8b999d4e5f87f486605465aae4', voiceId: '86956bc34b7248d7be34eb3a6f69d03b', text: '오늘도 갓생 시작! 저만의 갓생 꿀팁 알려드릴게요.' },
   { id: 'dog_student', avatarId: 'f51d84b6b19645dbbeedf326379be949', voiceId: 'aceb4659b9e7420483800bbf698e9e24', text: '멍멍, 입시 용어 쉽게 알려줄게요.' },

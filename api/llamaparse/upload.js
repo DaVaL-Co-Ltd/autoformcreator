@@ -1,5 +1,5 @@
-const { isAuthorizedRequest, rejectUnauthorized } = require('../_requestAuth')
-const { getLlamaParseAuthHeader } = require('../_llamaparse')
+const { isAuthorizedRequest, rejectUnauthorized } = require('../_lib/requestAuth')
+const { getLlamaParseAuthHeader } = require('../_lib/llamaparse')
 
 const config = { api: { bodyParser: false } }
 
