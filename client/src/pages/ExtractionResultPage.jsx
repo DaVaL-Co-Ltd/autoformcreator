@@ -1700,7 +1700,6 @@ export default function ExtractionResultPage() {
           />
         )
       }
-      const cornerImageUrl = cardImage?.imageUrl || cardImage?.url || null
       const cardTitle = getInstagramOverlayTitle(card, cardIndex)
       const bullets = buildInstagramKnowledgeBullets(card)
       const cardElement = (
@@ -1708,7 +1707,7 @@ export default function ExtractionResultPage() {
           index={cardIndex}
           headline={cardTitle}
           bullets={bullets}
-          imageUrl={cornerImageUrl}
+          imageUrl={null}
         />
       )
       if (attachRef) {

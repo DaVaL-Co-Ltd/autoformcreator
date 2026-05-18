@@ -1,6 +1,6 @@
 // 지식 공유(카드뉴스) 카테고리 전용 카드 컴포넌트.
-// 배경 스타일과 내부 디자인을 인덱스 기반으로 결정해 카드마다 변주를 준다.
-// 우하단 꼭짓점에 본문 관련 대표 이미지를 배치한다.
+// 배경 스타일을 인덱스 기반으로 결정해 카드마다 변주를 준다.
+// imageUrl 이 전달되면 우하단에 본문 관련 대표 이미지를 함께 배치한다.
 
 const BACKGROUND_STYLES = [
   // 0. 회색 격자 종이 (11.png 스타일)
@@ -30,33 +30,6 @@ const BACKGROUND_STYLES = [
   },
 ]
 
-function NotebookInnerDesign({ headline, bullets, fontFamily }) {
-  return (
-    <div className="relative w-[80%] h-[80%] bg-stone-50 border-2 border-gray-900 rounded-2xl px-6 py-8 overflow-hidden flex items-center">
-      {/* 좌측 빈더링(원 2개) */}
-      <div className="absolute left-6 top-1/3 w-7 h-7 rounded-full border-2 border-gray-900 bg-white" />
-      <div className="absolute left-6 bottom-1/3 w-7 h-7 rounded-full border-2 border-gray-900 bg-white" />
-      {/* 좌측 세로 점선 */}
-      <div className="absolute left-16 top-8 bottom-8 border-l-2 border-dashed border-gray-700" />
-      {/* 본문 */}
-      <div className="ml-20 w-full" style={{ fontFamily, wordBreak: 'keep-all', overflowWrap: 'break-word' }}>
-        {headline && (
-          <h3 className="text-3xl font-black leading-snug text-gray-900 mb-6">
-            {headline}
-          </h3>
-        )}
-        {bullets.length > 0 && (
-          <ul className="space-y-4 text-lg leading-relaxed text-gray-800">
-            {bullets.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  )
-}
-
 function BookCardInnerDesign({ headline, bullets, fontFamily }) {
   return (
     <div
@@ -82,8 +55,6 @@ function BookCardInnerDesign({ headline, bullets, fontFamily }) {
   )
 }
 
-const INNER_DESIGNS = [NotebookInnerDesign, BookCardInnerDesign]
-
 function pickIndex(seedIndex, length) {
   const safe = Math.abs(Number.isFinite(seedIndex) ? seedIndex : 0)
   return safe % length
@@ -97,7 +68,6 @@ export default function KnowledgeInsightCard({
   fontFamily = "'SBAggro', 'Pretendard', sans-serif",
 }) {
   const bgChoice = BACKGROUND_STYLES[pickIndex(index, BACKGROUND_STYLES.length)]
-  const InnerDesign = INNER_DESIGNS[pickIndex(index + 1, INNER_DESIGNS.length)]
   const safeBullets = Array.isArray(bullets)
     ? bullets.map((line) => String(line || '').trim()).filter(Boolean)
     : []
@@ -106,7 +76,7 @@ export default function KnowledgeInsightCard({
 
   return (
     <div className={bgChoice.wrapper} style={bgChoice.wrapperStyle}>
-      <InnerDesign
+      <BookCardInnerDesign
         headline={headline}
         bullets={safeBullets}
         fontFamily={fontFamily}
