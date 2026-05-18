@@ -233,7 +233,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
   },
   {
     id: 'parent_mental_care',
-    label: '후라이쌤·반려동물 학부모 멘탈 케어',
+    label: '후라이쌤의 학부모 멘탈 케어',
     summary: '학부모의 불안을 위로하며 입시 정보를 따뜻하게 풀어주는 토크',
     direction: [
       '후라이쌤 아바타를 영상 내내 풀샷으로 유지. PIP·차트·다른 인물 컷 금지.',
