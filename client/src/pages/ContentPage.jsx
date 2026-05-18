@@ -26,7 +26,7 @@ const channelConfig = {
   blog: { label: '네이버 블로그', icon: FileText, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
   newsletter: { label: '뉴스레터', icon: Mail, color: 'text-blue-500', bg: 'bg-blue-500/10' },
   instagram: { label: '인스타그램', icon: Image, color: 'text-pink-400', bg: 'bg-pink-400/10' },
-  shorts: { label: '유튜브 쇼츠', icon: Film, color: 'text-red-500', bg: 'bg-red-500/10' },
+  shorts: { label: '유튜브 쇼츠/릴스', icon: Film, color: 'text-red-500', bg: 'bg-red-500/10' },
 }
 
 const _uploadStatusConfig = {
@@ -60,6 +60,8 @@ function toContentItems(extractions, scheduledMap = new Map()) {
         scheduledAt: uploadInfo.scheduledAt || null,
         uploadedAt: uploadInfo.uploadedAt || null,
         scheduledId: scheduledMeta?.id || null,
+        scheduledContent: scheduledMeta?.content || null,
+        uploadTargets: uploadInfo.uploadTargets || scheduledMeta?.content?.uploadTargets || null,
       }
     })
   )
@@ -238,9 +240,12 @@ export default function ContentPage() {
       const result = await uploadToPlatform(item.channel, item.extractionId, options)
 
       const nextUploadInfo = {
-        status: 'uploaded',
+        status: result?.failures?.length ? 'partial_failed' : 'uploaded',
         uploadedAt: new Date().toISOString(),
         uploadedUrl: result?.url || null,
+      }
+      if (result?.uploadedUrls) {
+        nextUploadInfo.uploadedUrls = result.uploadedUrls
       }
 
       if (item.channel === 'blog' || item.channel === 'shorts') {
@@ -280,15 +285,24 @@ export default function ContentPage() {
 
     if (channel === 'shorts' && info.scheduledAt) {
       const target = scheduleTarget || editScheduleTarget
-      await handleUpload({
-        ...target,
-        channel,
+      const selectedTargets = info.uploadTargets || { instagram: true, youtube: true }
+      await createScheduledUpload({
+        platform: channel,
+        content: {
+          title: target?.title || '',
+          uploadTargets: selectedTargets,
+        },
+        scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
-        nativeSchedule: true,
-        scheduledAt: info.scheduledAt,
-      }, {
-        scheduledAtOverride: info.scheduledAt,
+        scheduledId,
       })
+      await updateUploadStatus(extractionId, channel, {
+        ...info,
+        status: 'scheduled',
+        nativeSchedule: false,
+        uploadTargets: selectedTargets,
+      })
+      await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
       return
     }
 
@@ -672,12 +686,17 @@ export default function ContentPage() {
         lockPlatform={true}
         content={scheduleTarget?.channel === 'instagram'
           ? buildInstagramScheduledContent(scheduleTarget?.data)
-          : { title: scheduleTarget?.title }}
-        onSave={async ({ scheduledAt }) => {
+          : {
+            title: scheduleTarget?.title,
+            uploadTargets: scheduleTarget?.channel === 'shorts' ? scheduleTarget?.uploadTargets : undefined,
+          }}
+        onSave={async ({ scheduledAt, uploadTargets }) => {
           if (!scheduleTarget) return
-          const nextInfo = ['blog', 'shorts'].includes(scheduleTarget.channel)
+          const nextInfo = scheduleTarget.channel === 'blog'
             ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
-            : { status: 'scheduled', scheduledAt }
+            : scheduleTarget.channel === 'shorts'
+              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
+              : { status: 'scheduled', scheduledAt }
           await handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
             ...nextInfo,
           }, scheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(scheduleTarget.data) : null, scheduleTarget.scheduledId)
@@ -692,13 +711,18 @@ export default function ContentPage() {
         lockPlatform={true}
         content={editScheduleTarget?.channel === 'instagram'
           ? buildInstagramScheduledContent(editScheduleTarget?.data)
-          : { title: editScheduleTarget?.title }}
+          : {
+            title: editScheduleTarget?.title,
+            uploadTargets: editScheduleTarget?.channel === 'shorts' ? editScheduleTarget?.uploadTargets : undefined,
+          }}
         initialDatetime={editScheduleTarget?.scheduledAt}
-        onSave={async ({ scheduledAt }) => {
+        onSave={async ({ scheduledAt, uploadTargets }) => {
           if (!editScheduleTarget) return
-          const nextInfo = ['blog', 'shorts'].includes(editScheduleTarget.channel)
+          const nextInfo = editScheduleTarget.channel === 'blog'
             ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
-            : { status: 'scheduled', scheduledAt }
+            : editScheduleTarget.channel === 'shorts'
+              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
+              : { status: 'scheduled', scheduledAt }
           await handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
             ...nextInfo,
           }, editScheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(editScheduleTarget.data) : null, editScheduleTarget.scheduledId)

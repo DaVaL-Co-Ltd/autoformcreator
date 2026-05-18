@@ -105,7 +105,7 @@ export function formatInstagramReelsRequest(shortsScript = {}, videoUrl = '') {
 export function formatYouTubeRequest(shortsScript = {}, videoUrl = '', scheduledAt = null) {
   const limits = PLATFORM_LIMITS.shorts
 
-  const rawTitle = stripMarkdownEmphasis(shortsScript.uploadTitle || shortsScript.title || '유튜브 숏츠')
+  const rawTitle = stripMarkdownEmphasis(shortsScript.uploadTitle || shortsScript.title || '유튜브 쇼츠/릴스')
   const shortsTag = ' #Shorts'
   const titleBase = truncate(rawTitle, limits.titleMax - shortsTag.length)
   const title = titleBase.includes('#Shorts') ? titleBase : `${titleBase}${shortsTag}`

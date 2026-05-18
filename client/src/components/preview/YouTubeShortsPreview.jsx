@@ -5,11 +5,11 @@ import { ThumbsUp, ThumbsDown, MessageCircle, Share2, MoreHorizontal } from 'luc
 const DEFAULT_PROPS = {
   videoUrl: null,
   thumbnail: null,
-  title: '유튜브 숏츠 미리보기 제목입니다',
+  title: '유튜브 쇼츠/릴스 미리보기 제목입니다',
   channelName: 'MyBest Official',
   channelImg: null,
   description: '오늘의 핵심 내용을 짧게 전달합니다.',
-  hashtags: ['#마이베스트', '#숏츠', '#정보'],
+  hashtags: ['#마이베스트', '#쇼츠', '#정보'],
 }
 
 // 채널 아바타

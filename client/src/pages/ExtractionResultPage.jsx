@@ -53,7 +53,6 @@ import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
 import {
   buildInstagramDisplayCards,
   getInstagramCardNumber,
-  getInstagramOverlayLines,
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
 import { appendBlogFooterText, getBlogFooterConfig } from '../utils/blogFooterLinks'
@@ -66,6 +65,26 @@ const USE_REMOTE_BLOG_PUBLISH = shouldUseRemoteBlogPublish()
 const BLOG_DIVIDER_MARKER = '[DIVIDER]'
 
 const ensureArray = (value) => Array.isArray(value) ? value : []
+
+const buildInstagramKnowledgeBullets = (card = {}) => {
+  if (Array.isArray(card?.bullets) && card.bullets.length > 0) {
+    return card.bullets.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 4)
+  }
+  const collected = []
+  const pushUnique = (value) => {
+    const trimmed = String(value || '').trim()
+    if (!trimmed) return
+    if (collected.includes(trimmed)) return
+    collected.push(trimmed)
+  }
+  pushUnique(card?.dataPoint)
+  String(card?.content || '')
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .forEach((piece) => pushUnique(piece))
+  pushUnique(card?.subtitle)
+  pushUnique(card?.summary)
+  return collected.slice(0, 4)
+}
 const escapeHtml = (value = '') => String(value)
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -1649,7 +1668,6 @@ export default function ExtractionResultPage() {
     const cards = buildInstagramDisplayCards(instagramContent)
     const current = cards[instaSlide]
     const currentCardNumber = getInstagramCardNumber(current, instaSlide)
-    const instagramCardStyle = instagramContent?.cardStyle || 'background-text'
     const currentInstagramImage = current?.isCaptionCta
       ? (ensureArray(instagramImages)[ensureArray(instagramImages).length - 1] || ensureArray(instagramImages)[0])
       : (
@@ -1682,23 +1700,25 @@ export default function ExtractionResultPage() {
           />
         )
       }
-      const imageUrl = cardImage?.imageUrl || cardImage?.url || null
+      const cornerImageUrl = cardImage?.imageUrl || cardImage?.url || null
       const cardTitle = getInstagramOverlayTitle(card, cardIndex)
-      const descriptionLines = getInstagramOverlayLines(card)
-      return (
-        <InstagramImageArtwork
-          innerRef={attachRef ? (el => { instaCardsRef.current[cardIndex] = el }) : undefined}
-          imageUrl={imageUrl}
-          alt={cardImage?.heading || card?.title || card?.heading || `인스타 카드 ${cardNumber}`}
-          cardNumber={cardNumber}
-          cardTitle={cardTitle}
-          descriptionLines={descriptionLines}
-          kicker={card?.kicker}
-          cardStyle={instagramCardStyle}
-          mode="modal"
-          containerClassName="rounded-[28px]"
+      const bullets = buildInstagramKnowledgeBullets(card)
+      const cardElement = (
+        <KnowledgeInsightCard
+          index={cardIndex}
+          headline={cardTitle}
+          bullets={bullets}
+          imageUrl={cornerImageUrl}
         />
       )
+      if (attachRef) {
+        return (
+          <div ref={el => { instaCardsRef.current[cardIndex] = el }}>
+            {cardElement}
+          </div>
+        )
+      }
+      return cardElement
     }
 
     return (

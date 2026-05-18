@@ -13,7 +13,7 @@ import {
   generateBlogContent, generateNewsletterContent,
   generateInstagramContent, generateShortsScript, recommendBlogCategory
 } from '../services/gemini-content'
-import { generateBlogImages } from '../services/cardImage'
+import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
 import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar } from '../utils/presetShortsAvatars'
@@ -622,6 +622,7 @@ export default function ExtractionPage() {
   const blogUploadedImagesRef = useRef([])
   const blogImageProcessingPromiseRef = useRef(Promise.resolve())
   const pendingBlogImagesPromiseRef = useRef(null)
+  const pendingInstagramImagesPromiseRef = useRef(null)
   const [processingBlogImages, setProcessingBlogImages] = useState(false)
   const [blogThumbnailDisabled, setBlogThumbnailDisabled] = useState(false)
   const [instagramImages, setInstagramImages] = useState(null)
@@ -862,6 +863,7 @@ export default function ExtractionPage() {
     setStepLoading('content', false)
     setStepLoading('media', false)
     pendingBlogImagesPromiseRef.current = null
+    pendingInstagramImagesPromiseRef.current = null
     contentGenerationAbortRef.current = null
   }
 
@@ -1134,7 +1136,40 @@ export default function ExtractionPage() {
         setBlogImages(generatedImages)
       }
     }
+    if (channelKey === 'instagram' && Array.isArray(result?.cardTopics) && result.cardTopics.length > 0) {
+      setContentGenerationStage('image')
+      const generatedInstagramImages = await triggerInstagramImageGenerationInBackground(result, options.signal)
+      if (Array.isArray(generatedInstagramImages)) {
+        setInstagramImages(generatedInstagramImages)
+      }
+    }
     return result
+  }
+
+  const triggerInstagramImageGenerationInBackground = (instagramContentResult, signal) => {
+    if (!instagramContentResult?.cardTopics?.length) return
+    setStepLoading('media', true)
+    removeStepError('media', 'gemini', '인스타 카드 이미지')
+    const task = generateInstagramImages(instagramContentResult.cardTopics, {
+      title: instagramContentResult?.title || '',
+      imageStyle: promptSettings.media.instagramImageStyle,
+      instagramCardStyle: promptSettings.media.instagramCardStyle,
+      extra: promptSettings.media.extra,
+      signal,
+    })
+      .catch((err) => {
+        if (isContentGenerationCancelledError(err)) return null
+        addStepErrors('media', [{ service: 'gemini', channel: '인스타 카드 이미지', message: err?.message || '인스타 카드 이미지 생성 실패' }])
+        return null
+      })
+      .finally(() => {
+        setStepLoading('media', false)
+        if (pendingInstagramImagesPromiseRef.current === task) {
+          pendingInstagramImagesPromiseRef.current = null
+        }
+      })
+    pendingInstagramImagesPromiseRef.current = task
+    return task
   }
 
   const triggerBlogImageGenerationInBackground = (blogContentResult, signal) => {

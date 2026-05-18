@@ -18,7 +18,7 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
 const RUNTIME_SOURCE = 'desktop-helper'
 const RUNTIME_ENDPOINT = 'http://127.0.0.1:3000/api/upload'
-const PUBLISHED_POST_URL_PATTERN = /^https:\/\/blog\.naver\.com\/[^/]+\/\d+(?:\?.*)?$/i
+const PUBLISHED_POST_URL_PATTERN = /^https:\/\/(?:m\.)?blog\.naver\.com\/[^/]+\/\d+(?:[/?#].*)?$/i
 const IMAGE_MARKER_PATTERN = /\[IMG:(\d+)\]/gi
 
 const TITLE_TEXT = '\uC81C\uBAA9'
@@ -42,7 +42,7 @@ const RESERVED_DONE_TEXT = '\uC608\uC57D\uB418\uC5C8\uC2B5\uB2C8\uB2E4'
 const RESERVED_POSTS_TEXT = '\uC608\uC57D \uBC1C\uD589 \uAE00'
 const INVALID_SCHEDULE_TIME_TEXT = '\uD604\uC7AC \uC2DC\uAC04 \uC774\uD6C4\uB85C \uC124\uC815\uD574\uC8FC\uC138\uC694.'
 const SCHEDULE_READY_TEXT = '\uC124\uC815\uD55C \uC2DC\uAC04\uC73C\uB85C \uC608\uC57D \uBC1C\uD589\uB429\uB2C8\uB2E4.'
-const WRITE_URL_HINTS = ['Redirect=Write', 'PostWriteForm', 'GoBlogWrite.naver']
+const WRITE_URL_HINTS = ['redirect=write', 'postwriteform', 'goblogwrite.naver', 'blog.editor.naver.com']
 
 const TITLE_SELECTORS = [
   '.se-section-documentTitle .se-text-paragraph',
@@ -1422,12 +1422,46 @@ async function dismissEditorPopups(page, targets = getEditorTargets(page)) {
   }
 }
 
+function normalizePublishedPostUrl(url) {
+  const value = String(url || '').trim()
+  if (!value || isEditorWriteUrl(value)) {
+    return null
+  }
+
+  try {
+    const parsed = new URL(value)
+    const hostname = parsed.hostname.toLowerCase()
+    if (hostname !== 'blog.naver.com' && hostname !== 'm.blog.naver.com') {
+      return null
+    }
+
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    if (pathParts.length >= 2 && /^\d+$/.test(pathParts[1])) {
+      return `https://blog.naver.com/${pathParts[0]}/${pathParts[1]}`
+    }
+
+    if (pathParts[0]?.toLowerCase() === 'postview.naver') {
+      const blogId = parsed.searchParams.get('blogId')
+      const logNo = parsed.searchParams.get('logNo')
+      if (blogId && /^\d+$/.test(logNo || '')) {
+        return `https://blog.naver.com/${blogId}/${logNo}`
+      }
+    }
+  } catch {}
+
+  if (PUBLISHED_POST_URL_PATTERN.test(value)) {
+    return value
+  }
+
+  return null
+}
+
 function isPublishedPostUrl(url) {
-  return PUBLISHED_POST_URL_PATTERN.test(String(url || ''))
+  return Boolean(normalizePublishedPostUrl(url))
 }
 
 function isEditorWriteUrl(url) {
-  const value = String(url || '')
+  const value = String(url || '').toLowerCase()
   return WRITE_URL_HINTS.some((hint) => value.includes(hint))
 }
 
@@ -1481,15 +1515,56 @@ function normalizeScheduledPublishAt(scheduledAt) {
   }
 }
 
-function findPublishedPostUrl(page) {
-  if (isPublishedPostUrl(page.url())) {
-    return page.url()
+async function collectPublishedPostUrlCandidates(scope) {
+  try {
+    return await scope.evaluate(() => {
+      const urls = new Set([window.location.href, document.URL])
+      const selector = [
+        'a[href]',
+        'area[href]',
+        'form[action]',
+        'iframe[src]',
+        'link[rel="canonical"][href]',
+        'meta[property="og:url"][content]',
+      ].join(',')
+
+      for (const element of Array.from(document.querySelectorAll(selector))) {
+        const value =
+          element.getAttribute('href') ||
+          element.getAttribute('action') ||
+          element.getAttribute('src') ||
+          element.getAttribute('content')
+        if (value) {
+          urls.add(new URL(value, window.location.href).href)
+        }
+      }
+
+      return Array.from(urls)
+    })
+  } catch {
+    return []
+  }
+}
+
+async function findPublishedPostUrl(page) {
+  const currentUrl = normalizePublishedPostUrl(page.url())
+  if (currentUrl) {
+    return currentUrl
   }
 
   for (const frame of page.frames()) {
     try {
-      if (isPublishedPostUrl(frame.url())) {
-        return frame.url()
+      const frameUrl = normalizePublishedPostUrl(frame.url())
+      if (frameUrl) {
+        return frameUrl
+      }
+
+      const candidates = await collectPublishedPostUrlCandidates(frame)
+      for (const candidate of candidates) {
+        const normalized = normalizePublishedPostUrl(candidate)
+        if (normalized) {
+          return normalized
+        }
       }
     } catch {}
   }
@@ -1546,7 +1621,7 @@ async function waitForPublishProgress(page, targets, { scheduledAt = null, timeo
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < timeout) {
-    if (findPublishedPostUrl(page)) {
+    if (await findPublishedPostUrl(page)) {
       return true
     }
 
@@ -1575,7 +1650,7 @@ async function resolvePublishOutcome(page, targets, { scheduledAt, timeout = 600
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < timeout) {
-    const publishedUrl = findPublishedPostUrl(page)
+    const publishedUrl = await findPublishedPostUrl(page)
     if (publishedUrl) {
       return { mode: 'published', scheduled: false, url: publishedUrl }
     }
@@ -1588,7 +1663,17 @@ async function resolvePublishOutcome(page, targets, { scheduledAt, timeout = 600
     }
 
     if (await hasPublishCompletionText(page, { scheduledAt })) {
-      return { mode: scheduledAt ? 'scheduled' : 'published', scheduled: Boolean(scheduledAt), url: page.url() }
+      if (scheduledAt) {
+        const scheduledUrl = findScheduledPostUrl(page)
+        if (scheduledUrl) {
+          return { mode: 'scheduled', scheduled: true, url: scheduledUrl }
+        }
+      }
+
+      const completedUrl = await findPublishedPostUrl(page)
+      if (completedUrl) {
+        return { mode: 'published', scheduled: false, url: completedUrl }
+      }
     }
 
     await sleep(300)
@@ -4436,6 +4521,7 @@ module.exports = {
     isScheduledPublishStateConfirmed,
     isPopupInterceptionError,
     isPublishedPostUrl,
+    normalizePublishedPostUrl,
     normalizeScheduledPublishAt,
     parseContentWithImageMarkers,
     resolvePublishOutcome,

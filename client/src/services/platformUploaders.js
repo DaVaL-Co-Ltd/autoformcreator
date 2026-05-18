@@ -3,7 +3,7 @@ import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/bl
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
-import { stripMarkdownEmphasis } from '../utils/platformFormatter.js'
+import { formatInstagramReelsRequest, stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
@@ -243,9 +243,10 @@ export async function uploadToYoutube(extractionId, options = {}) {
 
   const video = ext.data?.shortsVideo || ext.shortsVideo
   const script = ext.data?.shortsScript || ext.shortsScript
-  if (!video?.url) throw new Error('숏폼 영상이 없습니다')
+  const sourceVideoUrl = video?.combinedVideoUrl || video?.url || video?.videoUrl
+  if (!sourceVideoUrl) throw new Error('쇼츠/릴스 영상이 없습니다')
 
-  const rawTitle = stripMarkdownEmphasis(script?.uploadTitle || script?.title || ext.fileName || '유튜브 숏츠')
+  const rawTitle = stripMarkdownEmphasis(script?.uploadTitle || script?.title || ext.fileName || '유튜브 쇼츠/릴스')
   const title = rawTitle.includes('#Shorts') ? rawTitle.slice(0, 100) : `${rawTitle} #Shorts`.slice(0, 100)
 
   const descParts = []
@@ -275,7 +276,7 @@ export async function uploadToYoutube(extractionId, options = {}) {
       ? { privacyStatus: 'private', publishAt: scheduledAt, selfDeclaredMadeForKids: false }
       : { privacyStatus: 'public', selfDeclaredMadeForKids: false },
     scheduledAt,
-    videoUrl: video.url?.startsWith('/output/') && API_BASE ? `${API_BASE}${video.url}` : video.url,
+    videoUrl: sourceVideoUrl.startsWith('/output/') && API_BASE ? `${API_BASE}${sourceVideoUrl}` : sourceVideoUrl,
   }
 
   const res = await fetchWithTimeout(
@@ -303,6 +304,81 @@ export async function uploadToYoutube(extractionId, options = {}) {
     videoId: data.videoId,
     scheduled: Boolean(data.scheduled || scheduledAt),
     scheduledAt: data.scheduledAt || scheduledAt || null,
+  }
+}
+
+export async function uploadToInstagramReels(extractionId) {
+  const ext = await getExtractionById(extractionId)
+  if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
+
+  const video = ext.data?.shortsVideo || ext.shortsVideo
+  const script = ext.data?.shortsScript || ext.shortsScript
+  if (!video?.url && !video?.videoUrl && !video?.combinedVideoUrl) throw new Error('쇼츠/릴스 영상이 없습니다')
+
+  const videoUrl = video.combinedVideoUrl || video.url || video.videoUrl
+  const requestBody = formatInstagramReelsRequest(script, videoUrl?.startsWith('/output/') && API_BASE ? `${API_BASE}${videoUrl}` : videoUrl)
+
+  const res = await fetchWithTimeout(
+    `${API_BASE}/api/instagram/reel`,
+    {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify(requestBody),
+    },
+    BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
+    'Instagram Reels upload request',
+  )
+
+  const data = await withTimeout(
+    () => readApiResponse(res),
+    API_RESPONSE_TIMEOUT_MS,
+    'Instagram Reels upload response parsing',
+  )
+  if (!res.ok || !data.success) {
+    throw new Error(getApiErrorMessage(data, `인스타그램 릴스 업로드 실패 (${res.status})`))
+  }
+
+  return { url: data.permalink || data.url, mediaId: data.mediaId || data.id || null }
+}
+
+export async function uploadToShortsTargets(extractionId, options = {}) {
+  const targets = options.targets || { instagram: true, youtube: true }
+  const order = options.uploadOrder || ['instagram', 'youtube']
+  const results = {}
+  const failures = []
+
+  for (const target of order) {
+    if (target === 'instagram' && targets.instagram) {
+      try {
+        results.instagram = await uploadToInstagramReels(extractionId)
+      } catch (error) {
+        failures.push(`인스타그램: ${error.message}`)
+      }
+    }
+    if (target === 'youtube' && targets.youtube) {
+      try {
+        results.youtube = await uploadToYoutube(extractionId, options)
+      } catch (error) {
+        failures.push(`유튜브: ${error.message}`)
+      }
+    }
+  }
+
+  const uploadedUrls = {
+    youtube: results.youtube?.url || null,
+    instagram: results.instagram?.url || null,
+  }
+  const hasSuccess = Boolean(uploadedUrls.youtube || uploadedUrls.instagram)
+  if (failures.length && !hasSuccess) {
+    throw new Error(failures.join(' / '))
+  }
+
+  return {
+    failures,
+    scheduled: Boolean(results.youtube?.scheduled || options.scheduledAtOverride),
+    scheduledAt: results.youtube?.scheduledAt || options.scheduledAtOverride || null,
+    uploadedUrls,
+    url: uploadedUrls.instagram || uploadedUrls.youtube || null,
   }
 }
 
@@ -356,7 +432,7 @@ export async function uploadToPlatform(platform, extractionId, options = {}) {
       throw new Error(normalizeNaverHelperMessage(error.message))
     }
   }
-  if (platform === 'shorts') return uploadToYoutube(extractionId, options)
+  if (platform === 'shorts') return uploadToShortsTargets(extractionId, options)
   if (platform === 'instagram') return uploadToInstagram(extractionId)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')
   throw new Error(`지원하지 않는 플랫폼: ${platform}`)

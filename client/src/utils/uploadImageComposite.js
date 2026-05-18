@@ -681,6 +681,12 @@ export async function buildInstagramUploadImageUrls({
   for (let index = 0; index < cards.length; index += 1) {
     const card = cards[index]
     const image = findInstagramImageSource(instagramImages, card, index)
+    const capturedUrl = getRenderedImageUrl(image)
+    if (capturedUrl) {
+      uploads.push(capturedUrl)
+      continue
+    }
+
     const sourceUrl = getImageUrl(image)
     if (!sourceUrl) {
       uploads.push(null)

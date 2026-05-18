@@ -1817,6 +1817,19 @@ async function waitForMediaReadyLegacy(mediaIds, maxWait = 60000) {
   }
 }
 
+async function uploadBufferToStorage(buffer, mime = 'application/octet-stream', folder = 'instagram', bucket = 'extraction-images') {
+  if (!supabaseAdmin) throw new Error('Supabase is not configured')
+  const ext = mime.split('/')[1] || 'bin'
+  const storagePath = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+  const { error } = await supabaseAdmin.storage.from(bucket).upload(storagePath, buffer, {
+    contentType: mime,
+    upsert: false,
+  })
+  if (error) throw new Error(`스토리지 업로드 실패: ${error.message}`)
+  const { data: pub } = supabaseAdmin.storage.from(bucket).getPublicUrl(storagePath)
+  return pub?.publicUrl
+}
+
 // Upload a base64 data URL to Supabase Storage and return a public URL.
 async function uploadDataUrlToStorage(dataUrl, filename) {
   if (!supabaseAdmin) throw new Error('Supabase is not configured')
@@ -1825,15 +1838,48 @@ async function uploadDataUrlToStorage(dataUrl, filename) {
   if (!match) throw new Error('잘못된 data URL입니다.')
   const [, mime, b64] = match
   const buf = Buffer.from(b64, 'base64')
-  const ext = mime.split('/')[1] || 'png'
-  const path = `instagram/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-  const { error } = await supabaseAdmin.storage.from('extraction-images').upload(path, buf, {
-    contentType: mime,
-    upsert: false,
-  })
-  if (error) throw new Error(`스토리지 업로드 실패: ${error.message}`)
-  const { data: pub } = supabaseAdmin.storage.from('extraction-images').getPublicUrl(path)
-  return pub?.publicUrl
+  return uploadBufferToStorage(buf, mime, 'instagram', 'extraction-images')
+}
+
+async function ensurePublicInstagramVideoUrl(videoUrl) {
+  if (!videoUrl) throw new Error('Instagram Reels video URL is missing')
+
+  if (typeof videoUrl === 'string' && videoUrl.startsWith('data:')) {
+    const match = videoUrl.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) throw new Error('잘못된 video data URL입니다.')
+    const [, mime, b64] = match
+    return uploadBufferToStorage(Buffer.from(b64, 'base64'), mime || 'video/mp4', 'instagram-reels', 'extraction-videos')
+  }
+
+  const resolveLocalOutputPath = (value) => {
+    if (typeof value !== 'string') return null
+    if (value.startsWith('/output/')) return path.join(__dirname, '..', value)
+    try {
+      const parsed = new URL(value)
+      const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname)
+      if (isLocal && parsed.pathname.startsWith('/output/')) {
+        return path.join(__dirname, '..', parsed.pathname)
+      }
+    } catch {}
+    return null
+  }
+
+  const localPath = resolveLocalOutputPath(videoUrl)
+  if (localPath && fs.existsSync(localPath)) {
+    const ext = path.extname(localPath).toLowerCase()
+    const mime = ext === '.webm' ? 'video/webm' : 'video/mp4'
+    return uploadBufferToStorage(fs.readFileSync(localPath), mime, 'instagram-reels', 'extraction-videos')
+  }
+
+  try {
+    const parsed = new URL(videoUrl)
+    if (parsed.protocol !== 'https:') {
+      throw new Error('Instagram Reels 업로드에는 공개 HTTPS 영상 URL이 필요합니다.')
+    }
+    return videoUrl
+  } catch (error) {
+    throw new Error(error.message || 'Instagram Reels 업로드에는 공개 HTTPS 영상 URL이 필요합니다.')
+  }
 }
 
 async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
@@ -1892,6 +1938,84 @@ async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
   return resolveInstagramPublishResult(pub.id, auth.accessToken)
 }
 
+async function publishInstagramReelV2({ videoUrl, caption = '' }) {
+  const auth = getInstagramAuthMaterial()
+  if (!auth?.accessToken || !auth?.businessId) {
+    throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
+  }
+  if (!videoUrl) {
+    throw new Error('Instagram Reels video URL is missing')
+  }
+
+  const created = await instagramGraphPost(`${auth.businessId}/media`, auth.accessToken, {
+    media_type: 'REELS',
+    video_url: videoUrl,
+    caption,
+  })
+  await waitForInstagramMediaReady([created.id], auth.accessToken, 120000)
+
+  const pub = await publishInstagramMediaWithRetry({
+    creationId: created.id,
+    publish: () => instagramGraphPost(`${auth.businessId}/media_publish`, auth.accessToken, {
+      creation_id: created.id,
+    }),
+    waitUntilReady: () => waitForInstagramMediaReady([created.id], auth.accessToken, 15000),
+  })
+  return resolveInstagramPublishResult(pub.id, auth.accessToken)
+}
+
+function stripMarkdownText(value = '') {
+  return String(value || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    .trim()
+}
+
+function buildShortsUploadPayload({ script = {}, videoUrl, scheduledAt = null }) {
+  const rawTitle = stripMarkdownText(script.uploadTitle || script.title || '유튜브 쇼츠/릴스')
+  const title = rawTitle.includes('#Shorts') ? rawTitle.slice(0, 100) : `${rawTitle} #Shorts`.slice(0, 100)
+  const descriptionParts = []
+  if (script.uploadDescription) {
+    descriptionParts.push(stripMarkdownText(script.uploadDescription))
+  } else {
+    if (script.hook) descriptionParts.push(stripMarkdownText(script.hook))
+    if (Array.isArray(script.scenes)) {
+      script.scenes.forEach((scene, index) => {
+        if (scene.narration) descriptionParts.push(`${index + 1}. ${stripMarkdownText(scene.narration)}`)
+      })
+    }
+    if (script.cta) descriptionParts.push(stripMarkdownText(script.cta))
+  }
+  const tags = (script.hashtags || script.tags || []).map((tag) => String(tag).replace(/^#/, ''))
+  if (!tags.includes('Shorts')) tags.unshift('Shorts')
+
+  return {
+    snippet: {
+      title,
+      description: descriptionParts.join('\n').slice(0, 5000),
+      tags,
+      categoryId: '22',
+    },
+    status: scheduledAt
+      ? { privacyStatus: 'private', publishAt: scheduledAt, selfDeclaredMadeForKids: false }
+      : { privacyStatus: 'public', selfDeclaredMadeForKids: false },
+    videoUrl,
+  }
+}
+
+function buildReelsCaption(script = {}) {
+  const body = stripMarkdownText(
+    script.uploadDescription ||
+    [script.uploadTitle || script.title, script.hook, script.cta].filter(Boolean).join('\n\n')
+  )
+  const hashtags = (script.hashtags || script.tags || [])
+    .map((tag) => (String(tag).startsWith('#') ? tag : `#${tag}`))
+    .join(' ')
+  return `${body}\n\n${hashtags}`.trim()
+}
+
 async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000) {
   const interval = 2000
 
@@ -1944,6 +2068,18 @@ app.post('/api/instagram/publish', async (req, res) => {
     res.json({ success: true, ...result, uploadedUrls: publicUrls })
   } catch (err) {
     console.error('[Instagram] 업로드 실패:', err.message)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+app.post('/api/instagram/reel', async (req, res) => {
+  try {
+    const { videoUrl, caption } = req.body
+    const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
+    const result = await publishInstagramReelV2({ videoUrl: publicVideoUrl, caption })
+    res.json({ success: true, ...result, uploadedUrl: publicVideoUrl })
+  } catch (err) {
+    console.error('[Instagram Reels] 업로드 실패:', err.message)
     res.status(500).json({ success: false, error: err.message })
   }
 })
@@ -2434,9 +2570,7 @@ app.post('/api/youtube/logout', async (req, res) => {
   res.json({ success: true })
 })
 
-app.post('/api/youtube/upload', async (req, res) => {
-  // Support both flat payloads and { snippet, status, videoUrl } payloads.
-  const body = req.body || {}
+async function publishYouTubeVideoUpload(body = {}) {
   const snippet = body.snippet || {}
   const status = body.status || {}
   const title = body.title || snippet.title
@@ -2447,69 +2581,80 @@ app.post('/api/youtube/upload', async (req, res) => {
   const requestedPublishAt = body.scheduledAt || status.publishAt || null
   const videoUrl = body.videoUrl
 
-  if (!ytTokens) return res.status(401).json({ error: 'YouTube 인증이 필요합니다. 먼저 Google 계정을 연결해 주세요.' })
-  if (!videoUrl) return res.status(400).json({ error: 'videoUrl이 필요합니다.' })
+  if (!ytTokens) {
+    const error = new Error('YouTube 인증이 필요합니다. 먼저 Google 계정을 연결해 주세요.')
+    error.code = 401
+    throw error
+  }
+  if (!videoUrl) {
+    const error = new Error('videoUrl이 필요합니다.')
+    error.code = 400
+    throw error
+  }
 
   const publishAt = requestedPublishAt ? new Date(requestedPublishAt) : null
   if (publishAt && Number.isNaN(publishAt.getTime())) {
-    return res.status(400).json({ error: '예약 발행 시간은 ISO 8601 형식이 필요합니다.' })
+    const error = new Error('예약 발행 시간은 ISO 8601 형식이 필요합니다.')
+    error.code = 400
+    throw error
   }
 
   const client = getYtOAuth2Client()
   const youtube = google.youtube({ version: 'v3', auth: client })
 
+  let videoBuffer
+  const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
+  if (localPath && fs.existsSync(localPath)) {
+    videoBuffer = fs.readFileSync(localPath)
+  } else {
+    const videoRes = await fetch(videoUrl)
+    if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
+    videoBuffer = Buffer.from(await videoRes.arrayBuffer())
+  }
+
+  const tmpPath = path.join(__dirname, '..', 'output', `yt_upload_${Date.now()}.mp4`)
+  fs.writeFileSync(tmpPath, videoBuffer)
+
+  console.log('[YouTube] 업로드 시작:', { title, tags, size: videoBuffer.length })
+
+  const response = await youtube.videos.insert({
+    part: ['snippet', 'status'],
+    requestBody: {
+      snippet: {
+        title: title || 'Shorts test',
+        description: description || '',
+        tags: tags || [],
+        categoryId: categoryId || '22',
+      },
+      status: {
+        privacyStatus: publishAt ? 'private' : (privacyStatus || 'private'),
+        ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
+        selfDeclaredMadeForKids: false,
+      },
+    },
+    media: {
+      body: fs.createReadStream(tmpPath),
+    },
+  })
+
+  setTimeout(() => { try { fs.unlinkSync(tmpPath) } catch {} }, 5000)
+
+  const videoId = response.data.id
+  console.log('[YouTube] 업로드 완료:', videoId)
+
+  return {
+    success: true,
+    videoId,
+    scheduled: Boolean(publishAt),
+    scheduledAt: publishAt ? publishAt.toISOString() : null,
+    url: `https://youtu.be/${videoId}`,
+    snippet: response.data.snippet,
+  }
+}
+
+app.post('/api/youtube/upload', async (req, res) => {
   try {
-    // Download the video from a local output path or a remote URL.
-    let videoBuffer
-    const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
-    if (localPath && fs.existsSync(localPath)) {
-      videoBuffer = fs.readFileSync(localPath)
-    } else {
-      const videoRes = await fetch(videoUrl)
-      if (!videoRes.ok) throw new Error(`영상 다운로드 실패: ${videoRes.status}`)
-      videoBuffer = Buffer.from(await videoRes.arrayBuffer())
-    }
-
-    // Write a temporary file because the YouTube upload API needs a stream.
-    const tmpPath = path.join(__dirname, '..', 'output', `yt_upload_${Date.now()}.mp4`)
-    fs.writeFileSync(tmpPath, videoBuffer)
-
-    console.log('[YouTube] 업로드 시작:', { title, tags, size: videoBuffer.length })
-
-    const response = await youtube.videos.insert({
-      part: ['snippet', 'status'],
-      requestBody: {
-        snippet: {
-          title: title || 'Shorts test',
-          description: description || '',
-          tags: tags || [],
-          categoryId: categoryId || '22',
-        },
-        status: {
-          privacyStatus: publishAt ? 'private' : (privacyStatus || 'private'),
-          ...(publishAt ? { publishAt: publishAt.toISOString() } : {}),
-          selfDeclaredMadeForKids: false,
-        },
-      },
-      media: {
-        body: fs.createReadStream(tmpPath),
-      },
-    })
-
-    // Remove the temporary upload file shortly after the request finishes.
-    setTimeout(() => { try { fs.unlinkSync(tmpPath) } catch {} }, 5000)
-
-    const videoId = response.data.id
-    console.log('[YouTube] 업로드 완료:', videoId)
-
-    res.json({
-      success: true,
-      videoId,
-      scheduled: Boolean(publishAt),
-      scheduledAt: publishAt ? publishAt.toISOString() : null,
-      url: `https://youtu.be/${videoId}`,
-      snippet: response.data.snippet,
-    })
+    res.json(await publishYouTubeVideoUpload(req.body || {}))
   } catch (err) {
     console.error('[YouTube] 업로드 실패 전체:', JSON.stringify({
       code: err.code,
@@ -2520,7 +2665,7 @@ app.post('/api/youtube/upload', async (req, res) => {
       response_status: err.response?.status,
     }, null, 2))
     const detail = err.response?.data?.error?.message || err.errors?.[0]?.message || err.message
-    res.status(err.code === 401 ? 401 : 500).json({ error: detail, code: err.code, fullError: err.response?.data })
+    res.status(err.code === 400 || err.code === 401 ? err.code : 500).json({ error: detail, code: err.code, fullError: err.response?.data })
   }
 })
 
@@ -2617,7 +2762,7 @@ app.get('/api/scheduled/list', async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
-      .select('id, platform, extraction_id, scheduled_at, status, uploaded_url, uploaded_at, error, attempts, created_at, content_title:content->>title')
+      .select('id, platform, extraction_id, scheduled_at, status, uploaded_url, uploaded_at, error, attempts, created_at, content, content_title:content->>title')
       .order('scheduled_at', { ascending: true })
     if (error) throw error
     res.json(data)
@@ -2733,6 +2878,46 @@ app.post('/api/scheduled/run', async (req, res) => {
           const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption })
           uploadResult = { url: result.permalink, mediaId: result.mediaId }
 
+        } else if (item.platform === 'shorts') {
+          const { data: ext } = await supabaseAdmin
+            .from('extractions')
+            .select('shorts_video, shorts_script')
+            .eq('id', item.extraction_id)
+            .maybeSingle()
+
+          const video = ext?.shorts_video || {}
+          const script = ext?.shorts_script || {}
+          const videoUrl = video.combinedVideoUrl || video.url || video.videoUrl
+          if (!videoUrl) throw new Error('쇼츠/릴스 영상 URL이 없습니다.')
+
+          const targets = item.content?.uploadTargets || { instagram: true, youtube: true }
+          const uploadedUrls = { instagram: null, youtube: null }
+          const media = {}
+
+          if (targets.instagram) {
+            const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
+            const result = await publishInstagramReelV2({
+              videoUrl: publicVideoUrl,
+              caption: buildReelsCaption(script),
+            })
+            uploadedUrls.instagram = result.permalink || result.url || null
+            media.instagramMediaId = result.mediaId || result.id || null
+          }
+
+          if (targets.youtube) {
+            const result = await publishYouTubeVideoUpload(buildShortsUploadPayload({
+              script,
+              videoUrl,
+            }))
+            uploadedUrls.youtube = result.url || null
+            media.youtubeVideoId = result.videoId || null
+          }
+
+          uploadResult = {
+            ...media,
+            uploadedUrls,
+            url: uploadedUrls.instagram || uploadedUrls.youtube || null,
+          }
         } else {
           throw new Error(`지원하지 않는 플랫폼: ${item.platform}`)
         }

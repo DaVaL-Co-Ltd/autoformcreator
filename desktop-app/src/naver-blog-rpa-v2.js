@@ -51,6 +51,7 @@ const {
   fillTags: fillPublishDialogTags,
   getEditorTargets,
   getPublishDialogTargets,
+  normalizePublishedPostUrl,
   openPublishDialog,
   resolvePublishOutcome,
 } = publishHelpers
@@ -2438,17 +2439,20 @@ async function waitForPublishResult(page) {
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < PUBLISH_TIMEOUT_MS) {
-    const url = page.url()
-    if (/PostView\.naver|blog\.naver\.com\/[^/]+\/\d+/i.test(url)) {
+    const url = normalizePublishedPostUrl(page.url())
+    if (url) {
       return url
     }
 
     const successText = await page.locator('text=/발행되었습니다|등록되었습니다|완료/').first().isVisible({ timeout: 1000 }).catch(() => false)
-    if (successText) return page.url()
+    if (successText) {
+      const completedUrl = normalizePublishedPostUrl(page.url())
+      if (completedUrl) return completedUrl
+    }
     await page.waitForTimeout(1500)
   }
 
-  return page.url()
+  return normalizePublishedPostUrl(page.url())
 }
 
 async function uploadToNaverBlogV2({

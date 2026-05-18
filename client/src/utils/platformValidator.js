@@ -97,7 +97,7 @@ export function validateInstagram(content = {}) {
 }
 
 /**
- * 유튜브 숏츠 콘텐츠 유효성 검사
+ * 유튜브 쇼츠/릴스 콘텐츠 유효성 검사
  * @param {{ title?: string, description?: string, tags?: string[], videoSeconds?: number }} content
  * @returns {{ valid: boolean, errors: Array<{field: string, message: string}>, warnings: Array<{field: string, message: string}> }}
  */
@@ -145,13 +145,13 @@ export function validateYouTubeShorts(content = {}) {
     if (content.videoSeconds > limits.videoMaxSeconds) {
       errors.push({
         field: 'videoSeconds',
-        message: `유튜브 숏츠는 최대 ${limits.videoMaxSeconds}초까지 허용됩니다. (현재: ${content.videoSeconds}초)`,
+        message: `유튜브 쇼츠/릴스는 최대 ${limits.videoMaxSeconds}초까지 허용됩니다. (현재: ${content.videoSeconds}초)`,
       })
     }
   } else {
     warnings.push({
       field: 'videoSeconds',
-      message: '영상 길이를 확인할 수 없습니다. 유튜브 숏츠는 최대 60초입니다.',
+      message: '영상 길이를 확인할 수 없습니다. 유튜브 쇼츠/릴스는 최대 60초입니다.',
     })
   }
 

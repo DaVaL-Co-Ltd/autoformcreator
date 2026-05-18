@@ -16,7 +16,7 @@ const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
     items: ['화~목요일', '오전 7시~10시', '오후 12시~1시', '오후 7시~10시'],
   },
   shorts: {
-    title: '유튜브 추천 시간',
+    title: '유튜브 쇼츠/인스타그램 릴스 추천 시간',
     items: ['평일 기준', '오후 12시~3시', '오후 7시~10시'],
   },
 }
@@ -92,19 +92,38 @@ function ScheduleDialogBody({
   mode,
 }) {
   const [platform, setPlatform] = useState(defaultPlatform)
+  const [shortsTargets, setShortsTargets] = useState(() => {
+    const initialTargets = content?.uploadTargets
+    if (!initialTargets || typeof initialTargets !== 'object') {
+      return { instagram: true, youtube: true }
+    }
+    return {
+      instagram: Boolean(initialTargets.instagram),
+      youtube: Boolean(initialTargets.youtube),
+    }
+  })
   const [datetime, setDatetime] = useState(() => toLocalDatetimeValue(getDefaultScheduleDate(initialDatetime, defaultPlatform)))
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const showsNativeScheduleNotice = ['blog', 'shorts'].includes(platform)
+  const showsNativeScheduleNotice = platform === 'blog'
   const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
 
   const handleSubmit = async () => {
     const scheduledAt = normalizeScheduledAtForPlatform(platform, datetime)
+    if (platform === 'shorts' && !shortsTargets.instagram && !shortsTargets.youtube) {
+      alert('예약 업로드할 플랫폼을 하나 이상 선택해주세요.')
+      return
+    }
     try {
       setSaving(true)
       if (onSave) {
-        await Promise.resolve(onSave({ platform, scheduledAt, content }))
+        await Promise.resolve(onSave({
+          platform,
+          scheduledAt,
+          content,
+          uploadTargets: platform === 'shorts' ? shortsTargets : null,
+        }))
       } else {
         await create({ platform, content, scheduledAt })
       }
@@ -186,6 +205,34 @@ function ScheduleDialogBody({
             ))}
           </div>
         </div>
+
+        {platform === 'shorts' && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-text-muted mb-2">업로드 플랫폼</label>
+            <div className="flex gap-2 flex-wrap">
+              {[
+                { key: 'instagram', label: '인스타그램 릴스' },
+                { key: 'youtube', label: '유튜브 쇼츠' },
+              ].map((target) => {
+                const selected = shortsTargets[target.key]
+                return (
+                  <button
+                    key={target.key}
+                    type="button"
+                    onClick={() => setShortsTargets((prev) => ({ ...prev, [target.key]: !prev[target.key] }))}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                      selected
+                        ? 'bg-primary/10 text-primary-light border-primary/30'
+                        : 'bg-surface-light text-text-muted border-border hover:border-primary/40'
+                    }`}
+                  >
+                    {target.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="mb-5">
           <label className="block text-sm font-medium text-text-muted mb-2">
@@ -302,7 +349,7 @@ export default function ScheduleDialog({
 }) {
   if (!open) return null
 
-  const dialogKey = `${mode}:${defaultPlatform}:${initialDatetime || 'new'}:${content?.title || ''}`
+  const dialogKey = `${mode}:${defaultPlatform}:${initialDatetime || 'new'}:${content?.title || ''}:${JSON.stringify(content?.uploadTargets || {})}`
 
   return (
     <ScheduleDialogBody
