@@ -313,6 +313,11 @@ export default function ExtractionResultPage() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [previewImage])
+
+  const openImagePreview = useCallback((url, alt) => {
+    if (!url) return
+    setPreviewImage({ url, alt: alt || '미리보기' })
+  }, [])
   const blogCategoryPath = String(platformConnections?.blog?.categoryPath || state.blogContent?.categoryPath || '').trim()
   // AI 가 자동 선택한 카테고리 ID(`admissions_strategy_style_1` 등)는 categoryInfo 에 들어있다.
   // 네이버 폴더 경로(blogCategoryPath)와 별도로 스타일 결정용으로 사용한다.
@@ -1254,11 +1259,6 @@ export default function ExtractionResultPage() {
       flashCopied('newsletter-body')
     }
   }
-
-  const openImagePreview = useCallback((url, alt) => {
-    if (!url) return
-    setPreviewImage({ url, alt: alt || '미리보기' })
-  }, [])
 
   const ImagePreviewStrip = ({ images, label, columns = 6 }) => {
     if (!Array.isArray(images) || images.length === 0) return null
