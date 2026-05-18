@@ -2683,6 +2683,29 @@ function requireApiSecret(req, res, next) {
   next()
 }
 
+// 예약 페이로드에 포함된 base64 data URL은 그대로 JSONB로 저장하면 수 MB 단위가 되어
+// Supabase statement_timeout 을 초과한다. DB 에 쓰기 전에 Storage 공개 URL 로 치환한다.
+async function normalizeScheduledContent(platform, rawContent) {
+  if (!rawContent || typeof rawContent !== 'object') return rawContent || {}
+  if (platform !== 'instagram' || !Array.isArray(rawContent.imageUrls)) return rawContent
+
+  const normalizedImageUrls = await Promise.all(rawContent.imageUrls.map(async (url, idx) => {
+    if (typeof url === 'string' && url.startsWith('data:')) {
+      try {
+        return await uploadDataUrlToStorage(url)
+      } catch (err) {
+        throw new Error(`이미지 ${idx + 1} Storage 업로드 실패: ${err.message}`)
+      }
+    }
+    return url || null
+  }))
+
+  return {
+    ...rawContent,
+    imageUrls: normalizedImageUrls.filter(Boolean),
+  }
+}
+
 app.post('/api/scheduled/create', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
@@ -2691,12 +2714,14 @@ app.post('/api/scheduled/create', async (req, res) => {
       return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
     }
 
+    const normalizedContent = await normalizeScheduledContent(platform, content)
+
     if (scheduledId) {
       const { data, error } = await supabaseAdmin
         .from('scheduled_uploads')
         .update({
           scheduled_at: scheduledAt,
-          content: content || {},
+          content: normalizedContent || {},
         })
         .eq('id', scheduledId)
         .eq('extraction_id', extractionId)
@@ -2729,7 +2754,7 @@ app.post('/api/scheduled/create', async (req, res) => {
         .from('scheduled_uploads')
         .update({
           scheduled_at: scheduledAt,
-          content: content || first.content || {},
+          content: normalizedContent || first.content || {},
         })
         .eq('id', first.id)
         .select()
@@ -2743,7 +2768,7 @@ app.post('/api/scheduled/create', async (req, res) => {
       .insert({
         platform,
         extraction_id: extractionId,
-        content: content || {},
+        content: normalizedContent || {},
         scheduled_at: scheduledAt,
         status: 'pending',
       })
@@ -2798,7 +2823,14 @@ app.patch('/api/scheduled/:id', async (req, res) => {
     const patch = {}
     if (scheduledAt) patch.scheduled_at = scheduledAt
     if (status) patch.status = status
-    if (content) patch.content = content
+    if (content) {
+      const { data: existing } = await supabaseAdmin
+        .from('scheduled_uploads')
+        .select('platform')
+        .eq('id', req.params.id)
+        .maybeSingle()
+      patch.content = await normalizeScheduledContent(existing?.platform, content)
+    }
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
       .update(patch)

@@ -66,6 +66,16 @@ const BLOG_DIVIDER_MARKER = '[DIVIDER]'
 
 const ensureArray = (value) => Array.isArray(value) ? value : []
 
+const formatStatusDate = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`
+}
+
 const buildInstagramKnowledgeBullets = (card = {}) => {
   if (Array.isArray(card?.bullets) && card.bullets.length > 0) {
     return card.bullets.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 4)
@@ -256,13 +266,6 @@ const menuItems = [
   { id: 'instagram',  label: '인스타그램',    icon: Image,    color: 'text-pink-400',    bg: 'bg-pink-400/10' },
   { id: 'shorts',     label: '유튜브 쇼츠/릴스', icon: Film,   color: 'text-red-500',     bg: 'bg-red-500/10' },
 ]
-
-const footerLinkMeta = {
-  blog: { badge: 'N', badgeBg: '#03C75A', badgeColor: '#ffffff', bg: '#03C75A', fallbackLabel: '블로그 바로가기' },
-  newsletter: { badge: '✉', bg: '#2563eb', fallbackLabel: '뉴스레터 바로가기' },
-  instagram: { badge: '◐', bg: '#E1306C', fallbackLabel: '인스타그램 바로가기' },
-  shorts: { badge: '▶', bg: '#FF0000', fallbackLabel: '쇼츠/릴스 바로가기' },
-}
 
 export default function ExtractionResultPage() {
   const location = useLocation()
@@ -1164,19 +1167,6 @@ export default function ExtractionResultPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const footerLinks = Object.entries(platformConnections || {}).map(([key, item]) => {
-    const meta = footerLinkMeta[key] || {}
-    return {
-      key,
-      label: item?.displayName || meta.fallbackLabel || key,
-      url: item?.url,
-      badge: meta.badge,
-      badgeBg: meta.badgeBg,
-      badgeColor: meta.badgeColor,
-      bg: meta.bg || '#64748b',
-      isSvg: false,
-    }
-  })
   const blogFooterEnabled = state.blogFooterEnabled !== false
   const blogFooterConfig = blogFooterEnabled
     ? getBlogFooterConfig(platformConnections)
@@ -1185,7 +1175,6 @@ export default function ExtractionResultPage() {
   const copyNewsletterHtml = async () => {
     const keyPoints = ensureArray(newsletterContent?.keyPoints)
     const dataHighlights = ensureArray(newsletterContent?.dataHighlights)
-    const activeFooterLinks = footerLinks.filter(link => link.url && link.url !== '#')
 
     const keyPointsHtml = keyPoints.length > 0
       ? `
@@ -1236,25 +1225,6 @@ export default function ExtractionResultPage() {
         </tr>`
       : ''
 
-    const footerLinksHtml = activeFooterLinks.length > 0
-      ? `
-        <tr>
-          <td style="padding:8px 32px 32px 32px;border-top:1px solid #e5e7eb;text-align:center;">
-            <div style="font-size:12px;line-height:18px;color:#6b7280;margin:18px 0 16px 0;">더 많은 콘텐츠는 여기에서 만나보세요.</div>
-            ${activeFooterLinks.map((link) => `
-              <a
-                href="${escapeHtml(link.url)}"
-                target="_blank"
-                rel="noopener noreferrer"
-                style="display:inline-block;margin:4px 6px;padding:10px 16px;border-radius:10px;background:${link.bg};color:#ffffff;font-size:12px;line-height:18px;font-weight:700;text-decoration:none;"
-              >
-                ${escapeHtml(link.label)}
-              </a>
-            `).join('')}
-          </td>
-        </tr>`
-      : ''
-
     const fullHtml = `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#f7f8fb;padding:24px 0;margin:0;">
         <tr>
@@ -1278,7 +1248,6 @@ export default function ExtractionResultPage() {
                 </td>
               </tr>
               ${dataHighlightsHtml}
-              ${footerLinksHtml}
             </table>
           </td>
         </tr>
@@ -1707,7 +1676,7 @@ export default function ExtractionResultPage() {
           index={cardIndex}
           headline={cardTitle}
           bullets={bullets}
-          imageUrl={null}
+          imageUrl={cardImage?.imageUrl || null}
         />
       )
       if (attachRef) {
@@ -1901,33 +1870,6 @@ export default function ExtractionResultPage() {
                     <p className="text-xs text-text-muted mt-1">{d.label}</p>
                   </div>
                 ))}
-              </div>
-            )}
-
-            {footerLinks.some(l => l.url && l.url !== '#') && (
-              <div className="pt-6 border-t border-border text-center">
-                <p className="text-xs text-text-muted mb-4">더 많은 콘텐츠는 여기에서 만나보세요.</p>
-                <div className="flex items-center justify-center gap-2 flex-wrap">
-                  {footerLinks.filter(l => l.url && l.url !== '#').map(l => (
-                    <a
-                      key={l.key}
-                      href={l.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold text-white transition-opacity hover:opacity-90"
-                      style={{ background: l.bg }}
-                    >
-                      {l.isSvg ? (
-                        <span className="inline-flex items-center" dangerouslySetInnerHTML={{ __html: l.badge }} />
-                      ) : l.badgeBg ? (
-                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-sm font-black text-[11px]" style={{ background: l.badgeBg, color: l.badgeColor }}>{l.badge}</span>
-                      ) : (
-                        <span className="text-xs">{l.badge}</span>
-                      )}
-                      {l.label}
-                    </a>
-                  ))}
-                </div>
               </div>
             )}
           </div>
@@ -2195,58 +2137,102 @@ export default function ExtractionResultPage() {
               const sched = scheduleInfo[ch]
               const isNativeSchedule = ch === 'blog' && status === 'done' && Boolean(sched?.scheduledAt)
               const isScheduled = status === 'scheduled' && !isNativeSchedule
+              const isUploaded = status === 'done' && !isNativeSchedule
+              const uploadedAt = activeUploadMeta?.uploadedAt
+              const scheduledAtIso = sched?.scheduledAt || activeUploadMeta?.scheduledAt
+
+              const openScheduleDialog = async () => {
+                let resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
+                if (ch === 'instagram' && !resolvedInstaPngUrls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
+                  try {
+                    await convertInstaCardsToPng()
+                    await new Promise((resolve) => setTimeout(resolve, 200))
+                    resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
+                    if (!resolvedInstaPngUrls.length) {
+                      resolvedInstaPngUrls = (await Promise.all(
+                        (instaCardsRef.current || []).filter(Boolean).map(async (el, idx) => {
+                          try { return await captureElementPng(el, `Instagram schedule capture ${idx + 1}`) }
+                          catch { return null }
+                        })
+                      )).filter(Boolean)
+                    }
+                  } catch (err) {
+                    console.warn('[Schedule] 인스타 카드 PNG 캡처 실패:', err)
+                  }
+                }
+                const contentMap = {
+                  blog: blogContent,
+                  newsletter: newsletterContent,
+                  instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
+                  shorts: {
+                    ...(shortsScript || {}),
+                    uploadTargets: sched?.uploadTargets || activeUploadMeta?.uploadTargets || shortsUploadTargets,
+                  },
+                }
+                setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
+              }
+
+              if (isUploaded) {
+                return (
+                  <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 shrink-0">
+                    <CheckCircle size={14} />
+                    업로드 완료
+                    {uploadedAt && (
+                      <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(uploadedAt)}</span>
+                    )}
+                  </div>
+                )
+              }
+
+              if (isNativeSchedule) {
+                return (
+                  <button
+                    onClick={openScheduleDialog}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-colors shrink-0"
+                  >
+                    <CheckCircle size={14} />
+                    예약 등록 완료
+                    {scheduledAtIso && (
+                      <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(scheduledAtIso)}</span>
+                    )}
+                  </button>
+                )
+              }
+
+              if (isScheduled) {
+                return (
+                  <button
+                    onClick={openScheduleDialog}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors shrink-0"
+                  >
+                    <Calendar size={14} />
+                    예약 완료
+                    {scheduledAtIso && (
+                      <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(scheduledAtIso)}</span>
+                    )}
+                  </button>
+                )
+              }
+
               return (
                 <>
-                  {!isScheduled && !isNativeSchedule && (
-                    <button
-                      onClick={() => handleUpload(ch)}
-                      disabled={status === 'loading'}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
-                        ${status === 'done'
-                          ? 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
-                          : status === 'loading'
-                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                            : 'bg-primary text-white hover:bg-primary-dark disabled:opacity-60'
-                        }`}
-                    >
-                      {status === 'loading' ? (
-                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                      ) : (
-                        <><Upload size={14} /> 업로드</>
-                      )}
-                    </button>
-                  )}
                   <button
-                    onClick={async () => {
-                      let resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
-                      if (ch === 'instagram' && !resolvedInstaPngUrls.length && (instagramContent?.cards?.length || instagramContent?.cardTopics?.length)) {
-                        try {
-                          await convertInstaCardsToPng()
-                          await new Promise((resolve) => setTimeout(resolve, 200))
-                          resolvedInstaPngUrls = instaPngUrls.filter(Boolean)
-                          if (!resolvedInstaPngUrls.length) {
-                            resolvedInstaPngUrls = (await Promise.all(
-                              (instaCardsRef.current || []).filter(Boolean).map(async (el, idx) => {
-                                try { return await captureElementPng(el, `Instagram schedule capture ${idx + 1}`) }
-                                catch { return null }
-                              })
-                            )).filter(Boolean)
-                          }
-                        } catch (err) {
-                          console.warn('[Schedule] 인스타 카드 PNG 캡처 실패:', err)
-                        }
-                      }
-                      const contentMap = {
-                        blog: blogContent,
-                        newsletter: newsletterContent,
-                        instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
-                        shorts: {
-                          ...(shortsScript || {}),
-                          uploadTargets: sched?.uploadTargets || activeUploadMeta?.uploadTargets || shortsUploadTargets,
-                        },
-                      }
-                      setScheduleDialog({ open: true, platform: ch, content: contentMap[ch] || {}, mode: (isScheduled || isNativeSchedule) ? 'edit' : 'create', initialDatetime: sched?.scheduledAt })
-                    }}
+                    onClick={() => handleUpload(ch)}
+                    disabled={status === 'loading'}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
+                      ${status === 'loading'
+                        ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                        : 'bg-primary text-white hover:bg-primary-dark disabled:opacity-60'
+                      }`}
+                  >
+                    {status === 'loading' ? (
+                      <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                    ) : (
+                      <><Upload size={14} /> 업로드</>
+                    )}
+                  </button>
+                  <button
+                    onClick={openScheduleDialog}
                     className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40"
                   >
                     <Calendar size={14} />
