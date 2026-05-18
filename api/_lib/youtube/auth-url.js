@@ -1,4 +1,4 @@
-const { buildInstagramAuthUrl } = require('../_platformAuth')
+const { buildYoutubeAuthUrl } = require('../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -6,7 +6,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const data = buildInstagramAuthUrl()
+    const data = buildYoutubeAuthUrl()
     return res.status(200).json({ url: data.url })
   } catch (error) {
     return res.status(500).json({ error: error.message })

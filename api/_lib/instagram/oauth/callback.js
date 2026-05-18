@@ -1,4 +1,4 @@
-const { handleInstagramOAuthCallback } = require('../../_platformAuth')
+const { handleInstagramOAuthCallback } = require('../../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {

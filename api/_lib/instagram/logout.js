@@ -1,4 +1,4 @@
-const { clearInstagramTokens, isApiSecretValid } = require('../_platformAuth')
+const { clearInstagramTokens, isApiSecretValid } = require('../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {

@@ -1,4 +1,4 @@
-const { validateYoutubeSession } = require('../_platformAuth')
+const { validateYoutubeSession } = require('../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {

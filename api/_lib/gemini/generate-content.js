@@ -1,4 +1,4 @@
-const { isAuthorizedRequest, rejectUnauthorized } = require('../_requestAuth')
+const { isAuthorizedRequest, rejectUnauthorized } = require('../requestAuth')
 
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 const MODEL_NAME_PATTERN = /^gemini-[a-z0-9._-]+$/i

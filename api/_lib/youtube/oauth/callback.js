@@ -1,4 +1,4 @@
-const { exchangeYoutubeCode } = require('../../_platformAuth')
+const { exchangeYoutubeCode } = require('../../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {

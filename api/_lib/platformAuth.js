@@ -1,7 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
-const { isAuthorizedRequest } = require('./_requestAuth')
+const { isAuthorizedRequest } = require('./requestAuth')
 
 const ROOT_DIR = process.cwd()
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'

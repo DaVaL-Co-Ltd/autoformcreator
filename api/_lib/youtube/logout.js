@@ -1,4 +1,4 @@
-const { clearYoutubeTokens, isApiSecretValid } = require('../_platformAuth')
+const { clearYoutubeTokens, isApiSecretValid } = require('../platformAuth')
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {

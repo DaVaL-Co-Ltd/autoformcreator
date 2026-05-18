@@ -1,5 +1,5 @@
 const crypto = require('crypto')
-const { isAuthorizedRequest, rejectUnauthorized } = require('../_requestAuth')
+const { isAuthorizedRequest, rejectUnauthorized } = require('../requestAuth')
 
 const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'

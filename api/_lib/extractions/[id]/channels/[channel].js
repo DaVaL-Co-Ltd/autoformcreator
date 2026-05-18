@@ -1,5 +1,5 @@
-const { isAuthorizedRequest, rejectUnauthorized } = require('../../../_requestAuth')
-const { ensureSupabaseConfigured, deleteExtractionChannel } = require('../../../_extractionsStore')
+const { isAuthorizedRequest, rejectUnauthorized } = require('../../../requestAuth')
+const { ensureSupabaseConfigured, deleteExtractionChannel } = require('../../../extractionsStore')
 
 module.exports = async function handler(req, res) {
   if (!isAuthorizedRequest(req)) return rejectUnauthorized(res)
