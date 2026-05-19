@@ -68,6 +68,11 @@ function stripMarkdown(value = '') {
 const LEADING_EMOJI_SPACE_RE =
   /^([\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+)([ \t]+)/u
 
+// 이모지로 시작하는 줄은 paragraph 합치기에서 분리해 줄당 단독 블록으로 처리해야
+// preserveLeadingEmojiSpace 가 모든 줄의 emoji+공백을 NBSP 로 치환할 수 있다.
+const LEADING_EMOJI_LINE_RE =
+  /^[\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+[ \t]+\S/u
+
 function preserveLeadingEmojiSpace(value = '') {
   const text = String(value || '')
   if (!LEADING_EMOJI_SPACE_RE.test(text)) return text
@@ -148,6 +153,13 @@ function parseBlogBlocks(content = '') {
       flushParagraph()
       flushQuote()
       blocks.push({ type: 'paragraph', text: `- ${stripMarkdown(listMatch[1])}` })
+      continue
+    }
+
+    if (LEADING_EMOJI_LINE_RE.test(line)) {
+      flushParagraph()
+      flushQuote()
+      blocks.push({ type: 'paragraph', text: stripMarkdown(line) })
       continue
     }
 
