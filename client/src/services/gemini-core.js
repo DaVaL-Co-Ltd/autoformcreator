@@ -126,7 +126,8 @@ export async function callGeminiWithFallback(prompt, options = {}) {
     if (signal?.aborted) {
       throw new DOMException('The operation was aborted.', 'AbortError')
     }
-    // 각 모델은 최대 2번 시도 (429 재시도 1회 포함)
+    // 각 모델은 최대 2번 시도 (429/503 재시도 1회 포함). 503 재시도 시에는 maxOutputTokens 를 절반으로 낮춰 deadline 부담을 줄인다.
+    let attemptTokens = maxOutputTokens
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const data = await requestGeminiContent({
@@ -134,7 +135,7 @@ export async function callGeminiWithFallback(prompt, options = {}) {
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: {
             temperature,
-            maxOutputTokens,
+            maxOutputTokens: attemptTokens,
             ...(jsonMode ? { responseMimeType: 'application/json' } : {}),
           },
           signal,
@@ -174,6 +175,19 @@ export async function callGeminiWithFallback(prompt, options = {}) {
             continue
           }
           console.warn(`[Gemini] ${model} 재시도 후에도 429, 다음 모델로 전환`)
+          break
+        }
+
+        if (statusCode === 503) {
+          if (attempt === 0) {
+            const reducedTokens = Math.max(2048, Math.floor(attemptTokens / 2))
+            console.warn(`[Gemini] ${model} 503 (${err.message.slice(0, 80)}), 5초 후 maxOutputTokens ${attemptTokens}→${reducedTokens} 로 재시도`)
+            attemptTokens = reducedTokens
+            await waitForRateLimit(5000, signal)
+            continue
+          }
+          lastError = err
+          console.warn(`[Gemini] ${model} 재시도 후에도 503, 다음 모델로 전환`)
           break
         }
 
