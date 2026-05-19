@@ -105,6 +105,7 @@ function parseBlogBlocks(content = '') {
   const blocks = []
   let paragraph = []
   let quote = []
+  let blankRun = 0
 
   const flushParagraph = () => {
     const text = paragraph.join(' ').replace(/\s+/g, ' ').trim()
@@ -118,13 +119,27 @@ function parseBlogBlocks(content = '') {
     quote = []
   }
 
+  // 연속 빈 줄 N개(= 소스의 \n N+1개) 가 들어오면 단락 사이 기본 여백 외에 추가 빈 단락 N-1 개를
+  // 끼워 화면에 N개 빈 줄로 보이게 한다. 선행/후행 빈 줄은 무시.
+  const consumeBlanks = () => {
+    if (blocks.length > 0 && blankRun > 1) {
+      for (let i = 0; i < blankRun - 1; i += 1) {
+        blocks.push({ type: 'paragraph', text: '' })
+      }
+    }
+    blankRun = 0
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trim()
     if (!line) {
       flushParagraph()
       flushQuote()
+      blankRun += 1
       continue
     }
+
+    consumeBlanks()
 
     if (line === DIVIDER_MARKER) {
       flushParagraph()
@@ -188,7 +203,8 @@ function buildBodyHtml(content = '') {
       return `<blockquote style="margin:18px 0;padding:12px 16px;border-left:4px solid #d0d7de;background:#f6f8fa;color:#57606a;font-size:15px;line-height:1.75;">${text}</blockquote>`
     }
 
-    return `<p style="font-size:15px;font-weight:400;line-height:1.75;margin:0 0 14px 0;">${text}</p>`
+    const paragraphContent = text || '&nbsp;'
+    return `<p style="font-size:15px;font-weight:400;line-height:1.75;margin:0 0 14px 0;">${paragraphContent}</p>`
   }).join('')
 }
 
@@ -1701,7 +1717,7 @@ async function insertBodyTextV4(
       formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
       formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
     }
-    await page.keyboard.insertText(preserveLeadingEmojiSpace(block.text))
+    await page.keyboard.insertText(preserveLeadingEmojiSpace(block.text || ' '))
   }
 
   formatState.bold = await setBoldFormatting(page, false, formatState.bold)
