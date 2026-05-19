@@ -63,8 +63,9 @@ function stripMarkdown(value = '') {
 }
 
 // Naver SmartEditor 는 줄 앞에 emoji + 일반 공백 패턴이 오면 자동 리스트/단락 분리로
-// 인식해 emoji 뒤에서 줄을 끊는 경향이 있다. 공백을 NBSP 로 치환하면 시각적으로는 동일하지만
-// auto-format 트리거를 회피할 수 있다.
+// 인식해 emoji 뒤에서 줄을 끊는 경향이 있다. NBSP 만으로는 SMP 색깔 emoji(💡 🎯 👉 등) 의
+// bullet 변환이 막히지 않아 emoji 앞에 zero-width space 를 끼워 "줄 시작 emoji" 패턴 자체를
+// 깨고, emoji 뒤 공백은 NBSP 로 치환해 시각적으로는 동일하게 유지하면서 트리거를 회피한다.
 const LEADING_EMOJI_SPACE_RE =
   /^([\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+)([ \t]+)/u
 
@@ -76,7 +77,7 @@ const LEADING_EMOJI_LINE_RE =
 function preserveLeadingEmojiSpace(value = '') {
   const text = String(value || '')
   if (!LEADING_EMOJI_SPACE_RE.test(text)) return text
-  return text.replace(LEADING_EMOJI_SPACE_RE, (_, emoji, space) => `${emoji}${' '.repeat(space.length)}`)
+  return text.replace(LEADING_EMOJI_SPACE_RE, (_, emoji, space) => `​${emoji}${' '.repeat(space.length)}`)
 }
 
 function escapeHtml(value = '') {
