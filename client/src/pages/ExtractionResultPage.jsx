@@ -2260,65 +2260,47 @@ export default function ExtractionResultPage() {
       </div>
 
       {activeUploadedUrl && dataMap[activeMenu] && activeMenu !== 'newsletter' && (
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-primary/5 border border-primary/20 rounded-xl">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-text">{activeMenuLabel} 결과물을 확인할 수 있습니다.</p>
-            <p className="mt-1 text-xs text-text-muted break-all">{activeUploadedUrl}</p>
-            {activeUploadedUrls.length > 1 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {activeUploadedUrls.map(([platform, url]) => (
-                  <a
-                    key={platform}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-full border border-primary/20 px-2.5 py-1 text-xs font-medium text-primary-light hover:border-primary/40"
-                  >
-                    {platform === 'youtube' ? 'YouTube' : 'Instagram'}
-                    <ExternalLink size={11} />
-                  </a>
-                ))}
-              </div>
-            )}
+        <div className="flex flex-wrap items-start justify-between gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-text">{activeMenuLabel} 업로드 완료</p>
+              <a
+                href={activeUploadedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 mt-1 text-xs text-emerald-600 hover:underline font-medium break-all"
+              >
+                {activeUploadedUrl}
+                <ExternalLink size={11} className="shrink-0" />
+              </a>
+              {activeUploadedUrls.length > 1 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {activeUploadedUrls.map(([platform, url]) => (
+                    <a
+                      key={platform}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:border-emerald-500/60"
+                    >
+                      {platform === 'youtube' ? 'YouTube' : 'Instagram'}
+                      <ExternalLink size={11} />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <a
             href={activeUploadedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary-dark transition-colors shrink-0"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shrink-0"
           >
             결과물 보기
             <ExternalLink size={14} />
           </a>
-        </div>
-      )}
-
-      {activeMenu === 'blog' && blogUploadResult && (
-        <div className="flex items-start gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
-          <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-text">
-              {blogUploadResult.scheduled ? '네이버 예약 발행 등록 완료!' : '네이버 블로그 업로드 성공!'}
-            </p>
-            {blogUploadResult.scheduledAt && (
-              <p className="mt-1 text-xs text-text-muted">
-                예약 시간: {new Date(blogUploadResult.scheduledAt).toLocaleString('ko-KR', {
-                  year: 'numeric',
-                  month: '2-digit',
-                  day: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </p>
-            )}
-            {blogUploadResult.url && (
-              <a href={blogUploadResult.url} target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-1 mt-1 text-xs text-emerald-500 hover:underline font-medium break-all">
-                {blogUploadResult.url} <ExternalLink size={11} className="shrink-0" />
-              </a>
-            )}
-          </div>
-          <button onClick={() => setBlogUploadResult(null)} className="text-xs text-text-muted hover:text-text px-2 py-1 rounded border border-border">닫기</button>
         </div>
       )}
 

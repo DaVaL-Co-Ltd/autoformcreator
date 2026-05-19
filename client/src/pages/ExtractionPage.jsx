@@ -3562,12 +3562,9 @@ ${parsedText}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           onClick={() => setImageLightbox(null)}
         >
-          <div
-            className="relative max-h-[90vh] max-w-[90vw] flex items-center justify-center"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="relative max-h-[90vh] max-w-[90vw] flex items-center justify-center pointer-events-none">
             {imageLightbox.kind === 'knowledge' ? (
-              <div className="w-[min(80vh,80vw)]">
+              <div className="w-[min(80vh,80vw,36rem)]">
                 <KnowledgeInsightCard
                   index={imageLightbox.index || 0}
                   headline={imageLightbox.headline}
@@ -3576,7 +3573,7 @@ ${parsedText}
                 />
               </div>
             ) : imageLightbox.kind === 'artwork' ? (
-              <div className="w-[min(80vh,80vw)] aspect-square rounded-lg overflow-hidden shadow-2xl">
+              <div className="w-[min(80vh,80vw,36rem)] aspect-square rounded-lg overflow-hidden shadow-2xl">
                 <BlogImageArtwork
                   src={imageLightbox.src}
                   alt={imageLightbox.alt}
