@@ -179,7 +179,7 @@ function buildBodyHtml(content = '') {
       return '<hr style="margin:24px 0;border:0;border-top:1px solid #d0d7de;" />'
     }
 
-    const text = escapeHtml(block.text)
+    const text = escapeHtml(preserveLeadingEmojiSpace(block.text))
     if (block.type === 'heading') {
       return `<p style="font-size:24px;font-weight:700;line-height:1.45;margin:24px 0 10px 0;">${text}</p>`
     }
