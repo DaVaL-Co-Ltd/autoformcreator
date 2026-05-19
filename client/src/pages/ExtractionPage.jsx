@@ -23,7 +23,8 @@ import {
   deriveBlogHeadline,
   deriveBlogImageDescription,
 } from '../utils/contentImageOverlay'
-import { renderBlogUploadImageDataUrl } from '../utils/uploadImageComposite'
+import { renderBlogUploadImageDataUrl, renderInstagramUploadImageDataUrl } from '../utils/uploadImageComposite'
+import { buildInstagramDisplayCards } from '../utils/instagramCarousel'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
@@ -779,6 +780,71 @@ export default function ExtractionPage() {
     }
   }, [blogImages, blogContent])
 
+  useEffect(() => {
+    let cancelled = false
+
+    const hydrateRenderedInstagramImages = async () => {
+      const images = Array.isArray(instagramImages) ? instagramImages : []
+      if (!images.length || !instagramContent) return
+
+      const cards = buildInstagramDisplayCards(instagramContent)
+      if (!cards.length) return
+
+      const needsRenderedPreview = images.some((image) => (
+        image
+        && image?.imageUrl
+        && !image?.renderedImageUrl
+        && !image?.pngUrl
+      ))
+      if (!needsRenderedPreview) return
+
+      const cardStyle = instagramContent?.cardStyle || 'background-text'
+
+      const nextImages = await Promise.all(images.map(async (image, index) => {
+        if (!image || !image.imageUrl || image.renderedImageUrl || image.pngUrl) return image
+
+        const cardNumber = image.cardNumber || image.card_number || index + 1
+        const matchedIndex = cards.findIndex((card, i) => {
+          const num = card?.cardNumber || card?.card_number || i + 1
+          return num === cardNumber
+        })
+        const cardIndex = matchedIndex >= 0 ? matchedIndex : Math.min(index, cards.length - 1)
+        const card = cards[cardIndex]
+        if (!card) return image
+
+        try {
+          const renderedImageUrl = await renderInstagramUploadImageDataUrl({
+            imageUrl: image.imageUrl,
+            card,
+            cardIndex,
+            cardStyle,
+          })
+          if (!renderedImageUrl || renderedImageUrl === image.imageUrl) return image
+          return {
+            ...image,
+            renderedImageUrl,
+            pngUrl: renderedImageUrl,
+          }
+        } catch {
+          return image
+        }
+      }))
+
+      if (cancelled) return
+
+      const changed = nextImages.some((image, index) => image !== images[index])
+      if (changed) {
+        setInstagramImages(nextImages)
+      }
+    }
+
+    hydrateRenderedInstagramImages()
+
+    return () => {
+      cancelled = true
+    }
+  }, [instagramImages, instagramContent])
+
   const applyBlogThumbnailState = ({ uploadedImages = blogUploadedImagesRef.current, generatedImages = blogImages, disabled = blogThumbnailDisabled }) => {
     const normalized = normalizeBlogThumbnailSelection({
       uploadedImages,
@@ -961,13 +1027,11 @@ export default function ExtractionPage() {
     setCurrentStep(step)
     // Step 1 이하(파일 변경 포함) → 모든 후속 단계 초기화
     if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setRecommendedBlogCategory(null); setEditingText(false) }
-    if (step <= 3) setBlogContent(null)
+    if (step <= 3) { setBlogContent(null); setBlogImages(null) }
     if (step <= 4) setNewsletterContent(null)
-    if (step <= 5) setInstagramContent(null)
+    if (step <= 5) { setInstagramContent(null); setInstagramImages(null) }
     if (step <= 6) setShortsScript(null)
     if (step <= 7) {
-      setBlogImages(null)
-      setInstagramImages(null)
       setMediaItemLoading({})
     }
     if (step <= 2) {
@@ -1643,30 +1707,30 @@ DO NOT:
               voice_id: preset?.defaultVoiceId,
             },
           }
-          if (scene?.layout === 'pip-tl' && scene?.infographic) {
+          if (scene?.layout === 'infographic-full' && scene?.visualDescription) {
+            // 풀화면 인포그래픽 씬 — Gemini Image 가 visualDescription 으로부터 인포그래픽을
+            // 생성해 HeyGen scene background 로 깐다. 아바타는 화면에 보이지 않게 극소 스케일 +
+            // 우하단 모서리(자막 영역 뒤) 로 밀어내고, 나레이션은 보이스오버로 깔린다.
             try {
-              const bgRes = await apiFetch('/api/heygen/shorts-pip-background', {
+              const bgRes = await apiFetch('/api/heygen/shorts-infographic-background', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  headline: scene.infographic.headline || '',
-                  value: scene.infographic.value || '',
-                  subtitle: scene.infographic.subtitle || '',
-                  chartType: scene.infographic.chartType || 'bar',
-                  theme: scene.infographic.theme || 'navy',
+                  visualDescription: scene.visualDescription,
+                  sceneNumber: scene.sceneNumber || idx + 1,
                 }),
               })
               const bgData = await readApiResponse(bgRes)
               if (bgRes.ok && bgData?.image_key) {
-                baseInput.character.scale = 0.3
-                baseInput.character.offset = { x: -0.30, y: -0.32 }
+                baseInput.character.scale = 0.01
+                baseInput.character.offset = { x: 0.95, y: 0.95 }
                 baseInput.background = {
                   type: 'image',
                   image_asset_id: bgData.image_key,
                 }
               }
             } catch (err) {
-              console.warn(`[shorts pip bg] scene ${scene?.sceneNumber} 실패:`, err.message)
+              console.warn(`[shorts infographic bg] scene ${scene?.sceneNumber} 실패:`, err.message)
             }
           } else if (scene?.layout === 'dialogue-shared-bg' && sharedDialogueBgKey) {
             // 모든 씬이 같은 배경 공유. speakerSide 로 좌우 위치만 다르게.
@@ -3115,11 +3179,11 @@ ${parsedText}
                   )}
                   {row.key === 'blog' && blogContent && (
                     <div className="space-y-4">
+                      <ContentImagePreviewStrip images={blogPreviewImages} label="블로그 이미지 미리보기" />
                       <div>
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
-                      <ContentImagePreviewStrip images={blogPreviewImages} label="블로그 이미지 미리보기" />
                       {blogContent.sections?.map((sec, i) => (
                         <div key={i} className="border-l-2 border-primary/30 pl-3">
                           <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
@@ -3150,8 +3214,8 @@ ${parsedText}
                   )}
                   {row.key === 'instagram' && instagramContent && (
                     <div className="space-y-3">
-                      {instagramContent.caption && <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>}
                       <ContentImagePreviewStrip images={instagramPreviewImages} label="인스타 카드 미리보기" />
+                      {instagramContent.caption && <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>}
                       {instagramContent.cardTopics?.length > 0 && (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {instagramContent.cardTopics.map((card, i) => (
