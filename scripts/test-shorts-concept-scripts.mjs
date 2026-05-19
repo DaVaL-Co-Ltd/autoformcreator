@@ -132,8 +132,8 @@ function buildShortsPrompt(summary, rawText, emphasis, options) {
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)
-- layout 후보: 'full' (풀화면 1인), 'pip-tl' (좌상단 PIP + 인포그래픽 배경), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
-- 'pip-tl' 을 쓰면 scenes[].infographic 필드(headline, value, subtitle, chartType, theme) 를 반드시 같이 채우세요. chartType 후보: 'bar' | 'pie' | 'line'. theme 후보: 'beige' (채도 낮은 따뜻한 베이지 + 차콜 텍스트 — 기본·추천), 'warm-gray' (웜 그레이 + 차콜), 'cream' (크림 + 골드 액센트). 가독성 우선이라 'navy' 같은 채도 높은 톤은 피하세요.
+- layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
+- 'infographic-full' 을 쓰면 scenes[].visualDescription 에 headline, hero value(예: "+12.4%"), chart 종류(bar/pie/line), subtitle, 색상 톤을 영어로 한 문장에 자세히 풀어 쓰세요 — Gemini Image 가 이 묘사대로 풀화면 인포그래픽을 생성합니다. "no avatar visible", "no people" 을 반드시 포함하세요. 첫 씬·마지막 씬에는 쓰지 말고, 수치·통계·비교가 핵심인 중간 씬에만 쓰세요.
 - 'dialogue-shared-bg' 와 'quiz-shared-bg' 를 쓰면 최상위 sharedBackground.visualDescription 필드를 한 번 채우고, 각 씬은 동일한 sharedBackground 를 공유한다고 가정하세요.
 - 'dialogue-shared-bg' 를 쓰면 각 씬에 speakerSide ('left' 또는 'right') 를 명시하세요.
 - 'full-vlog' 를 쓰면 scenes[].visualDescription 에 씬마다 다른 장소·시간대 배경을 영어로 상세히 묘사하세요.

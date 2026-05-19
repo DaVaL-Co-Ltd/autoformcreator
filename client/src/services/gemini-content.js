@@ -1412,13 +1412,13 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)
-- layout 후보: 'full' (풀화면 1인), 'pip-tl' (좌상단 PIP + 인포그래픽 배경), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
-- 'pip-tl' 을 쓰면 scenes[].infographic 필드(headline, value, subtitle, chartType, theme) 를 반드시 같이 채우세요. chartType 후보: 'bar' | 'pie' | 'line'. theme 후보: 'beige' (채도 낮은 따뜻한 베이지 + 차콜 텍스트 — 기본·추천), 'warm-gray' (웜 그레이 + 차콜), 'cream' (크림 + 골드 액센트). 가독성 우선이라 'navy' 같은 채도 높은 톤은 피하세요.
+- layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
+- 'infographic-full' 을 쓰면 scenes[].visualDescription 에 headline, hero value(예: "+12.4%"), chart 종류(bar/pie/line), subtitle, 색상 톤(예: navy + gold)을 영어로 한 문장에 자세히 풀어 쓰세요 — Gemini Image 가 이 묘사대로 풀화면 인포그래픽을 생성합니다. "no avatar visible", "no people" 을 반드시 포함하세요. 인포그래픽 씬은 첫 씬·마지막 씬에는 쓰지 말고, 수치·통계·비교가 핵심인 중간 씬에만 쓰세요.
 - 'dialogue-shared-bg' 와 'quiz-shared-bg' 를 쓰면 최상위 sharedBackground.visualDescription 필드를 한 번 채우고, 각 씬은 동일한 sharedBackground 를 공유한다고 가정하세요.
 - 'dialogue-shared-bg' 를 쓰면 각 씬에 speakerSide ('left' 또는 'right') 를 명시하세요.
 - 'full-vlog' 를 쓰면 scenes[].visualDescription 에 씬마다 다른 장소·시간대 배경을 영어로 상세히 묘사하세요.
 - 컨셉이 선택되지 않았다면 모든 씬을 'full' layout 으로 통일하세요.
-- visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요.
+- visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요(인포그래픽 씬은 인물 없이 차트·수치 시각화 묘사).
 
 ## 업로드 메타데이터 규칙
 - uploadTitle: 60자 이내
@@ -1428,7 +1428,7 @@ ${fewShot}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"숏폼 제목","duration":"20","hook":"첫 문장","sharedBackground":{"visualDescription":"공유 배경 영어 묘사. 공유 배경 layout 을 쓰지 않으면 생략 가능"},"scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이","speakerSide":"left","infographic":{"headline":"핵심 라벨","value":"+12.4%","subtitle":"부가 설명","chartType":"bar","theme":"beige"}}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
+{"title":"숏폼 제목","duration":"20","hook":"첫 문장","sharedBackground":{"visualDescription":"공유 배경 영어 묘사. 공유 배경 layout 을 쓰지 않으면 생략 가능"},"scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이","speakerSide":"left"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(
