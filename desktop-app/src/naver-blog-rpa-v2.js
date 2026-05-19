@@ -1692,7 +1692,8 @@ async function insertBodyTextV4(
       }
       const insertedDivider = await insertDividerByToolbar(page)
       if (!insertedDivider) {
-        throw new Error('네이버 블로그 구분선 메뉴에서 첫 번째 스타일을 선택하지 못했습니다.')
+        console.warn('[divider] toolbar 구분선 삽입 실패 — 텍스트 구분선으로 대체합니다.')
+        await page.keyboard.insertText('────────')
       }
       await page.keyboard.press('Enter')
       await page.waitForTimeout(200)
