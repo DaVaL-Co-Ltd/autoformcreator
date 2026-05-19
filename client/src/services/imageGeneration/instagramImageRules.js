@@ -3,6 +3,7 @@ import {
   KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT,
   KNOWLEDGE_INSIGHT_CUTOUT_RULE,
   KNOWLEDGE_INSIGHT_EMOJI_STYLE,
+  KNOWLEDGE_INSIGHT_NO_TEXT_RULE,
   KNOWLEDGE_INSIGHT_THEME_MOTIFS,
   inferConceptDigestTheme,
   removeWhiteBackgroundFromDataUrl,
@@ -32,7 +33,7 @@ function buildInstagramCornerPrompt(card, options = {}) {
     `Use one main motif, or at most two tightly related motifs, ${topicHint}. Prefer ${subjectPrompt}.`,
     'Do not generate a full background scene, landscape, room, poster, or card layout. The subject must be precisely centered on the canvas with even empty white margin on all four sides. Do not use people unless the concept absolutely requires a human action, and even then keep the figure simple and secondary. Avoid text, labels, many mini icons, repeated decorations, notebook paper textures, stickers, and collage composition. Prefer a single isolated object or one tiny object pair with bold linework and simplified color blocking.',
     KNOWLEDGE_INSIGHT_CUTOUT_RULE,
-    'Do not render any Korean letters or Korean words anywhere in the image. English letters and numbers are acceptable only if they are part of the motif.',
+    KNOWLEDGE_INSIGHT_NO_TEXT_RULE,
   ].join(' ') + extraHint
 }
 
