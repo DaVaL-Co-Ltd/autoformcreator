@@ -135,7 +135,7 @@ export default function KnowledgeInsightCard({
           src={imageUrl}
           alt=""
           aria-hidden
-          className="absolute bottom-2 right-2 z-20 w-28 h-28 sm:w-32 sm:h-32 object-contain pointer-events-none drop-shadow-md"
+          className="absolute bottom-2 right-2 z-20 w-32 h-32 object-contain pointer-events-none drop-shadow-md"
         />
       )}
     </div>
