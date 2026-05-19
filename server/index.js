@@ -685,108 +685,6 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
-app.post('/api/infographic/generate', async (req, res) => {
-  const { scenes } = req.body
-  if (!scenes?.length) return res.status(400).json({ error: 'Missing scenes' })
-
-  const outputDir2 = path.join(__dirname, '..', 'output')
-  if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
-
-  const results = []
-  const themes = [
-    { bg: '#F5F0E8', accent: '#D4A574', text: '#2D2016', sub: '#8B7355' },
-    { bg: '#E8F0F5', accent: '#5B9BD5', text: '#1A2E3D', sub: '#5A7A94' },
-    { bg: '#F0E8F5', accent: '#9B6BC5', text: '#2D1A3D', sub: '#7A5A94' },
-    { bg: '#E8F5EE', accent: '#5BC58A', text: '#1A3D2D', sub: '#5A947A' },
-    { bg: '#FFF8E8', accent: '#E5A83B', text: '#3D2D0A', sub: '#947A3A' },
-  ]
-
-  for (const scene of scenes) {
-    if (scene.type !== 'infographic') continue
-    const ts = Date.now()
-    const filename = `infographic_${scene.sceneNumber}_${ts}.png`
-    const filePath = path.join(outputDir2, filename)
-
-    const theme = themes[(scene.sceneNumber - 1) % themes.length]
-    const title = scene.keyword || ''
-    const bullets = scene.bullets || []
-    const narration = scene.narration || ''
-
-    const W = 1080, H = 1920
-    const canvas = createCanvas(W, H)
-    const ctx = canvas.getContext('2d')
-
-    // 배경
-    ctx.fillStyle = theme.bg
-    ctx.fillRect(0, 0, W, H)
-
-    // 상단 장식 원
-    ctx.globalAlpha = 0.2; ctx.fillStyle = theme.accent
-    ctx.beginPath(); ctx.arc(480, 200, 45, 0, Math.PI * 2); ctx.fill()
-    ctx.globalAlpha = 0.3
-    ctx.beginPath(); ctx.arc(600, 200, 45, 0, Math.PI * 2); ctx.fill()
-    ctx.globalAlpha = 1
-
-    // Draw title text.
-    ctx.font = '52px Pretendard'
-    ctx.fillStyle = theme.text
-    ctx.textAlign = 'center'
-    ctx.fillText(title, W / 2, 400)
-
-    // 구분선
-    ctx.fillStyle = theme.accent; ctx.globalAlpha = 0.5
-    roundRect(ctx, 340, 440, 400, 4, 2); ctx.fill()
-    ctx.globalAlpha = 1
-
-    // 막대 차트
-    bullets.forEach((b, i) => {
-      const y = 600 + i * 200
-      const parts = b.split(':')
-      const label = parts[0]?.trim() || b
-      const value = parts[1]?.trim() || ''
-      const numMatch = value.match(/[\d.]+/)
-      const barWidth = numMatch ? Math.min(750, Math.max(200, parseFloat(numMatch[0]) * 10)) : 500
-
-      // 항목명
-      ctx.font = '38px Pretendard'
-      ctx.fillStyle = theme.text
-      ctx.textAlign = 'left'
-      ctx.fillText(label, 120, y)
-
-      // 배경 바
-      ctx.globalAlpha = 0.3; ctx.fillStyle = theme.accent
-      roundRect(ctx, 120, y + 20, barWidth, 55, 28); ctx.fill()
-      // 진행 바
-      ctx.globalAlpha = 1; ctx.fillStyle = theme.accent
-      roundRect(ctx, 120, y + 20, barWidth * 0.85, 55, 28); ctx.fill()
-
-      // 값
-      ctx.font = '34px Pretendard'
-      ctx.fillStyle = theme.accent
-      ctx.textAlign = 'left'
-      ctx.fillText(value, 140 + barWidth * 0.85, y + 58)
-    })
-
-    // 워터마크
-    ctx.font = '22px Pretendard'
-    ctx.fillStyle = theme.sub
-    ctx.globalAlpha = 0.5
-    ctx.textAlign = 'right'
-    ctx.fillText('MYBIZ', 1010, 1870)
-    ctx.globalAlpha = 1
-
-    try {
-      const buffer = canvas.toBuffer('image/png')
-      fs.writeFileSync(filePath, buffer)
-      results.push({ sceneNumber: scene.sceneNumber, url: `/output/${filename}`, path: filePath })
-    } catch (err) {
-      results.push({ sceneNumber: scene.sceneNumber, error: err.message })
-    }
-  }
-
-  res.json({ images: results })
-})
-
 function escapeXml(str) {
   return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
@@ -872,124 +770,61 @@ app.post('/api/heygen/shorts-vlog-background', async (req, res) => {
   }
 })
 
-// ===== Shorts PIP-safe background: 좌상단 PIP 영역 비우고 인포그래픽 생성 + HeyGen 업로드 =====
-// body: { headline, value, subtitle, chartType: 'bar'|'pie'|'line', theme?: 'navy'|'cream' }
+// ===== Shorts infographic background: Gemini 이미지 생성 + HeyGen 업로드 =====
+// briefing_dongwan 처럼 데이터·수치가 핵심인 컨셉의 중간 씬용 — 풀화면 인포그래픽을
+// Gemini Image (gemini-2.5-flash-image) 가 visualDescription 으로부터 생성하고,
+// HeyGen 에 asset 으로 업로드해 /v2/video/generate 의 scene background 로 사용한다.
+// 캔버스로 직접 그리지 않는다 — 헤드라인·수치·차트는 모두 AI 가 visualDescription 안에
+// 적힌 지시(headline, hero value, chart type 등) 를 그대로 시각화한다.
+// body: { visualDescription, sceneNumber? }
 // returns: { image_key, url, localPath }
-app.post('/api/heygen/shorts-pip-background', async (req, res) => {
+app.post('/api/heygen/shorts-infographic-background', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
-  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured' })
+  if (!geminiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not configured' })
 
   try {
-    const { headline = '', value = '', subtitle = '', chartType = 'bar', theme = 'navy' } = req.body || {}
+    const { visualDescription = '', sceneNumber = 1 } = req.body || {}
+    if (!visualDescription) return res.status(400).json({ error: 'visualDescription required' })
+    const sceneNumberSafe = Math.max(0, Math.floor(Number(sceneNumber)) || 0)
 
-    const W = 720, H = 1280
-    const canvas = createCanvas(W, H)
-    const ctx = canvas.getContext('2d')
+    // vlog 흐름과 달리 사실주의 사진(realistic photo) 키워드는 빼고,
+    // 데이터 비주얼라이제이션 톤 키워드를 붙인다.
+    const prompt = `${visualDescription}, vertical 9:16 composition, no people visible, no avatar, no human figure, minimal Korean broadcast-news infographic style, clean data visualization, high-contrast typography, sharp vector look, no logos, no watermarks`
 
-    // 테마 — 가독성 우선, 채도 낮은 톤을 기본으로 한다.
-    // 'navy' 는 호환성을 위해 유지하지만 신규 컨텐츠는 베이지/웜그레이/크림 권장.
-    const themePalettes = {
-      beige:      { bg1: '#F5EFE6', bg2: '#EAE3D5', text: '#3A322A', accent: '#A8693C', sub: '#7A6A56' },
-      'warm-gray':{ bg1: '#EDEAE5', bg2: '#DCD7D0', text: '#3A3733', accent: '#8A7A6A', sub: '#6E6661' },
-      cream:      { bg1: '#FAF6EF', bg2: '#F1E7D2', text: '#2A1F0A', accent: '#D4A540', sub: '#7C6940' },
-      navy:       { bg1: '#0F1B2D', bg2: '#1A2D4A', text: '#FFFFFF', accent: '#F4C534', sub: '#7C8FA8' },
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`
+    const geminiBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
     }
-    const palette = themePalettes[theme] || themePalettes.beige
-
-    // 그라데이션 배경
-    const grad = ctx.createLinearGradient(0, 0, 0, H)
-    grad.addColorStop(0, palette.bg1)
-    grad.addColorStop(1, palette.bg2)
-    ctx.fillStyle = grad
-    ctx.fillRect(0, 0, W, H)
-
-    // PIP 안전 영역 (그리지 않음): x=0~290, y=0~330. 가이드 라인만 살짝 (디버그용 — 실 배포 전 끄기 권장)
-    // ctx.strokeStyle = palette.accent; ctx.globalAlpha = 0.15; ctx.strokeRect(0, 0, 290, 330); ctx.globalAlpha = 1
-
-    // PIP 영역 우측에 작은 헤드라인 (씬 주제)
-    ctx.font = 'bold 30px Pretendard'
-    ctx.fillStyle = palette.accent
-    ctx.textAlign = 'left'
-    ctx.fillText(headline, 310, 80)
-
-    // 헤드라인 밑에 얇은 밑줄
-    ctx.fillStyle = palette.accent
-    ctx.fillRect(310, 100, 80, 4)
-
-    // 부제 (PIP 옆 또는 메인 영역 상단)
-    if (subtitle) {
-      ctx.font = '22px Pretendard'
-      ctx.fillStyle = palette.sub
-      ctx.fillText(subtitle, 310, 140)
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody),
+    })
+    const geminiData = await geminiRes.json()
+    if (!geminiRes.ok) {
+      return res.status(geminiRes.status).json({ error: 'Gemini image failed', detail: geminiData })
     }
-
-    // === 메인 영역 (PIP 아래쪽) ===
-    // 큰 숫자/값 강조
-    ctx.font = 'bold 140px Pretendard'
-    ctx.fillStyle = palette.accent
-    ctx.textAlign = 'center'
-    ctx.fillText(value, W / 2, 580)
-
-    // 차트
-    const chartY = 700
-    const chartH = 200
-    if (chartType === 'bar') {
-      // 막대 3개 (이전·현재·예측 느낌)
-      const bars = [{ x: 100, w: 120, h: 80 }, { x: 280, w: 120, h: 140 }, { x: 460, w: 120, h: 180 }]
-      bars.forEach(b => {
-        ctx.fillStyle = palette.accent
-        ctx.globalAlpha = 0.3 + (b.h / 200) * 0.7
-        ctx.fillRect(b.x, chartY + chartH - b.h, b.w, b.h)
-      })
-      ctx.globalAlpha = 1
-    } else if (chartType === 'pie') {
-      // 50/50 분할 원
-      const cx = W / 2, cy = chartY + chartH / 2, r = 90
-      ctx.fillStyle = palette.sub
-      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = palette.accent
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2); ctx.fill()
-      ctx.strokeStyle = palette.bg1; ctx.lineWidth = 4; ctx.stroke()
-    } else if (chartType === 'line') {
-      // 우상향 라인
-      ctx.strokeStyle = palette.accent
-      ctx.lineWidth = 6
-      ctx.beginPath()
-      ctx.moveTo(80, chartY + 180)
-      ctx.lineTo(260, chartY + 140)
-      ctx.lineTo(440, chartY + 70)
-      ctx.lineTo(620, chartY + 20)
-      ctx.stroke()
-      // 점들
-      ctx.fillStyle = palette.accent
-      ;[ [80,180],[260,140],[440,70],[620,20] ].forEach(([x,y]) => {
-        ctx.beginPath(); ctx.arc(x, chartY + y, 10, 0, Math.PI * 2); ctx.fill()
-      })
+    const parts = geminiData?.candidates?.[0]?.content?.parts || []
+    const imagePart = parts.find((p) => p.inlineData?.data)
+    if (!imagePart) {
+      return res.status(500).json({ error: 'Gemini did not return an image', detail: parts.slice(0, 2) })
     }
+    const buffer = Buffer.from(imagePart.inlineData.data, 'base64')
+    const mimeType = imagePart.inlineData.mimeType || 'image/png'
 
-    // 하단 75% 이하는 플랫폼 UI 가 덮으므로 비워두거나 워터마크만
-    ctx.font = '20px Pretendard'
-    ctx.fillStyle = palette.sub
-    ctx.globalAlpha = 0.6
-    ctx.textAlign = 'center'
-    ctx.fillText('1퍼센트 입시 데이터 브리핑', W / 2, 940)
-    ctx.globalAlpha = 1
-
-    // PNG 버퍼 생성
-    const buffer = canvas.toBuffer('image/png')
-
-    // 디스크 저장 (디버그용)
     const outputDir2 = path.join(__dirname, '..', 'output')
     if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
     const ts = Date.now()
-    const filename = `shorts_pip_bg_${ts}.png`
+    const filename = `shorts_infographic_bg_${sceneNumberSafe}_${ts}.png`
     const localPath = path.join(outputDir2, filename)
     fs.writeFileSync(localPath, buffer)
 
-    // HeyGen 으로 자산 업로드
     const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
       method: 'POST',
-      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'image/png' },
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': mimeType },
       body: buffer,
     })
     const uploadData = await uploadRes.json()
@@ -997,35 +832,12 @@ app.post('/api/heygen/shorts-pip-background', async (req, res) => {
       return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
     }
     const imageKey = uploadData.data?.image_key || uploadData.data?.id
-    const heygenUrl = uploadData.data?.url
 
     res.json({
       image_key: imageKey,
-      url: heygenUrl,
+      url: uploadData.data?.url,
       localPath: `/output/${filename}`,
     })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-// ===== Upload infographic images to HeyGen and return the asset URL =====
-app.post('/api/infographic/upload-to-heygen', async (req, res) => {
-  const apiKey = process.env.HEYGEN_API_KEY
-  const { localPath } = req.body
-  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
-  if (!localPath || !fs.existsSync(localPath)) return res.status(400).json({ error: 'File not found' })
-
-  try {
-    const buffer = fs.readFileSync(localPath)
-    const response = await fetch('https://upload.heygen.com/v1/asset', {
-      method: 'POST',
-      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'image/png' },
-      body: buffer,
-    })
-    const data = await response.json()
-    if (!response.ok) return res.status(response.status).json(data)
-    res.json(data)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

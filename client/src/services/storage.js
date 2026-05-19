@@ -143,7 +143,10 @@ export async function updateExtractionMedia(id, media = {}) {
 
 export async function getExtractions() {
   const result = await apiRequest('/api/extractions')
-  return (result?.items || []).map(rowToItem)
+  return {
+    items: (result?.items || []).map(rowToItem),
+    aggregateCounts: result?.aggregateCounts || null,
+  }
 }
 
 export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
@@ -151,6 +154,7 @@ export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
   return {
     items: (result?.items || []).map(rowToItem),
     total: result?.total || 0,
+    aggregateCounts: result?.aggregateCounts || null,
   }
 }
 

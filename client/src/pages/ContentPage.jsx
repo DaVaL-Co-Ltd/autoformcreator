@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -16,7 +16,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { deleteExtractionChannel, getExtractionsPaged, updateUploadStatus } from '../services/storage'
+import { deleteExtractionChannel, getExtractions, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
@@ -35,8 +35,6 @@ const _uploadStatusConfig = {
   scheduled: { label: '예약 완료', icon: Calendar },
   uploaded: { label: '업로드 완료', icon: CheckCircle },
 }
-
-const EXTRACTION_BATCH_SIZE = 10
 
 function toContentItems(extractions, scheduledMap = new Map()) {
   return extractions.flatMap(ext =>
@@ -95,7 +93,7 @@ export default function ContentPage() {
   })
   const [initialLoading, setInitialLoading] = useState(true)
   const [listLoading, setListLoading] = useState(false)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const hasLoadedOnceRef = useRef(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
@@ -113,7 +111,7 @@ export default function ContentPage() {
     query = searchQuery,
   ) => {
     if (showSpinner) {
-      if (hasLoadedOnce) {
+      if (hasLoadedOnceRef.current) {
         setListLoading(true)
       } else {
         setInitialLoading(true)
@@ -121,70 +119,51 @@ export default function ContentPage() {
     }
 
     try {
-      const scheduledRows = await getAllScheduledUploads()
+      const [scheduledRows, extractionResult] = await Promise.all([
+        getAllScheduledUploads(),
+        getExtractions(),
+      ])
       const scheduledMap = new Map(
         scheduledRows
           .filter((row) => row.status === 'pending')
           .map((row) => [`${row.extractionId}:${row.platform}`, row]),
       )
 
+      const allItems = toContentItems(extractionResult.items || [], scheduledMap)
+      const filtered = allItems.filter(item => matchesFilters(item, channel, status, query))
+      const totalMatched = filtered.length
       const startIndex = (page - 1) * size
-        const pageItems = []
-      let matchedCount = 0
-      let extractionPage = 1
-      const nextCounts = {
-        all: 0,
-        not_uploaded: 0,
-        scheduled: 0,
-        uploaded: 0,
-      }
+      const pageItems = filtered.slice(startIndex, startIndex + size)
+      const resolvedTotalPages = Math.max(1, Math.ceil(totalMatched / size))
 
-      while (true) {
-        const { items } = await getExtractionsPaged({
-          page: extractionPage,
-          pageSize: EXTRACTION_BATCH_SIZE,
-        })
-
-        if (!items.length) break
-
-        const batchItems = toContentItems(items, scheduledMap)
-        const countedBatch = batchItems.filter(item =>
-          matchesFilters(item, channel, 'all', query)
-        )
-        const matchedBatch = batchItems.filter(item =>
-          matchesFilters(item, channel, status, query)
-        )
-
-        countedBatch.forEach((item) => {
-          nextCounts.all += 1
-          if (item.channel === 'newsletter') return
-          if (item.uploadStatus === 'scheduled' || item.nativeSchedule) {
-            nextCounts.scheduled += 1
-            return
-          }
-          if (item.uploadStatus === 'uploaded') {
-            nextCounts.uploaded += 1
-            return
-          }
-          if (item.uploadStatus === 'not_uploaded') {
-            nextCounts.not_uploaded += 1
-          }
-        })
-
-        const nextMatchedCount = matchedCount + matchedBatch.length
-
-        if (nextMatchedCount > startIndex && pageItems.length < size) {
-          const sliceStart = Math.max(0, startIndex - matchedCount)
-          pageItems.push(...matchedBatch.slice(sliceStart, sliceStart + (size - pageItems.length)))
+      const serverStats = extractionResult.aggregateCounts?.[channel] || null
+      const nextCounts = (serverStats && !query)
+        ? {
+          all: serverStats.all,
+          not_uploaded: serverStats.not_uploaded,
+          scheduled: serverStats.scheduled,
+          uploaded: serverStats.uploaded,
         }
-
-        matchedCount = nextMatchedCount
-
-        if (items.length < EXTRACTION_BATCH_SIZE) break
-        extractionPage += 1
-      }
-
-      const resolvedTotalPages = Math.max(1, Math.ceil(matchedCount / size))
+        : (() => {
+          const counted = allItems.filter(item => matchesFilters(item, channel, 'all', query))
+          const counts = { all: 0, not_uploaded: 0, scheduled: 0, uploaded: 0 }
+          counted.forEach((item) => {
+            counts.all += 1
+            if (item.channel === 'newsletter') return
+            if (item.uploadStatus === 'scheduled' || item.nativeSchedule) {
+              counts.scheduled += 1
+              return
+            }
+            if (item.uploadStatus === 'uploaded') {
+              counts.uploaded += 1
+              return
+            }
+            if (item.uploadStatus === 'not_uploaded') {
+              counts.not_uploaded += 1
+            }
+          })
+          return counts
+        })()
 
       if (page > 1 && pageItems.length === 0) {
         setCurrentPage(page - 1)
@@ -197,15 +176,15 @@ export default function ContentPage() {
       setHasNextPage(page < resolvedTotalPages)
     } finally {
       if (showSpinner) {
-        if (hasLoadedOnce) {
+        if (hasLoadedOnceRef.current) {
           setListLoading(false)
         } else {
           setInitialLoading(false)
-          setHasLoadedOnce(true)
+          hasLoadedOnceRef.current = true
         }
       }
     }
-  }, [activeChannel, activeStatus, currentPage, hasLoadedOnce, pageSize, searchQuery])
+  }, [activeChannel, activeStatus, currentPage, pageSize, searchQuery])
 
   useEffect(() => {
     refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
@@ -362,7 +341,7 @@ export default function ContentPage() {
   }
 
   const beginFilterRefresh = () => {
-    if (hasLoadedOnce) {
+    if (hasLoadedOnceRef.current) {
       setListLoading(true)
     }
   }

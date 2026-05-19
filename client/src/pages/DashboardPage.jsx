@@ -61,12 +61,12 @@ export default function DashboardPage() {
     const load = async (showSpinner = true) => {
       if (showSpinner) setLoading(true)
       try {
-        const [items, nextConnections] = await Promise.all([
+        const [result, nextConnections] = await Promise.all([
           getExtractions(),
           loadPlatformConnections(),
         ])
         if (!cancelled) {
-          setExtractions(items)
+          setExtractions(result?.items || [])
           setPlatformConnections(nextConnections)
         }
       } catch {

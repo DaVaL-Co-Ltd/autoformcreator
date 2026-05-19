@@ -307,26 +307,60 @@ async function updateExtractionMedia(id, media, req) {
   return rowToItem(Array.isArray(data) ? data[0] : data)
 }
 
+async function fetchContentStats() {
+  try {
+    const params = new URLSearchParams()
+    params.set('select', 'channel,total_count,not_uploaded_count,scheduled_count,uploaded_count,updated_at')
+    const { data } = await restRequest(`/rest/v1/content_stats?${params.toString()}`, {
+      headers: buildRestHeaders(),
+    })
+    const rows = Array.isArray(data) ? data : []
+    if (!rows.length) return null
+    const stats = {}
+    for (const row of rows) {
+      if (!row?.channel) continue
+      stats[row.channel] = {
+        all: Number(row.total_count) || 0,
+        not_uploaded: Number(row.not_uploaded_count) || 0,
+        scheduled: Number(row.scheduled_count) || 0,
+        uploaded: Number(row.uploaded_count) || 0,
+      }
+    }
+    return stats
+  } catch {
+    return null
+  }
+}
+
 async function listExtractions({ page, pageSize } = {}) {
   const paged = typeof page === 'number' && typeof pageSize === 'number'
   const params = buildSelectParams({
-    select: paged ? EXTRACTION_LIST_COLUMNS : EXTRACTION_LIST_COLUMNS,
+    select: EXTRACTION_LIST_COLUMNS,
     orderBy: 'created_at',
     ascending: false,
-    limit: paged ? pageSize : 50,
+    limit: paged ? pageSize : 500,
     offset: paged ? (page - 1) * pageSize : 0,
   })
 
   const headers = buildRestHeaders(paged ? { prefer: 'count=exact' } : {})
-  const { data, response } = await restRequest(`/rest/v1/extractions?${params.toString()}`, { headers })
+  const [{ data, response }, aggregateCounts] = await Promise.all([
+    restRequest(`/rest/v1/extractions?${params.toString()}`, { headers }),
+    fetchContentStats(),
+  ])
 
-  if (!paged) return { items: (data || []).map(rowToItem) }
+  if (!paged) {
+    return {
+      items: (data || []).map(rowToItem),
+      aggregateCounts,
+    }
+  }
 
   const contentRange = response.headers.get('content-range') || ''
   const total = Number(contentRange.split('/')[1] || 0) || 0
   return {
     items: (data || []).map(rowToItem),
     total,
+    aggregateCounts,
   }
 }
 
