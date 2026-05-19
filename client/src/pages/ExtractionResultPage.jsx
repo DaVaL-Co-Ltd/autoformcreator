@@ -1260,81 +1260,9 @@ export default function ExtractionResultPage() {
     }
   }
 
-  const ImagePreviewStrip = ({ images, label, columns = 6 }) => {
-    if (!Array.isArray(images) || images.length === 0) return null
-    const colsClass = columns >= 6 ? 'grid-cols-3 sm:grid-cols-4 md:grid-cols-6' : 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5'
-    return (
-      <div className="bg-surface rounded-2xl border border-border p-4 space-y-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
-          <ZoomIn size={13} />
-          <span>{label} ({images.length}장)</span>
-          <span className="text-[10px] opacity-70">— 클릭하면 확대됩니다</span>
-        </div>
-        <div className={`grid gap-2 ${colsClass}`}>
-          {images.map((image, idx) => (
-            <button
-              key={`preview-${idx}-${image.alt}`}
-              type="button"
-              onClick={() => openImagePreview(image.url, image.alt)}
-              disabled={!image.url}
-              className="group relative aspect-square overflow-hidden rounded-lg border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              title={image.alt}
-            >
-              {image.url ? (
-                <>
-                  <img
-                    src={image.url}
-                    alt={image.alt}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
-                    <ZoomIn size={18} className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
-                  </div>
-                </>
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-surface-light text-[10px] text-text-muted">
-                  준비 중...
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   const renderBlog = () => {
     const blogTags = normalizeBlogTags(blogContent)
     const blogTagText = buildBlogTagText(blogTags)
-    const previewBlogImageList = (() => {
-      const list = []
-      const blogImageList = ensureArray(blogImages)
-      const seen = new Set()
-      const push = (url, alt) => {
-        if (!url || seen.has(url)) return
-        seen.add(url)
-        list.push({ url, alt })
-      }
-      const thumb = blogImageList.find((img) => img?.isThumbnail && (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl))
-      if (thumb) {
-        push(thumb.renderedImageUrl || thumb.pngUrl || thumb.imageUrl, '블로그 썸네일')
-      }
-      const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
-      ensureArray(blogContent?.sections).forEach((section, index) => {
-        const png = blogPngUrls[index]
-        if (png) {
-          push(png, section?.heading || `블로그 이미지 ${index + 1}`)
-          return
-        }
-        const match = sectionImageList.find((img) =>
-          img?.heading && section?.heading && img.heading === section.heading
-        ) || sectionImageList[index]
-        const url = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl
-        if (url) push(url, section?.heading || `블로그 이미지 ${index + 1}`)
-      })
-      return list
-    })()
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -1415,12 +1343,6 @@ export default function ExtractionResultPage() {
           </button>
           </div>
         </div>
-
-        <ImagePreviewStrip
-          images={previewBlogImageList}
-          label="블로그 이미지 미리보기"
-          columns={6}
-        />
 
         <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
           <div className="p-6 sm:p-8 border-b border-border">
@@ -1727,19 +1649,6 @@ export default function ExtractionResultPage() {
         }) || ensureArray(instagramImages)[0]
       )
     const currentCardPngUrl = currentInstagramImage?.renderedImageUrl || currentInstagramImage?.pngUrl || instaPngUrls[instaSlide] || null
-    const previewInstagramImageList = cards.map((card, idx) => {
-      const cardNumber = getInstagramCardNumber(card, idx)
-      const cardImage = card?.isCaptionCta
-        ? (ensureArray(instagramImages)[ensureArray(instagramImages).length - 1] || ensureArray(instagramImages)[0])
-        : (
-          ensureArray(instagramImages).find((image, i) => {
-            const imageCardNumber = image?.cardNumber || image?.card_number || i + 1
-            return imageCardNumber === cardNumber
-          }) || ensureArray(instagramImages)[0]
-        )
-      const url = cardImage?.renderedImageUrl || cardImage?.pngUrl || instaPngUrls[idx] || null
-      return { url, alt: card?.title || card?.heading || `인스타 카드 ${cardNumber}` }
-    })
     const hashtags = ensureArray(instagramContent?.hashtags)
     const sanitizedCaption = stripResultCtaText(buildInstagramCaption(instagramContent))
     const renderInstaCardArt = (card, cardIndex, attachRef = false) => {
@@ -1805,12 +1714,6 @@ export default function ExtractionResultPage() {
             </button>
           </div>
         </div>
-
-        <ImagePreviewStrip
-          images={previewInstagramImageList}
-          label="인스타 카드 미리보기"
-          columns={6}
-        />
 
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
           <div className="space-y-4 sm:w-[440px] sm:shrink-0">

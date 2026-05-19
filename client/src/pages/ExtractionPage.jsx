@@ -2405,6 +2405,81 @@ ${parsedText}
       </div>
     )
   }
+
+  const ContentImagePreviewStrip = ({ images, label }) => {
+    if (!Array.isArray(images) || images.length === 0) return null
+    return (
+      <div className="rounded-lg border border-border bg-surface-light p-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-text-muted">
+          <ImageIcon size={12} />
+          <span>{label} ({images.length}장)</span>
+          <span className="text-[10px] opacity-70">— 클릭하면 확대됩니다</span>
+        </div>
+        <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
+          {images.map((image, idx) => (
+            <button
+              key={`content-preview-${idx}-${image.alt || idx}`}
+              type="button"
+              onClick={() => image.url && setImageLightbox({ kind: 'image', src: image.url })}
+              disabled={!image.url}
+              title={image.alt}
+              className="group relative aspect-square overflow-hidden rounded-md border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {image.url ? (
+                <img src={image.url} alt={image.alt || ''} className="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-surface text-[10px] text-text-muted">
+                  준비 중...
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const blogPreviewImages = (() => {
+    const blogImageList = Array.isArray(blogImages) ? blogImages : []
+    if (!blogImageList.length) return []
+    const list = []
+    const seen = new Set()
+    const push = (url, alt) => {
+      if (!url || seen.has(url)) return
+      seen.add(url)
+      list.push({ url, alt })
+    }
+    const thumb = blogImageList.find((img) => img?.isThumbnail && (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl))
+    if (thumb) {
+      push(thumb.renderedImageUrl || thumb.pngUrl || thumb.imageUrl, '블로그 썸네일')
+    }
+    const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
+    const sections = Array.isArray(blogContent?.sections) ? blogContent.sections : []
+    sections.forEach((section, index) => {
+      const match = sectionImageList.find((img) =>
+        img?.heading && section?.heading && img.heading === section.heading
+      ) || sectionImageList[index]
+      const url = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl
+      if (url) push(url, section?.heading || `블로그 이미지 ${index + 1}`)
+    })
+    return list
+  })()
+
+  const instagramPreviewImages = (() => {
+    const cards = Array.isArray(instagramContent?.cardTopics) ? instagramContent.cardTopics : []
+    const images = Array.isArray(instagramImages) ? instagramImages : []
+    if (!cards.length || !images.length) return []
+    return cards.map((card, idx) => {
+      const cardNumber = card?.cardNumber || card?.card_number || idx + 1
+      const match = images.find((img, i) => {
+        const imageCardNumber = img?.cardNumber || img?.card_number || i + 1
+        return imageCardNumber === cardNumber
+      }) || images[idx]
+      const url = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
+      return { url, alt: card?.headline || card?.title || `인스타 카드 ${cardNumber}` }
+    }).filter((item) => item.url)
+  })()
+
   const contentStepRows = [
     { key: 'blog', stepId: 3, label: '네이버 블로그', icon: FileText, color: 'text-emerald-500 bg-emerald-500/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
     { key: 'newsletter', stepId: 4, label: '뉴스레터', icon: Mail, color: 'text-blue-500 bg-blue-500/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
@@ -3044,6 +3119,7 @@ ${parsedText}
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
+                      <ContentImagePreviewStrip images={blogPreviewImages} label="블로그 이미지 미리보기" />
                       {blogContent.sections?.map((sec, i) => (
                         <div key={i} className="border-l-2 border-primary/30 pl-3">
                           <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
@@ -3075,6 +3151,7 @@ ${parsedText}
                   {row.key === 'instagram' && instagramContent && (
                     <div className="space-y-3">
                       {instagramContent.caption && <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>}
+                      <ContentImagePreviewStrip images={instagramPreviewImages} label="인스타 카드 미리보기" />
                       {instagramContent.cardTopics?.length > 0 && (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {instagramContent.cardTopics.map((card, i) => (
