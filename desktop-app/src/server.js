@@ -55,7 +55,8 @@ function isAllowedOrigin(origin) {
 
 function applyCorsResponseHeaders(req, res) {
   const origin = req.get('origin')
-  if (origin && isAllowedOrigin(origin)) {
+  const originAllowed = origin && isAllowedOrigin(origin)
+  if (originAllowed) {
     res.setHeader('Access-Control-Allow-Origin', origin)
   }
 
@@ -66,8 +67,13 @@ function applyCorsResponseHeaders(req, res) {
     req.get('Access-Control-Request-Headers') || `Content-Type, ${UPLOAD_CLIENT_HEADER}`
   )
 
-  if (origin && isAllowedOrigin(origin) && req.get('Access-Control-Request-Private-Network') === 'true') {
-    res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  if (originAllowed) {
+    if (req.get('Access-Control-Request-Private-Network') === 'true') {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true')
+    }
+    if (req.get('Access-Control-Request-Local-Network-Access') === 'true') {
+      res.setHeader('Access-Control-Allow-Local-Network-Access', 'true')
+    }
   }
 }
 
