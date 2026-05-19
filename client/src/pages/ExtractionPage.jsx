@@ -23,8 +23,13 @@ import {
   deriveBlogHeadline,
   deriveBlogImageDescription,
 } from '../utils/contentImageOverlay'
-import { renderBlogUploadImageDataUrl, renderInstagramUploadImageDataUrl } from '../utils/uploadImageComposite'
-import { buildInstagramDisplayCards } from '../utils/instagramCarousel'
+import { renderBlogUploadImageDataUrl } from '../utils/uploadImageComposite'
+import {
+  buildInstagramDisplayCards,
+  buildInstagramKnowledgeBullets,
+  getInstagramCardNumber,
+  getInstagramOverlayTitle,
+} from '../utils/instagramCarousel'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
@@ -779,71 +784,6 @@ export default function ExtractionPage() {
       cancelled = true
     }
   }, [blogImages, blogContent])
-
-  useEffect(() => {
-    let cancelled = false
-
-    const hydrateRenderedInstagramImages = async () => {
-      const images = Array.isArray(instagramImages) ? instagramImages : []
-      if (!images.length || !instagramContent) return
-
-      const cards = buildInstagramDisplayCards(instagramContent)
-      if (!cards.length) return
-
-      const needsRenderedPreview = images.some((image) => (
-        image
-        && image?.imageUrl
-        && !image?.renderedImageUrl
-        && !image?.pngUrl
-      ))
-      if (!needsRenderedPreview) return
-
-      const cardStyle = instagramContent?.cardStyle || 'background-text'
-
-      const nextImages = await Promise.all(images.map(async (image, index) => {
-        if (!image || !image.imageUrl || image.renderedImageUrl || image.pngUrl) return image
-
-        const cardNumber = image.cardNumber || image.card_number || index + 1
-        const matchedIndex = cards.findIndex((card, i) => {
-          const num = card?.cardNumber || card?.card_number || i + 1
-          return num === cardNumber
-        })
-        const cardIndex = matchedIndex >= 0 ? matchedIndex : Math.min(index, cards.length - 1)
-        const card = cards[cardIndex]
-        if (!card) return image
-
-        try {
-          const renderedImageUrl = await renderInstagramUploadImageDataUrl({
-            imageUrl: image.imageUrl,
-            card,
-            cardIndex,
-            cardStyle,
-          })
-          if (!renderedImageUrl || renderedImageUrl === image.imageUrl) return image
-          return {
-            ...image,
-            renderedImageUrl,
-            pngUrl: renderedImageUrl,
-          }
-        } catch {
-          return image
-        }
-      }))
-
-      if (cancelled) return
-
-      const changed = nextImages.some((image, index) => image !== images[index])
-      if (changed) {
-        setInstagramImages(nextImages)
-      }
-    }
-
-    hydrateRenderedInstagramImages()
-
-    return () => {
-      cancelled = true
-    }
-  }, [instagramImages, instagramContent])
 
   const applyBlogThumbnailState = ({ uploadedImages = blogUploadedImagesRef.current, generatedImages = blogImages, disabled = blogThumbnailDisabled }) => {
     const normalized = normalizeBlogThumbnailSelection({
@@ -1656,12 +1596,39 @@ DO NOT:
         }
         // 솔로 standard 면 talkingPhotoId 한 명, 멀티면 round-robin.
         // sceneAvatarIds 가 정의된 솔로 컨셉은 같은 인물의 variant 들을 씬마다 순환.
+        // randomVariantPerVideo: true → 영상 1개당 1개를 랜덤 픽해 모든 씬에 동일 적용
+        //   (한 영상 안에서는 같은 배경, 영상마다 배경이 달라짐 — dongwan_secret).
+        // shuffleSceneVariants: true → 영상 생성 시마다 풀을 셔플해 씬마다 다른 variant
+        //   (한 영상 안에서 룩 다양, 영상마다 4가지 룩 조합도 달라짐 — godsaeng_routine).
         const hasSceneAvatars = !useMultiAvatar
           && Array.isArray(selectedConcept?.sceneAvatarIds)
           && selectedConcept.sceneAvatarIds.length > 0
+        const randomVariantPerVideo = hasSceneAvatars
+          && selectedConcept.randomVariantPerVideo === true
+        const shuffleSceneVariants = hasSceneAvatars
+          && !randomVariantPerVideo
+          && selectedConcept.shuffleSceneVariants === true
+        const pickedVariantId = randomVariantPerVideo
+          ? selectedConcept.sceneAvatarIds[
+              Math.floor(Math.random() * selectedConcept.sceneAvatarIds.length)
+            ]
+          : null
+        const shuffledSceneAvatarIds = shuffleSceneVariants
+          ? [...selectedConcept.sceneAvatarIds].sort(() => Math.random() - 0.5)
+          : null
+        if (pickedVariantId) {
+          console.log(`[shorts] ${selectedConcept.id}: variant ${pickedVariantId} 랜덤 픽 (영상 전 씬 동일 적용)`)
+        }
+        if (shuffledSceneAvatarIds) {
+          console.log(`[shorts] ${selectedConcept.id}: variant 셔플 — 앞 ${Math.min(scenesForStandard.length, shuffledSceneAvatarIds.length)}개: ${shuffledSceneAvatarIds.slice(0, scenesForStandard.length).join(', ')}`)
+        }
         const conceptAvatarIds = useMultiAvatar
           ? selectedConcept.preferredAvatarIds
-          : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [talkingPhotoId])
+          : (pickedVariantId
+              ? [pickedVariantId]
+              : (shuffledSceneAvatarIds
+                  ? shuffledSceneAvatarIds
+                  : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [talkingPhotoId])))
 
         // dialogue-shared-bg / quiz-shared-bg: 한 영상에서 모든 씬이 1장의 배경 공유. 미리 1회만 fetch.
         let sharedDialogueBgKey = null
@@ -2470,42 +2437,133 @@ ${parsedText}
     )
   }
 
-  const ContentImagePreviewStrip = ({ images, label }) => {
-    if (!Array.isArray(images) || images.length === 0) return null
+  const ScaledKnowledgeCard = ({ headline, bullets, imageUrl, index = 0 }) => {
+    const wrapperRef = useRef(null)
+    const innerRef = useRef(null)
+
+    useEffect(() => {
+      const wrapper = wrapperRef.current
+      const inner = innerRef.current
+      if (!wrapper || !inner) return undefined
+      const update = () => {
+        const size = wrapper.clientWidth
+        if (!size) return
+        inner.style.transform = `scale(${size / 600})`
+      }
+      update()
+      if (typeof ResizeObserver === 'undefined') return undefined
+      const ro = new ResizeObserver(update)
+      ro.observe(wrapper)
+      return () => ro.disconnect()
+    }, [])
+
     return (
-      <div className="rounded-lg border border-border bg-surface-light p-3 space-y-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-text-muted">
-          <ImageIcon size={12} />
-          <span>{label} ({images.length}장)</span>
-          <span className="text-[10px] opacity-70">— 클릭하면 확대됩니다</span>
-        </div>
-        <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
-          {images.map((image, idx) => (
-            <button
-              key={`content-preview-${idx}-${image.alt || idx}`}
-              type="button"
-              onClick={() => image.url && setImageLightbox({ kind: 'image', src: image.url })}
-              disabled={!image.url}
-              title={image.alt}
-              className="group relative aspect-square overflow-hidden rounded-md border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {image.url ? (
-                <img src={image.url} alt={image.alt || ''} className="w-full h-full object-cover" loading="lazy" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-surface text-[10px] text-text-muted">
-                  준비 중...
-                </div>
-              )}
-            </button>
-          ))}
+      <div ref={wrapperRef} className="relative aspect-square w-full overflow-hidden bg-white">
+        <div
+          ref={innerRef}
+          className="absolute top-0 left-0 origin-top-left"
+          style={{ width: 600, height: 600 }}
+        >
+          <KnowledgeInsightCard
+            index={index}
+            headline={headline}
+            bullets={bullets}
+            imageUrl={imageUrl}
+          />
         </div>
       </div>
     )
   }
 
-  const blogPreviewImages = (() => {
+  const ContentImagePreviewStrip = ({ items, label }) => {
+    if (!Array.isArray(items) || items.length === 0) return null
+    return (
+      <div className="rounded-lg border border-border bg-surface-light p-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-text-muted">
+          <ImageIcon size={12} />
+          <span>{label} ({items.length}장)</span>
+          <span className="text-[10px] opacity-70">— 클릭하면 확대됩니다</span>
+        </div>
+        <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
+          {items.map((item, idx) => {
+            if (item.card) {
+              const { headline, bullets, imageUrl, index } = item.card
+              const clickable = headline || (bullets && bullets.length > 0)
+              return (
+                <button
+                  key={`content-preview-${idx}-${item.alt || idx}`}
+                  type="button"
+                  onClick={() => clickable && setImageLightbox({
+                    kind: 'knowledge',
+                    headline,
+                    bullets,
+                    imageUrl,
+                    index,
+                  })}
+                  disabled={!clickable}
+                  title={item.alt}
+                  className="group relative aspect-square overflow-hidden rounded-md border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ScaledKnowledgeCard
+                    headline={headline}
+                    bullets={bullets}
+                    imageUrl={imageUrl}
+                    index={index}
+                  />
+                </button>
+              )
+            }
+            return (
+              <button
+                key={`content-preview-${idx}-${item.alt || idx}`}
+                type="button"
+                onClick={() => item.url && setImageLightbox({ kind: 'image', src: item.url })}
+                disabled={!item.url}
+                title={item.alt}
+                className="group relative aspect-square overflow-hidden rounded-md border border-border bg-white hover:border-primary/50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {item.url ? (
+                  <img src={item.url} alt={item.alt || ''} className="w-full h-full object-cover" loading="lazy" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-surface text-[10px] text-text-muted">
+                    준비 중...
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const blogPreviewItems = (() => {
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
     if (!blogImageList.length) return []
+    const sections = Array.isArray(blogContent?.sections) ? blogContent.sections : []
+    const blogCategoryId = blogContent?.categoryInfo?.finalCategoryId || ''
+    const usesKnowledgeCards = (blogCategoryId === 'knowledge_insight' || blogCategoryId === 'interview_prep')
+      && blogImageList.some((img) => img?.imageVersion === 'knowledge-insight-corner')
+
+    if (usesKnowledgeCards) {
+      const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
+      return sections.map((section, index) => {
+        const match = sectionImageList.find((img) =>
+          img?.heading && section?.heading && img.heading === section.heading
+        ) || sectionImageList[index]
+        const cornerImageUrl = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
+        const cardSummary = section?.cardSummary || {}
+        const headline = String(cardSummary.headline || section?.heading || '').trim()
+        const bullets = Array.isArray(cardSummary.bullets)
+          ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
+          : []
+        return {
+          alt: section?.heading || `블로그 카드 ${index + 1}`,
+          card: { headline, bullets, imageUrl: cornerImageUrl, index },
+        }
+      }).filter((item) => item.card.headline || item.card.bullets.length > 0 || item.card.imageUrl)
+    }
+
     const list = []
     const seen = new Set()
     const push = (url, alt) => {
@@ -2518,7 +2576,6 @@ ${parsedText}
       push(thumb.renderedImageUrl || thumb.pngUrl || thumb.imageUrl, '블로그 썸네일')
     }
     const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
-    const sections = Array.isArray(blogContent?.sections) ? blogContent.sections : []
     sections.forEach((section, index) => {
       const match = sectionImageList.find((img) =>
         img?.heading && section?.heading && img.heading === section.heading
@@ -2529,19 +2586,27 @@ ${parsedText}
     return list
   })()
 
-  const instagramPreviewImages = (() => {
-    const cards = Array.isArray(instagramContent?.cardTopics) ? instagramContent.cardTopics : []
+  const instagramPreviewItems = (() => {
+    if (!instagramContent) return []
+    const displayCards = buildInstagramDisplayCards(instagramContent)
     const images = Array.isArray(instagramImages) ? instagramImages : []
-    if (!cards.length || !images.length) return []
-    return cards.map((card, idx) => {
-      const cardNumber = card?.cardNumber || card?.card_number || idx + 1
-      const match = images.find((img, i) => {
-        const imageCardNumber = img?.cardNumber || img?.card_number || i + 1
-        return imageCardNumber === cardNumber
-      }) || images[idx]
-      const url = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
-      return { url, alt: card?.headline || card?.title || `인스타 카드 ${cardNumber}` }
-    }).filter((item) => item.url)
+    if (!displayCards.length) return []
+    return displayCards.map((card, idx) => {
+      const cardNumber = getInstagramCardNumber(card, idx)
+      const match = card?.isCaptionCta
+        ? (images[images.length - 1] || images[0])
+        : (images.find((img, i) => {
+          const imageCardNumber = img?.cardNumber || img?.card_number || i + 1
+          return imageCardNumber === cardNumber
+        }) || images[idx])
+      const cornerImageUrl = match?.imageUrl || null
+      const headline = getInstagramOverlayTitle(card, idx)
+      const bullets = buildInstagramKnowledgeBullets(card)
+      return {
+        alt: card?.title || card?.heading || `인스타 카드 ${cardNumber}`,
+        card: { headline, bullets, imageUrl: cornerImageUrl, index: idx },
+      }
+    }).filter((item) => item.card.headline || item.card.bullets.length > 0 || item.card.imageUrl)
   })()
 
   const contentStepRows = [
@@ -3179,7 +3244,7 @@ ${parsedText}
                   )}
                   {row.key === 'blog' && blogContent && (
                     <div className="space-y-4">
-                      <ContentImagePreviewStrip images={blogPreviewImages} label="블로그 이미지 미리보기" />
+                      <ContentImagePreviewStrip items={blogPreviewItems} label="블로그 이미지 미리보기" />
                       <div>
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
@@ -3214,7 +3279,7 @@ ${parsedText}
                   )}
                   {row.key === 'instagram' && instagramContent && (
                     <div className="space-y-3">
-                      <ContentImagePreviewStrip images={instagramPreviewImages} label="인스타 카드 미리보기" />
+                      <ContentImagePreviewStrip items={instagramPreviewItems} label="인스타 카드 미리보기" />
                       {instagramContent.caption && <p className="text-sm text-text whitespace-pre-wrap">{instagramContent.caption}</p>}
                       {instagramContent.cardTopics?.length > 0 && (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

@@ -61,6 +61,26 @@ export function getInstagramOverlayTitle(card = {}, index = 0) {
   )
 }
 
+export function buildInstagramKnowledgeBullets(card = {}) {
+  if (Array.isArray(card?.bullets) && card.bullets.length > 0) {
+    return card.bullets.map((line) => String(line || '').trim()).filter(Boolean).slice(0, 4)
+  }
+  const collected = []
+  const pushUnique = (value) => {
+    const trimmed = String(value || '').trim()
+    if (!trimmed) return
+    if (collected.includes(trimmed)) return
+    collected.push(trimmed)
+  }
+  pushUnique(card?.dataPoint)
+  String(card?.content || '')
+    .split(/(?<=[.!?。！？])\s+|\n+/u)
+    .forEach((piece) => pushUnique(piece))
+  pushUnique(card?.subtitle)
+  pushUnique(card?.summary)
+  return collected.slice(0, 4)
+}
+
 export function getInstagramOverlayLines(card = {}) {
   if (isInstagramCaptionCtaCard(card)) return [CTA_LINE]
 
