@@ -30,7 +30,8 @@ begin
       not_uploaded_count = 0,
       scheduled_count = 0,
       uploaded_count = 0,
-      updated_at = timezone('utc', now());
+      updated_at = timezone('utc', now())
+  where channel is not null;
 
   with channels as (
     select 'blog'::text as channel, e.upload_status->'blog' as info from public.extractions e where e.blog_content is not null
