@@ -7,6 +7,14 @@
 //   - 솔로 컨셉(preferredAvatarIds 1개) 위에 얹는 옵션이라 useMultiAvatar 분기는 타지 않는다.
 //   - 씬 수가 배열 길이보다 많으면 mod 순환.
 //   - 정의되지 않으면 preferredAvatarIds[0] 만 사용 (기존 동작).
+// randomVariantPerVideo (선택, sceneAvatarIds 와 함께만 의미 있음):
+//   - true 면 영상 1개를 만들 때 sceneAvatarIds 중 1개를 랜덤으로 뽑아 모든 씬에 동일 적용한다.
+//     → 한 영상 안에서는 같은 배경, 영상마다 배경이 달라짐 (dongwan_secret 처럼 "같은 방" 가이드용).
+//   - false/생략이면 기본 동작(씬마다 mod 순환).
+// shuffleSceneVariants (선택, sceneAvatarIds 와 함께만 의미 있음):
+//   - true 면 영상 1개를 만들 때마다 sceneAvatarIds 풀을 랜덤 셔플해 씬마다 서로 다른 variant 를 쓴다.
+//     → 같은 인물의 여러 룩이 한 영상에서 순환, 영상마다 룩 조합이 달라짐 (godsaeng_routine 브이로그 흐름용).
+//   - randomVariantPerVideo 와 동시에 true 면 randomVariantPerVideo 가 우선한다.
 // testScript 는 컨셉 테스트용 약 15초 분량 대본.
 // 아바타 ID 는 heygenAvatars.js 의 단일 진실 소스(HEYGEN_AVATAR_IDS) 에서만 참조한다.
 // (단 sceneAvatarIds 는 같은 인물의 variant 라 raw 문자열로 작성한다.)
@@ -68,12 +76,22 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '저장·공유를 자연스럽게 유도하는 CTA로 마무리.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.male_student],
-    // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용".
-    // 모든 씬에 동일한 "Jace" variant 1종 적용 — 영상 1개 안에서 배경 일관성 유지.
-    // 기본 male_student (해변 선베드) 가 컨셉의 "아늑한 방" 가이드와 안 맞아 실내 variant 로 override.
+    // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용" + 영상마다 분위기 변화.
+    // → randomVariantPerVideo: true 로 영상 1개당 1개 variant 를 랜덤 픽 후 모든 씬에 동일 적용.
+    // 풀은 "아늑한 방" 가이드와 잘 맞는 실내 variant 7종 (정확 4 + 보더라인 3).
+    // 기본 male_student (해변 선베드) 같은 야외/해변 variant 는 의도적으로 제외.
     sceneAvatarIds: [
-      '0893ea6525994226a96b654cd729b742', // 창가 소파 앉음, 회색 맨투맨, 컵 — "소파에 기대거나" 가이드 매칭
+      // 정확 매칭 (아늑한 방·거실·창가)
+      '0893ea6525994226a96b654cd729b742', // 창가 소파 앉음, 회색 맨투맨, 컵
+      '0d67157b8c3c40a3b381dc60d0f2614e', // 거실 정면, 회색 라운드넥 티셔츠
+      '98514c36beb94007a1ab493d583cf5c6', // 의자 컵, 모던 거실 라운지
+      'f3db5b47238c4a4ba58885d24a3f1faa', // 창가 제스처, 회색 맨투맨
+      // 보더라인 (실내지만 톤이 살짝 formal)
+      '726a2f45007c41da89f4fde587796ece', // 스튜디오 정면, 차콜 셔츠
+      '440f2af83f58425ab54a3f163a7dfd52', // 실내 정면샷, 차콜 카라 셔츠
+      'f55a98c799b84d859469982014ab9e3c', // 모던 오피스, 차콜 반팔 셔츠
     ],
+    randomVariantPerVideo: true,
     useStandardEndpoint: true,
     testScript: {
       title: '동완쌤 전수 수행평가 치트키 3',
@@ -112,14 +130,24 @@ export const SHORTS_VIDEO_CONCEPTS = [
       '말투는 친근하고 조곤조곤한 브이로그 톤. 청소년 팬덤 형성과 시각 만족 우선.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.female_student],
-    // 컨셉 가이드: "씬마다 배경 장소가 바뀌는 브이로그 흐름: 새벽 침실 → 공부 책상 → 카페·거실 → 저녁 책상".
-    // 같은 인물 "Alexa" 의 variant 4종을 씬마다 다른 배경으로 순환 적용해 브이로그 톤 구현.
+    // 컨셉 가이드: 씬마다 배경 장소가 바뀌는 브이로그 흐름 — 영상마다 룩 조합 다양화.
+    // 같은 인물 "Alexa" 12 variant 전부를 풀에 넣고 shuffleSceneVariants 로
+    // 영상 생성 시마다 셔플해 씬마다 다른 룩을 뽑는다 (영상마다 다른 4가지 룩 조합).
     sceneAvatarIds: [
-      '62bc0097e3ec4154bd8133e73c6ff12d', // 씬 1: 창가 침실, 핑크 니트 — 새벽 침실
-      'd4a53ea25a724aacb252c5e6f273b6e4', // 씬 2: 계단 앉음, 베이지 가디건 — 공부 자리 대용
-      '8813a91ea46847cd80baffbaa5f2b17e', // 씬 3: 카페 앉음, 컵 — 카페 코너
-      '04e3819affbe42f3ba0b8df2688f1576', // 씬 4: 소파 앉음, 크림 가디건 — 저녁 거실 마무리
+      '62b02a920a78424e94f63f2ddb85dc99', // 창가 미소, 흰 홀터넥 + 헤어밴드
+      '62bc0097e3ec4154bd8133e73c6ff12d', // 창가 침실, 핑크 니트
+      'a5454d8b999d4e5f87f486605465aae4', // 창가 가디건, 베이지 (기본 변형)
+      '10e2042ed6b04649af6421221795e75c', // 야외 카페, 크림 니트 + 청바지
+      '8813a91ea46847cd80baffbaa5f2b17e', // 카페 앉음, 베이지 니트 + 컵
+      '04e3819affbe42f3ba0b8df2688f1576', // 거실 소파 앉음, 크림 가디건
+      'd4a53ea25a724aacb252c5e6f273b6e4', // 계단 앉음, 베이지 가디건
+      '057d99ff22cc47a9be6d5773cb46e2e0', // 거실 셀카, 검정 테두리 가디건
+      'dac36601dd9447a7a41d88b37dbac8d6', // 창가 복도 인사, 베이지 + 블루 셔츠
+      '539574131395485aac85c015c72cecb0', // 거실 소파 미소, 검정 카라 베이지 가디건
+      '7e16d04300e74074bc77e7c0bfb97e87', // 복도 셀카, 베이지 니트 + 하늘색 셔츠
+      '7a9c3518725e4f788b61df77e7d36c34', // 창가 복도, 흰 홀터넥 + 베이지 가디건
     ],
+    shuffleSceneVariants: true,
     useStandardEndpoint: true,
     testScript: {
       title: '상위 0.1퍼센트 갓생 루틴',
