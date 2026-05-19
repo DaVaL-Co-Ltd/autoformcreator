@@ -118,7 +118,7 @@ const appendBlogTagsToBody = (content = '', tags = []) => {
   if (!trimmedContent) return tagText
   if (trimmedContent.includes(tagText)) return trimmedContent
 
-  return `${trimmedContent}\n\n\n${tagText}`
+  return `${trimmedContent}\n\n${tagText}`
 }
 
 const stripResultCtaText = (value) => {
