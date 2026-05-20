@@ -17,7 +17,7 @@ const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
   },
   shorts: {
     title: '유튜브 쇼츠/인스타그램 릴스 추천 시간',
-    items: ['평일 기준', '오후 12시~3시', '오후 7시~10시'],
+    items: ['평일 오전 11시~오후 1시', '평일 오후 5시~8시', '주말 오후 8시~밤 12시'],
   },
 }
 
