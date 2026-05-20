@@ -68,6 +68,14 @@ function buildSceneLines(script) {
   return (script?.scenes || [])
     .map((scene) => {
       const overlay = scene?.textOverlay ? ` / 화면 텍스트: ${scene.textOverlay}` : ''
+      // layout === 'infographic-full' 은 컨셉이 명시적으로 "이 씬은 아바타 없는 풀화면 인포그래픽" 으로
+      // 선언한 것. heuristic 보다 우선해 HeyGen Video Agent 에 강하게 지시한다.
+      if (scene?.layout === 'infographic-full') {
+        const visual = scene?.visualDescription
+          ? ` / Visual content for HeyGen to render: ${scene.visualDescription}`
+          : ''
+        return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${scene.narration}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
+      }
       const layoutDirection = sceneNeedsTextOnlyOverlay(scene)
         ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
         : ' / Layout direction: keep the avatar on screen and use only a small, compact text overlay away from the subtitle zone and avatar face.'
@@ -98,10 +106,14 @@ export function buildShortsVideoAgentPrompt({
   // 음성 캐릭터·톤은 아바타에 미리 묶인 HeyGen voice 가 결정한다.
   // 프롬프트에서는 voice 의 일관성만 강제하고, 특성 지시는 넣지 않는다.
   const resolvedVoiceInstruction = 'Keep the same single narrator voice across the entire video with consistent identity, tone, and pitch from scene to scene.'
+  // 인포그래픽 씬이 하나라도 있으면 mixed-scene 처리 룰을 상단에 명시한다.
+  const hasInfographicScenes = (script?.scenes || []).some((s) => s?.layout === 'infographic-full')
 
   return [
     'Create a polished vertical 9:16 YouTube Shorts video in Korean.',
     `Target duration: about ${duration} seconds.`,
+    hasInfographicScenes ? 'This video MIXES AVATAR scenes and INFOGRAPHIC-ONLY scenes — follow each scene\'s Layout direction EXACTLY. In AVATAR scenes the named avatar appears on screen; in INFOGRAPHIC-ONLY scenes the avatar must be completely hidden and the entire frame is replaced with an AI-generated data card / chart / keyword graphic that HeyGen renders from the Visual content given in that scene.' : '',
+    hasInfographicScenes ? 'INFOGRAPHIC-ONLY scenes play the narration as a voice-over only — use the same single narrator voice as the avatar scenes so the audio identity is continuous across the whole video.' : '',
     'Keep the pacing fast, informative, and optimized for short-form retention.',
     'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment and a compact rounded text card placed above the subtitle area.',
     'Include burned-in Korean subtitles across the full video by default.',
@@ -118,14 +130,20 @@ export function buildShortsVideoAgentPrompt({
     'Never place labels, headlines, highlights, charts, or callout text inside the bottom subtitle zone.',
     'For regular scenes, place compact text overlays in the upper-safe area or the lower-left safe area above subtitles, never over the face.',
     'Prefer top-safe, upper-middle-safe, or lower-left-safe placement for all scene text overlays.',
-    'Only switch to a text-only or infographic-only scene when a scene is genuinely crowded with numbers, rankings, percentages, comparisons, or multiple dense factual lines.',
-    'For normal scenes, keep the avatar on screen and use only a light, compact overlay.',
-    'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
-    'When using a text-only scene, keep the center and bottom subtitle area separate so subtitles never collide with the main data card.',
+    // 인포그래픽 씬이 명시돼 있으면 "아껴 써라 / 데이터 빽빽할 때만" 류의 옛 heuristic 문구는
+    // 씬별 명시 지시와 정면 충돌하므로 넣지 않는다. 대신 마커가 최종임을 못 박는다.
+    hasInfographicScenes
+      ? 'The scene plan below explicitly labels each scene as either an AVATAR scene or an INFOGRAPHIC-ONLY scene — these labels are FINAL and authoritative. Do NOT reclassify any scene: never turn a labelled INFOGRAPHIC-ONLY scene back into an avatar scene, and never add the avatar to it, regardless of how few numbers its narration has.'
+      : 'Only switch to a text-only or infographic-only scene when a scene is genuinely crowded with numbers, rankings, percentages, comparisons, or multiple dense factual lines.',
+    hasInfographicScenes
+      ? 'Every scene labelled INFOGRAPHIC-ONLY must fill the entire frame with the data / chart / keyword graphic and contain zero avatar pixels; every scene labelled as an avatar scene keeps the avatar on screen.'
+      : 'For normal scenes, keep the avatar on screen and use only a light, compact overlay.',
+    hasInfographicScenes ? '' : 'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
+    'When using a text-only or infographic-only scene, keep the center and bottom subtitle area separate so subtitles never collide with the main data card.',
     avatarName
       ? avatarKind === 'talking_photo'
-        ? `Use my custom HeyGen talking photo avatar named "${avatarName}".`
-        : `Use the HeyGen stock avatar named "${avatarName}".`
+        ? `Use my custom HeyGen talking photo avatar named "${avatarName}"${hasInfographicScenes ? ' in AVATAR scenes only — it must NOT appear in INFOGRAPHIC-ONLY scenes' : ''}.`
+        : `Use the HeyGen stock avatar named "${avatarName}"${hasInfographicScenes ? ' in AVATAR scenes only — it must NOT appear in INFOGRAPHIC-ONLY scenes' : ''}.`
       : '',
     resolvedVoiceInstruction,
     videoStyle && videoStyle !== 'auto' ? `Visual direction: ${videoStyle}.` : '',

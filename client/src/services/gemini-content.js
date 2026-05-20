@@ -1419,10 +1419,11 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)
-- layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
-- 'infographic-full' 을 쓰면 scenes[].visualDescription 에 headline, hero value(예: "+12.4%"), chart 종류(bar/pie/line), subtitle, 색상 톤(예: navy + gold)을 영어로 한 문장에 자세히 풀어 쓰세요 — Gemini Image 가 이 묘사대로 풀화면 인포그래픽을 생성합니다. "no avatar visible", "no people" 을 반드시 포함하세요. 인포그래픽 씬은 첫 씬·마지막 씬에는 쓰지 말고, 수치·통계·비교가 핵심인 중간 씬에만 쓰세요.
-- 'dialogue-shared-bg' 와 'quiz-shared-bg' 를 쓰면 최상위 sharedBackground.visualDescription 필드를 한 번 채우고, 각 씬은 동일한 sharedBackground 를 공유한다고 가정하세요.
+- layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'dialogue-shared-bg' (공유 배경 + 좌우 화자 교차), 'quiz-shared-bg' (공유 배경 + 중앙 풀샷 인물 교차), 'quiz-countdown' (퀴즈 대기 씬 · 같은 인물 idle · 3초 카운트다운 배경), 'solo-shared-bg' (공유 배경 + 중앙 풀샷 솔로 아바타), 'full-vlog' (풀화면 + 씬마다 다른 브이로그 배경).
+- 'infographic-full' 을 쓰면 scenes[].visualDescription 에 headline, hero value(예: "+12.4%"), chart 종류(bar/pie/line), subtitle, 색상 톤(예: navy + gold)을 영어로 한 문장에 자세히 풀어 쓰세요 — HeyGen Video Agent 가 이 묘사대로 풀화면 인포그래픽을 직접 생성하며, 아바타는 자동으로 숨겨집니다. "no avatar visible", "no people" 을 반드시 포함하세요. 인포그래픽 씬은 첫 씬·마지막 씬에는 쓰지 말고, 수치·통계·비교 또는 강조 키워드가 핵심인 중간 씬에만 쓰세요.
+- 'dialogue-shared-bg' 와 'quiz-shared-bg' 와 'solo-shared-bg' 를 쓰면 최상위 sharedBackground.visualDescription 필드를 한 번 채우고(인물 없이 공간·소품만 영어로 묘사), 각 씬은 동일한 sharedBackground 를 공유한다고 가정하세요. 'solo-shared-bg' 는 솔로 아바타가 중앙 풀샷으로 한 영상 내내 같은 배경을 유지하는 용도입니다.
 - 'dialogue-shared-bg' 를 쓰면 각 씬에 speakerSide ('left' 또는 'right') 를 명시하세요.
+- 퀴즈형 컨셉(ox_quiz)은 각 문제를 질문 씬('quiz-shared-bg') → 대기 씬('quiz-countdown', narration 은 빈 문자열) → 정답 씬('quiz-shared-bg') 3개로 구성하고, 한 문제의 3개 씬은 모두 같은 avatarId 를 지정하세요. 대기 씬 배경 카운트다운 영상은 시스템이 자동 처리하니 visualDescription 만 채우면 됩니다.
 - 'full-vlog' 를 쓰면 scenes[].visualDescription 에 씬마다 다른 장소·시간대 배경을 영어로 상세히 묘사하세요.
 - 컨셉이 선택되지 않았다면 모든 씬을 'full' layout 으로 통일하세요.
 - visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요(인포그래픽 씬은 인물 없이 차트·수치 시각화 묘사).

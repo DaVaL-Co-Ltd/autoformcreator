@@ -1630,10 +1630,10 @@ DO NOT:
                   ? shuffledSceneAvatarIds
                   : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [talkingPhotoId])))
 
-        // dialogue-shared-bg / quiz-shared-bg: 한 영상에서 모든 씬이 1장의 배경 공유. 미리 1회만 fetch.
+        // dialogue-shared-bg / quiz-shared-bg / solo-shared-bg: 한 영상에서 모든 씬이 1장의 배경 공유. 미리 1회만 fetch.
         let sharedDialogueBgKey = null
         const hasSharedBgScene = scenesForStandard.some((s) =>
-          s?.layout === 'dialogue-shared-bg' || s?.layout === 'quiz-shared-bg'
+          s?.layout === 'dialogue-shared-bg' || s?.layout === 'quiz-shared-bg' || s?.layout === 'solo-shared-bg'
         )
         if (hasSharedBgScene && targetScript?.sharedBackground?.visualDescription) {
           setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '공유 배경 준비 중...' }))
@@ -1655,51 +1655,52 @@ DO NOT:
           }
         }
 
+        // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
+        let quizCountdownAssetId = null
+        const hasCountdownScene = scenesForStandard.some((s) => s?.layout === 'quiz-countdown')
+        if (hasCountdownScene) {
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '카운트다운 영상 준비 중...' }))
+          try {
+            const cdRes = await apiFetch('/api/heygen/quiz-countdown', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            })
+            const cdData = await readApiResponse(cdRes)
+            if (cdRes.ok && cdData?.video_asset_id) {
+              quizCountdownAssetId = cdData.video_asset_id
+            }
+          } catch (err) {
+            console.warn('[quiz countdown] 실패:', err.message)
+          }
+        }
+
         // 씬별 layout 분기.
         setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '씬별 배경 준비 중...' }))
         // sceneAvatarIds variant 는 PRESET_SHORTS_AVATARS 에 등록되어 있지 않을 수 있어
         // 컨셉의 기본 아바타(preferredAvatarIds[0]) preset 으로 fallback 해서 voice 를 가져온다.
         const fallbackPreset = findPresetShortsAvatar(selectedConcept?.preferredAvatarIds?.[0])
         const video_inputs = await Promise.all(scenesForStandard.map(async (scene, idx) => {
-          const avatarId = conceptAvatarIds[idx % conceptAvatarIds.length]
+          // 씬이 avatarId 를 직접 지정하면 우선 사용 (ox_quiz 처럼 한 문제의 질문/대기/정답
+          // 씬을 같은 인물로 고정할 때). 없으면 conceptAvatarIds 순환.
+          const avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
           const preset = findPresetShortsAvatar(avatarId) || fallbackPreset
+          // quiz-countdown: 아바타가 3초간 말 없이 대기하는 씬 → voice 를 silence 로.
+          const isCountdownScene = scene?.layout === 'quiz-countdown'
           const baseInput = {
             character: {
               type: 'talking_photo',
               talking_photo_id: avatarId,
             },
-            voice: {
-              type: 'text',
-              input_text: String(scene?.narration || '').trim(),
-              voice_id: preset?.defaultVoiceId,
-            },
+            voice: isCountdownScene
+              ? { type: 'silence', duration: Number(scene?.duration) || 3 }
+              : {
+                  type: 'text',
+                  input_text: String(scene?.narration || '').trim(),
+                  voice_id: preset?.defaultVoiceId,
+                },
           }
-          if (scene?.layout === 'infographic-full' && scene?.visualDescription) {
-            // 풀화면 인포그래픽 씬 — Gemini Image 가 visualDescription 으로부터 인포그래픽을
-            // 생성해 HeyGen scene background 로 깐다. 아바타는 화면에 보이지 않게 극소 스케일 +
-            // 우하단 모서리(자막 영역 뒤) 로 밀어내고, 나레이션은 보이스오버로 깔린다.
-            try {
-              const bgRes = await apiFetch('/api/heygen/shorts-infographic-background', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  visualDescription: scene.visualDescription,
-                  sceneNumber: scene.sceneNumber || idx + 1,
-                }),
-              })
-              const bgData = await readApiResponse(bgRes)
-              if (bgRes.ok && bgData?.image_key) {
-                baseInput.character.scale = 0.01
-                baseInput.character.offset = { x: 0.95, y: 0.95 }
-                baseInput.background = {
-                  type: 'image',
-                  image_asset_id: bgData.image_key,
-                }
-              }
-            } catch (err) {
-              console.warn(`[shorts infographic bg] scene ${scene?.sceneNumber} 실패:`, err.message)
-            }
-          } else if (scene?.layout === 'dialogue-shared-bg' && sharedDialogueBgKey) {
+          if (scene?.layout === 'dialogue-shared-bg' && sharedDialogueBgKey) {
             // 모든 씬이 같은 배경 공유. speakerSide 로 좌우 위치만 다르게.
             const side = scene?.speakerSide === 'right' ? 0.30 : -0.30
             baseInput.character.scale = 0.85
@@ -1708,11 +1709,23 @@ DO NOT:
               type: 'image',
               image_asset_id: sharedDialogueBgKey,
             }
-          } else if (scene?.layout === 'quiz-shared-bg' && sharedDialogueBgKey) {
+          } else if ((scene?.layout === 'quiz-shared-bg' || scene?.layout === 'solo-shared-bg') && sharedDialogueBgKey) {
             // 모든 씬이 같은 배경 공유. 아바타는 중앙 풀샷 (scale·offset 기본값).
+            // quiz-shared-bg: 5인 교차 등장 / solo-shared-bg: 솔로 1인 (parent_mental_care 등).
             baseInput.background = {
               type: 'image',
               image_asset_id: sharedDialogueBgKey,
+            }
+          } else if (scene?.layout === 'quiz-countdown') {
+            // 3초 대기 씬 — 카운트다운 영상을 배경으로 깖. 아바타는 중앙 풀샷 idle.
+            if (quizCountdownAssetId) {
+              baseInput.background = {
+                type: 'video',
+                video_asset_id: quizCountdownAssetId,
+              }
+            } else if (sharedDialogueBgKey) {
+              // 카운트다운 영상 준비 실패 시 공유 배경으로 fallback (대기 자체는 유지).
+              baseInput.background = { type: 'image', image_asset_id: sharedDialogueBgKey }
             }
           } else if (scene?.layout === 'full-vlog' && scene?.visualDescription) {
             try {
@@ -1736,9 +1749,18 @@ DO NOT:
               console.warn(`[shorts vlog bg] scene ${scene?.sceneNumber} 실패:`, err.message)
             }
           }
+          // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 단색 배경 적용
+          // (아바타가 9:16 을 못 채울 때 여백을 일관된 색으로 — study_dialogue 영상 통화 프레이밍 통일).
+          if (!baseInput.background && selectedConcept?.backgroundColor) {
+            baseInput.background = { type: 'color', value: selectedConcept.backgroundColor }
+          }
           return baseInput
         }))
-        const filteredInputs = video_inputs.filter((input) => input.voice.input_text && input.voice.voice_id)
+        const filteredInputs = video_inputs.filter((input) =>
+          input.voice?.type === 'silence'
+            ? Number(input.voice.duration) > 0
+            : (input.voice?.input_text && input.voice?.voice_id)
+        )
 
         if (filteredInputs.length === 0) {
           throw new Error('씬 narration 또는 voice_id 가 비어있어 영상을 만들 수 없습니다.')
@@ -2486,6 +2508,19 @@ ${parsedText}
         </div>
         <div className="grid gap-2 grid-cols-3 sm:grid-cols-4 md:grid-cols-6">
           {items.map((item, idx) => {
+            if (item.pending) {
+              return (
+                <div
+                  key={`content-preview-${idx}-${item.alt || idx}`}
+                  title={item.alt}
+                  className="relative aspect-square overflow-hidden rounded-md border border-border bg-surface flex items-center justify-center"
+                >
+                  <span className="flex items-center gap-1 text-[10px] text-text-muted">
+                    <Loader2 size={11} className="animate-spin" /> 준비 중
+                  </span>
+                </div>
+              )
+            }
             if (item.card) {
               const { headline, bullets, imageUrl, index } = item.card
               const clickable = headline || (bullets && bullets.length > 0)
@@ -2539,14 +2574,15 @@ ${parsedText}
 
   const blogPreviewItems = (() => {
     const blogImageList = Array.isArray(blogImages) ? blogImages : []
-    if (!blogImageList.length) return []
     const sections = Array.isArray(blogContent?.sections) ? blogContent.sections : []
     const blogCategoryId = blogContent?.categoryInfo?.finalCategoryId || ''
-    const usesKnowledgeCards = (blogCategoryId === 'knowledge_insight' || blogCategoryId === 'interview_prep')
-      && blogImageList.some((img) => img?.imageVersion === 'knowledge-insight-corner')
+    // 카드뉴스 카테고리는 카테고리만으로 판정한다(이미지 태깅 타이밍에 의존하지 않음).
+    const isCardNewsCategory = blogCategoryId === 'knowledge_insight' || blogCategoryId === 'interview_prep'
 
-    if (usesKnowledgeCards) {
+    if (isCardNewsCategory) {
+      if (!sections.length) return []
       const sectionImageList = blogImageList.filter((img) => !img?.isThumbnail)
+      // 카드뉴스는 "글자 + 우하단 그림"이 모두 준비됐을 때만 최종 카드를 노출한다.
       return sections.map((section, index) => {
         const match = sectionImageList.find((img) =>
           img?.heading && section?.heading && img.heading === section.heading
@@ -2557,13 +2593,17 @@ ${parsedText}
         const bullets = Array.isArray(cardSummary.bullets)
           ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
           : []
+        const hasText = Boolean(headline) || bullets.length > 0
+        const ready = hasText && Boolean(cornerImageUrl)
         return {
           alt: section?.heading || `블로그 카드 ${index + 1}`,
-          card: { headline, bullets, imageUrl: cornerImageUrl, index },
+          pending: !ready,
+          card: ready ? { headline, bullets, imageUrl: cornerImageUrl, index } : null,
         }
-      }).filter((item) => item.card.headline || item.card.bullets.length > 0 || item.card.imageUrl)
+      })
     }
 
+    if (!blogImageList.length) return []
     const list = []
     const seen = new Set()
     const push = (url, alt) => {
@@ -2599,14 +2639,19 @@ ${parsedText}
           const imageCardNumber = img?.cardNumber || img?.card_number || i + 1
           return imageCardNumber === cardNumber
         }) || images[idx])
-      const cornerImageUrl = match?.imageUrl || null
+      const cornerImageUrl = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
       const headline = getInstagramOverlayTitle(card, idx)
       const bullets = buildInstagramKnowledgeBullets(card)
+      const hasText = Boolean(headline) || bullets.length > 0
+      // CTA 카드는 우하단 그림이 없는 게 정상 → 글자만 있으면 완성.
+      // 일반 카드는 글자 + 우하단 그림이 모두 준비됐을 때만 최종 카드를 노출.
+      const ready = hasText && (Boolean(card?.isCaptionCta) || Boolean(cornerImageUrl))
       return {
         alt: card?.title || card?.heading || `인스타 카드 ${cardNumber}`,
-        card: { headline, bullets, imageUrl: cornerImageUrl, index: idx },
+        pending: !ready,
+        card: ready ? { headline, bullets, imageUrl: cornerImageUrl, index: idx } : null,
       }
-    }).filter((item) => item.card.headline || item.card.bullets.length > 0 || item.card.imageUrl)
+    })
   })()
 
   const contentStepRows = [

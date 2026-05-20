@@ -757,7 +757,9 @@ app.post('/api/heygen/shorts-vlog-background', async (req, res) => {
     if (!uploadRes.ok) {
       return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
     }
-    const imageKey = uploadData.data?.image_key || uploadData.data?.id
+    // HeyGen /v2/video/generate 의 background.image_asset_id 는 asset UUID 만 받는다.
+    // 업로드 응답의 data.id(UUID) 우선, 없으면 image_key("image/UUID/original.png")의 UUID 토큰 추출.
+    const imageKey = uploadData.data?.id || String(uploadData.data?.image_key || '').split('/')[1] || ''
 
     res.json({
       image_key: imageKey,
@@ -770,74 +772,105 @@ app.post('/api/heygen/shorts-vlog-background', async (req, res) => {
   }
 })
 
-// ===== Shorts infographic background: Gemini 이미지 생성 + HeyGen 업로드 =====
-// briefing_dongwan 처럼 데이터·수치가 핵심인 컨셉의 중간 씬용 — 풀화면 인포그래픽을
-// Gemini Image (gemini-2.5-flash-image) 가 visualDescription 으로부터 생성하고,
-// HeyGen 에 asset 으로 업로드해 /v2/video/generate 의 scene background 로 사용한다.
-// 캔버스로 직접 그리지 않는다 — 헤드라인·수치·차트는 모두 AI 가 visualDescription 안에
-// 적힌 지시(headline, hero value, chart type 등) 를 그대로 시각화한다.
-// body: { visualDescription, sceneNumber? }
-// returns: { image_key, url, localPath }
-app.post('/api/heygen/shorts-infographic-background', async (req, res) => {
+// ===== Quiz countdown background video: 3→2→1 카운트다운 영상 생성 + HeyGen 업로드 =====
+// ox_quiz 의 'quiz-countdown' 대기 씬 배경으로 쓰는 3초 카운트다운 영상.
+// @napi-rs/canvas 로 프레임 3장(3·2·1)을 그리고 ffmpeg 로 3초 mp4 로 합쳐
+// HeyGen 에 video asset 으로 업로드한다. 카운트다운은 항상 동일하므로 결과를 캐시해 재사용.
+let quizCountdownAssetCache = null
+app.post('/api/heygen/quiz-countdown', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured' })
-  if (!geminiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not configured' })
 
   try {
-    const { visualDescription = '', sceneNumber = 1 } = req.body || {}
-    if (!visualDescription) return res.status(400).json({ error: 'visualDescription required' })
-    const sceneNumberSafe = Math.max(0, Math.floor(Number(sceneNumber)) || 0)
-
-    // vlog 흐름과 달리 사실주의 사진(realistic photo) 키워드는 빼고,
-    // 데이터 비주얼라이제이션 톤 키워드를 붙인다.
-    const prompt = `${visualDescription}, vertical 9:16 composition, no people visible, no avatar, no human figure, minimal Korean broadcast-news infographic style, clean data visualization, high-contrast typography, sharp vector look, no logos, no watermarks`
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`
-    const geminiBody = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-    }
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
-    })
-    const geminiData = await geminiRes.json()
-    if (!geminiRes.ok) {
-      return res.status(geminiRes.status).json({ error: 'Gemini image failed', detail: geminiData })
-    }
-    const parts = geminiData?.candidates?.[0]?.content?.parts || []
-    const imagePart = parts.find((p) => p.inlineData?.data)
-    if (!imagePart) {
-      return res.status(500).json({ error: 'Gemini did not return an image', detail: parts.slice(0, 2) })
-    }
-    const buffer = Buffer.from(imagePart.inlineData.data, 'base64')
-    const mimeType = imagePart.inlineData.mimeType || 'image/png'
-
     const outputDir2 = path.join(__dirname, '..', 'output')
     if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
-    const ts = Date.now()
-    const filename = `shorts_infographic_bg_${sceneNumberSafe}_${ts}.png`
-    const localPath = path.join(outputDir2, filename)
-    fs.writeFileSync(localPath, buffer)
+    const cacheFile = path.join(outputDir2, '.quiz-countdown-asset.json')
 
+    // 메모리 캐시
+    if (quizCountdownAssetCache) {
+      return res.json({ video_asset_id: quizCountdownAssetCache, cached: 'memory' })
+    }
+    // 디스크 캐시
+    if (fs.existsSync(cacheFile)) {
+      try {
+        const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
+        if (cached?.videoAssetId) {
+          quizCountdownAssetCache = cached.videoAssetId
+          return res.json({ video_asset_id: cached.videoAssetId, cached: 'disk' })
+        }
+      } catch { /* 캐시 파손 시 재생성 */ }
+    }
+
+    // 1) 프레임 3장 그리기 (3, 2, 1)
+    const W = 720, H = 1280
+    const numbers = ['3', '2', '1']
+    numbers.forEach((num, i) => {
+      const canvas = createCanvas(W, H)
+      const ctx = canvas.getContext('2d')
+      // 배경 그라데이션 (퀴즈쇼 톤)
+      const grad = ctx.createLinearGradient(0, 0, 0, H)
+      grad.addColorStop(0, '#1A2D4A')
+      grad.addColorStop(1, '#0F1B2D')
+      ctx.fillStyle = grad
+      ctx.fillRect(0, 0, W, H)
+      // 카운트다운 링 + 숫자 — 상단 영역(아바타 머리 위쪽). 위치/크기는 상수라 조정 가능.
+      const cx = W / 2, cy = H * 0.30
+      ctx.strokeStyle = '#F4C534'
+      ctx.lineWidth = 16
+      ctx.beginPath()
+      ctx.arc(cx, cy, 230, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.fillStyle = '#F4C534'
+      ctx.font = 'bold 300px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(num, cx, cy + 16)
+      const buf = canvas.toBuffer('image/png')
+      fs.writeFileSync(path.join(outputDir2, `quiz_countdown_frame_${i}.png`), buf)
+    })
+
+    // 2) ffmpeg 로 3초 mp4 합성 (프레임당 1초)
+    const videoPath = path.join(outputDir2, 'quiz_countdown.mp4')
+    await new Promise((resolve, reject) => {
+      execFile(ffmpegPath, [
+        '-y',
+        '-framerate', '1',
+        '-start_number', '0',
+        '-i', path.join(outputDir2, 'quiz_countdown_frame_%d.png'),
+        '-t', '3',
+        '-r', '30',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        videoPath,
+      ], { timeout: 60000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(`ffmpeg countdown 합성 실패: ${stderr || err.message}`))
+        else resolve()
+      })
+    })
+
+    // 3) HeyGen video asset 업로드
+    const videoBuffer = fs.readFileSync(videoPath)
     const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
       method: 'POST',
-      headers: { 'X-Api-Key': apiKey, 'Content-Type': mimeType },
-      body: buffer,
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'video/mp4' },
+      body: videoBuffer,
     })
-    const uploadData = await uploadRes.json()
+    const uploadData = await uploadRes.json().catch(() => ({}))
     if (!uploadRes.ok) {
-      return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
+      return res.status(uploadRes.status).json({ error: 'HeyGen video upload failed', detail: uploadData })
     }
-    const imageKey = uploadData.data?.image_key || uploadData.data?.id
+    const videoAssetId = uploadData?.data?.id
+      || String(uploadData?.data?.image_key || '').split('/')[1]
+      || uploadData?.data?.video_asset_id
+    if (!videoAssetId) {
+      return res.status(500).json({ error: 'HeyGen video asset id 추출 실패', detail: uploadData })
+    }
 
-    res.json({
-      image_key: imageKey,
-      url: uploadData.data?.url,
-      localPath: `/output/${filename}`,
-    })
+    // 4) 캐시 저장 (카운트다운은 항상 동일하므로 영구 캐시)
+    quizCountdownAssetCache = videoAssetId
+    fs.writeFileSync(cacheFile, JSON.stringify({ videoAssetId, createdAt: Date.now() }, null, 2), 'utf8')
+
+    res.json({ video_asset_id: videoAssetId, cached: false })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

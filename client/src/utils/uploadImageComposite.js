@@ -8,11 +8,13 @@
 } from './contentImageOverlay'
 import {
   buildInstagramDisplayCards,
+  buildInstagramKnowledgeBullets,
   getInstagramCardNumber,
   getInstagramOverlayLines,
   getInstagramOverlayTitle,
   isInstagramCaptionCtaCard,
 } from './instagramCarousel'
+import { renderKnowledgeCardDataUrl } from './knowledgeCardCapture.jsx'
 
 const FALLBACK_SIZE = 1536
 const BLOG_ACCENT_COLORS = ['#e57a00', '#2e7d32', '#1565c0', '#7b1fa2']
@@ -575,6 +577,31 @@ export async function buildBlogUploadImageDataUrls({ blogImages = [], sections =
       return
     }
 
+    // 지식공유(카드뉴스) 이미지는 코너 일러스트만 들어있으므로,
+    // 결과 화면과 동일한 KnowledgeInsightCard 를 합성해 "완성된 카드" 를 업로드한다.
+    if (image?.imageVersion === 'knowledge-insight-corner') {
+      const cardSummary = section?.cardSummary || {}
+      const headline = String(cardSummary.headline || section?.heading || '').trim()
+      const bullets = Array.isArray(cardSummary.bullets)
+        ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
+        : []
+      try {
+        const cardUrl = await renderKnowledgeCardDataUrl({
+          headline,
+          bullets,
+          imageUrl: sourceUrl,
+          index,
+        })
+        uploads.push(cardUrl || sourceUrl)
+      } catch (error) {
+        console.warn(`[uploadImageComposite] Failed to render knowledge card ${index + 1}:`, error)
+        uploads.push(sourceUrl)
+      } finally {
+        pushedImages.add(image)
+      }
+      return
+    }
+
     if (image?.overlayMode === 'none') {
       uploads.push(sourceUrl)
       pushedImages.add(image)
@@ -675,7 +702,6 @@ export async function buildInstagramUploadImageUrls({
     return (Array.isArray(instagramImages) ? instagramImages : []).map((image) => getImageUrl(image)).filter(Boolean)
   }
 
-  const cardStyle = normalizeInstagramLayout(instagramContent?.cardStyle)
   const uploads = []
 
   for (let index = 0; index < cards.length; index += 1) {
@@ -687,23 +713,27 @@ export async function buildInstagramUploadImageUrls({
       continue
     }
 
-    const sourceUrl = getImageUrl(image)
-    if (!sourceUrl) {
+    const cornerUrl = getImageUrl(image)
+    const headline = getInstagramOverlayTitle(card, index)
+    const bullets = buildInstagramKnowledgeBullets(card)
+
+    if (!headline && bullets.length === 0 && !cornerUrl) {
       uploads.push(null)
       continue
     }
 
+    // 결과 화면과 동일한 KnowledgeInsightCard 를 합성해 "완성된 카드" 를 업로드한다.
     try {
-      const renderedUrl = await renderInstagramUploadImageDataUrl({
-        imageUrl: sourceUrl,
-        card,
-        cardIndex: index,
-        cardStyle,
+      const cardUrl = await renderKnowledgeCardDataUrl({
+        headline,
+        bullets,
+        imageUrl: cornerUrl,
+        index,
       })
-      uploads.push(renderedUrl)
+      uploads.push(cardUrl || cornerUrl)
     } catch (error) {
-      console.warn(`[uploadImageComposite] Failed to render instagram image ${index + 1}:`, error)
-      uploads.push(sourceUrl)
+      console.warn(`[uploadImageComposite] Failed to render instagram card ${index + 1}:`, error)
+      uploads.push(cornerUrl)
     }
   }
 

@@ -5,6 +5,7 @@ import {
   KNOWLEDGE_INSIGHT_EMOJI_STYLE,
   KNOWLEDGE_INSIGHT_NO_TEXT_RULE,
   KNOWLEDGE_INSIGHT_THEME_MOTIFS,
+  buildKnowledgeTextFallbackClause,
   inferConceptDigestTheme,
   removeWhiteBackgroundFromDataUrl,
 } from './blogImageRules'
@@ -25,16 +26,18 @@ function buildInstagramCornerPrompt(card, options = {}) {
     ? `directly and specifically related to "${section.heading}"${section.keyPhrase ? ` and key idea "${section.keyPhrase}"` : ''}`
     : 'related to one clear study concept'
   const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
+  const textFallbackClause = buildKnowledgeTextFallbackClause(section.heading || section.keyPhrase)
 
   return [
     'Generate a 1:1 square educational illustration asset to be displayed in a small slot of a Korean knowledge-sharing card.',
+    KNOWLEDGE_INSIGHT_NO_TEXT_RULE,
     KNOWLEDGE_INSIGHT_EMOJI_STYLE,
     KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT,
     `Use one main motif, or at most two tightly related motifs, ${topicHint}. Prefer ${subjectPrompt}.`,
     'Do not generate a full background scene, landscape, room, poster, or card layout. The subject must be precisely centered on the canvas with even empty white margin on all four sides. Do not use people unless the concept absolutely requires a human action, and even then keep the figure simple and secondary. Avoid text, labels, many mini icons, repeated decorations, notebook paper textures, stickers, and collage composition. Prefer a single isolated object or one tiny object pair with bold linework and simplified color blocking.',
     KNOWLEDGE_INSIGHT_CUTOUT_RULE,
     KNOWLEDGE_INSIGHT_NO_TEXT_RULE,
-  ].join(' ') + extraHint
+  ].join(' ') + textFallbackClause + extraHint
 }
 
 export async function generateInstagramImages(cards, options = {}) {
