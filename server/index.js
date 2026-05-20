@@ -1006,9 +1006,18 @@ function generateTitleOverlay(text, design, palette, outputPath) {
   fs.writeFileSync(outputPath, canvas.toBuffer('image/png'))
 }
 
+// 자막 번인 비동기 잡 저장소 — 무거운 FFmpeg 작업을 동기 응답에서 분리해
+// 요청 타임아웃(→ Render 502)을 막는다. POST 는 jobId 만 즉시 반환, 작업은 백그라운드.
+const subtitleBurnJobs = new Map()
+
 app.post('/api/subtitle/burn', async (req, res) => {
   const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles } = req.body
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
+
+  // jobId 를 즉시 반환하고 FFmpeg 작업은 백그라운드로 진행. 클라이언트는 status 로 폴링.
+  const jobId = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  subtitleBurnJobs.set(jobId, { status: 'processing', createdAt: Date.now() })
+  res.json({ jobId })
   // animatedTitles: [{ sceneNumber, localPath }] optional WebM title overlays.
   const animatedTitleMap = {}
   if (Array.isArray(animatedTitles)) {
@@ -1140,7 +1149,9 @@ app.post('/api/subtitle/burn', async (req, res) => {
       filterComplex = chain
 
       await new Promise((resolve, reject) => {
-        const args = [...inputs, '-filter_complex', filterComplex, '-map', '[out]', '-map', '0:a', '-c:a', 'copy', '-y', outputPath]
+        const args = [...inputs, '-filter_complex', filterComplex, '-map', '[out]', '-map', '0:a',
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-threads', '2',
+          '-c:a', 'copy', '-y', outputPath]
         execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
           if (err) reject(new Error(`FFmpeg 오류: ${err.message}\n${(stderr || '').slice(-500)}`))
           else resolve()
@@ -1152,6 +1163,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
         const args = [
           '-i', inputPath,
           '-vf', `subtitles='${srtPathEscaped}':fontsdir='${fontsDirEscaped}':force_style='${forceStyle}'`,
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-threads', '2',
           '-c:a', 'copy',
           '-y', outputPath,
         ]
@@ -1165,15 +1177,17 @@ app.post('/api/subtitle/burn', async (req, res) => {
     // Clean up generated PNG overlays. Keep provided WebM overlays intact.
     titleOverlays.forEach(t => { if (t.cleanup) { try { fs.unlinkSync(t.path) } catch {} } })
 
-    // 5) 응답
+    // 5) 잡 완료 기록 (HTTP 응답은 이미 jobId 로 보냈음)
     const size = fs.statSync(outputPath).size
     const url = `/output/final_${ts}.mp4`
-    res.json({
+    subtitleBurnJobs.set(jobId, {
+      status: 'done',
       url,
       size,
       srtUrl: `/output/subtitle_${ts}.srt`,
       requestedFont: subtitleFont || 'default',
       resolvedFont: resolvedFont.fontName,
+      finishedAt: Date.now(),
     })
 
     // Clean up temporary input files immediately.
@@ -1181,7 +1195,17 @@ app.post('/api/subtitle/burn', async (req, res) => {
   } catch (err) {
     try { fs.unlinkSync(inputPath) } catch {}
     try { fs.unlinkSync(srtPath) } catch {}
-    res.status(500).json({ error: err.message })
+    subtitleBurnJobs.set(jobId, { status: 'failed', error: err.message, finishedAt: Date.now() })
+  }
+})
+
+// 자막 번인 잡 상태 폴링. done/failed 결과를 받아간 뒤엔 메모리에서 정리한다.
+app.get('/api/subtitle/burn/status/:jobId', (req, res) => {
+  const job = subtitleBurnJobs.get(req.params.jobId)
+  if (!job) return res.status(404).json({ status: 'not_found', error: 'job not found' })
+  res.json(job)
+  if (job.status === 'done' || job.status === 'failed') {
+    setTimeout(() => subtitleBurnJobs.delete(req.params.jobId), 60000)
   }
 })
 

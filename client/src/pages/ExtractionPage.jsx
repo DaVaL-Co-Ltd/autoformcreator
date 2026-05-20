@@ -1844,9 +1844,25 @@ DO NOT:
 
           let finalUrl = rawUrl
           let srtUrl = null
+          let subtitleStatus = 'processing'
+
+          // 렌더 완료 즉시 — 자막 없는 원본을 미리보기에 먼저 띄운다 (자막 합성은 이어서 진행).
+          const baseVideo = {
+            url: rawUrl,
+            rawUrl,
+            srtUrl: null,
+            duration: targetScript.duration,
+            videoId,
+            prompt: generatedVideoPrompt,
+            mode: 'recommended',
+          }
+          setShortsVideo({ ...baseVideo, subtitleStatus: 'processing' })
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '자막 합성 중...' }))
 
           try {
-            const burnRes = await apiFetch('/api/subtitle/burn', {
+            // 자막 번인은 비동기 잡 — POST 는 jobId 만 즉시 반환, 무거운 FFmpeg 는 백그라운드.
+            // (동기 요청이 약한 Render 인스턴스를 타임아웃시켜 502 가 나던 문제 해결.)
+            const burnStartRes = await apiFetch('/api/subtitle/burn', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1856,31 +1872,43 @@ DO NOT:
                 subtitleFont,
               }),
             })
-            const burnData = await readApiResponse(burnRes)
-            if (!burnRes.ok) {
+            const burnStartData = await readApiResponse(burnStartRes)
+            if (!burnStartRes.ok || !burnStartData?.jobId) {
               throw new Error(
-                burnData?.error?.message ||
-                burnData?.error ||
-                `자막 번인 실패 (${burnRes.status})`
+                burnStartData?.error?.message ||
+                burnStartData?.error ||
+                `자막 번인 요청 실패 (${burnStartRes.status})`
               )
             }
+            // jobId 폴링 — 5초 간격, 최대 ~10분.
+            let burnData = null
+            for (let bi = 0; bi < 120; bi++) {
+              await delay(5000)
+              const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`)
+              const stData = await readApiResponse(stRes)
+              if (!stRes.ok) continue
+              if (stData?.status === 'done') { burnData = stData; break }
+              if (stData?.status === 'failed') {
+                throw new Error(stData?.error || '자막 번인 실패')
+              }
+            }
             if (!burnData?.url) {
-              throw new Error('자막 번인 결과 영상 URL이 없습니다.')
+              throw new Error('자막 번인 시간 초과 또는 결과 영상 URL이 없습니다.')
             }
             finalUrl = resolveMediaUrl(burnData.url)
             srtUrl = resolveMediaUrl(burnData.srtUrl || null)
+            subtitleStatus = 'done'
           } catch (burnErr) {
-            throw new Error(burnErr.message || '자막 번인 실패')
+            // 자막 합성이 실패해도 원본 영상은 유지한다 — 미리보기엔 자막 없는 영상이 남는다.
+            console.warn('[자막 합성] 실패:', burnErr.message)
+            subtitleStatus = 'failed'
           }
 
           finalVideo = {
+            ...baseVideo,
             url: finalUrl,
-            rawUrl,
             srtUrl,
-            duration: targetScript.duration,
-            videoId,
-            prompt: generatedVideoPrompt,
-            mode: 'recommended',
+            subtitleStatus,
           }
           break
         }
@@ -3543,11 +3571,35 @@ ${parsedText}
                           </div>
                           {shortsVideo ? (
                             <div className="space-y-3">
-                              <div className="flex items-center gap-3 p-3 bg-success/5 rounded-lg border border-success/20">
-                                <CheckCircle size={16} className="text-success" />
+                              <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+                                shortsVideo.subtitleStatus === 'processing'
+                                  ? 'bg-primary/5 border-primary/20'
+                                  : shortsVideo.subtitleStatus === 'failed'
+                                  ? 'bg-warning/10 border-warning/20'
+                                  : 'bg-success/5 border-success/20'
+                              }`}>
+                                {shortsVideo.subtitleStatus === 'processing' ? (
+                                  <Loader2 size={16} className="text-primary animate-spin" />
+                                ) : shortsVideo.subtitleStatus === 'failed' ? (
+                                  <AlertTriangle size={16} className="text-warning" />
+                                ) : (
+                                  <CheckCircle size={16} className="text-success" />
+                                )}
                                 <div className="flex-1">
-                                  <p className="text-sm font-medium text-text">숏폼 영상 생성 완료</p>
-                                  <p className="text-xs text-text-muted">{shortsVideo.duration || shortsScript?.duration}초</p>
+                                  <p className="text-sm font-medium text-text">
+                                    {shortsVideo.subtitleStatus === 'processing'
+                                      ? '영상 생성 완료 · 자막 합성 중...'
+                                      : shortsVideo.subtitleStatus === 'failed'
+                                      ? '영상 생성 완료 · 자막 합성 실패'
+                                      : '숏폼 영상 생성 완료'}
+                                  </p>
+                                  <p className="text-xs text-text-muted">
+                                    {shortsVideo.subtitleStatus === 'processing'
+                                      ? '자막이 입혀지면 미리보기가 자동으로 갱신됩니다'
+                                      : shortsVideo.subtitleStatus === 'failed'
+                                      ? '자막 없는 원본 영상입니다 — 필요 시 재생성하세요'
+                                      : `${shortsVideo.duration || shortsScript?.duration}초`}
+                                  </p>
                                 </div>
                                 <button
                                   onClick={() => setCreditConfirm(true)}
@@ -3560,7 +3612,13 @@ ${parsedText}
                               {shortsVideo.url && (
                                 <div className="grid gap-4 md:grid-cols-2">
                                   <div className="flex flex-col items-center gap-2">
-                                    <p className="text-xs font-medium text-text-muted">자막 포함 최종본</p>
+                                    <p className="text-xs font-medium text-text-muted">
+                                      {shortsVideo.subtitleStatus === 'processing'
+                                        ? '원본 (자막 합성 중)'
+                                        : shortsVideo.subtitleStatus === 'failed'
+                                        ? '원본 (자막 없음)'
+                                        : '자막 포함 최종본'}
+                                    </p>
                                     <div className="w-full max-w-[240px] rounded-xl overflow-hidden border-2 border-red-500/30 shadow-lg bg-black" style={{ aspectRatio: '9/16' }}>
                                       <video src={shortsVideo.url} controls className="w-full h-full object-contain" />
                                     </div>
