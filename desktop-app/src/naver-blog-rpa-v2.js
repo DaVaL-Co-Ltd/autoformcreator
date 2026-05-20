@@ -778,7 +778,12 @@ async function focusEditableEnd(page, selectors, clear = false) {
 }
 
 function buildBodyTextBlocks(content = '') {
-  return parseBlogBlocks(content).filter((block) => block.type === 'divider' || block.text)
+  // divider, 텍스트 있는 블록, 그리고 consumeBlanks 가 만든 빈 단락(type==='paragraph', text==='')
+  // 을 모두 유지한다. flushParagraph 는 text 가 있을 때만 paragraph 를 push 하므로 text 없는
+  // paragraph 는 의도된 빈 줄뿐 — 이를 거르면 빈 줄이 화면에서 사라진다.
+  return parseBlogBlocks(content).filter(
+    (block) => block.type === 'divider' || block.type === 'paragraph' || block.text,
+  )
 }
 
 async function setTitleV4(page, title) {
