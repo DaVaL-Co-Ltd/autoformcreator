@@ -1672,36 +1672,10 @@ function startsWithSmpEmoji(text = '') {
   return typeof codePoint === 'number' && codePoint >= 0x10000
 }
 
-// 현재 selection 이 속한 SmartEditor 단락(.se-text-paragraph 또는 <p>) 안에서
-// 커서를 맨 앞(toStart=true) 또는 맨 끝으로 이동시킨다.
-async function moveCaretWithinParagraph(page, toStart) {
-  for (const scope of [page, ...page.frames()]) {
-    const ok = await scope.evaluate((collapseToStart) => {
-      const selection = window.getSelection()
-      if (!selection || selection.rangeCount === 0) return false
-      const anchor = selection.anchorNode
-      let paragraph = anchor && anchor.nodeType === 3 ? anchor.parentElement : anchor
-      while (paragraph && paragraph !== document.body) {
-        if (paragraph.classList && paragraph.classList.contains('se-text-paragraph')) break
-        if (paragraph.tagName === 'P') break
-        paragraph = paragraph.parentElement
-      }
-      if (!paragraph || paragraph === document.body) return false
-      const range = document.createRange()
-      range.selectNodeContents(paragraph)
-      range.collapse(collapseToStart)
-      selection.removeAllRanges()
-      selection.addRange(range)
-      return true
-    }, toStart).catch(() => false)
-    if (ok) return true
-  }
-  return false
-}
-
-// 단락 텍스트를 SmartEditor 에 입력한다. SMP 이모지로 시작하는 줄은 본문 텍스트를 먼저 넣고
-// 이모지를 단락 맨 앞에 나중에 끼워 "이모지 뒤 공백 입력" 시퀀스를 만들지 않음으로써
-// emoji-bullet 자동변환(뒤 텍스트 삼킴) 을 회피한다. 그 외 줄은 기존 NBSP 보존 방식.
+// 단락 텍스트를 SmartEditor 에 입력한다. SMP 이모지로 시작하는 줄은 NBSP+본문 텍스트를 먼저
+// 입력하고 ArrowLeft 로 커서를 단락 맨 앞으로 옮긴 뒤 이모지만 삽입한다. DOM Selection 변경은
+// SmartEditor 내부 커서 모델이 무시하므로 반드시 키보드 방향키로 커서를 이동해야 한다.
+// "이모지 다음 공백 입력" 이벤트가 없어 emoji-bullet 자동변환을 회피한다.
 async function insertParagraphText(page, rawText) {
   const text = String(rawText || '')
   const emojiMatch = startsWithSmpEmoji(text) ? text.match(LEADING_EMOJI_SPACE_RE) : null
@@ -1712,16 +1686,23 @@ async function insertParagraphText(page, rawText) {
 
   const emojiGlyphs = emojiMatch[1]
   const restText = text.slice(emojiMatch[0].length)
-  // 1) NBSP(이모지 뒤 공백 자리) + 본문 텍스트 먼저 입력 — 이 시점엔 줄이 이모지로 시작하지 않음
-  await page.keyboard.insertText(` ${restText}`)
-  // 2) 커서를 단락 맨 앞으로 옮긴 뒤 이모지만 삽입 (이모지 뒤 공백을 타이핑하는 이벤트 없음)
-  if (await moveCaretWithinParagraph(page, true)) {
-    await page.keyboard.insertText(emojiGlyphs)
-  }
-  // 3) 다음 블록의 Enter 입력에 대비해 커서를 단락 끝으로 복귀
-  await moveCaretWithinParagraph(page, false)
-}
+  // NBSP(이모지 뒤 공백) + 본문 텍스트 — 이모지는 아직 없음
+  const leadingBody = ' ' + restText
+  const caretCount = [...leadingBody].length
 
+  // 1) 본문(NBSP 포함) 먼저 입력 — 줄이 이모지로 시작하지 않음
+  await page.keyboard.insertText(leadingBody)
+  // 2) ArrowLeft 로 커서를 단락 맨 앞으로 이동 (키 이벤트는 SmartEditor 가 존중)
+  for (let i = 0; i < caretCount; i += 1) {
+    await page.keyboard.press('ArrowLeft')
+  }
+  // 3) 이모지만 삽입 — 입력 데이터가 공백이 아니라 이모지라 bullet 트리거 미발동
+  await page.keyboard.insertText(emojiGlyphs)
+  // 4) 커서를 단락 끝으로 복귀 (다음 블록 Enter 대비)
+  for (let i = 0; i < caretCount; i += 1) {
+    await page.keyboard.press('ArrowRight')
+  }
+}
 async function insertBodyTextV4(
   page,
   text,
