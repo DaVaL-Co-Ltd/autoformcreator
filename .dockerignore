@@ -1,0 +1,19 @@
+# 컨테이너 안에서 npm ci 로 새로 설치하므로 호스트의 node_modules 는 제외한다
+# (Windows 바이너리가 Linux 이미지로 들어가는 것을 방지).
+**/node_modules
+
+# 서버 배포에 불필요한 대용량 디렉터리 — 빌드 컨텍스트 크기를 줄여 업로드를 빠르게 한다.
+desktop-app
+client
+scripts
+output
+portfolio
+
+# 기타
+.git
+.omc
+.omx
+.tmp
+*.log
+.env
+.env.local
