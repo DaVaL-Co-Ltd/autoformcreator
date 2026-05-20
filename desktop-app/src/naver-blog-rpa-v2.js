@@ -1381,35 +1381,10 @@ async function selectQuoteStyleOption(page, quoteStyle) {
 }
 
 async function clickDividerToolbarButton(scope) {
-  const selectors = [
-    'button[aria-label*="divider" i]',
-    '[role="button"][aria-label*="divider" i]',
-    'button[aria-label*="separator" i]',
-    '[role="button"][aria-label*="separator" i]',
-    'button[aria-label*="horizontal line" i]',
-    '[role="button"][aria-label*="horizontal line" i]',
-    'button[title*="divider" i]',
-    '[role="button"][title*="divider" i]',
-    'button[title*="separator" i]',
-    '[role="button"][title*="separator" i]',
-    '[data-name="divider"]',
-    '[data-name="separator"]',
-    '[data-command="divider"]',
-    '[data-command="separator"]',
-    '[data-tool="divider"]',
-    '[data-tool="separator"]',
-    '[data-click-area*="divider"]',
-    '[data-click-area*="separator"]',
-    '[data-click-area*="line"]',
-    'button.se-toolbar-item-line',
-    '.se-toolbar-item-line button',
-    'button.se-toolbar-item-divider',
-    '.se-toolbar-item-divider button',
-    '[class*="divider"] button',
-    '[class*="separator"] button',
-  ]
-
-  return scope.evaluate((dividerSelectors) => {
+  // 네이버 SmartEditor ONE 의 구분선 버튼은 data-name="horizontal-line",
+  // class="se-toolbar-button-horizontalLine", 내부에 <span class="se-blind">구분선</span> 구조다.
+  // 좁은 셀렉터로 미리 거르면 못 잡으므로 모든 버튼을 스캔해 라벨 점수로 고른다.
+  return scope.evaluate(() => {
     const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
     const isVisible = (element) => {
       const rect = element.getBoundingClientRect()
@@ -1423,29 +1398,34 @@ async function clickDividerToolbarButton(scope) {
       element.getAttribute?.('data-name'),
       element.getAttribute?.('data-command'),
       element.getAttribute?.('data-tool'),
+      element.getAttribute?.('data-log'),
       element.getAttribute?.('data-click-area'),
       element.className,
     ].filter(Boolean).join(' '))
     const score = (element) => {
       const label = labelOf(element)
-      if (label.includes('horizontal line')) return 100
-      if (label.includes('divider')) return 98
-      if (label.includes('separator')) return 96
-      if (label.includes('구분선')) return 94
-      if (label.includes('hr')) return 90
+      if (label.includes('구분선')) return 100
+      if (
+        label.includes('horizontal line') ||
+        label.includes('horizontal-line') ||
+        label.includes('horizontalline')
+      ) return 98
+      if (label.includes('divider')) return 90
+      if (label.includes('separator')) return 88
       return 0
     }
 
-    const button = dividerSelectors
-      .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+    const button = Array.from(document.querySelectorAll('button, [role="button"], a'))
       .filter((element) => element instanceof HTMLElement && isVisible(element))
-      .sort((left, right) => score(right) - score(left))
-      .find((element) => score(element) > 0)
+      .map((element) => ({ element, value: score(element) }))
+      .filter((entry) => entry.value > 0)
+      .sort((left, right) => right.value - left.value)[0]?.element
 
     if (!button) return false
+    button.scrollIntoView({ block: 'center', inline: 'center' })
     button.click()
     return true
-  }, selectors).catch(() => false)
+  }).catch(() => false)
 }
 
 async function selectFirstDividerStyle(page) {
