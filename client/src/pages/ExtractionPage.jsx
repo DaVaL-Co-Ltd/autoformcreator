@@ -636,6 +636,8 @@ export default function ExtractionPage() {
   const [avatarConfirmed, setAvatarConfirmed] = useState(false)
   const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id 또는 프리셋 avatar_id
   const [heygenReady, setHeygenReady] = useState(false)
+  // 컨셉 선택 상태에서 그 컨셉에 없는 아바타를 직접 고르면 컨셉이 초기화되며 이 안내를 띄운다.
+  const [conceptResetNotice, setConceptResetNotice] = useState(false)
   // 프리셋 아바타 미리보기 URL 캐시 (avatarId → preview_image_url)
   const [presetAvatarPreviews, setPresetAvatarPreviews] = useState({})
   // 프리셋 voice 샘플 URL 캐시 (voiceId → preview_audio URL)
@@ -3170,6 +3172,7 @@ ${parsedText}
                     value: promptSettings.shorts.videoConcept,
                     onChange: (v) => {
                       updatePrompt('shorts', 'videoConcept', v)
+                      setConceptResetNotice(false)
                       // 컨셉 선택 시: extra 필드 자동 채움 + 첫 번째 추천 아바타 자동 선택
                       const concept = findShortsVideoConcept(v)
                       if (concept) {
@@ -3191,7 +3194,7 @@ ${parsedText}
                       }
                     },
                     options: SHORTS_VIDEO_CONCEPT_OPTIONS,
-                    hint: '선택 시 영상 추가 지시 + 추천 아바타가 자동 적용됩니다. 멀티 아바타 컨셉은 첫 번째 인물 기준으로 자동 세팅.',
+                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 모든 아바타가 자동 선택됩니다.',
                   })}
                   {promptSettings.shorts.videoConcept && (() => {
                     const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
@@ -3385,9 +3388,19 @@ ${parsedText}
                             <p className="text-base font-semibold text-text">아바타 선택</p>
                             {heygenAvatarId && <CheckCircle size={14} className="text-success" />}
                           </div>
+                          {conceptResetNotice && (
+                            <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20">
+                              <p className="text-xs text-warning">기존에 선택한 컨셉은 초기화됩니다.</p>
+                            </div>
+                          )}
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                             {PRESET_SHORTS_AVATARS.map((preset) => {
-                              const isSelected = heygenAvatarId === preset.avatarId
+                              // 컨셉 선택 시: 그 컨셉에 등장하는 모든 아바타(preferredAvatarIds)를 선택 표시.
+                              // 컨셉 미선택 시: 단일 heygenAvatarId 기준.
+                              const conceptAvatarIds = findShortsVideoConcept(promptSettings.shorts.videoConcept)?.preferredAvatarIds
+                              const isSelected = conceptAvatarIds?.length
+                                ? conceptAvatarIds.includes(preset.avatarId)
+                                : heygenAvatarId === preset.avatarId
                               const previewUrl = presetAvatarPreviews[preset.avatarId] || null
                               return (
                                 <div
@@ -3423,6 +3436,15 @@ ${parsedText}
                                   <button
                                     type="button"
                                     onClick={() => {
+                                      // 컨셉이 선택돼 있는데 그 컨셉에 없는 아바타를 고르면 컨셉을 초기화하고 안내한다.
+                                      const activeConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+                                      if (activeConcept && !activeConcept.preferredAvatarIds?.includes(preset.avatarId)) {
+                                        updatePrompt('shorts', 'videoConcept', '')
+                                        updatePrompt('shorts', 'extra', '')
+                                        setConceptResetNotice(true)
+                                      } else {
+                                        setConceptResetNotice(false)
+                                      }
                                       setAvatarPrompt('')
                                       setAvatarImage(previewUrl)
                                       setHeygenAvatarId(preset.avatarId)
