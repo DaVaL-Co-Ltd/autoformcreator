@@ -28,7 +28,7 @@ const {
   updateUploadStatus,
   deleteExtraction,
   deleteExtractionChannel,
-} = require('../api/_extractionsStore')
+} = require('../api/_lib/extractionsStore')
 const fontsDir = path.join(__dirname, 'fonts')
 
 function registerOptionalFont(filename, family) {
