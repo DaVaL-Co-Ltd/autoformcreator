@@ -9,6 +9,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: "0"
       - key: PORT
         value: 3001
       - key: GOOGLE_CLIENT_ID
