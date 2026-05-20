@@ -1608,6 +1608,84 @@ async function setFontSizeFormatting(page, sizeLabel, currentState = null) {
   return currentState
 }
 
+// 본문 입력 전에 서체를 지정한 폰트(기본값 "기본서체") 로 바꾼다. 네이버 SmartEditor ONE 의
+// 서체 드롭다운 버튼을 열고 원하는 폰트 옵션을 클릭한다. 실패해도 업로드는 계속 진행.
+async function setFontFamily(page, fontLabel = '기본서체') {
+  for (const scope of getFormattingScopes(page)) {
+    // 1) 서체 드롭다운 버튼 열기 (글자 크기 버튼은 제외)
+    const opened = await scope.evaluate(() => {
+      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect()
+        const style = window.getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+      }
+      const labelOf = (element) => normalize([
+        element.textContent,
+        element.getAttribute?.('aria-label'),
+        element.getAttribute?.('title'),
+        element.getAttribute?.('data-name'),
+        element.getAttribute?.('data-log'),
+        element.getAttribute?.('data-command'),
+        element.getAttribute?.('data-tool'),
+        element.className,
+      ].filter(Boolean).join(' '))
+      const FONT_HINTS = ['글꼴', '서체', '폰트', 'font family', 'fontfamily', 'font-family']
+      const FONT_NAMES = ['기본서체', '나눔고딕', '나눔명조', '나눔바른고딕', '마루부리', '다온']
+      const score = (element) => {
+        const label = labelOf(element)
+        if (label.includes('size') || label.includes('크기')) return 0
+        for (const hint of FONT_HINTS) if (label.includes(hint)) return 100
+        for (const name of FONT_NAMES) if (label.includes(name.toLowerCase())) return 90
+        return 0
+      }
+      const button = Array.from(document.querySelectorAll('button, [role="button"], a'))
+        .filter((element) => element instanceof HTMLElement && isVisible(element))
+        .map((element) => ({ element, value: score(element) }))
+        .filter((entry) => entry.value > 0)
+        .sort((left, right) => right.value - left.value)[0]?.element
+      if (!button) return false
+      button.scrollIntoView({ block: 'center', inline: 'center' })
+      button.click()
+      return true
+    }).catch(() => false)
+    if (!opened) continue
+
+    await page.waitForTimeout(350)
+
+    // 2) 열린 드롭다운에서 원하는 서체 옵션 클릭
+    const picked = await scope.evaluate((wanted) => {
+      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim()
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect()
+        const style = window.getComputedStyle(element)
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
+      }
+      const options = Array.from(
+        document.querySelectorAll('button, [role="option"], [role="menuitem"], li, a'),
+      ).filter((element) => element instanceof HTMLElement && isVisible(element))
+      const exact = options.filter((element) => normalize(element.textContent) === wanted)
+      const partial = options
+        .filter((element) => normalize(element.textContent).includes(wanted))
+        .sort((left, right) => normalize(left.textContent).length - normalize(right.textContent).length)
+      const option = exact[0] || partial[0]
+      if (!option) return false
+      option.scrollIntoView({ block: 'center', inline: 'center' })
+      option.click()
+      option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+      option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+      option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+      return true
+    }, fontLabel).catch(() => false)
+
+    if (picked) {
+      await page.waitForTimeout(250)
+      return true
+    }
+  }
+  return false
+}
+
 async function clickBodyField(page, preferLast = false) {
   const selectors = [
     '.se-section-text .se-text-paragraph',
@@ -1705,7 +1783,13 @@ async function insertBodyTextV4(
 
   const bodyBlocks = buildBodyTextBlocks(text)
   if (!bodyBlocks.length) return
-  if (clear) await page.keyboard.press('Control+A')
+  if (clear) {
+    await page.keyboard.press('Control+A')
+    // 본문 입력 전에 서체를 기본서체로 지정 (실패해도 업로드는 계속 진행)
+    if (!(await setFontFamily(page, '기본서체'))) {
+      console.warn('[font] 기본서체 선택 실패 — 계정 기본 서체로 진행합니다.')
+    }
+  }
 
   for (const [index, block] of bodyBlocks.entries()) {
     if (block.type === 'divider') {
