@@ -1428,9 +1428,11 @@ async function clickDividerToolbarButton(scope) {
   }).catch(() => false)
 }
 
-async function selectFirstDividerStyle(page) {
+// styleIndex(0-based) 번째 구분선 스타일을 고른다. 팝업 옵션을 top→left 위치순으로 정렬하므로
+// styleIndex 1 이면 팝업의 2번째(긴 구분선) 스타일이 된다.
+async function selectDividerStyle(page, styleIndex = 0) {
   for (const scope of getFormattingScopes(page)) {
-    const clicked = await scope.evaluate(() => {
+    const clicked = await scope.evaluate((wantedIndex) => {
       const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect()
@@ -1519,7 +1521,8 @@ async function selectFirstDividerStyle(page) {
           return left.getBoundingClientRect().left - right.getBoundingClientRect().left
         })
 
-      const option = candidates[0] || fallbackCandidates[0]
+      const option = candidates[wantedIndex] || fallbackCandidates[wantedIndex]
+        || candidates[0] || fallbackCandidates[0]
       if (!option) return false
       option.scrollIntoView({ block: 'center', inline: 'center' })
       option.click()
@@ -1527,7 +1530,7 @@ async function selectFirstDividerStyle(page) {
       option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
       option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
       return true
-    }).catch(() => false)
+    }, styleIndex).catch(() => false)
 
     if (clicked) {
       await page.waitForTimeout(180)
@@ -1547,7 +1550,7 @@ async function insertDividerByToolbar(page) {
     const opened = await clickDividerToolbarButton(scope)
     if (!opened) continue
     await page.waitForTimeout(250)
-    if (await selectFirstDividerStyle(page)) {
+    if (await selectDividerStyle(page, 1)) {
       await page.waitForTimeout(250)
       await clickBodyField(page, true)
       return true
