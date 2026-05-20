@@ -118,7 +118,8 @@ const appendBlogTagsToBody = (content = '', tags = []) => {
   if (!trimmedContent) return tagText
   if (trimmedContent.includes(tagText)) return trimmedContent
 
-  return `${trimmedContent}\n\n${tagText}`
+  // 본문→태그 사이 빈 줄 1개 (parseBlogBlocks 기준 보이는 빈 줄 = 줄바꿈 수 - 2)
+  return `${trimmedContent}\n\n\n${tagText}`
 }
 
 const stripResultCtaText = (value) => {
@@ -1456,12 +1457,19 @@ export default function ExtractionResultPage() {
                         <h3 className="text-2xl font-bold text-gray-900">{sectionHeadingText}</h3>
                       )}
                       <div className="flex justify-center">
-                        <KnowledgeInsightCard
-                          index={index}
-                          headline={cardHeadline}
-                          bullets={cardBullets}
-                          imageUrl={cornerImageUrl}
-                        />
+                        {cornerImageUrl ? (
+                          <KnowledgeInsightCard
+                            index={index}
+                            headline={cardHeadline}
+                            bullets={cardBullets}
+                            imageUrl={cornerImageUrl}
+                          />
+                        ) : (
+                          <div className="w-full max-w-xl aspect-square rounded-3xl border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-400">
+                            <Loader2 size={22} className="animate-spin" />
+                            <span className="text-sm">카드 이미지 합성 중...</span>
+                          </div>
+                        )}
                       </div>
                       {sectionContent && (
                         <div className="prose prose-gray max-w-none text-gray-700 leading-8">

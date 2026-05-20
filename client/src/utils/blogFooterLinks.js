@@ -73,10 +73,12 @@ export function appendBlogFooterText(content = '', footerConfig = {}) {
 
   if (links.length === 0) return trimmedContent
 
-  const footerText = `${heading}\n\n${links.map((link) => `${link.label}: ${link.url}`).join('\n\n')}`.trim()
+  // 데스크톱 RPA 의 parseBlogBlocks 는 "보이는 빈 줄 = 소스 줄바꿈 수 - 2" 로 동작한다.
+  // heading→링크·링크→링크 사이 빈 줄 1개 → \n\n\n, 태그→heading 사이 빈 줄 2개 → \n\n\n\n.
+  const footerText = `${heading}\n\n\n${links.map((link) => `${link.label}: ${link.url}`).join('\n\n\n')}`.trim()
   if (!footerText) return trimmedContent
   if (!trimmedContent) return footerText
   if (trimmedContent.includes(footerText)) return trimmedContent
 
-  return `${trimmedContent}\n\n\n${footerText}`
+  return `${trimmedContent}\n\n\n\n${footerText}`
 }
