@@ -1425,7 +1425,7 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 'dialogue-shared-bg' 를 쓰면 각 씬에 speakerSide ('left' 또는 'right') 를 명시하세요.
 - 퀴즈형 컨셉(ox_quiz)은 각 문제를 질문 씬('quiz-shared-bg') → 대기 씬('quiz-countdown', narration 은 빈 문자열) → 정답 씬('quiz-shared-bg') 3개로 구성하고, 한 문제의 3개 씬은 모두 같은 avatarId 를 지정하세요. 대기 씬 배경 카운트다운 영상은 시스템이 자동 처리하니 visualDescription 만 채우면 됩니다.
 - 'full-vlog' 를 쓰면 scenes[].visualDescription 에 씬마다 다른 장소·시간대 배경을 영어로 상세히 묘사하세요.
-- 컨셉이 선택되지 않았다면 모든 씬을 'full' layout 으로 통일하세요.
+- 컨셉이 선택되지 않았다면: 첫 씬과 마지막 씬은 'full'(아바타가 말하는 화면)로 두고, 중간 씬들은 수치·통계·데이터가 핵심인 씬이면 'infographic-full'(HeyGen 자체 인포그래픽 화면), 그 외에는 'full' 로 지정하세요.
 - visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요(인포그래픽 씬은 인물 없이 차트·수치 시각화 묘사).
 
 ## 업로드 메타데이터 규칙
