@@ -36,6 +36,7 @@ scripts/concept-video-tests/
 scripts/concept-video-tests-pip/
 scripts/concept-video-tests-agent/
 scripts/concept-video-tests-*.log
+scripts/concept-test-videos*/
 scripts/avatar-variants/preview-images/
 
 # 네이버 세션 쿠키 (절대 커밋 금지)
