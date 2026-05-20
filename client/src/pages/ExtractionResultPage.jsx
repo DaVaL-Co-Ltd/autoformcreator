@@ -36,7 +36,8 @@ import {
   resolveBlogHeadingStyle,
 } from '../utils/blogHeadingStyle'
 import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentImageOverlays'
-import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
+import KnowledgeInsightCard, { KnowledgeInsightCardReady } from '../components/KnowledgeInsightCard'
+import { renderKnowledgeCardDataUrl } from '../utils/knowledgeCardCapture.jsx'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import {
   cleanCardText,
@@ -915,6 +916,48 @@ export default function ExtractionResultPage() {
     return urls
   }, [blogContent, blogImages, extractionId])
 
+  // 지식공유(카드뉴스) 블로그 카드를 합성 PNG 로 변환해 DB(blog_images)에 저장한다.
+  // 코너 일러스트 + 글자 + 배경을 매번 실시간 조합하던 것을 완성 카드 한 장으로 굳힌다.
+  const convertKnowledgeCardsToPng = useCallback(async () => {
+    if (!usesKnowledgeInsightCards) return
+    const sections = ensureArray(blogContent?.sections)
+    const images = ensureArray(blogImages)
+    if (!sections.length || !images.length) return
+    const sectionImageList = images.filter((img) => !img?.isThumbnail)
+    const needs = sectionImageList.some((img) => img?.imageUrl && !img?.renderedImageUrl && !img?.pngUrl)
+    if (!needs) return
+
+    const nextImages = await Promise.all(images.map(async (image) => {
+      if (!image || image.isThumbnail) return image
+      if (!image.imageUrl || image.renderedImageUrl || image.pngUrl) return image
+      const sectionIndex = sections.findIndex((s) => s?.heading && image?.heading && s.heading === image.heading)
+      const idx = sectionIndex >= 0 ? sectionIndex : Math.max(0, sectionImageList.indexOf(image))
+      const section = sections[idx] || {}
+      const cardSummary = section?.cardSummary || {}
+      const headline = String(cardSummary.headline || section?.heading || image?.heading || '').trim()
+      const bullets = Array.isArray(cardSummary.bullets)
+        ? cardSummary.bullets.map((line) => String(line || '').trim()).filter(Boolean)
+        : []
+      if (!headline && bullets.length === 0) return image
+      try {
+        const cardUrl = await renderKnowledgeCardDataUrl({ headline, bullets, imageUrl: image.imageUrl, index: idx })
+        if (!cardUrl) return image
+        return { ...image, renderedImageUrl: cardUrl, pngUrl: cardUrl }
+      } catch (err) {
+        console.warn('[지식공유 카드 합성 실패]', err)
+        return image
+      }
+    }))
+
+    const changed = nextImages.some((img, i) => img !== images[i])
+    if (!changed) return
+    setBlogImages(nextImages)
+    if (extractionId) {
+      updateExtractionMedia(extractionId, { blogImages: nextImages })
+        .catch((err) => console.warn('[지식공유 카드 저장 실패]', err))
+    }
+  }, [usesKnowledgeInsightCards, blogContent, blogImages, extractionId])
+
   // 인스타 카드 HTML -> PNG 변환 (모든 카드는 숨겨진 컨테이너에 마운트되어 있어 슬라이드 변경 없이 캡처)
   const convertInstaCardsToPng = useCallback(async () => {
     const cards = buildInstagramDisplayCards(instagramContent)
@@ -945,6 +988,14 @@ export default function ExtractionResultPage() {
       return () => clearTimeout(timer)
     }
   }, [activeMenu, blogContent, blogPngUrls.length, convertBlogImagesToPng])
+
+  // 지식공유 카드뉴스 합성 PNG 변환 트리거
+  useEffect(() => {
+    if (activeMenu === 'blog' && usesKnowledgeInsightCards) {
+      const timer = setTimeout(() => convertKnowledgeCardsToPng(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [activeMenu, usesKnowledgeInsightCards, convertKnowledgeCardsToPng])
 
   useEffect(() => {
     if (!extractionId || !blogPngUrls.some(Boolean)) return
@@ -1443,11 +1494,13 @@ export default function ExtractionResultPage() {
                   const matchedKnowledgeImage = sectionImageList.find((img) =>
                     img?.heading && section?.heading && img.heading === section.heading
                   ) || sectionImageList[index] || null
-                  const cornerImageUrl =
+                  // renderedImageUrl / pngUrl 은 "글자까지 합성된 완성 카드" PNG.
+                  // imageUrl 은 우하단 코너 일러스트 원본.
+                  const composedCardUrl =
                     matchedKnowledgeImage?.renderedImageUrl
                     || matchedKnowledgeImage?.pngUrl
-                    || matchedKnowledgeImage?.imageUrl
                     || null
+                  const cornerImageUrl = matchedKnowledgeImage?.imageUrl || null
                   const sectionHeadingText = String(section?.heading || '').trim()
                   const sectionContent = stripResultCtaText(sanitizeBlogBodyForDisplay(section?.content || ''))
                   const isLastKnowledgeSection = index === ensureArray(blogContent?.sections).length - 1
@@ -1457,18 +1510,26 @@ export default function ExtractionResultPage() {
                         <h3 className="text-2xl font-bold text-gray-900">{sectionHeadingText}</h3>
                       )}
                       <div className="flex justify-center">
-                        {cornerImageUrl ? (
-                          <KnowledgeInsightCard
+                        {composedCardUrl ? (
+                          <img
+                            src={composedCardUrl}
+                            alt={cardHeadline || `지식공유 카드 ${index + 1}`}
+                            className="w-full max-w-xl rounded-3xl cursor-zoom-in"
+                            onClick={() => openImagePreview(composedCardUrl, cardHeadline || `지식공유 카드 ${index + 1}`)}
+                          />
+                        ) : (
+                          <KnowledgeInsightCardReady
                             index={index}
                             headline={cardHeadline}
                             bullets={cardBullets}
                             imageUrl={cornerImageUrl}
+                            placeholder={(
+                              <div className="w-full max-w-xl aspect-square rounded-3xl border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-400">
+                                <Loader2 size={22} className="animate-spin" />
+                                <span className="text-sm">카드 준비 중...</span>
+                              </div>
+                            )}
                           />
-                        ) : (
-                          <div className="w-full max-w-xl aspect-square rounded-3xl border border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center gap-2 text-gray-400">
-                            <Loader2 size={22} className="animate-spin" />
-                            <span className="text-sm">카드 이미지 합성 중...</span>
-                          </div>
                         )}
                       </div>
                       {sectionContent && (
@@ -1682,22 +1743,38 @@ export default function ExtractionResultPage() {
       }
       const cardTitle = getInstagramOverlayTitle(card, cardIndex)
       const bullets = buildInstagramKnowledgeBullets(card)
-      const cardElement = (
-        <KnowledgeInsightCard
-          index={cardIndex}
-          headline={cardTitle}
-          bullets={bullets}
-          imageUrl={cardImage?.imageUrl || null}
-        />
-      )
+      const cornerUrl = cardImage?.imageUrl || null
+
+      // 캡쳐용(attachRef) 은 html2canvas 가 잡을 실제 카드를 그대로 렌더해야 한다.
       if (attachRef) {
         return (
           <div ref={el => { instaCardsRef.current[cardIndex] = el }}>
-            {cardElement}
+            <KnowledgeInsightCard
+              index={cardIndex}
+              headline={cardTitle}
+              bullets={bullets}
+              imageUrl={cornerUrl}
+            />
           </div>
         )
       }
-      return cardElement
+
+      // 화면 표시용은 우하단 그림을 미리 로드한 뒤 카드 전체를 한 번에 노출한다.
+      return (
+        <KnowledgeInsightCardReady
+          index={cardIndex}
+          headline={cardTitle}
+          bullets={bullets}
+          imageUrl={cornerUrl}
+          imageOptional={Boolean(card?.isCaptionCta)}
+          placeholder={(
+            <div className="w-full aspect-square rounded-[28px] bg-gray-100 flex flex-col items-center justify-center gap-2 text-gray-400">
+              <Loader2 size={22} className="animate-spin" />
+              <span className="text-sm">카드 준비 중...</span>
+            </div>
+          )}
+        />
+      )
     }
 
     return (

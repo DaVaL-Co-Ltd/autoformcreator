@@ -2587,7 +2587,14 @@ ${parsedText}
         const match = sectionImageList.find((img) =>
           img?.heading && section?.heading && img.heading === section.heading
         ) || sectionImageList[index]
-        const cornerImageUrl = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
+        // renderedImageUrl / pngUrl 은 합성된 완성 카드. imageUrl 은 우하단 코너 원본.
+        const composedUrl = match?.renderedImageUrl || match?.pngUrl || null
+        const cornerImageUrl = match?.imageUrl || null
+        const alt = section?.heading || `블로그 카드 ${index + 1}`
+        // 합성본이 이미 있으면 그 이미지를 그대로 노출한다.
+        if (composedUrl) {
+          return { alt, url: composedUrl }
+        }
         const cardSummary = section?.cardSummary || {}
         const headline = String(cardSummary.headline || section?.heading || '').trim()
         const bullets = Array.isArray(cardSummary.bullets)
@@ -2596,7 +2603,7 @@ ${parsedText}
         const hasText = Boolean(headline) || bullets.length > 0
         const ready = hasText && Boolean(cornerImageUrl)
         return {
-          alt: section?.heading || `블로그 카드 ${index + 1}`,
+          alt,
           pending: !ready,
           card: ready ? { headline, bullets, imageUrl: cornerImageUrl, index } : null,
         }
@@ -2639,7 +2646,14 @@ ${parsedText}
           const imageCardNumber = img?.cardNumber || img?.card_number || i + 1
           return imageCardNumber === cardNumber
         }) || images[idx])
-      const cornerImageUrl = match?.renderedImageUrl || match?.pngUrl || match?.imageUrl || null
+      // renderedImageUrl / pngUrl 은 합성된 완성 카드. imageUrl 은 우하단 코너 원본.
+      const composedUrl = match?.renderedImageUrl || match?.pngUrl || null
+      const cornerImageUrl = match?.imageUrl || null
+      const alt = card?.title || card?.heading || `인스타 카드 ${cardNumber}`
+      // 합성본이 이미 있으면 그 이미지를 그대로 노출한다.
+      if (composedUrl) {
+        return { alt, url: composedUrl }
+      }
       const headline = getInstagramOverlayTitle(card, idx)
       const bullets = buildInstagramKnowledgeBullets(card)
       const hasText = Boolean(headline) || bullets.length > 0
@@ -2647,7 +2661,7 @@ ${parsedText}
       // 일반 카드는 글자 + 우하단 그림이 모두 준비됐을 때만 최종 카드를 노출.
       const ready = hasText && (Boolean(card?.isCaptionCta) || Boolean(cornerImageUrl))
       return {
-        alt: card?.title || card?.heading || `인스타 카드 ${cardNumber}`,
+        alt,
         pending: !ready,
         card: ready ? { headline, bullets, imageUrl: cornerImageUrl, index: idx } : null,
       }

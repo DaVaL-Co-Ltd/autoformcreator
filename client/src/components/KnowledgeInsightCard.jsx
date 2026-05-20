@@ -2,6 +2,8 @@
 // 배경 스타일을 인덱스 기반으로 결정해 카드마다 변주를 준다.
 // imageUrl 이 전달되면 우하단에 본문 관련 대표 이미지를 함께 배치한다.
 
+import { useEffect, useState } from 'react'
+
 const CARD_WRAPPER_CLASS = 'relative w-full max-w-xl aspect-square rounded-3xl flex items-center justify-center'
 
 const BACKGROUND_STYLES = [
@@ -139,5 +141,48 @@ export default function KnowledgeInsightCard({
         />
       )}
     </div>
+  )
+}
+
+// 우하단 그림(imageUrl)을 미리 로드한 뒤에만 카드를 렌더한다.
+// 글자만 먼저 뜨고 몇 초 후 그림이 팝인되는 깜빡임을 막기 위함.
+// imageUrl 이 없고 imageOptional=true 면(예: 인스타 CTA 카드) 곧바로 렌더한다.
+export function KnowledgeInsightCardReady({
+  index = 0,
+  headline = '',
+  bullets = [],
+  imageUrl = null,
+  fontFamily,
+  placeholder = null,
+  imageOptional = false,
+}) {
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!imageUrl) {
+      setReady(Boolean(imageOptional))
+      return undefined
+    }
+    setReady(false)
+    const img = new Image()
+    const done = () => { if (!cancelled) setReady(true) }
+    img.onload = done
+    img.onerror = done
+    img.src = imageUrl
+    if (img.complete && img.naturalWidth > 0) done()
+    return () => { cancelled = true }
+  }, [imageUrl, imageOptional])
+
+  if (!ready) return placeholder
+
+  return (
+    <KnowledgeInsightCard
+      index={index}
+      headline={headline}
+      bullets={bullets}
+      imageUrl={imageUrl}
+      {...(fontFamily ? { fontFamily } : {})}
+    />
   )
 }

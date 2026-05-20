@@ -1,5 +1,11 @@
-﻿import { getExtractionById } from './storage'
+﻿import { getExtractionById, updateExtractionMedia } from './storage'
 import { getBlogUploadServerBase, shouldUseRemoteBlogPublish } from '../utils/blogUploadServer.js'
+import {
+  buildInstagramDisplayCards,
+  buildInstagramKnowledgeBullets,
+  getInstagramOverlayTitle,
+} from '../utils/instagramCarousel.js'
+import { renderKnowledgeCardDataUrl } from '../utils/knowledgeCardCapture.jsx'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
@@ -393,14 +399,76 @@ export async function uploadToShortsTargets(extractionId, options = {}) {
   }
 }
 
+// 발행 전에 인스타 카드 이미지를 추출물에 저장(공개 URL화)한다.
+// 이렇게 하면 발행 시 서버로 data URL 이 아닌 공개 URL 이 전달되어
+// 서버가 instagram/ 폴더에 별도 사본을 만들지 않고, 이미지는 instagram_images
+// 컬럼에 기록되어 추출물 삭제 시 함께 정리된다.
+async function ensureInstagramImagesPublished(extractionId, ext) {
+  const igContent = ext.data?.instagramContent || ext.instagramContent || {}
+  const cards = buildInstagramDisplayCards(igContent)
+  const baseImages = Array.isArray(ext.data?.instagramImages || ext.instagramImages)
+    ? [...(ext.data?.instagramImages || ext.instagramImages)]
+    : []
+  if (!cards.length || typeof document === 'undefined') return baseImages
+
+  let changed = false
+  const nextImages = await Promise.all(cards.map(async (card, idx) => {
+    const cardNumber = Number(card?.cardNumber || card?.card_number) || idx + 1
+    const existing = card?.isCaptionCta
+      ? baseImages[baseImages.length - 1]
+      : (baseImages.find((img, i) => (Number(img?.cardNumber || img?.card_number) || i + 1) === cardNumber) || baseImages[idx])
+    const base = (existing && typeof existing === 'object') ? { ...existing } : { cardNumber }
+
+    // 이미 합성 카드(renderedImageUrl)가 있으면 그대로 둔다.
+    if (base.renderedImageUrl || base.pngUrl) return base
+
+    const headline = getInstagramOverlayTitle(card, idx)
+    const bullets = buildInstagramKnowledgeBullets(card)
+    if (!headline && bullets.length === 0) return base
+    try {
+      const cardUrl = await renderKnowledgeCardDataUrl({
+        headline,
+        bullets,
+        imageUrl: base.imageUrl || null,
+        index: idx,
+      })
+      if (cardUrl) {
+        changed = true
+        return { ...base, renderedImageUrl: cardUrl, pngUrl: cardUrl }
+      }
+    } catch (error) {
+      console.warn('[uploadToInstagram] 카드 합성 실패:', error)
+    }
+    return base
+  }))
+
+  const hasDataUrl = nextImages.some((img) =>
+    ['imageUrl', 'renderedImageUrl', 'pngUrl'].some((field) =>
+      typeof img?.[field] === 'string' && img[field].startsWith('data:')
+    )
+  )
+  if (!changed && !hasDataUrl) return baseImages
+
+  try {
+    const saved = await updateExtractionMedia(extractionId, { instagramImages: nextImages })
+    return saved?.data?.instagramImages || saved?.instagramImages || nextImages
+  } catch (error) {
+    // 저장 실패 시에도 발행 자체는 진행한다(서버가 사본을 만들 수 있음).
+    console.warn('[uploadToInstagram] 카드 이미지 저장 실패:', error)
+    return nextImages
+  }
+}
+
 export async function uploadToInstagram(extractionId) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
   const igContent = ext.data?.instagramContent || ext.instagramContent || {}
+  // 발행 전 카드 이미지를 추출물에 저장해 공개 URL 로 만든다.
+  const persistedImages = await ensureInstagramImagesPublished(extractionId, ext)
   const renderedContent = await buildInstagramScheduledUploadContent({
     instagramContent: igContent,
-    instagramImages: ext.data?.instagramImages || ext.instagramImages || [],
+    instagramImages: persistedImages,
     instaPngUrls: ext.data?.instaPngUrls || ext.instaPngUrls || [],
   })
   const images = (renderedContent.imageUrls || []).filter(Boolean)
