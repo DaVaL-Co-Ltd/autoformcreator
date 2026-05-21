@@ -2,7 +2,7 @@
 // ExtractionPage.jsx 의 쇼츠 영상 생성 로직을 그대로 복제한다:
 //   - briefing_dongwan, pet_dictionary → Video Agent (/v1/video_agent/generate)
 //   - dongwan_secret  → 표준 (/v2/video/generate) + randomVariantPerVideo
-//   - godsaeng_routine → 표준 + shuffleSceneVariants + full-vlog(Gemini 배경)
+//   - godsaeng_routine → 표준 + randomVariantPerVideo (아바타 자체 배경)
 //
 // 사용: node scripts/test-shorts-concepts-1to4.mjs [conceptId ...]
 //   인자 없으면 4개 전부. 예) node scripts/test-shorts-concepts-1to4.mjs dongwan_secret
@@ -39,7 +39,6 @@ await loadDotenv(path.join(ROOT, 'server', '.env'))
 await loadDotenv(path.join(ROOT, '.env.local'))
 
 const HEYGEN_API_KEY = (process.env.HEYGEN_API_KEY || '').trim()
-const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim()
 if (!HEYGEN_API_KEY) {
   console.error('HEYGEN_API_KEY 없음 (server/.env 또는 .env.local)')
   process.exit(1)
@@ -83,49 +82,8 @@ function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-// server/index.js 의 /api/heygen/shorts-vlog-background 복제:
-// Gemini 이미지 생성 → HeyGen 자산 업로드 → image_key 반환.
-const VLOG_MOOD_VARIATIONS = [
-  'warm beige and cream color palette',
-  'cool white and soft sage color palette',
-  'pastel pink and dusty rose color palette',
-  'soft mint and cream color palette',
-  'muted cream and oat tone palette',
-  'warm honey and amber color palette',
-]
-async function generateVlogBackground(visualDescription) {
-  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 없음 — full-vlog 배경 생성 불가')
-  const seedMood = VLOG_MOOD_VARIATIONS[Math.floor(Math.random() * VLOG_MOOD_VARIATIONS.length)]
-  const prompt = `${visualDescription}, ${seedMood}, vertical 9:16 composition, no people visible, no text overlays, no logos, no watermarks, professional vlog photography, high quality realistic photo`
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${GEMINI_API_KEY}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-    }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(`Gemini image ${res.status}: ${JSON.stringify(data).slice(0, 200)}`)
-  const parts = data?.candidates?.[0]?.content?.parts || []
-  const imagePart = parts.find((p) => p.inlineData?.data)
-  if (!imagePart) throw new Error('Gemini 이미지 미반환')
-  const buffer = Buffer.from(imagePart.inlineData.data, 'base64')
-  const mimeType = imagePart.inlineData.mimeType || 'image/png'
-  const up = await fetch('https://upload.heygen.com/v1/asset', {
-    method: 'POST',
-    headers: { 'X-Api-Key': HEYGEN_API_KEY, 'Content-Type': mimeType },
-    body: buffer,
-  })
-  const upData = await up.json().catch(() => ({}))
-  if (!up.ok) throw new Error(`HeyGen upload ${up.status}: ${JSON.stringify(upData).slice(0, 200)}`)
-  // background.image_asset_id 는 asset UUID 만 받는다 — data.id 우선, 없으면 image_key 의 UUID 토큰.
-  return upData.data?.id || String(upData.data?.image_key || '').split('/')[1] || ''
-}
-
 // 표준 엔드포인트 video_inputs 빌드 (ExtractionPage standard 경로 복제).
-// 솔로/멀티 아바타, variant 랜덤·셔플, full-vlog / dialogue·quiz·solo-shared-bg 레이아웃 처리.
+// 솔로/멀티 아바타, variant 랜덤·셔플 처리. 배경은 아바타 자체 배경 / 컨셉 단색만 사용.
 async function buildStandardInputs(concept, script) {
   const useMultiAvatar = concept.preferredAvatarIds.length > 1
   const hasSceneAvatars = !useMultiAvatar
@@ -150,19 +108,6 @@ async function buildStandardInputs(concept, script) {
     conceptAvatarIds = [baseAvatarId]
   }
 
-  // 공유 배경: dialogue/quiz/solo-shared-bg 씬이 있으면 sharedBackground 로 1회만 생성.
-  let sharedBgId = null
-  const needsSharedBg = script.scenes.some((s) =>
-    s?.layout === 'dialogue-shared-bg' || s?.layout === 'quiz-shared-bg' || s?.layout === 'solo-shared-bg')
-  if (needsSharedBg && script.sharedBackground?.visualDescription) {
-    try {
-      sharedBgId = await generateVlogBackground(script.sharedBackground.visualDescription)
-      console.log(`  공유 배경 생성 OK`)
-    } catch (e) {
-      console.warn(`  공유 배경 생성 실패: ${e.message}`)
-    }
-  }
-
   const inputs = []
   for (let idx = 0; idx < script.scenes.length; idx++) {
     const scene = script.scenes[idx]
@@ -177,27 +122,7 @@ async function buildStandardInputs(concept, script) {
         ? { type: 'silence', duration: Number(scene?.duration) || 3 }
         : { type: 'text', input_text: narration, voice_id: voiceId },
     }
-    if (scene?.layout === 'full-vlog' && scene?.visualDescription) {
-      try {
-        const key = await generateVlogBackground(scene.visualDescription)
-        if (key) {
-          input.background = { type: 'image', image_asset_id: key }
-          console.log(`  씬 ${idx + 1} 배경 생성 OK`)
-        }
-      } catch (e) {
-        console.warn(`  씬 ${idx + 1} 배경 실패: ${e.message}`)
-      }
-    } else if (scene?.layout === 'dialogue-shared-bg' && sharedBgId) {
-      // 공유 배경 + speakerSide 로 좌우 배치.
-      const side = scene?.speakerSide === 'right' ? 0.30 : -0.30
-      input.character.scale = 0.85
-      input.character.offset = { x: side, y: 0 }
-      input.background = { type: 'image', image_asset_id: sharedBgId }
-    } else if ((scene?.layout === 'quiz-shared-bg' || scene?.layout === 'solo-shared-bg') && sharedBgId) {
-      // 공유 배경 + 아바타 중앙 풀샷 (scale·offset 기본값).
-      input.background = { type: 'image', image_asset_id: sharedBgId }
-    }
-    // 컨셉 backgroundColor 지정 시, 배경 미설정 씬에 단색 배경 적용 (프레이밍 통일).
+    // 컨셉 backgroundColor 지정 시 단색 배경 적용 (프레이밍 통일). 그 외엔 아바타 자체 배경.
     if (!input.background && concept.backgroundColor) {
       input.background = { type: 'color', value: concept.backgroundColor }
     }

@@ -1642,31 +1642,6 @@ DO NOT:
                   ? shuffledSceneAvatarIds
                   : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [talkingPhotoId])))
 
-        // dialogue-shared-bg / quiz-shared-bg / solo-shared-bg: 한 영상에서 모든 씬이 1장의 배경 공유. 미리 1회만 fetch.
-        let sharedDialogueBgKey = null
-        const hasSharedBgScene = scenesForStandard.some((s) =>
-          s?.layout === 'dialogue-shared-bg' || s?.layout === 'quiz-shared-bg' || s?.layout === 'solo-shared-bg'
-        )
-        if (hasSharedBgScene && targetScript?.sharedBackground?.visualDescription) {
-          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '공유 배경 준비 중...' }))
-          try {
-            const sharedBgRes = await apiFetch('/api/heygen/shorts-vlog-background', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                visualDescription: targetScript.sharedBackground.visualDescription,
-                sceneNumber: 0,
-              }),
-            })
-            const sharedBgData = await readApiResponse(sharedBgRes)
-            if (sharedBgRes.ok && sharedBgData?.image_key) {
-              sharedDialogueBgKey = sharedBgData.image_key
-            }
-          } catch (err) {
-            console.warn('[shared dialogue bg] 실패:', err.message)
-          }
-        }
-
         // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
         let quizCountdownAssetId = null
         const hasCountdownScene = scenesForStandard.some((s) => s?.layout === 'quiz-countdown')
@@ -1712,53 +1687,11 @@ DO NOT:
                   voice_id: preset?.defaultVoiceId,
                 },
           }
-          if (scene?.layout === 'dialogue-shared-bg' && sharedDialogueBgKey) {
-            // 모든 씬이 같은 배경 공유. speakerSide 로 좌우 위치만 다르게.
-            const side = scene?.speakerSide === 'right' ? 0.30 : -0.30
-            baseInput.character.scale = 0.85
-            baseInput.character.offset = { x: side, y: 0 }
-            baseInput.background = {
-              type: 'image',
-              image_asset_id: sharedDialogueBgKey,
-            }
-          } else if ((scene?.layout === 'quiz-shared-bg' || scene?.layout === 'solo-shared-bg') && sharedDialogueBgKey) {
-            // 모든 씬이 같은 배경 공유. 아바타는 중앙 풀샷 (scale·offset 기본값).
-            // quiz-shared-bg: 5인 교차 등장 / solo-shared-bg: 솔로 1인 (parent_mental_care 등).
-            baseInput.background = {
-              type: 'image',
-              image_asset_id: sharedDialogueBgKey,
-            }
-          } else if (scene?.layout === 'quiz-countdown') {
+          if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
             // 3초 대기 씬 — 카운트다운 영상을 배경으로 깖. 아바타는 중앙 풀샷 idle.
-            if (quizCountdownAssetId) {
-              baseInput.background = {
-                type: 'video',
-                video_asset_id: quizCountdownAssetId,
-              }
-            } else if (sharedDialogueBgKey) {
-              // 카운트다운 영상 준비 실패 시 공유 배경으로 fallback (대기 자체는 유지).
-              baseInput.background = { type: 'image', image_asset_id: sharedDialogueBgKey }
-            }
-          } else if (scene?.layout === 'full-vlog' && scene?.visualDescription) {
-            try {
-              const bgRes = await apiFetch('/api/heygen/shorts-vlog-background', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  visualDescription: scene.visualDescription,
-                  sceneNumber: scene.sceneNumber || idx + 1,
-                }),
-              })
-              const bgData = await readApiResponse(bgRes)
-              if (bgRes.ok && bgData?.image_key) {
-                // 풀화면 아바타 유지 (scale·offset 기본값) + 브이로그 배경만 합성
-                baseInput.background = {
-                  type: 'image',
-                  image_asset_id: bgData.image_key,
-                }
-              }
-            } catch (err) {
-              console.warn(`[shorts vlog bg] scene ${scene?.sceneNumber} 실패:`, err.message)
+            baseInput.background = {
+              type: 'video',
+              video_asset_id: quizCountdownAssetId,
             }
           }
           // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 단색 배경 적용

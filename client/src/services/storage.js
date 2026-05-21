@@ -141,6 +141,15 @@ export async function updateExtractionMedia(id, media = {}) {
   return rowToItem(item)
 }
 
+// 본문(텍스트) 수정 저장. content 는 { blogContent?, newsletterContent?, instagramContent?, shortsScript? } 부분 업데이트.
+export async function updateExtractionContent(id, content = {}) {
+  const item = await apiRequest(`/api/extractions/${id}/content`, {
+    method: 'PATCH',
+    body: JSON.stringify(content),
+  })
+  return rowToItem(item)
+}
+
 export async function getExtractions() {
   const result = await apiRequest('/api/extractions')
   return {

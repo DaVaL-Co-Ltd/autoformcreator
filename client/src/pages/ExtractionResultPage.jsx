@@ -4,14 +4,14 @@ import { useMemo } from 'react'
 import {
   FileText, Image, Mail, Film, ArrowLeft, ArrowRight, Copy, Download,
   CheckCircle, Clock, ChevronLeft, ChevronRight, ExternalLink,
-  Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff, X, ZoomIn
+  Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff, X, ZoomIn, Pencil
 } from 'lucide-react'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus } from '../services/storage'
+import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus, updateExtractionContent } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest, stripMarkdownEmphasis } from '../utils/platformFormatter'
 import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
@@ -44,6 +44,7 @@ import { BlogImageArtwork, InstagramImageArtwork } from '../components/contentIm
 import KnowledgeInsightCard, { KnowledgeInsightCardReady } from '../components/KnowledgeInsightCard'
 import { renderKnowledgeCardDataUrl } from '../utils/knowledgeCardCapture.jsx'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
+import ContentEditModal from '../components/ContentEditModal'
 import {
   cleanCardText,
   deriveBlogHeadline,
@@ -303,6 +304,7 @@ export default function ExtractionResultPage() {
   const [uploadStatus, setUploadStatus] = useState({}) // { blog: 'idle'|'loading'|'done'|'error', ... }
   const [uploadError, setUploadError] = useState(null)
   const [extractionId, setExtractionId] = useState(null)
+  const [editingChannel, setEditingChannel] = useState(null) // 'blog' | 'newsletter' | 'instagram' | 'shorts' | null
   const [scheduleDialog, setScheduleDialog] = useState({ open: false, platform: 'blog', content: {} })
   const [blogServerStatus, setBlogServerStatus] = useState('idle') // idle | checking | online | offline
   const [blogUploadResult, setBlogUploadResult] = useState(null) // { url } | null
@@ -2271,6 +2273,19 @@ export default function ExtractionResultPage() {
     : []
   const activeMenuLabel = menuItems.find(item => item.id === activeMenu)?.label || '결과물'
 
+  const CHANNEL_CONTENT_KEY = { blog: 'blogContent', newsletter: 'newsletterContent', instagram: 'instagramContent', shorts: 'shortsScript' }
+
+  // 본문 수정 저장: 로컬 state 즉시 반영 + 저장된 추출이면 서버에도 반영.
+  const handleSaveEditedContent = async (updatedContent) => {
+    const key = CHANNEL_CONTENT_KEY[editingChannel]
+    if (!key) return
+    setResolvedState((prev) => ({ ...(prev || state), [key]: updatedContent }))
+    if (extractionId) {
+      await updateExtractionContent(extractionId, { [key]: updatedContent })
+    }
+    setEditingChannel(null)
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
       <NavigationBlockerModal when={isBusy} />
@@ -2305,8 +2320,18 @@ export default function ExtractionResultPage() {
             </button>
           )
         })}
+        {dataMap[activeMenu] && (
+          <button
+            type="button"
+            onClick={() => setEditingChannel(activeMenu)}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+            title="본문 텍스트를 수정합니다"
+          >
+            <Pencil size={14} /> 수정
+          </button>
+        )}
         {dataMap[activeMenu] && activeMenu !== 'newsletter' && activeMenu !== 'shorts' && (
-          <div className="ml-auto flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {(() => {
               const ch = activeMenu
               const status = uploadStatus[ch]
@@ -2480,6 +2505,16 @@ export default function ExtractionResultPage() {
           </div>
         )}
       </div>
+
+      {editingChannel && dataMap[editingChannel] && (
+        <ContentEditModal
+          channel={editingChannel}
+          channelLabel={menuItems.find(item => item.id === editingChannel)?.label || '콘텐츠'}
+          content={dataMap[editingChannel]}
+          onClose={() => setEditingChannel(null)}
+          onSave={handleSaveEditedContent}
+        />
+      )}
 
       <ScheduleDialog
         open={scheduleDialog.open}

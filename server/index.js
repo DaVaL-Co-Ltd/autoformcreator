@@ -23,6 +23,7 @@ const {
   ensureSupabaseConfigured,
   saveExtraction,
   updateExtractionMedia,
+  updateExtractionContent,
   listExtractions,
   fetchExtractionById,
   updateUploadStatus,
@@ -692,85 +693,8 @@ function escapeXml(str) {
 // ===== Shorts vlog background: Gemini 이미지 생성 + HeyGen 업로드 =====
 // body: { visualDescription, sceneNumber? }
 // returns: { image_key, url }
-const VLOG_MOOD_VARIATIONS = [
-  'warm beige and cream color palette',
-  'cool white and soft sage color palette',
-  'pastel pink and dusty rose color palette',
-  'soft mint and cream color palette',
-  'muted cream and oat tone palette',
-  'warm honey and amber color palette',
-]
-app.post('/api/heygen/shorts-vlog-background', async (req, res) => {
-  const apiKey = process.env.HEYGEN_API_KEY
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY
-  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured' })
-  if (!geminiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not configured' })
-
-  try {
-    const { visualDescription = '', sceneNumber = 1 } = req.body || {}
-    if (!visualDescription) return res.status(400).json({ error: 'visualDescription required' })
-    // sceneNumber 는 파일명에 들어가므로 path traversal 방어용으로 정수만 허용.
-    const sceneNumberSafe = Math.max(0, Math.floor(Number(sceneNumber)) || 0)
-
-    // 매번 다른 분위기 위해 랜덤 시드 키워드 추가
-    const seedMood = VLOG_MOOD_VARIATIONS[Math.floor(Math.random() * VLOG_MOOD_VARIATIONS.length)]
-    const prompt = `${visualDescription}, ${seedMood}, vertical 9:16 composition, no people visible, no text overlays, no logos, no watermarks, professional vlog photography, high quality realistic photo`
-
-    // Gemini 이미지 생성 호출
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiKey}`
-    const geminiBody = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-    }
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
-    })
-    const geminiData = await geminiRes.json()
-    if (!geminiRes.ok) {
-      return res.status(geminiRes.status).json({ error: 'Gemini image failed', detail: geminiData })
-    }
-    const parts = geminiData?.candidates?.[0]?.content?.parts || []
-    const imagePart = parts.find((p) => p.inlineData?.data)
-    if (!imagePart) {
-      return res.status(500).json({ error: 'Gemini did not return an image', detail: parts.slice(0, 2) })
-    }
-    const buffer = Buffer.from(imagePart.inlineData.data, 'base64')
-    const mimeType = imagePart.inlineData.mimeType || 'image/png'
-
-    // 디스크 저장 (디버그용)
-    const outputDir2 = path.join(__dirname, '..', 'output')
-    if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
-    const ts = Date.now()
-    const filename = `shorts_vlog_bg_${sceneNumberSafe}_${ts}.png`
-    const localPath = path.join(outputDir2, filename)
-    fs.writeFileSync(localPath, buffer)
-
-    // HeyGen 자산 업로드
-    const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
-      method: 'POST',
-      headers: { 'X-Api-Key': apiKey, 'Content-Type': mimeType },
-      body: buffer,
-    })
-    const uploadData = await uploadRes.json()
-    if (!uploadRes.ok) {
-      return res.status(uploadRes.status).json({ error: 'HeyGen upload failed', detail: uploadData })
-    }
-    // HeyGen /v2/video/generate 의 background.image_asset_id 는 asset UUID 만 받는다.
-    // 업로드 응답의 data.id(UUID) 우선, 없으면 image_key("image/UUID/original.png")의 UUID 토큰 추출.
-    const imageKey = uploadData.data?.id || String(uploadData.data?.image_key || '').split('/')[1] || ''
-
-    res.json({
-      image_key: imageKey,
-      url: uploadData.data?.url,
-      localPath: `/output/${filename}`,
-      seedMood,
-    })
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
+// 쇼츠 Gemini 배경 생성 기능 제거됨.
+// 숏폼 배경은 아바타 자체 배경 / 컨셉 backgroundColor 단색 / quiz-countdown 영상만 사용한다.
 
 // ===== Quiz countdown background video: 3→2→1 카운트다운 영상 생성 + HeyGen 업로드 =====
 // ox_quiz 의 'quiz-countdown' 대기 씬 배경으로 쓰는 3초 카운트다운 영상.
@@ -3032,6 +2956,16 @@ app.patch('/api/extractions/:id/media', async (req, res) => {
   try {
     ensureSupabaseConfigured()
     const item = await updateExtractionMedia(req.params.id, req.body || {}, req)
+    res.json(item)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.patch('/api/extractions/:id/content', async (req, res) => {
+  try {
+    ensureSupabaseConfigured()
+    const item = await updateExtractionContent(req.params.id, req.body || {})
     res.json(item)
   } catch (err) {
     res.status(500).json({ error: err.message })

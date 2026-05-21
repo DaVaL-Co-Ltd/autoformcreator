@@ -43,6 +43,7 @@ app.get('/api/health', vercel(require('./_lib/health')));
 app.get('/api/extractions', vercel(require('./_lib/extractions/index')));
 app.post('/api/extractions', vercel(require('./_lib/extractions/index')));
 app.patch('/api/extractions/:id/media', vercel(require('./_lib/extractions/[id]/media')));
+app.patch('/api/extractions/:id/content', vercel(require('./_lib/extractions/[id]/content')));
 app.patch('/api/extractions/:id/upload-status', vercel(require('./_lib/extractions/[id]/upload-status')));
 app.delete('/api/extractions/:id/channels/:channel', vercel(require('./_lib/extractions/[id]/channels/[channel]')));
 app.get('/api/extractions/:id', vercel(require('./_lib/extractions/[id]/index')));

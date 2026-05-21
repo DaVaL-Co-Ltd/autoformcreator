@@ -307,6 +307,29 @@ async function updateExtractionMedia(id, media, req) {
   return rowToItem(Array.isArray(data) ? data[0] : data)
 }
 
+async function updateExtractionContent(id, content) {
+  const patch = {}
+  if (content?.blogContent !== undefined) patch.blog_content = content.blogContent
+  if (content?.newsletterContent !== undefined) patch.newsletter_content = content.newsletterContent
+  if (content?.instagramContent !== undefined) patch.instagram_content = content.instagramContent
+  if (content?.shortsScript !== undefined) patch.shorts_script = content.shortsScript
+
+  if (Object.keys(patch).length === 0) {
+    return fetchExtractionById(id)
+  }
+
+  const params = new URLSearchParams()
+  params.set('id', `eq.${id}`)
+  params.set('select', '*')
+  const { data } = await restRequest(`/rest/v1/extractions?${params.toString()}`, {
+    method: 'PATCH',
+    headers: buildRestHeaders({ prefer: 'return=representation' }),
+    body: JSON.stringify(patch),
+  })
+
+  return rowToItem(Array.isArray(data) ? data[0] : data)
+}
+
 async function fetchContentStats() {
   try {
     const params = new URLSearchParams()
@@ -471,6 +494,7 @@ module.exports = {
   ensureSupabaseConfigured,
   saveExtraction,
   updateExtractionMedia,
+  updateExtractionContent,
   listExtractions,
   fetchExtractionById,
   updateUploadStatus,

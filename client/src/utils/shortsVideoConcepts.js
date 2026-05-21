@@ -137,7 +137,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.female_student],
     // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용" (dongwan_secret 과 동일 방식).
     // → randomVariantPerVideo: true 로 영상 1개당 Alexa variant 1개를 랜덤 픽해 모든 씬에 동일 적용.
-    // 별도 배경 합성(full-vlog) 은 쓰지 않는다 — variant 자체 배경을 그대로 사용해 합성 어색함을 없앤다.
+    // 별도 배경 합성은 쓰지 않는다 — variant 자체 배경을 그대로 사용해 합성 어색함을 없앤다.
     // 풀은 Alexa 12 variant 전부 (실내·카페·창가 계열 — 갓생 브이로그 톤에 두루 어울림).
     sceneAvatarIds: [
       '62b02a920a78424e94f63f2ddb85dc99', // 창가 미소, 흰 홀터넥 + 헤어밴드
