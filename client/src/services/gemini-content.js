@@ -1142,6 +1142,8 @@ ${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 - scenes는 3개 이상으로 구성하세요.
 - 총 길이는 20~30초 사이로 작성하세요.
 - uploadTitle은 60자 이내, uploadDescription은 200~400자 사이로 작성하세요.
@@ -1290,6 +1292,8 @@ ${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 
 ${buildBlogTitleRules()}
 ## 블로그 규칙
@@ -1436,6 +1440,8 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 없는 사실은 추가하지 마세요.
 - scenes는 3개 이상으로 구성하세요.
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)

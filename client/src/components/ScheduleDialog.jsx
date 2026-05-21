@@ -6,6 +6,9 @@ import { CHANNELS } from '../constants/channels'
 const MINUTE_STEP = 10
 const BLOG_MIN_LEAD_MINUTES = 10
 
+// 분 select 의 고정 선택지 (00·10·20·…·50)
+const MINUTE_OPTIONS = Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, '0'))
+
 const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
   blog: {
     title: '네이버 블로그 추천 시간',
@@ -83,7 +86,10 @@ function getDefaultScheduleDate(initialDatetime, platform = 'blog') {
     return Number.isNaN(initialDate.getTime()) ? getMinimumScheduleDate(platform) : initialDate
   }
 
-  return new Date(Date.now() + 60 * 60 * 1000)
+  // 기본 시간(지금부터 1시간 뒤)도 분 select 선택지에 맞춰 10분 단위로 올림한다.
+  // 올림하지 않으면 datetime 상태(예: 15:23)와 드롭다운 표시(옵션에 없어 빈칸/00분)가
+  // 어긋나, 사용자가 본 시간과 실제 저장 시간이 달라진다.
+  return roundUpToMinuteStep(new Date(Date.now() + 60 * 60 * 1000))
 }
 
 function normalizeScheduledAtForPlatform(platform, datetimeValue) {
@@ -175,6 +181,12 @@ function ScheduleDialogBody({
       minute: String(now.getMinutes()).padStart(2, '0'),
     }
   })()
+
+  // 기존 예약 시간이 10분 단위가 아니면(레거시·네이티브 예약) 그 분도 선택지에 포함해
+  // 드롭다운이 실제 저장된 분과 다른 값을 보여주지 않게 한다.
+  const minuteChoices = MINUTE_OPTIONS.includes(parts.minute)
+    ? MINUTE_OPTIONS
+    : [...MINUTE_OPTIONS, parts.minute].sort((a, b) => Number(a) - Number(b))
 
   const updateParts = (next) => {
     setDatetime(`${next.date}T${next.hour}:${next.minute}`)
@@ -282,7 +294,7 @@ function ScheduleDialogBody({
               onChange={(e) => updateParts({ ...parts, minute: e.target.value })}
               className="px-2 py-2 bg-surface-light border border-border rounded-lg text-sm text-text focus:outline-none focus:border-primary transition-colors"
             >
-              {Array.from({ length: 60 / MINUTE_STEP }, (_, i) => String(i * MINUTE_STEP).padStart(2, '0')).map((minute) => (
+              {minuteChoices.map((minute) => (
                 <option key={minute} value={minute}>{minute}분</option>
               ))}
             </select>
