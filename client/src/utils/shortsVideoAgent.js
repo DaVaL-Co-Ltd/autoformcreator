@@ -21,10 +21,6 @@ export const SHORTS_SUBTITLE_STYLE_OPTIONS = [
   },
 ]
 
-function getSubtitleFontOption(font) {
-  return SHORTS_SUBTITLE_FONT_OPTIONS.find((option) => option.value === font) || SHORTS_SUBTITLE_FONT_OPTIONS[0]
-}
-
 function getSubtitleStyleOption(style) {
   return SHORTS_SUBTITLE_STYLE_OPTIONS.find((option) => option.value === style) || SHORTS_SUBTITLE_STYLE_OPTIONS[0]
 }
@@ -74,7 +70,7 @@ function buildSceneLines(script) {
         const visual = scene?.visualDescription
           ? ` / Visual content for HeyGen to render: ${scene.visualDescription}`
           : ''
-        return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${scene.narration}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
+        return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${scene.narration}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The chart, graph, or table MUST be ANIMATED motion graphics — bars grow in, line graphs draw on progressively, pie/donut segments sweep in, key numbers count up — never a flat static image. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
       }
       const layoutDirection = sceneNeedsTextOnlyOverlay(scene)
         ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
@@ -91,14 +87,10 @@ export function mapShortsSubtitleStyleToBurnStyle(style) {
 export function buildShortsVideoAgentPrompt({
   script,
   avatar,
-  subtitleStyle = 'style1',
-  subtitleFont = 'default',
   extraPrompt = '',
   videoStyle = 'avatar',
   narrationTone = 'auto',
 }) {
-  const fontOption = getSubtitleFontOption(subtitleFont)
-  const styleOption = getSubtitleStyleOption(subtitleStyle)
   const duration = script?.duration || '30'
   const sceneLines = buildSceneLines(script)
   const avatarName = avatar?.name || ''
@@ -115,21 +107,12 @@ export function buildShortsVideoAgentPrompt({
     hasInfographicScenes ? 'This video MIXES AVATAR scenes and INFOGRAPHIC-ONLY scenes — follow each scene\'s Layout direction EXACTLY. In AVATAR scenes the named avatar appears on screen; in INFOGRAPHIC-ONLY scenes the avatar must be completely hidden and the entire frame is replaced with an AI-generated data card / chart / keyword graphic that HeyGen renders from the Visual content given in that scene.' : '',
     hasInfographicScenes ? 'INFOGRAPHIC-ONLY scenes play the narration as a voice-over only — use the same single narrator voice as the avatar scenes so the audio identity is continuous across the whole video.' : '',
     'Keep the pacing fast, informative, and optimized for short-form retention.',
-    'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment and a compact rounded text card placed above the subtitle area.',
-    'Include burned-in Korean subtitles across the full video by default.',
-    `Subtitle font direction: ${fontOption.promptLabel}.`,
-    `Subtitle visual treatment: ${styleOption.promptLabel}.`,
-    'Place subtitles in the lower portion of the frame inside a safe lower-third area.',
-    'Reserve the bottom 25-30% of the frame for subtitles only.',
-    'Keep the lower third visually clean and mostly empty except for subtitles.',
-    'Treat the middle facial area of the avatar as a protected no-text zone.',
-    'Keep subtitle timing clean, readable, and synchronized with each spoken phrase.',
-    'Subtitles are mandatory in the final exported video, not optional.',
-    'Do not let subtitles overlap the avatar face, mouth, or important facial details.',
-    'Keep all subtitles and scene text overlays away from the avatar face.',
-    'Never place labels, headlines, highlights, charts, or callout text inside the bottom subtitle zone.',
-    'For regular scenes, place compact text overlays in the upper-safe area or the lower-left safe area above subtitles, never over the face.',
-    'Prefer top-safe, upper-middle-safe, or lower-left-safe placement for all scene text overlays.',
+    'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment, with any compact rounded text card placed in the upper area of the frame.',
+    'CRITICAL — NO SUBTITLES: Do NOT generate, render, or burn in any subtitles, captions, or closed captions. Export the video with zero subtitle/caption text. Korean subtitles are added afterward in a separate post-production step.',
+    'CRITICAL — RESERVED BOTTOM BAND: The bottom 30% of the vertical 9:16 frame is a strictly reserved empty zone. Keep it completely clear at all times — no captions, no text, no labels, no headlines, no charts, no callouts, no logos, no decorative graphics. This lower band must stay visually empty so post-production subtitles can sit there cleanly.',
+    'CRITICAL — PROTECTED FACE ZONE: The avatar face and the central head area are a protected no-overlay zone. Never place text, labels, headlines, numbers, charts, stickers, or any graphic over the avatar face, mouth, or eyes.',
+    'Place every auto-generated scene keyword card or text overlay only in the top-safe area (upper ~25% of the frame) — never in the bottom 30% band and never over the avatar face.',
+    'Keep all on-screen text and graphic elements out of both the bottom 30% reserved band and the central avatar-face zone.',
     // 인포그래픽 씬이 명시돼 있으면 "아껴 써라 / 데이터 빽빽할 때만" 류의 옛 heuristic 문구는
     // 씬별 명시 지시와 정면 충돌하므로 넣지 않는다. 대신 마커가 최종임을 못 박는다.
     hasInfographicScenes
@@ -139,7 +122,9 @@ export function buildShortsVideoAgentPrompt({
       ? 'Every scene labelled INFOGRAPHIC-ONLY must fill the entire frame with the data / chart / keyword graphic and contain zero avatar pixels; every scene labelled as an avatar scene keeps the avatar on screen.'
       : 'For normal scenes, keep the avatar on screen and use only a light, compact overlay.',
     hasInfographicScenes ? '' : 'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
-    'When using a text-only or infographic-only scene, keep the center and bottom subtitle area separate so subtitles never collide with the main data card.',
+    'When using a text-only or infographic-only scene, still keep the bottom 30% band completely empty — the data card must not extend into that reserved band.',
+    'Whenever a scene presents data, statistics, numbers, charts, graphs, or tables, render them as ANIMATED motion graphics — bars growing in, line graphs drawing on progressively, pie or donut segments sweeping in, key numbers counting up — never a flat static image.',
+    'For scenes that are NOT data-heavy, keep the avatar on screen and speaking instead of switching to an infographic.',
     avatarName
       ? avatarKind === 'talking_photo'
         ? `Use my custom HeyGen talking photo avatar named "${avatarName}"${hasInfographicScenes ? ' in AVATAR scenes only — it must NOT appear in INFOGRAPHIC-ONLY scenes' : ''}.`
@@ -152,9 +137,9 @@ export function buildShortsVideoAgentPrompt({
     script?.hook ? `Opening hook: ${script.hook}` : '',
     sceneLines ? `Use the following scene plan exactly as the speaking structure:\n${sceneLines}` : '',
     script?.cta ? `Closing CTA: ${script.cta}` : '',
-    'Add concise scene-specific on-screen text and preserve the vertical mobile-safe composition.',
-    'Never cover the avatar face with subtitles, titles, labels, charts, or numeric overlays.',
-    'Do not use the lower third for decorative overlays, scene labels, or emphasis text.',
+    'Add concise scene-specific on-screen text in the top-safe area only, and preserve the vertical mobile-safe composition.',
+    'Never cover the avatar face with titles, labels, charts, or numeric overlays.',
+    'Never use the bottom 30% band for captions, decorative overlays, scene labels, or emphasis text — it stays empty.',
     'Avoid adding extra scenes or stretching the script beyond the target runtime.',
     extraPrompt ? `Highest-priority user override: ${extraPrompt}` : '',
   ]

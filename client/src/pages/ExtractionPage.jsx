@@ -18,6 +18,7 @@ import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar } from '../utils/presetShortsAvatars'
 import { SHORTS_VIDEO_CONCEPT_OPTIONS, findShortsVideoConcept, buildShortsConceptExtra } from '../utils/shortsVideoConcepts'
+import { resolveAvatarGroupLook } from '../utils/avatarGroupLook'
 import {
   cleanCardText,
   deriveBlogHeadline,
@@ -1590,6 +1591,13 @@ DO NOT:
         throw new Error('HeyGen 아바타가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
       }
 
+      // 등록 아바타에 avatar group 이 있으면 그룹 안 9:16 룩 중 하나를 랜덤 선택해 쓴다.
+      // 그룹이 없는 아바타(스톡·사용자 업로드)는 talkingPhotoId 가 그대로 반환된다.
+      const resolvedAvatarId = await resolveAvatarGroupLook(talkingPhotoId)
+      if (resolvedAvatarId !== talkingPhotoId) {
+        console.log(`[shorts] avatar group 랜덤 룩 선택: ${talkingPhotoId} → ${resolvedAvatarId}`)
+      }
+
       // 다음 경우 /v2/video/generate 로 분기:
       //   1) 멀티 아바타 컨셉 (preferredAvatarIds.length > 1)
       //   2) 솔로이지만 useStandardEndpoint: true 로 표시된 컨셉 (자동 연출 불필요)
@@ -1635,12 +1643,12 @@ DO NOT:
           console.log(`[shorts] ${selectedConcept.id}: variant 셔플 — 앞 ${Math.min(scenesForStandard.length, shuffledSceneAvatarIds.length)}개: ${shuffledSceneAvatarIds.slice(0, scenesForStandard.length).join(', ')}`)
         }
         const conceptAvatarIds = useMultiAvatar
-          ? selectedConcept.preferredAvatarIds
+          ? await Promise.all(selectedConcept.preferredAvatarIds.map(resolveAvatarGroupLook))
           : (pickedVariantId
               ? [pickedVariantId]
               : (shuffledSceneAvatarIds
                   ? shuffledSceneAvatarIds
-                  : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [talkingPhotoId])))
+                  : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [resolvedAvatarId])))
 
         // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
         let quizCountdownAssetId = null
@@ -1662,45 +1670,75 @@ DO NOT:
           }
         }
 
-        // 씬별 layout 분기.
-        setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '씬별 배경 준비 중...' }))
         // sceneAvatarIds variant 는 PRESET_SHORTS_AVATARS 에 등록되어 있지 않을 수 있어
         // 컨셉의 기본 아바타(preferredAvatarIds[0]) preset 으로 fallback 해서 voice 를 가져온다.
         const fallbackPreset = findPresetShortsAvatar(selectedConcept?.preferredAvatarIds?.[0])
-        const video_inputs = await Promise.all(scenesForStandard.map(async (scene, idx) => {
-          // 씬이 avatarId 를 직접 지정하면 우선 사용 (ox_quiz 처럼 한 문제의 질문/대기/정답
-          // 씬을 같은 인물로 고정할 때). 없으면 conceptAvatarIds 순환.
-          const avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
-          const preset = findPresetShortsAvatar(avatarId) || fallbackPreset
-          // quiz-countdown: 아바타가 3초간 말 없이 대기하는 씬 → voice 를 silence 로.
-          const isCountdownScene = scene?.layout === 'quiz-countdown'
-          const baseInput = {
-            character: {
-              type: 'talking_photo',
-              talking_photo_id: avatarId,
-            },
-            voice: isCountdownScene
-              ? { type: 'silence', duration: Number(scene?.duration) || 3 }
-              : {
-                  type: 'text',
-                  input_text: String(scene?.narration || '').trim(),
-                  voice_id: preset?.defaultVoiceId,
-                },
+
+        // 솔로 컨셉(한 아바타가 전 씬 동일)은 씬을 나누지 않고 나레이션을 모두 이어붙여
+        // video_input 1개로 만든다 → HeyGen 이 끊김 없는 연속 테이크로 렌더(씬 전환 컷 제거).
+        // 자막은 이후 자막 번인 단계에서 그대로 씬별로 입혀진다(타이밍은 비율 계산이라 영향 없음).
+        const canMergeSoloTake = !useMultiAvatar
+          && conceptAvatarIds.length === 1
+          && scenesForStandard.every((s) => !s?.avatarId
+            && s?.layout !== 'quiz-countdown'
+            && s?.layout !== 'infographic-full')
+
+        let video_inputs
+        if (canMergeSoloTake) {
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '연속 테이크 영상 준비 중...' }))
+          const soloAvatarId = conceptAvatarIds[0]
+          const soloPreset = findPresetShortsAvatar(soloAvatarId) || fallbackPreset
+          const mergedText = scenesForStandard
+            .map((s) => String(s?.narration || '').trim())
+            .filter(Boolean)
+            .join(' ')
+          const mergedInput = {
+            character: { type: 'talking_photo', talking_photo_id: soloAvatarId },
+            voice: { type: 'text', input_text: mergedText, voice_id: soloPreset?.defaultVoiceId },
           }
-          if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
-            // 3초 대기 씬 — 카운트다운 영상을 배경으로 깖. 아바타는 중앙 풀샷 idle.
-            baseInput.background = {
-              type: 'video',
-              video_asset_id: quizCountdownAssetId,
+          if (selectedConcept?.backgroundColor) {
+            mergedInput.background = { type: 'color', value: selectedConcept.backgroundColor }
+          }
+          video_inputs = [mergedInput]
+          console.log(`[shorts] ${selectedConcept?.id || 'no-concept'}: 솔로 연속 테이크 — 씬 ${scenesForStandard.length}개를 video_input 1개로 병합`)
+        } else {
+          // 씬별 layout 분기.
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '씬별 배경 준비 중...' }))
+          video_inputs = await Promise.all(scenesForStandard.map(async (scene, idx) => {
+            // 씬이 avatarId 를 직접 지정하면 우선 사용 (ox_quiz 처럼 한 문제의 질문/대기/정답
+            // 씬을 같은 인물로 고정할 때). 없으면 conceptAvatarIds 순환.
+            const avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
+            const preset = findPresetShortsAvatar(avatarId) || fallbackPreset
+            // quiz-countdown: 아바타가 3초간 말 없이 대기하는 씬 → voice 를 silence 로.
+            const isCountdownScene = scene?.layout === 'quiz-countdown'
+            const baseInput = {
+              character: {
+                type: 'talking_photo',
+                talking_photo_id: avatarId,
+              },
+              voice: isCountdownScene
+                ? { type: 'silence', duration: Number(scene?.duration) || 3 }
+                : {
+                    type: 'text',
+                    input_text: String(scene?.narration || '').trim(),
+                    voice_id: preset?.defaultVoiceId,
+                  },
             }
-          }
-          // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 단색 배경 적용
-          // (아바타가 9:16 을 못 채울 때 여백을 일관된 색으로 — study_dialogue 영상 통화 프레이밍 통일).
-          if (!baseInput.background && selectedConcept?.backgroundColor) {
-            baseInput.background = { type: 'color', value: selectedConcept.backgroundColor }
-          }
-          return baseInput
-        }))
+            if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
+              // 3초 대기 씬 — 카운트다운 영상을 배경으로 깖. 아바타는 중앙 풀샷 idle.
+              baseInput.background = {
+                type: 'video',
+                video_asset_id: quizCountdownAssetId,
+              }
+            }
+            // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 단색 배경 적용
+            // (아바타가 9:16 을 못 채울 때 여백을 일관된 색으로 — study_dialogue 영상 통화 프레이밍 통일).
+            if (!baseInput.background && selectedConcept?.backgroundColor) {
+              baseInput.background = { type: 'color', value: selectedConcept.backgroundColor }
+            }
+            return baseInput
+          }))
+        }
         const filteredInputs = video_inputs.filter((input) =>
           input.voice?.type === 'silence'
             ? Number(input.voice.duration) > 0
@@ -1726,7 +1764,7 @@ DO NOT:
         generatedVideoPrompt = buildShortsVideoAgentPrompt({
           script: targetScript,
           avatar: {
-            id: talkingPhotoId,
+            id: resolvedAvatarId,
             kind: 'talking_photo',
             name: avatarPrompt?.trim() || 'custom avatar',
             subjectPrompt: avatarPrompt?.trim() || '',
@@ -1747,7 +1785,7 @@ DO NOT:
           body: JSON.stringify({
             prompt: generatedVideoPrompt,
             config: {
-              avatar_id: talkingPhotoId,
+              avatar_id: resolvedAvatarId,
             },
           }),
         })

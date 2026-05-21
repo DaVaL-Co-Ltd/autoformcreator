@@ -28,9 +28,9 @@ const exec = promisify(execFile)
 
 const PRESETS = [
   { id: 'dongwan_ssaem', avatarId: 'bd28ab87ed834bf5a72a5923536182c6', voiceId: '8da71a32beeb45ffa0182276233333c6', text: '안녕하세요. 입시 전문가 동완쌤이에요.' },
-  { id: 'fry_ssaem', avatarId: '1e32ee05d0154a989d3e2214efaeed75', voiceId: '3a6f4521058a436ebf97d42152dae017', text: '안녕하세요. 후라이쌤이에요.' },
+  { id: 'fry_ssaem', avatarId: 'adebcddfb2e94c869e484e946bb275ae', voiceId: '3a6f4521058a436ebf97d42152dae017', text: '안녕하세요. 후라이쌤이에요.' },
   { id: 'male_student', avatarId: '885c95d7fced49bba5cb230ca5a3e332', voiceId: '3097f9a8fd3b4340b6bbe913177b378f', text: '공부, 효율적으로 해야죠!' },
-  { id: 'female_student', avatarId: 'a5454d8b999d4e5f87f486605465aae4', voiceId: '86956bc34b7248d7be34eb3a6f69d03b', text: '오늘도 갓생 시작! 저만의 갓생 꿀팁 알려드릴게요.' },
+  { id: 'female_student', avatarId: '62b02a920a78424e94f63f2ddb85dc99', voiceId: '86956bc34b7248d7be34eb3a6f69d03b', text: '오늘도 갓생 시작! 저만의 갓생 꿀팁 알려드릴게요.' },
   { id: 'dog_student', avatarId: 'f51d84b6b19645dbbeedf326379be949', voiceId: 'aceb4659b9e7420483800bbf698e9e24', text: '멍멍, 입시 용어 쉽게 알려줄게요.' },
   { id: 'cat_student', avatarId: 'b2f2fda709a2481a8a63a7ea72c747a8', voiceId: 'aUNzYEiHa4XkuSYzaiy1', text: '야옹, 오늘 공부할 준비됐어요?' },
 ]

@@ -108,6 +108,29 @@ async function buildStandardInputs(concept, script) {
     conceptAvatarIds = [baseAvatarId]
   }
 
+  // 솔로 컨셉(한 아바타가 전 씬 동일)은 나레이션을 모두 이어붙여 video_input 1개로 만든다
+  // → HeyGen 이 끊김 없는 연속 테이크로 렌더(씬 전환 컷 제거).
+  const canMergeSoloTake = !useMultiAvatar
+    && conceptAvatarIds.length === 1
+    && script.scenes.every((s) => !s?.avatarId
+      && s?.layout !== 'quiz-countdown'
+      && s?.layout !== 'infographic-full')
+  if (canMergeSoloTake) {
+    const avatarId = conceptAvatarIds[0]
+    const voiceId = avatarMeta(avatarId)?.defaultVoiceId || avatarMeta(baseAvatarId)?.defaultVoiceId
+    const mergedText = script.scenes
+      .map((s) => String(s?.narration || '').trim())
+      .filter(Boolean)
+      .join(' ')
+    const input = {
+      character: { type: 'talking_photo', talking_photo_id: avatarId },
+      voice: { type: 'text', input_text: mergedText, voice_id: voiceId },
+    }
+    if (concept.backgroundColor) input.background = { type: 'color', value: concept.backgroundColor }
+    console.log(`  솔로 연속 테이크 — 씬 ${script.scenes.length}개 → video_input 1개 병합`)
+    return (input.voice.input_text && input.voice.voice_id) ? [input] : []
+  }
+
   const inputs = []
   for (let idx = 0; idx < script.scenes.length; idx++) {
     const scene = script.scenes[idx]
