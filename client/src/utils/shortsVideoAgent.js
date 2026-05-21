@@ -63,7 +63,8 @@ function sceneNeedsTextOnlyOverlay(scene) {
 function buildSceneLines(script) {
   return (script?.scenes || [])
     .map((scene) => {
-      const overlay = scene?.textOverlay ? ` / 화면 텍스트: ${scene.textOverlay}` : ''
+      // noTextOverlay: true 인 씬은 화면 텍스트 카드를 일절 넣지 않으므로 textOverlay 도 프롬프트에서 제외한다.
+      const overlay = scene?.textOverlay && !scene?.noTextOverlay ? ` / 화면 텍스트: ${scene.textOverlay}` : ''
       // layout === 'infographic-full' 은 컨셉이 명시적으로 "이 씬은 아바타 없는 풀화면 인포그래픽" 으로
       // 선언한 것. heuristic 보다 우선해 HeyGen Video Agent 에 강하게 지시한다.
       if (scene?.layout === 'infographic-full') {
@@ -72,9 +73,13 @@ function buildSceneLines(script) {
           : ''
         return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${scene.narration}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The chart, graph, or table MUST be ANIMATED motion graphics — bars grow in, line graphs draw on progressively, pie/donut segments sweep in, key numbers count up — never a flat static image. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
       }
-      const layoutDirection = sceneNeedsTextOnlyOverlay(scene)
-        ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
-        : ' / Layout direction: keep the avatar on screen and use only a small, compact text overlay away from the subtitle zone and avatar face.'
+      // noTextOverlay: true 면 화면 텍스트 카드/키워드 오버레이를 금지하고 아바타만 풀프레임으로
+      // (briefing_dongwan 인트로·아웃트로처럼 깔끔한 등장/마무리 컷). 모션 등 다른 연출은 그대로 둔다.
+      const layoutDirection = scene?.noTextOverlay
+        ? ' / Layout direction: keep the avatar speaking full-frame; do NOT add any on-screen text card, keyword card, title, caption card, or text overlay anywhere in this scene — the frame shows only the avatar.'
+        : sceneNeedsTextOnlyOverlay(scene)
+          ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
+          : ' / Layout direction: keep the avatar on screen and use only a small, compact text overlay away from the subtitle zone and avatar face.'
       return `- 장면 ${scene.sceneNumber} (${scene.duration}초): ${scene.narration}${overlay}${layoutDirection}`
     })
     .join('\n')
@@ -100,12 +105,16 @@ export function buildShortsVideoAgentPrompt({
   const resolvedVoiceInstruction = 'Keep the same single narrator voice across the entire video with consistent identity, tone, and pitch from scene to scene.'
   // 인포그래픽 씬이 하나라도 있으면 mixed-scene 처리 룰을 상단에 명시한다.
   const hasInfographicScenes = (script?.scenes || []).some((s) => s?.layout === 'infographic-full')
+  // 인포그래픽 씬이 2개 이상이면 HeyGen AI 가 씬마다 따로 그려 디자인이 흔들린다
+  // (배경색이 씬마다 바뀌는 등). 모든 인포그래픽 씬이 하나의 디자인 시스템을 공유하도록 강제한다.
+  const hasMultipleInfographicScenes = (script?.scenes || []).filter((s) => s?.layout === 'infographic-full').length >= 2
 
   return [
     'Create a polished vertical 9:16 YouTube Shorts video in Korean.',
     `Target duration: about ${duration} seconds.`,
     hasInfographicScenes ? 'This video MIXES AVATAR scenes and INFOGRAPHIC-ONLY scenes — follow each scene\'s Layout direction EXACTLY. In AVATAR scenes the named avatar appears on screen; in INFOGRAPHIC-ONLY scenes the avatar must be completely hidden and the entire frame is replaced with an AI-generated data card / chart / keyword graphic that HeyGen renders from the Visual content given in that scene.' : '',
     hasInfographicScenes ? 'INFOGRAPHIC-ONLY scenes play the narration as a voice-over only — use the same single narrator voice as the avatar scenes so the audio identity is continuous across the whole video.' : '',
+    hasMultipleInfographicScenes ? 'CRITICAL — UNIFIED INFOGRAPHIC DESIGN: Every INFOGRAPHIC-ONLY scene in this single video MUST share ONE identical design system — the same background color, the same color palette, the same layout grid and margins, the same typography, and the same chart/graphic styling. They must look like a consistent series of cards generated from one fixed template. NEVER change the background color between infographic scenes (for example, do not show a navy background in one infographic scene and a white background in another) — choose one background treatment and keep it pixel-consistent across all of them.' : '',
     'Keep the pacing fast, informative, and optimized for short-form retention.',
     'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment, with any compact rounded text card placed in the upper area of the frame.',
     'CRITICAL — NO SUBTITLES: Do NOT generate, render, or burn in any subtitles, captions, or closed captions. Export the video with zero subtitle/caption text. Korean subtitles are added afterward in a separate post-production step.',

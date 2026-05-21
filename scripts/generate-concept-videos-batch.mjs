@@ -164,6 +164,8 @@ function buildStandardInputs(concept, script) {
     return (input.voice.input_text && input.voice.voice_id) ? [input] : []
   }
 
+  // 씬별 분리 입력. 각 input 에 _scene(원본 씬 참조)을 달아 후처리에서 클립↔씬 매핑에 쓴다.
+  // _scene 은 HeyGen 요청 전에 heygenGenerateOne 에서 제거한다.
   const inputs = []
   for (let i = 0; i < script.scenes.length; i++) {
     const scene = script.scenes[i]
@@ -177,6 +179,7 @@ function buildStandardInputs(concept, script) {
         : { type: 'text', input_text: String(scene?.narration || '').trim(), voice_id: voiceId },
     }
     if (concept.backgroundColor) input.background = { type: 'color', value: concept.backgroundColor }
+    Object.defineProperty(input, '_scene', { value: scene, enumerable: false })
     inputs.push(input)
   }
   return inputs.filter((i) =>
@@ -184,9 +187,8 @@ function buildStandardInputs(concept, script) {
 }
 
 // ---- HeyGen ----
-async function heygenGenerateStandard(concept, script) {
-  const videoInputs = buildStandardInputs(concept, script)
-  if (!videoInputs.length) throw new Error('video_inputs 비어있음')
+// video_inputs 배열을 받아 /v2/video/generate 로 1개 요청 → video_id 1개.
+async function heygenGenerateOne(videoInputs) {
   const body = { video_inputs: videoInputs, dimension: { width: 720, height: 1280 } }
   if (USE_AVATAR_IV) body.use_avatar_iv_model = true
   const res = await fetch('https://api.heygen.com/v2/video/generate', {
@@ -196,7 +198,32 @@ async function heygenGenerateStandard(concept, script) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(`generate ${res.status}: ${JSON.stringify(data).slice(0, 300)}`)
-  return data?.data?.video_id || data?.video_id
+  const id = data?.data?.video_id || data?.video_id
+  if (!id) throw new Error('video_id 없음')
+  return id
+}
+
+// 표준 엔드포인트 렌더.
+//  - video_inputs 가 2개 이상(= 씬별 분리 멀티 컨셉)이면 각 input 을 개별 요청으로 보내 video_id N개.
+//  - 1개(솔로 연속 테이크)면 기존대로 1개 요청.
+// 반환: { videoIds: [...], perScene: boolean, sceneClips: [scene, ...] }
+//   sceneClips 는 perScene 일 때만 videoIds 와 같은 순서로 각 클립의 원본 씬을 담는다.
+async function heygenGenerateStandard(concept, script) {
+  const videoInputs = buildStandardInputs(concept, script)
+  if (!videoInputs.length) throw new Error('video_inputs 비어있음')
+  if (videoInputs.length === 1) {
+    return { videoIds: [await heygenGenerateOne(videoInputs)], perScene: false }
+  }
+  console.log(`  멀티 씬별 렌더 — ${videoInputs.length}개 클립을 개별 요청`)
+  const videoIds = []
+  const sceneClips = []
+  for (let i = 0; i < videoInputs.length; i++) {
+    const id = await heygenGenerateOne([videoInputs[i]])
+    console.log(`    씬 ${i + 1}/${videoInputs.length} video_id: ${id}`)
+    videoIds.push(id)
+    sceneClips.push(videoInputs[i]._scene || script.scenes[i] || null)
+  }
+  return { videoIds, perScene: true, sceneClips }
 }
 
 async function heygenGenerateVideoAgent(concept, script) {
@@ -276,7 +303,134 @@ function measureDuration(inputPath, fallback) {
   })
 }
 
-function buildSrt(scenes, duration) {
+// ---- 트림 + freeze (멀티 씬별 클립 후처리) ----
+// concat 을 위해 모든 클립을 동일 코덱/해상도/fps(libx264·yuv420p·720x1280·30fps·aac 44100) 로 통일.
+const FREEZE_DUR = 0.3 // 마지막 프레임 정지 길이(초)
+const TRIM_PAD = 0.12 // 입 다문 프레임 확보용 여유(초)
+const MIN_TAIL_SILENCE = 0.2 // 끝 무음이 이보다 짧으면 트림 생략(초)
+
+// ffmpeg silencedetect 로 끝부분 무음을 분석해 트림 지점 T 를 계산.
+// 반환: { fullDuration, trimAt, tailSilence }
+function analyzeTailSilence(inputPath, fallbackDur) {
+  return new Promise((resolve) => {
+    execFile(ffmpegPath, [
+      '-i', inputPath,
+      '-af', 'silencedetect=noise=-30dB:d=0.25',
+      '-f', 'null', '-',
+    ], { timeout: 60000 }, (err, stdout, stderr) => {
+      const log = stderr || ''
+      const durM = log.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
+      const fullDuration = durM
+        ? parseInt(durM[1]) * 3600 + parseInt(durM[2]) * 60 + parseInt(durM[3]) + parseInt(durM[4]) / 100
+        : fallbackDur
+      // silence_start / silence_end 쌍을 시간순으로 수집
+      const events = []
+      const re = /silence_(start|end):\s*([0-9.]+)/g
+      let m
+      while ((m = re.exec(log)) !== null) events.push({ type: m[1], t: parseFloat(m[2]) })
+      // 마지막 silence_start 를 찾는다
+      let lastStart = null
+      let lastStartIdx = -1
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].type === 'start') { lastStart = events[i].t; lastStartIdx = i; break }
+      }
+      // 끝부분 무음 = 마지막 silence_start 이후 영상 끝까지 이어지는 무음.
+      // 그 뒤에 silence_end 가 없거나, silence_end 가 영상 끝과 거의 같으면(0.15s 이내) 끝 무음으로 본다.
+      let tailSilence = 0
+      let trimAt = fullDuration
+      if (lastStart !== null) {
+        const endAfter = events.slice(lastStartIdx + 1).find((e) => e.type === 'end')
+        const isTail = !endAfter || (fullDuration - endAfter.t) <= 0.15
+        if (isTail) {
+          tailSilence = fullDuration - lastStart
+          if (tailSilence >= MIN_TAIL_SILENCE) {
+            trimAt = Math.min(fullDuration, lastStart + TRIM_PAD)
+          }
+        }
+      }
+      resolve({ fullDuration, trimAt, tailSilence })
+    })
+  })
+}
+
+// 클립 1개를 트림 + freeze + 표준 인코딩으로 변환.
+//  - skipTrim 이 true (quiz-countdown 무음 씬 등) 면 트림 없이 인코딩 표준화만.
+// 반환: 처리 후 실제 길이(초)
+async function trimAndFreezeClip(inputPath, outputPath, fallbackDur, skipTrim) {
+  let trimAt
+  let fullDuration
+  let tailSilence = 0
+  if (skipTrim) {
+    fullDuration = await measureDuration(inputPath, fallbackDur)
+    trimAt = fullDuration
+  } else {
+    const a = await analyzeTailSilence(inputPath, fallbackDur)
+    fullDuration = a.fullDuration
+    trimAt = a.trimAt
+    tailSilence = a.tailSilence
+  }
+  const T = trimAt.toFixed(3)
+  const args = [
+    '-i', inputPath,
+    '-vf', `trim=0:${T},setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:white,fps=30,tpad=stop_mode=clone:stop_duration=${FREEZE_DUR}`,
+    // apad 의 pad_dur 옵션은 구버전 ffmpeg(@ffmpeg-installer 2018 빌드)에 없다.
+    // 옵션 없는 apad(무한 무음) + -shortest 로 비디오(tpad 로 +FREEZE_DUR)의 끝길이에 맞춰 자른다.
+    '-af', `atrim=0:${T},asetpts=PTS-STARTPTS,apad`,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2',
+    '-shortest',
+    '-y', outputPath,
+  ]
+  await new Promise((resolve, reject) => {
+    execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`trim/freeze FFmpeg: ${err.message}\n${(stderr || '').slice(-400)}`))
+      else resolve()
+    })
+  })
+  const finalDur = await measureDuration(outputPath, trimAt + FREEZE_DUR)
+  return { finalDur, fullDuration, trimAt, tailSilence }
+}
+
+// concat demuxer 로 클립들을 합친다. 동일 인코딩이므로 -c copy 우선, 실패 시 재인코딩.
+async function concatClips(clipPaths, outputPath, ts) {
+  const listPath = path.join(OUT_DIR, `concat_${ts}.txt`)
+  // concat demuxer 는 list 내 경로를 list 파일 위치 기준으로 resolve 한다.
+  // Windows 절대경로(C:/...)는 절대경로로 인식되지 않아 list 디렉토리가 앞에 붙는 문제가 있다.
+  // 클립과 list 가 모두 OUT_DIR 에 있으므로 파일명(basename)만 적어 안전하게 resolve 되게 한다.
+  const listBody = clipPaths
+    .map((p) => `file '${path.basename(p).replace(/'/g, "'\\''")}'`)
+    .join('\n')
+  writeFileSync(listPath, listBody, 'utf8')
+  // concat demuxer 는 list 내 basename 을 list 파일의 디렉토리 기준으로 resolve 한다.
+  // list 경로가 백슬래시뿐이면 디렉토리를 추출하지 못해 cwd 기준이 되므로 forward slash 로 넘긴다.
+  const listArg = listPath.replace(/\\/g, '/')
+  const runConcat = (reencode) => new Promise((resolve, reject) => {
+    const args = [
+      '-f', 'concat', '-safe', '0', '-i', listArg,
+      ...(reencode
+        ? ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
+           '-c:a', 'aac', '-ar', '44100', '-ac', '2']
+        : ['-c', 'copy']),
+      '-y', outputPath,
+    ]
+    execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`concat FFmpeg: ${err.message}\n${(stderr || '').slice(-400)}`))
+      else resolve()
+    })
+  })
+  try {
+    await runConcat(false)
+  } catch (e) {
+    console.log(`  concat -c copy 실패, 재인코딩으로 재시도: ${e.message.split('\n')[0]}`)
+    await runConcat(true)
+  }
+  try { await fs.unlink(listPath) } catch {}
+}
+
+// scenes 와 (선택) sceneDurations(클립별 실제 길이) 로 SRT 생성.
+// sceneDurations 가 주어지면 각 씬 자막 구간을 그 길이로 정확히 매핑하고,
+// 없으면 글자 수 비율로 전체 duration 을 분배(기존 동작).
+function buildSrt(scenes, duration, sceneDurations) {
   const maxCharsPerLine = 16
   const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
   const fmt = (t) => {
@@ -284,33 +438,40 @@ function buildSrt(scenes, duration) {
     const s = Math.floor(t % 60), ms = Math.round((t % 1) * 1000)
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`
   }
+  const useActual = Array.isArray(sceneDurations) && sceneDurations.length === scenes.length
   let srt = ''
   let idx = 1
   let currentTime = 0
-  for (const scene of scenes) {
+  for (let si = 0; si < scenes.length; si++) {
+    const scene = scenes[si]
     const narration = String(scene.narration || '')
-    if (!narration.trim()) continue
-    const sceneDur = (narration.length / totalChars) * duration
+    // 실제 길이 모드: 무음/빈 씬도 시간축에서 건너뛰어야 자막이 밀리지 않는다.
+    const sceneDur = useActual ? sceneDurations[si] : (narration.length / totalChars) * duration
+    if (!narration.trim()) { currentTime += sceneDur; continue }
     const lines = splitNarration(narration, maxCharsPerLine)
     const blocks = []
     const linesPerBlock = lines.length === 3 ? 3 : 2
     for (let j = 0; j < lines.length; j += linesPerBlock) blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
     const blockChars = blocks.map((b) => b.replace(/\n/g, '').length)
     const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
+    // 실제 길이 모드: 씬 끝의 freeze 0.3초는 자막을 깔지 않아 마지막 자막이 freeze 전에 끝나도록.
+    const captionSpan = useActual ? Math.max(0.1, sceneDur - FREEZE_DUR) : sceneDur
+    let sceneCursor = currentTime
     for (let b = 0; b < blocks.length; b++) {
-      const blockDur = (blockChars[b] / blockTotalChars) * sceneDur
-      srt += `${idx++}\n${fmt(currentTime)} --> ${fmt(currentTime + blockDur)}\n${blocks[b]}\n\n`
-      currentTime += blockDur
+      const blockDur = (blockChars[b] / blockTotalChars) * captionSpan
+      srt += `${idx++}\n${fmt(sceneCursor)} --> ${fmt(sceneCursor + blockDur)}\n${blocks[b]}\n\n`
+      sceneCursor += blockDur
     }
+    currentTime += sceneDur
   }
   return srt
 }
 
-async function burnSubtitles(inputPath, scenes, outputPath, ts) {
+async function burnSubtitles(inputPath, scenes, outputPath, ts, sceneDurations) {
   const fallback = scenes.reduce((s, sc) => s + (Number(sc.duration) || 5), 0)
   const duration = await measureDuration(inputPath, fallback)
   const srtPath = path.join(OUT_DIR, `subtitle_${ts}.srt`)
-  writeFileSync(srtPath, buildSrt(scenes, duration), 'utf8')
+  writeFileSync(srtPath, buildSrt(scenes, duration, sceneDurations), 'utf8')
 
   const srtEsc = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:')
   const fontsEsc = FONTS_DIR.replace(/\\/g, '/').replace(/:/g, '\\:')
@@ -365,6 +526,8 @@ async function main() {
   console.log(`엔진: ${USE_AVATAR_IV ? 'HeyGen Avatar IV (use_avatar_iv_model)' : '표준 토킹포토'}\n`)
 
   // Phase 1: HeyGen 생성 요청
+  // job.videoIds: video_id 배열 (솔로/Video Agent 는 [id], 멀티 씬별은 [id, id, ...]).
+  // job.perScene: 멀티 씬별 분리 렌더 여부 (true 면 클립별 트림+freeze+concat 후처리).
   const jobs = []
   for (const id of CONCEPT_IDS) {
     const concept = findShortsVideoConcept(id)
@@ -373,12 +536,22 @@ async function main() {
     const useStandard = concept.preferredAvatarIds.length > 1 || concept.useStandardEndpoint === true
     try {
       console.log(`[${id}] ${concept.label} — ${useStandard ? '표준' : 'Video Agent'} (씬 ${script.scenes.length}개)`)
-      const videoId = useStandard
-        ? await heygenGenerateStandard(concept, script)
-        : await heygenGenerateVideoAgent(concept, script)
-      if (!videoId) throw new Error('video_id 없음')
-      console.log(`  video_id: ${videoId}\n`)
-      jobs.push({ id, concept, script, videoId, status: 'pending', startedAt: Date.now() })
+      let videoIds
+      let perScene = false
+      let sceneClips = null
+      if (useStandard) {
+        const r = await heygenGenerateStandard(concept, script)
+        videoIds = r.videoIds
+        perScene = r.perScene
+        sceneClips = r.sceneClips || null
+      } else {
+        const vid = await heygenGenerateVideoAgent(concept, script)
+        if (!vid) throw new Error('video_id 없음')
+        videoIds = [vid]
+      }
+      if (!videoIds.length) throw new Error('video_id 없음')
+      console.log(`  video_ids: ${videoIds.join(', ')}${perScene ? ' (씬별)' : ''}\n`)
+      jobs.push({ id, concept, script, videoIds, perScene, sceneClips, status: 'pending', startedAt: Date.now() })
     } catch (e) {
       console.error(`  생성 실패: ${e.message}\n`)
       jobs.push({ id, status: 'create_failed', error: e.message })
@@ -386,7 +559,10 @@ async function main() {
   }
 
   // Phase 2: 폴링
-  const pending = jobs.filter((j) => j.videoId)
+  // job 의 모든 videoId 를 폴링. 모두 completed → rendered, 하나라도 failed → render_failed.
+  // 각 videoId 의 video_url 을 videoUrls 배열에 순서대로 보관.
+  const pending = jobs.filter((j) => Array.isArray(j.videoIds) && j.videoIds.length)
+  for (const job of pending) job.videoUrls = new Array(job.videoIds.length).fill(null)
   if (pending.length) {
     console.log(`폴링 시작 (20초 간격, 최대 20분)\n`)
     const maxWait = 20 * 60 * 1000
@@ -394,19 +570,31 @@ async function main() {
       await sleep(20000)
       for (const job of pending.filter((j) => j.status === 'pending')) {
         try {
-          const st = await heygenPoll(job.videoId)
+          const states = []
+          for (let i = 0; i < job.videoIds.length; i++) {
+            if (job.videoUrls[i]) { states.push('completed'); continue }
+            const st = await heygenPoll(job.videoIds[i])
+            if (st.status === 'completed') { job.videoUrls[i] = st.video_url; states.push('completed') }
+            else if (st.status === 'failed') {
+              states.push('failed')
+              job.error = st.error?.message || JSON.stringify(st.error)
+            } else {
+              states.push(st.status || 'processing')
+            }
+          }
           const el = ((Date.now() - job.startedAt) / 1000).toFixed(0)
-          if (st.status === 'completed') {
-            job.status = 'rendered'; job.videoUrl = st.video_url
-            console.log(`  ✅ [${job.id}] 렌더 완료 (${el}s)`)
-          } else if (st.status === 'failed') {
-            job.status = 'render_failed'; job.error = st.error?.message || JSON.stringify(st.error)
+          const doneCount = states.filter((s) => s === 'completed').length
+          if (states.includes('failed')) {
+            job.status = 'render_failed'
             console.log(`  ❌ [${job.id}] 렌더 실패: ${job.error}`)
+          } else if (states.every((s) => s === 'completed')) {
+            job.status = 'rendered'
+            console.log(`  ✅ [${job.id}] 렌더 완료 (${doneCount}/${states.length} 클립, ${el}s)`)
           } else if (Date.now() - job.startedAt > maxWait) {
             job.status = 'timeout'
             console.log(`  ⏰ [${job.id}] 타임아웃`)
           } else {
-            console.log(`  ⏳ [${job.id}] ${st.status} (${el}s)`)
+            console.log(`  ⏳ [${job.id}] ${doneCount}/${states.length} 완료 (${el}s)`)
           }
         } catch (e) {
           console.log(`  ⚠️ [${job.id}] 폴링 에러: ${e.message}`)
@@ -415,22 +603,61 @@ async function main() {
     }
   }
 
-  // Phase 3: 자막 번인 → 업로드 → DB 저장 (순차)
-  console.log('\n자막 번인 + 업로드 + DB 저장\n')
+  // Phase 3: (멀티 씬별이면 트림+freeze+concat) → 자막 번인 → 업로드 → DB 저장 (순차)
+  console.log('\n후처리 + 자막 번인 + 업로드 + DB 저장\n')
   for (const job of jobs.filter((j) => j.status === 'rendered')) {
-    const { id, concept, script, videoUrl } = job
+    const { id, concept, script, videoIds, videoUrls, perScene, sceneClips } = job
+    const tmpFiles = []
     try {
       const ts = Date.now()
       console.log(`[${id}] 처리 중...`)
-      // 원본 다운로드
-      const dl = await fetch(videoUrl)
-      if (!dl.ok) throw new Error(`다운로드 ${dl.status}`)
-      const rawPath = path.join(OUT_DIR, `heygen_raw_${id}_${ts}.mp4`)
-      writeFileSync(rawPath, Buffer.from(await dl.arrayBuffer()))
-
-      // 자막 번인
+      let rawPath          // 자막 번인 입력 (concat 결과 또는 단일 원본)
+      let sceneDurations   // perScene 일 때 클립별 실제 길이(초) — 자막 정밀 매핑용
       const finalPath = path.join(OUT_DIR, `concept_${id}_${ts}.mp4`)
-      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts)
+
+      if (perScene) {
+        // 멀티 씬별: 각 클립 다운로드 → 트림+freeze → concat
+        console.log(`  씬별 ${videoUrls.length}개 클립 후처리`)
+        const processedClips = []
+        sceneDurations = []
+        for (let i = 0; i < videoUrls.length; i++) {
+          const url = videoUrls[i]
+          const scene = sceneClips?.[i] || script.scenes[i] || {}
+          const dl = await fetch(url)
+          if (!dl.ok) throw new Error(`클립 ${i + 1} 다운로드 ${dl.status}`)
+          const clipRaw = path.join(OUT_DIR, `heygen_clip_${id}_${ts}_${i}.mp4`)
+          writeFileSync(clipRaw, Buffer.from(await dl.arrayBuffer()))
+          tmpFiles.push(clipRaw)
+          // quiz-countdown(무음 씬)은 원래 무음 → 트림 생략, 인코딩 표준화만.
+          const skipTrim = scene?.layout === 'quiz-countdown'
+          const clipOut = path.join(OUT_DIR, `heygen_clip_${id}_${ts}_${i}_p.mp4`)
+          const fallbackDur = Number(scene?.duration) || 5
+          const { finalDur, fullDuration, trimAt, tailSilence } =
+            await trimAndFreezeClip(clipRaw, clipOut, fallbackDur, skipTrim)
+          tmpFiles.push(clipOut)
+          processedClips.push(clipOut)
+          sceneDurations.push(finalDur)
+          const trimmed = fullDuration - trimAt
+          console.log(`    씬 ${i + 1}: 원본 ${fullDuration.toFixed(2)}s → 트림 ${trimmed > 0.01 ? `-${trimmed.toFixed(2)}s` : '없음'}` +
+            ` (끝무음 ${tailSilence.toFixed(2)}s) + freeze ${FREEZE_DUR}s → ${finalDur.toFixed(2)}s`)
+        }
+        // concat
+        rawPath = path.join(OUT_DIR, `heygen_concat_${id}_${ts}.mp4`)
+        await concatClips(processedClips, rawPath, ts)
+        tmpFiles.push(rawPath)
+        const concatDur = sceneDurations.reduce((s, d) => s + d, 0)
+        console.log(`  concat 완료 — ${processedClips.length}개 클립, 합계 ${concatDur.toFixed(2)}s`)
+      } else {
+        // 솔로 연속 테이크 / Video Agent: 단일 원본 다운로드 (기존 동작)
+        const dl = await fetch(videoUrls[0])
+        if (!dl.ok) throw new Error(`다운로드 ${dl.status}`)
+        rawPath = path.join(OUT_DIR, `heygen_raw_${id}_${ts}.mp4`)
+        writeFileSync(rawPath, Buffer.from(await dl.arrayBuffer()))
+        tmpFiles.push(rawPath)
+      }
+
+      // 자막 번인 (perScene 이면 클립별 실제 길이로 정밀 매핑)
+      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts, sceneDurations)
       const finalBuf = await fs.readFile(finalPath)
       console.log(`  자막 번인 완료 (${duration.toFixed(1)}s, ${(finalBuf.length / 1024 / 1024).toFixed(1)}MB)`)
 
@@ -450,7 +677,13 @@ async function main() {
         summary: null, blog_content: null, newsletter_content: null, instagram_content: null,
         shorts_script: shortsScript,
         blog_images: null, instagram_images: null,
-        shorts_video: { url: publicUrl, videoUrl: publicUrl, combinedVideoUrl: publicUrl, heygenVideoId: job.videoId, subtitleStatus: 'done' },
+        // heygenVideoId: 기존 키 구조 유지 위해 첫 video_id. 멀티는 heygenVideoIds 에 전체 배열.
+        shorts_video: {
+          url: publicUrl, videoUrl: publicUrl, combinedVideoUrl: publicUrl,
+          heygenVideoId: videoIds[0],
+          ...(videoIds.length > 1 ? { heygenVideoIds: videoIds } : {}),
+          subtitleStatus: 'done',
+        },
         upload_status: {},
         parsed_text: null,
       })
@@ -459,12 +692,13 @@ async function main() {
       job.publicUrl = publicUrl
       console.log(`  ✅ DB 저장 — extraction id: ${inserted?.id}\n`)
       // 임시 파일 정리 (자막 입힌 최종본은 output/ 에 남김)
-      try { await fs.unlink(rawPath) } catch {}
+      for (const f of tmpFiles) { try { await fs.unlink(f) } catch {} }
       try { await fs.unlink(srtPath) } catch {}
     } catch (e) {
       job.status = 'save_failed'
       job.error = e.message
       console.error(`  ❌ [${id}] 실패: ${e.message}\n`)
+      for (const f of tmpFiles) { try { await fs.unlink(f) } catch {} }
     }
   }
 
