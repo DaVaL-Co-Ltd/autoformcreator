@@ -17,7 +17,8 @@ export const PRESET_SHORTS_AVATARS = [
     id: 'fry_ssaem',
     name: '후라이쌤',
     kind: 'Person Avatar',
-    avatarId: 'cfdf4447704f4e44b92cd984dd9b28cc',
+    // 후라이쌤 avatar group 안의 실제 룩 — heygenAvatars.js 와 동일하게 유지.
+    avatarId: 'adebcddfb2e94c869e484e946bb275ae',
     defaultVoiceId: '3a6f4521058a436ebf97d42152dae017',
     samplePreviewUrl: '/voice-previews/fry_ssaem.mp3',
   },
@@ -33,7 +34,8 @@ export const PRESET_SHORTS_AVATARS = [
     id: 'female_student',
     name: '여자 제자',
     kind: 'Person Avatar',
-    avatarId: 'a5454d8b999d4e5f87f486605465aae4',
+    // 9:16 세로 Alexa 룩 — heygenAvatars.js 의 female_student 와 동일하게 유지.
+    avatarId: '62b02a920a78424e94f63f2ddb85dc99',
     defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
     samplePreviewUrl: '/voice-previews/female_student.mp3',
   },

@@ -78,6 +78,111 @@ export function reflowBulletLabelLines(raw = '') {
   return out.join('\n')
 }
 
+// 마크다운 표 구분행 셀("---", ":-", ": -", ":---:" 등) 판별. 콜론·하이픈·공백만으로 이뤄진다.
+function isTableSeparatorCell(cell = '') {
+  const value = String(cell || '').trim()
+  return value.length > 0 && /^[:\s-]+$/u.test(value) && /[:-]/u.test(value)
+}
+
+// 표 행 후보 줄: 파이프로 시작하거나 파이프가 4개 이상이면 마크다운 표의 일부로 본다.
+function isTableRowCandidate(line = '') {
+  const trimmed = String(line || '').trim()
+  if (!trimmed.includes('|')) return false
+  if (trimmed.startsWith('|')) return true
+  return (trimmed.match(/\|/gu) || []).length >= 4
+}
+
+// 파이프로 이어진 표 블록을 평문 줄로 변환한다.
+// "| 등급 | 비율 | 누적 | |:-|:-|:-| | 1등급 | 10% | 10% | ..." →
+//   "1등급: 비율 10%, 누적 10%" 처럼 행마다 한 줄. 변환 불가 시 null.
+function convertPipeBlock(text = '') {
+  const cells = String(text || '')
+    .split('|')
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0)
+  if (cells.length < 4) return null
+
+  // 헤더 직후의 연속된 구분행 셀 구간을 찾는다.
+  let separatorStart = -1
+  let separatorEnd = -1
+  for (let index = 0; index < cells.length; index += 1) {
+    if (isTableSeparatorCell(cells[index])) {
+      if (separatorStart === -1) separatorStart = index
+      separatorEnd = index
+    } else if (separatorStart !== -1) {
+      break
+    }
+  }
+  if (separatorStart === -1) return null
+
+  const columnCount = separatorEnd - separatorStart + 1
+  if (columnCount < 2 || separatorStart < columnCount) return null
+
+  const header = cells.slice(separatorStart - columnCount, separatorStart)
+  const dataCells = cells.slice(separatorEnd + 1)
+  if (dataCells.length < columnCount) return null
+
+  const rows = []
+  for (let index = 0; index + columnCount <= dataCells.length; index += columnCount) {
+    const row = dataCells.slice(index, index + columnCount)
+    if (columnCount === 2) {
+      rows.push(`${row[0]}: ${row[1]}`)
+    } else {
+      const rest = header
+        .slice(1)
+        .map((headerName, restIndex) => `${headerName} ${row[restIndex + 1]}`)
+        .join(', ')
+      rows.push(`${row[0]}: ${rest}`)
+    }
+  }
+
+  return rows.length > 0 ? rows.join('\n') : null
+}
+
+// 본문에 섞인 마크다운 표를 평문 줄로 바꾼다. 네이버 블로그 에디터는 마크다운 표를
+// 렌더링하지 못하므로 "| 열 | 열 |" 가 날것으로 노출되는 것을 막는다.
+// 표 중간에 빈 줄이 끼어 있어도 같은 표로 이어 붙여 처리한다.
+export function convertMarkdownTables(raw = '') {
+  const lines = String(raw || '').split('\n')
+  const out = []
+  let tableLines = []
+
+  const flushTable = () => {
+    if (tableLines.length === 0) return
+    const converted = convertPipeBlock(tableLines.join(' '))
+    if (converted) {
+      out.push(converted)
+    } else {
+      out.push(...tableLines)
+    }
+    tableLines = []
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+
+    if (isTableRowCandidate(line)) {
+      tableLines.push(line)
+      continue
+    }
+
+    // 표 수집 중 빈 줄은, 다음 비어있지 않은 줄도 표 행이면 표가 이어지는 것으로 본다.
+    if (line.trim() === '' && tableLines.length > 0) {
+      let lookahead = index + 1
+      while (lookahead < lines.length && lines[lookahead].trim() === '') lookahead += 1
+      if (lookahead < lines.length && isTableRowCandidate(lines[lookahead])) {
+        continue
+      }
+    }
+
+    flushTable()
+    out.push(line)
+  }
+
+  flushTable()
+  return out.join('\n')
+}
+
 const EXPLICIT_LABELS = [
   '예시',
   '준비물',
@@ -311,13 +416,13 @@ export function splitLabeledLines(raw = '') {
 }
 
 export function sanitizeBlogBodyForDisplay(raw = '') {
-  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(stripBlogAutoFormatMarkers(raw)))))
+  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw))))))
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
 
 export function sanitizeBlogBodyForUpload(raw = '') {
-  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(stripBlogAutoFormatMarkers(raw)))))
+  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw))))))
     .replace(/^\s*---+\s*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()

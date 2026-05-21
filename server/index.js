@@ -307,6 +307,63 @@ app.get('/api/heygen/voices', async (req, res) => {
   }
 })
 
+// ===== HeyGen avatar group looks =====
+// avatar group ID 안의 룩(look) 목록을 조회한다. 각 룩의 preview 이미지를 재서
+// 9:16 세로 여부(portrait)를 함께 반환한다. 그룹 내용은 자주 안 바뀌므로 10분 캐시.
+const avatarGroupLooksCache = new Map() // groupId → { looks, ts }
+const AVATAR_GROUP_LOOKS_TTL = 10 * 60 * 1000
+
+app.get('/api/heygen/avatar-group/:groupId/looks', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  const groupId = String(req.params.groupId || '').trim()
+  if (!groupId) return res.status(400).json({ error: 'groupId required' })
+
+  try {
+    const cached = avatarGroupLooksCache.get(groupId)
+    if (cached && Date.now() - cached.ts < AVATAR_GROUP_LOOKS_TTL) {
+      return res.json({ looks: cached.looks, cached: true })
+    }
+
+    const r = await fetch(`https://api.heygen.com/v2/avatar_group/${groupId}/avatars`, {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    const data = await r.json().catch(() => ({}))
+    if (!r.ok) return res.status(r.status).json({ error: 'avatar group fetch failed', detail: data })
+
+    const rawLooks = data?.data?.avatar_list || data?.data?.avatars || data?.data?.list
+      || (Array.isArray(data?.data) ? data.data : [])
+    const looks = []
+    for (const look of (Array.isArray(rawLooks) ? rawLooks : [])) {
+      const id = look.id || look.avatar_id || look.talking_photo_id || look.image_key
+      if (!id) continue
+      const name = look.name || look.avatar_name || look.talking_photo_name || ''
+      const preview = look.image_url || look.preview_image_url || look.preview_image || look.motion_preview_url
+      let width = 0
+      let height = 0
+      if (preview) {
+        try {
+          const imgRes = await fetch(preview)
+          if (imgRes.ok) {
+            const meta = await sharp(Buffer.from(await imgRes.arrayBuffer())).metadata()
+            width = meta.width || 0
+            height = meta.height || 0
+          }
+        } catch {
+          // preview 측정 실패 시 portrait 는 기본 true 로 둔다.
+        }
+      }
+      const portrait = width > 0 && height > 0 ? (width / height) <= 0.85 : true
+      looks.push({ id, name, width, height, portrait })
+    }
+
+    avatarGroupLooksCache.set(groupId, { looks, ts: Date.now() })
+    res.json({ looks })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== HeyGen Video Generate Proxy =====
 app.post('/api/heygen/video/generate', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
