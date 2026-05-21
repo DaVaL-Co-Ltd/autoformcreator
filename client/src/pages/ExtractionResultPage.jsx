@@ -757,7 +757,10 @@ export default function ExtractionResultPage() {
           platformPatches.instagram = { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.instagram }
         }
         if (uploadedUrls.youtube) {
-          platformPatches.youtube = { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.youtube }
+          // YouTube 자체 예약(publishAt)이면 'scheduled', 즉시 업로드면 'uploaded'.
+          platformPatches.youtube = scheduledAt
+            ? { status: 'scheduled', scheduledAt, nativeSchedule: true, uploadedUrl: uploadedUrls.youtube }
+            : { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.youtube }
         }
 
         if (Object.keys(platformPatches).length) {
@@ -792,8 +795,8 @@ export default function ExtractionResultPage() {
           } catch {
             // 클립보드 권한이 없으면 업로드 완료만 유지한다.
           }
-          alert(`업로드 완료!\n\n${completedLinks.join('\n')}\n\n링크가 클립보드에 복사되었습니다.`)
-          if (primaryUrl) window.open(primaryUrl, '_blank')
+          alert(`${scheduledAt ? '예약 등록 완료!' : '업로드 완료!'}\n\n${completedLinks.join('\n')}\n\n링크가 클립보드에 복사되었습니다.`)
+          if (primaryUrl && !scheduledAt) window.open(primaryUrl, '_blank')
         }
       } catch (err) {
         setUploadStatus(p => ({ ...p, shorts: 'error' }))
@@ -2552,9 +2555,18 @@ export default function ExtractionResultPage() {
             setUploadError(null)
             handleUpload(platform, { scheduledAtOverride: scheduledAt })
             return
-          } else if (platform === 'shorts_instagram' || platform === 'shorts_youtube') {
-            // 숏폼 플랫폼별 예약 (인스타그램 릴스 / 유튜브 쇼츠 각각)
-            const platformKey = platform === 'shorts_youtube' ? 'youtube' : 'instagram'
+          } else if (platform === 'shorts_youtube') {
+            // YouTube 자체 예약: 영상을 지금 비공개로 업로드하고 publishAt 으로 예약 발행한다.
+            // YouTube 가 알아서 그 시각에 공개하므로 러너(scheduled_uploads)가 필요 없다.
+            setScheduleInfo(p => ({ ...p, shorts_youtube: { scheduledAt } }))
+            await handleUpload('shorts', {
+              targets: { youtube: true },
+              uploadOrder: ['youtube'],
+              scheduledAtOverride: scheduledAt,
+            })
+            return
+          } else if (platform === 'shorts_instagram') {
+            // 인스타그램 릴스는 native 예약을 지원하지 않아 러너 방식으로 예약한다.
             try {
               const scheduledId = scheduleInfo[platform]?.scheduledId || null
               const savedSchedule = await createScheduledUpload({
@@ -2569,12 +2581,12 @@ export default function ExtractionResultPage() {
                 [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
               }))
             } catch (err) {
-              console.error('[쇼츠/릴스 예약 생성 실패]', err)
+              console.error('[릴스 예약 생성 실패]', err)
               alert(`예약 생성 실패: ${err.message}`)
               return
             }
             const merged = buildShortsUploadStatus(state.uploadStatus?.shorts, {
-              [platformKey]: { status: 'scheduled', scheduledAt },
+              instagram: { status: 'scheduled', scheduledAt },
             })
             await updateUploadStatus(id, 'shorts', merged)
             mergeStoredUploadMeta('shorts', merged)
