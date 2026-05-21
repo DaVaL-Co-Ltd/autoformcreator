@@ -1,12 +1,26 @@
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const apiHeaders = (extra = {}) => ({ 'Content-Type': 'application/json', ...extra })
 
+// 예약 목록 캐시 — 상세보기 왕복 등 짧은 재방문에서 재요청을 막는다.
+// 예약 생성/수정/삭제 시 즉시 무효화하고, 그 외에는 TTL 동안 유지한다.
+let _scheduledCache = null
+const SCHEDULED_CACHE_TTL_MS = 60000
+
+function invalidateScheduledCache() {
+  _scheduledCache = null
+}
+
 export async function getAll() {
+  if (_scheduledCache && Date.now() - _scheduledCache.ts < SCHEDULED_CACHE_TTL_MS) {
+    return _scheduledCache.value
+  }
   try {
     const res = await fetch(`${API_BASE}/api/scheduled/list`, { headers: apiHeaders() })
     if (!res.ok) throw new Error(`목록 조회 실패 (${res.status})`)
     const rows = await res.json()
-    return rows.map(normalize)
+    const value = rows.map(normalize)
+    _scheduledCache = { value, ts: Date.now() }
+    return value
   } catch (err) {
     console.error('[scheduledUploads] getAll 실패:', err)
     return []
@@ -34,6 +48,7 @@ export async function create({ platform, extractionId, content, scheduledAt, sch
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `예약 생성 실패 (${res.status})`)
   }
+  invalidateScheduledCache()
   return normalize(await res.json())
 }
 
@@ -54,6 +69,7 @@ export async function update(id, patch) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `예약 수정 실패 (${res.status})`)
   }
+  invalidateScheduledCache()
   return normalize(await res.json())
 }
 
@@ -63,6 +79,7 @@ export async function remove(id) {
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || `예약 삭제 실패 (${res.status})`)
   }
+  invalidateScheduledCache()
 }
 
 // Supabase snake_case → 프론트 camelCase

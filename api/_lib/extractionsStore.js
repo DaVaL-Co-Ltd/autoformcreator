@@ -1,4 +1,6 @@
-const EXTRACTION_LIST_COLUMNS = 'id,created_at,file_name,summary,blog_content,newsletter_content,instagram_content,shorts_script,upload_status,blog_images,instagram_images,shorts_video,parsed_text'
+// 목록 조회용 컬럼 — 채널 제목/요약 산출에 필요한 만큼만. parsed_text·이미지·영상 등
+// 무거운 컬럼은 목록에 불필요하며(상세는 id 재조회로 전체를 가져옴) 제외해 페이로드를 줄인다.
+const EXTRACTION_LIST_COLUMNS = 'id,created_at,file_name,summary,blog_content,newsletter_content,instagram_content,shorts_script,upload_status'
 const IMAGE_BUCKET = 'extraction-images'
 const VIDEO_BUCKET = 'extraction-videos'
 
@@ -213,6 +215,15 @@ function rowToItem(row) {
   }
 }
 
+// 목록용 경량 아이템 — 본문(data)을 제외하고 채널 요약·메타만 반환한다.
+// 상세 화면은 fromContents 플래그로 항상 id 재조회하므로 목록엔 data 가 불필요하다.
+function rowToListItem(row) {
+  const item = rowToItem(row)
+  if (!item) return item
+  const { data, ...rest } = item
+  return rest
+}
+
 function extractStoragePath(url, bucket) {
   if (!url || typeof url !== 'string') return null
   const marker = `/storage/v1/object/public/${bucket}/`
@@ -373,7 +384,7 @@ async function listExtractions({ page, pageSize } = {}) {
 
   if (!paged) {
     return {
-      items: (data || []).map(rowToItem),
+      items: (data || []).map(rowToListItem),
       aggregateCounts,
     }
   }
@@ -381,7 +392,7 @@ async function listExtractions({ page, pageSize } = {}) {
   const contentRange = response.headers.get('content-range') || ''
   const total = Number(contentRange.split('/')[1] || 0) || 0
   return {
-    items: (data || []).map(rowToItem),
+    items: (data || []).map(rowToListItem),
     total,
     aggregateCounts,
   }

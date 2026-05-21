@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -98,29 +98,35 @@ function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
   return true
 }
 
+// 상세보기 왕복 시 목록 상태(필터·페이지·검색·데이터·스크롤)를 그대로 복원하기 위한 모듈 레벨 스냅샷.
+let pageStateSnapshot = null
+
 export default function ContentPage() {
   const navigate = useNavigate()
-  const [activeChannel, setActiveChannel] = useState('all')
-  const [activeStatus, setActiveStatus] = useState('all')
-  const [contents, setContents] = useState([])
-  const [hasNextPage, setHasNextPage] = useState(false)
-  const [totalPages, setTotalPages] = useState(1)
-  const [aggregateCounts, setAggregateCounts] = useState({
+  // 첫 렌더 시점의 스냅샷을 고정 캡처한다.
+  const snap = useRef(pageStateSnapshot).current
+
+  const [activeChannel, setActiveChannel] = useState(snap?.activeChannel ?? 'all')
+  const [activeStatus, setActiveStatus] = useState(snap?.activeStatus ?? 'all')
+  const [contents, setContents] = useState(snap?.contents ?? [])
+  const [hasNextPage, setHasNextPage] = useState(snap?.hasNextPage ?? false)
+  const [totalPages, setTotalPages] = useState(snap?.totalPages ?? 1)
+  const [aggregateCounts, setAggregateCounts] = useState(snap?.aggregateCounts ?? {
     all: 0,
     not_uploaded: 0,
     scheduled: 0,
     uploaded: 0,
   })
-  const [initialLoading, setInitialLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(!snap)
   const [listLoading, setListLoading] = useState(false)
-  const hasLoadedOnceRef = useRef(false)
+  const hasLoadedOnceRef = useRef(Boolean(snap))
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [scheduleTarget, setScheduleTarget] = useState(null)
   const [editScheduleTarget, setEditScheduleTarget] = useState(null)
   const [uploadingIds, setUploadingIds] = useState(new Set())
-  const [pageSize, setPageSize] = useState(10)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [pageSize, setPageSize] = useState(snap?.pageSize ?? 10)
+  const [currentPage, setCurrentPage] = useState(snap?.currentPage ?? 1)
+  const [searchQuery, setSearchQuery] = useState(snap?.searchQuery ?? '')
 
   const refreshContents = useCallback(async (
     showSpinner = false,
@@ -206,9 +212,27 @@ export default function ContentPage() {
     }
   }, [activeChannel, activeStatus, currentPage, pageSize, searchQuery])
 
+  const firstMountRef = useRef(true)
   useEffect(() => {
-    refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
-  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery])
+    const isFirst = firstMountRef.current
+    firstMountRef.current = false
+    // 스냅샷이 복원된 첫 마운트는 스피너 없이 백그라운드로만 갱신한다.
+    refreshContents(!(isFirst && snap), currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+  }, [activeChannel, activeStatus, currentPage, pageSize, refreshContents, searchQuery, snap])
+
+  // 목록 상태가 바뀔 때마다 스냅샷을 갱신해, 상세보기에서 돌아왔을 때 그대로 복원되게 한다.
+  useEffect(() => {
+    pageStateSnapshot = {
+      activeChannel, activeStatus, contents, hasNextPage, totalPages,
+      aggregateCounts, currentPage, pageSize, searchQuery,
+      scrollY: pageStateSnapshot?.scrollY || 0,
+    }
+  }, [activeChannel, activeStatus, contents, hasNextPage, totalPages, aggregateCounts, currentPage, pageSize, searchQuery])
+
+  // 스냅샷이 있으면(상세보기에서 복귀) 이전 스크롤 위치를 복원한다.
+  useLayoutEffect(() => {
+    if (snap?.scrollY) window.scrollTo(0, snap.scrollY)
+  }, [snap])
 
   const paginationGroupStart = Math.floor((currentPage - 1) / 10) * 10 + 1
   const paginationGroupEnd = Math.min(paginationGroupStart + 9, totalPages)
@@ -219,6 +243,8 @@ export default function ContentPage() {
   const statusCounts = aggregateCounts
 
   const handleView = (item) => {
+    // 상세보기로 떠나기 직전 스크롤 위치를 스냅샷에 기록 → 복귀 시 그대로 복원.
+    if (pageStateSnapshot) pageStateSnapshot.scrollY = window.scrollY
     navigate('/contents/view', {
       state: {
         ...item.data,

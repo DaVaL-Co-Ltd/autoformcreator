@@ -16,7 +16,8 @@ function buildChannels(data) {
 
 function rowToItem(row) {
   if (!row) return null
-  if (row.data && row.channels) return row
+  // 서버가 이미 가공한 아이템(목록 경량 아이템은 data 없이 channels 만 있음)은 그대로 통과.
+  if (Array.isArray(row.channels)) return row
 
   const data = {
     fileName: row.file_name,
@@ -130,6 +131,7 @@ export async function saveExtraction(data) {
     method: 'POST',
     body: JSON.stringify(payload),
   })
+  invalidateExtractionsCache()
   return item?.id
 }
 
@@ -138,6 +140,7 @@ export async function updateExtractionMedia(id, media = {}) {
     method: 'PATCH',
     body: JSON.stringify(media),
   })
+  invalidateExtractionsCache()
   return rowToItem(item)
 }
 
@@ -147,15 +150,30 @@ export async function updateExtractionContent(id, content = {}) {
     method: 'PATCH',
     body: JSON.stringify(content),
   })
+  invalidateExtractionsCache()
   return rowToItem(item)
 }
 
+// 콘텐츠 목록 캐시 — 상세보기 왕복 등 짧은 재방문에서 재요청을 막는다.
+// 생성/수정/삭제 시 즉시 무효화하고, 그 외에는 TTL 동안 유지한다.
+let _extractionsCache = null
+const EXTRACTIONS_CACHE_TTL_MS = 60000
+
+export function invalidateExtractionsCache() {
+  _extractionsCache = null
+}
+
 export async function getExtractions() {
+  if (_extractionsCache && Date.now() - _extractionsCache.ts < EXTRACTIONS_CACHE_TTL_MS) {
+    return _extractionsCache.value
+  }
   const result = await apiRequest('/api/extractions')
-  return {
+  const value = {
     items: (result?.items || []).map(rowToItem),
     aggregateCounts: result?.aggregateCounts || null,
   }
+  _extractionsCache = { value, ts: Date.now() }
+  return value
 }
 
 export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
@@ -174,6 +192,7 @@ export async function getExtractionById(id) {
 
 export async function deleteExtraction(id) {
   await apiRequest(`/api/extractions/${id}`, { method: 'DELETE' })
+  invalidateExtractionsCache()
 }
 
 export async function updateUploadStatus(id, channel, info) {
@@ -181,11 +200,13 @@ export async function updateUploadStatus(id, channel, info) {
     method: 'PATCH',
     body: JSON.stringify({ channel, info }),
   })
+  invalidateExtractionsCache()
   return rowToItem(item)
 }
 
 export async function deleteExtractionChannel(id, channel) {
   await apiRequest(`/api/extractions/${id}/channels/${channel}`, { method: 'DELETE' })
+  invalidateExtractionsCache()
 }
 
 export async function saveImages() {}

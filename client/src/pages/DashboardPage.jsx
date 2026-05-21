@@ -265,6 +265,7 @@ export default function DashboardPage() {
                         activeChannel: item.channel,
                         extractionId: item.extractionId,
                         uploadStatus: item.allUploadStatus,
+                        fromContents: true,
                       },
                     })}
                     className="flex items-center gap-3 p-3 hover:bg-surface-light/50 transition-colors cursor-pointer"
