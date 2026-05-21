@@ -1,4 +1,4 @@
-import { generateImage } from './commonImageRules'
+import { IMAGE_GENERATION_CONCURRENCY, generateImage, mapWithConcurrency } from './commonImageRules'
 import {
   KNOWLEDGE_INSIGHT_CORNER_LAYOUT_PROMPT,
   KNOWLEDGE_INSIGHT_CUTOUT_RULE,
@@ -42,18 +42,18 @@ function buildInstagramCornerPrompt(card, options = {}) {
 
 export async function generateInstagramImages(cards, options = {}) {
   const safeCards = Array.isArray(cards) ? cards : []
-  const results = []
-  for (let i = 0; i < safeCards.length; i += 1) {
-    const card = safeCards[i] || {}
+  // 카드별 코너 일러스트를 동시성 상한을 두고 병렬 생성한다(순서는 보존).
+  const results = await mapWithConcurrency(safeCards, IMAGE_GENERATION_CONCURRENCY, async (rawCard, i) => {
+    const card = rawCard || {}
     const cardNumber = card?.cardNumber || i + 1
     try {
       const generatedImageUrl = await generateImage(buildInstagramCornerPrompt(card, options), 2, options.signal)
       const imageUrl = await removeWhiteBackgroundFromDataUrl(generatedImageUrl)
-      results.push({ cardNumber, imageUrl })
+      return { cardNumber, imageUrl }
     } catch {
-      results.push({ cardNumber, imageUrl: null })
+      return { cardNumber, imageUrl: null }
     }
-  }
+  })
   // buildInstagramDisplayCards 가 cardTopics 뒤에 CTA 카드 1개를 더 붙이므로,
   // 결과 페이지 캡처 흐름에서 CTA 카드의 PNG 가 instagramImages 와 매칭되도록
   // CTA placeholder 항목을 함께 추가한다. CTA 자체는 코너 일러스트가 없으므로 imageUrl 은 null.

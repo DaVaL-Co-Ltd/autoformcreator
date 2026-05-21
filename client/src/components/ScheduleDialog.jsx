@@ -19,6 +19,20 @@ const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
     title: '유튜브 쇼츠/인스타그램 릴스 추천 시간',
     items: ['평일 오전 11시~오후 1시', '평일 오후 5시~8시', '주말 오후 8시~밤 12시'],
   },
+  shorts_instagram: {
+    title: '인스타그램 릴스 추천 시간',
+    items: ['평일 오전 11시~오후 1시', '평일 오후 5시~8시', '주말 오후 8시~밤 12시'],
+  },
+  shorts_youtube: {
+    title: '유튜브 쇼츠 추천 시간',
+    items: ['평일 오전 11시~오후 1시', '평일 오후 5시~8시', '주말 오후 8시~밤 12시'],
+  },
+}
+
+// CHANNELS 에 없는 숏폼 플랫폼별 예약 키의 표시 라벨
+const SUB_PLATFORM_LABELS = {
+  shorts_instagram: '인스타그램 릴스',
+  shorts_youtube: '유튜브 쇼츠',
 }
 
 function roundUpToMinuteStep(input, step = MINUTE_STEP) {
@@ -189,20 +203,27 @@ function ScheduleDialogBody({
         <div className="mb-4">
           <label className="block text-sm font-medium text-text-muted mb-2">플랫폼</label>
           <div className="flex gap-2 flex-wrap">
-            {(lockPlatform ? CHANNELS.filter((c) => c.key === platform) : CHANNELS).map((p) => (
-              <button
-                key={p.key}
-                onClick={() => !lockPlatform && setPlatform(p.key)}
-                disabled={lockPlatform}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                  platform === p.key
-                    ? `${p.bg} ${p.color} ${p.border}`
-                    : 'bg-surface-light text-text-muted border-border hover:border-primary/40'
-                } ${lockPlatform ? 'cursor-default' : ''}`}
-              >
-                {p.label}
-              </button>
-            ))}
+            {lockPlatform && !CHANNELS.some((c) => c.key === platform) ? (
+              // CHANNELS 에 없는 숏폼 플랫폼별 예약 키(shorts_instagram/shorts_youtube)
+              <span className="px-3 py-1.5 rounded-full text-sm font-medium border bg-primary/10 text-primary-light border-primary/30 cursor-default">
+                {SUB_PLATFORM_LABELS[platform] || platform}
+              </span>
+            ) : (
+              (lockPlatform ? CHANNELS.filter((c) => c.key === platform) : CHANNELS).map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => !lockPlatform && setPlatform(p.key)}
+                  disabled={lockPlatform}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                    platform === p.key
+                      ? `${p.bg} ${p.color} ${p.border}`
+                      : 'bg-surface-light text-text-muted border-border hover:border-primary/40'
+                  } ${lockPlatform ? 'cursor-default' : ''}`}
+                >
+                  {p.label}
+                </button>
+              ))
+            )}
           </div>
         </div>
 

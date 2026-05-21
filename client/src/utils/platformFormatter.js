@@ -10,6 +10,24 @@ export function stripMarkdownEmphasis(text = '') {
     .trim()
 }
 
+// 해시태그 배열을 "#a #b #c" 한 줄 문자열로 변환. 영상 설명 맨 뒤에 붙인다.
+export function buildYoutubeHashtagLine(hashtags = []) {
+  const tags = (Array.isArray(hashtags) ? hashtags : [])
+    .map((tag) => String(tag || '').trim().replace(/^#+/, '').trim())
+    .filter(Boolean)
+  if (tags.length === 0) return ''
+  return tags.map((tag) => `#${tag}`).join(' ')
+}
+
+// 영상 설명 뒤에 한 줄 공백을 두고 해시태그 줄을 덧붙인다. descriptionMax 한도를 넘지 않도록 본문을 먼저 자른다.
+export function appendYoutubeHashtags(description = '', hashtags = [], descriptionMax = 5000) {
+  const hashtagLine = buildYoutubeHashtagLine(hashtags)
+  const base = String(description || '')
+  if (!hashtagLine) return base.slice(0, descriptionMax)
+  const budget = Math.max(0, descriptionMax - hashtagLine.length - 2)
+  return `${base.slice(0, budget).trimEnd()}\n\n${hashtagLine}`
+}
+
 /**
  * Convert generated Instagram content into the Instagram upload payload.
  * @param {{ title?: string, body?: string, caption?: string, hashtags?: string[], cardTopics?: string[] }} instagramContent
@@ -126,7 +144,11 @@ export function formatYouTubeRequest(shortsScript = {}, videoUrl = '', scheduled
     if (shortsScript.cta) descParts.push(`\n${stripMarkdownEmphasis(shortsScript.cta)}`)
     rawDescription = descParts.join('\n')
   }
-  const description = truncate(rawDescription, limits.descriptionMax)
+  const description = appendYoutubeHashtags(
+    truncate(rawDescription, limits.descriptionMax),
+    shortsScript.hashtags,
+    limits.descriptionMax,
+  )
 
   const rawTags = (shortsScript.hashtags || []).map((tag) => String(tag).replace(/^#/, ''))
   if (!rawTags.includes('Shorts')) rawTags.unshift('Shorts')

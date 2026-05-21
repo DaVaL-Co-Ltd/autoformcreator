@@ -16,6 +16,12 @@ import { create as createScheduledUpload, getAll as getAllScheduledUploads, remo
 import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest, stripMarkdownEmphasis } from '../utils/platformFormatter'
 import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
 import {
+  SHORTS_PLATFORMS,
+  buildShortsUploadStatus,
+  deriveShortsPlatforms,
+  shortsSchedulePlatform,
+} from '../utils/shortsUploadStatus'
+import {
   getAll as getPlatformConnections,
   loadAll as loadPlatformConnections,
   subscribe as subscribePlatformConnections,
@@ -31,7 +37,6 @@ import { getBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.j
 import {
   BLOG_HEADING_STYLE,
   buildBlogHeadingPrefix,
-  getBlogHeadingStyleLabel,
   isAutomaticBlogQuoteCategory,
   resolveBlogHeadingStyle,
 } from '../utils/blogHeadingStyle'
@@ -304,7 +309,9 @@ export default function ExtractionResultPage() {
   const [blogTitle, setBlogTitle] = useState('')
   const [blogBody, setBlogBody] = useState('')
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
-  const [shortsUploadTargets, setShortsUploadTargets] = useState({ instagram: true, youtube: true })
+  // 숏폼 업로드 대상 기본값 (플랫폼별 패널에서 명시적으로 targets 를 넘기지 않을 때의 폴백)
+  const [shortsUploadTargets] = useState({ instagram: true, youtube: true })
+  const [shortsBusy, setShortsBusy] = useState({ instagram: false, youtube: false })
   const [previewImage, setPreviewImage] = useState(null) // { url, alt } | null
 
   useEffect(() => {
@@ -636,12 +643,17 @@ export default function ExtractionResultPage() {
     }
 
     if (channel === 'shorts') {
+      const requestedTargets = options.targets || shortsUploadTargets
+      const selectedTargets = {
+        youtube: Boolean(requestedTargets.youtube),
+        instagram: Boolean(requestedTargets.instagram),
+      }
+      setShortsBusy(prev => ({
+        ...prev,
+        ...(selectedTargets.instagram ? { instagram: true } : {}),
+        ...(selectedTargets.youtube ? { youtube: true } : {}),
+      }))
       try {
-        const requestedTargets = options.targets || shortsUploadTargets
-        const selectedTargets = {
-          youtube: Boolean(requestedTargets.youtube),
-          instagram: Boolean(requestedTargets.instagram),
-        }
         if (!selectedTargets.youtube && !selectedTargets.instagram) {
           throw new Error('업로드할 플랫폼을 하나 이상 선택해주세요.')
         }
@@ -657,7 +669,7 @@ export default function ExtractionResultPage() {
           throw new Error('업로드할 쇼츠/릴스 영상이 없습니다.')
         }
 
-        const scheduledAt = options.scheduledAtOverride || scheduleInfo.shorts?.scheduledAt || null
+        const scheduledAt = options.scheduledAtOverride || null
         const results = {}
         const failures = []
 
@@ -734,26 +746,30 @@ export default function ExtractionResultPage() {
           instagram: results.instagram?.url || null,
         }
         const primaryUrl = uploadedUrls.instagram || uploadedUrls.youtube || null
-        const resolvedScheduledAt = results.youtube?.scheduledAt || scheduledAt || null
         const hasSuccess = Boolean(uploadedUrls.youtube || uploadedUrls.instagram)
-        const nextUploadMeta = {
-          nativeSchedule: Boolean(results.youtube?.scheduled || scheduledAt),
-          scheduledAt: resolvedScheduledAt,
-          status: failures.length ? (hasSuccess ? 'partial_failed' : 'failed') : 'uploaded',
-          uploadedAt: new Date().toISOString(),
-          uploadedUrl: primaryUrl,
-          uploadedUrls,
-          uploadTargets: selectedTargets,
+
+        // 성공한 플랫폼만 업로드 완료로 기록하고 나머지 플랫폼 상태는 유지한다.
+        const now = new Date().toISOString()
+        const platformPatches = {}
+        if (uploadedUrls.instagram) {
+          platformPatches.instagram = { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.instagram }
+        }
+        if (uploadedUrls.youtube) {
+          platformPatches.youtube = { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.youtube }
         }
 
-        if (hasSuccess) {
-          mergeStoredUploadMeta('shorts', nextUploadMeta)
+        if (Object.keys(platformPatches).length) {
+          // 다른 플랫폼 업로드와 동시에 진행될 수 있으므로 최신 상태를 다시 읽어 병합한다.
+          let currentShorts = state.uploadStatus?.shorts
           if (extractionId) {
-            updateUploadStatus(extractionId, 'shorts', nextUploadMeta)
-              .catch(err => console.warn('[uploadStatus 저장 실패]', err))
+            const fresh = await getExtractionById(extractionId).catch(() => null)
+            if (fresh) currentShorts = fresh.uploadStatus?.shorts
           }
-          if (resolvedScheduledAt) {
-            setScheduleInfo(p => ({ ...p, shorts: { scheduledAt: resolvedScheduledAt, uploadTargets: selectedTargets } }))
+          const merged = buildShortsUploadStatus(currentShorts, platformPatches)
+          mergeStoredUploadMeta('shorts', merged)
+          if (extractionId) {
+            updateUploadStatus(extractionId, 'shorts', merged)
+              .catch(err => console.warn('[uploadStatus 저장 실패]', err))
           }
         }
 
@@ -780,6 +796,13 @@ export default function ExtractionResultPage() {
       } catch (err) {
         setUploadStatus(p => ({ ...p, shorts: 'error' }))
         setUploadError(`쇼츠/릴스 업로드 실패: ${err.message}`)
+      } finally {
+        setShortsBusy(prev => {
+          const next = { ...prev }
+          if (selectedTargets.instagram) next.instagram = false
+          if (selectedTargets.youtube) next.youtube = false
+          return next
+        })
       }
     }
   }
@@ -1363,14 +1386,6 @@ export default function ExtractionResultPage() {
             >
               설정으로 이동
             </button>
-          )}
-          {usesAutomaticBlogQuote && (
-            <div className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-text-muted">
-              <span>소제목 자동 스타일</span>
-              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary-light">
-                인용구 · {getBlogHeadingStyleLabel(blogHeadingStyle)}
-              </span>
-            </div>
           )}
           <button
             onClick={() => copy(`${blogTitle || blogContent?.title || ''}\n\n${appendBlogFooterText(
@@ -2086,32 +2101,95 @@ export default function ExtractionResultPage() {
       .filter(Boolean)
       .join('\n\n')
 
+    const shortsPlatforms = deriveShortsPlatforms(state.uploadStatus?.shorts)
+    const openShortsSchedule = (platformKey, mode) => {
+      const schedulePlatform = shortsSchedulePlatform(platformKey)
+      setScheduleDialog({
+        open: true,
+        platform: schedulePlatform,
+        content: { title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스' },
+        mode,
+        initialDatetime: scheduleInfo[schedulePlatform]?.scheduledAt || shortsPlatforms[platformKey]?.scheduledAt || null,
+      })
+    }
+
     return (
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div />
-          <div className="flex items-center gap-2 flex-wrap">
-            {[
-              { key: 'youtube', label: 'YouTube' },
-              { key: 'instagram', label: 'Instagram' },
-            ].map((target) => {
-              const selected = shortsUploadTargets[target.key]
-              return (
-                <button
-                  key={target.key}
-                  type="button"
-                  onClick={() => setShortsUploadTargets(prev => ({ ...prev, [target.key]: !prev[target.key] }))}
-                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                    selected
-                      ? 'border-primary/40 bg-primary/10 text-primary-light'
-                      : 'border-border text-text-muted hover:text-text hover:border-primary/40'
-                  }`}
-                >
-                  {selected && <CheckCircle size={14} />}
-                  {target.label}
-                </button>
-              )
-            })}
+        <div className="bg-surface rounded-2xl border border-border p-5 space-y-3">
+          <div>
+            <h4 className="text-sm font-semibold text-text">플랫폼별 업로드</h4>
+            <p className="text-xs text-text-muted mt-0.5">
+              유튜브 쇼츠와 인스타그램 릴스를 각각 따로 업로드·예약할 수 있습니다.
+            </p>
+          </div>
+          {SHORTS_PLATFORMS.map((p) => {
+            const pmeta = shortsPlatforms[p.key]
+            const busy = shortsBusy[p.key]
+            const scheduledAtIso = pmeta.scheduledAt || scheduleInfo[p.schedulePlatform]?.scheduledAt
+            return (
+              <div
+                key={p.key}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-light/40 px-3 py-2.5"
+              >
+                <span className="text-sm font-medium text-text">{p.label}</span>
+                <div className="flex items-center gap-2">
+                  {pmeta.status === 'uploaded' ? (
+                    pmeta.uploadedUrl ? (
+                      <a
+                        href={pmeta.uploadedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-colors"
+                      >
+                        <CheckCircle size={14} /> 업로드 완료 <ExternalLink size={12} />
+                      </a>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20">
+                        <CheckCircle size={14} /> 업로드 완료
+                      </div>
+                    )
+                  ) : pmeta.status === 'scheduled' ? (
+                    <button
+                      onClick={() => openShortsSchedule(p.key, 'edit')}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
+                    >
+                      <Calendar size={14} /> 예약 완료
+                      {scheduledAtIso && (
+                        <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(scheduledAtIso)}</span>
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => openShortsSchedule(p.key, 'create')}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+                      >
+                        <Calendar size={14} /> 예약 업로드
+                      </button>
+                      <button
+                        onClick={() => handleUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
+                        disabled={busy}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          busy
+                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                            : 'bg-primary text-white hover:bg-primary-dark'
+                        }`}
+                      >
+                        {busy ? (
+                          <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                        ) : (
+                          <><Upload size={14} /> 업로드</>
+                        )}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               onClick={() => copy(shortsDetailText)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-text-muted hover:text-text hover:border-primary/40 transition-colors"
@@ -2137,7 +2215,6 @@ export default function ExtractionResultPage() {
                 <Download size={14} /> 영상 저장
               </button>
             )}
-          </div>
         </div>
 
         <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap lg:items-start">
@@ -2228,7 +2305,7 @@ export default function ExtractionResultPage() {
             </button>
           )
         })}
-        {dataMap[activeMenu] && activeMenu !== 'newsletter' && (
+        {dataMap[activeMenu] && activeMenu !== 'newsletter' && activeMenu !== 'shorts' && (
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {(() => {
               const ch = activeMenu
@@ -2440,6 +2517,33 @@ export default function ExtractionResultPage() {
             setUploadError(null)
             handleUpload(platform, { scheduledAtOverride: scheduledAt })
             return
+          } else if (platform === 'shorts_instagram' || platform === 'shorts_youtube') {
+            // 숏폼 플랫폼별 예약 (인스타그램 릴스 / 유튜브 쇼츠 각각)
+            const platformKey = platform === 'shorts_youtube' ? 'youtube' : 'instagram'
+            try {
+              const scheduledId = scheduleInfo[platform]?.scheduledId || null
+              const savedSchedule = await createScheduledUpload({
+                platform,
+                content: { title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스' },
+                scheduledAt,
+                extractionId: id,
+                scheduledId,
+              })
+              setScheduleInfo(p => ({
+                ...p,
+                [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
+              }))
+            } catch (err) {
+              console.error('[쇼츠/릴스 예약 생성 실패]', err)
+              alert(`예약 생성 실패: ${err.message}`)
+              return
+            }
+            const merged = buildShortsUploadStatus(state.uploadStatus?.shorts, {
+              [platformKey]: { status: 'scheduled', scheduledAt },
+            })
+            await updateUploadStatus(id, 'shorts', merged)
+            mergeStoredUploadMeta('shorts', merged)
+            return
           } else if (platform === 'shorts') {
             const selectedTargets = uploadTargets || shortsUploadTargets
             try {
@@ -2506,6 +2610,29 @@ export default function ExtractionResultPage() {
         onDelete={scheduleDialog.mode === 'edit' ? async () => {
           const platform = scheduleDialog.platform
           const scheduledId = scheduleInfo[platform]?.scheduledId
+
+          if (platform === 'shorts_instagram' || platform === 'shorts_youtube') {
+            const platformKey = platform === 'shorts_youtube' ? 'youtube' : 'instagram'
+            if (scheduledId) {
+              try {
+                await removeScheduledUpload(scheduledId)
+              } catch (err) {
+                alert(`예약 삭제 실패: ${err.message}`)
+                return
+              }
+            }
+            if (extractionId) {
+              const merged = buildShortsUploadStatus(state.uploadStatus?.shorts, {
+                [platformKey]: { status: 'not_uploaded', scheduledAt: null, scheduledId: null },
+              })
+              updateUploadStatus(extractionId, 'shorts', merged)
+                .catch(err => console.warn('[uploadStatus 저장 실패]', err))
+              mergeStoredUploadMeta('shorts', merged)
+            }
+            setScheduleInfo(p => { const n = { ...p }; delete n[platform]; return n })
+            return
+          }
+
           if (scheduledId && platform !== 'blog') {
             try {
               await removeScheduledUpload(scheduledId)

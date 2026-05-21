@@ -9,7 +9,7 @@ import { renderKnowledgeCardDataUrl } from '../utils/knowledgeCardCapture.jsx'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { formatDesktopHelperStatus, getDesktopHelperStatus } from '../utils/desktopHelperStatus.js'
 import { normalizeNaverHelperMessage } from '../utils/naverHelperMessage.js'
-import { formatInstagramReelsRequest, stripMarkdownEmphasis } from '../utils/platformFormatter.js'
+import { appendYoutubeHashtags, formatInstagramReelsRequest, stripMarkdownEmphasis } from '../utils/platformFormatter.js'
 import { fetchWithTimeout, withTimeout } from '../utils/requestTimeout.js'
 import { pollUploadCompletion } from '../utils/blogUploadPolling.js'
 import { buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads.js'
@@ -276,7 +276,8 @@ export async function uploadToYoutube(extractionId, options = {}) {
     })
   }
   if (script?.cta) descParts.push(`\n${stripMarkdownEmphasis(script.cta)}`)
-  const description = stripMarkdownEmphasis(script?.uploadDescription || descParts.join('\n') || '').slice(0, 5000)
+  const baseDescription = stripMarkdownEmphasis(script?.uploadDescription || descParts.join('\n') || '')
+  const description = appendYoutubeHashtags(baseDescription, script?.hashtags, 5000)
 
   const rawTags = (script?.hashtags || script?.tags || []).map((tag) => String(tag).replace(/^#/, ''))
   if (!rawTags.includes('Shorts')) rawTags.unshift('Shorts')
@@ -392,6 +393,11 @@ export async function uploadToShortsTargets(extractionId, options = {}) {
 
   return {
     failures,
+    // 플랫폼별 업로드 결과(성공한 플랫폼만 채워짐) — 호출부가 플랫폼별 상태를 갱신한다.
+    results: {
+      instagram: results.instagram || null,
+      youtube: results.youtube || null,
+    },
     scheduled: Boolean(results.youtube?.scheduled || options.scheduledAtOverride),
     scheduledAt: results.youtube?.scheduledAt || options.scheduledAtOverride || null,
     uploadedUrls,

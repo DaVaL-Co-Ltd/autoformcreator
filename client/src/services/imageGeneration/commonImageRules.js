@@ -1,5 +1,27 @@
 import { findInlineDataPart, requestGeminiContent } from '../gemini-core'
 
+// 이미지 생성 동시 실행 상한. Gemini 이미지 모델은 텍스트보다 rate limit 이 빡빡해
+// 2 로 제한한다(blog·instagram 배치가 겹쳐도 합쳐서 4 동시까지).
+export const IMAGE_GENERATION_CONCURRENCY = 2
+
+// items 를 fn 으로 매핑하되 동시 실행 수를 limit 으로 제한한다. 결과는 입력 순서를 보존한다.
+// fn 은 자체적으로 예외를 처리해야 한다(throw 하면 전체가 reject 됨).
+export async function mapWithConcurrency(items, limit, fn) {
+  const list = Array.isArray(items) ? items : []
+  const results = new Array(list.length)
+  let cursor = 0
+  async function worker() {
+    while (cursor < list.length) {
+      const index = cursor
+      cursor += 1
+      results[index] = await fn(list[index], index)
+    }
+  }
+  const workerCount = Math.max(1, Math.min(limit, list.length))
+  await Promise.all(Array.from({ length: workerCount }, () => worker()))
+  return results
+}
+
 function abortableDelay(ms, signal) {
   if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
   if (signal.aborted) return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))

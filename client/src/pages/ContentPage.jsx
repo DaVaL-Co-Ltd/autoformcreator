@@ -16,10 +16,18 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { deleteExtractionChannel, getExtractions, updateUploadStatus } from '../services/storage'
+import { deleteExtractionChannel, getExtractionById, getExtractions, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
+import {
+  SHORTS_PLATFORMS,
+  aggregateShortsStatus,
+  buildShortsUploadStatus,
+  deriveShortsPlatforms,
+  shortsPlatformFromSchedule,
+  shortsSchedulePlatform,
+} from '../utils/shortsUploadStatus'
 
 const channelConfig = {
   all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
@@ -43,6 +51,16 @@ function toContentItems(extractions, scheduledMap = new Map()) {
       const nativeSchedule = Boolean(uploadInfo.nativeSchedule)
       const scheduledMeta = scheduledMap.get(`${ext.id}:${ch.channel}`) || null
 
+      // 숏폼은 인스타그램/유튜브 상태를 따로 추적한다.
+      const isShorts = ch.channel === 'shorts'
+      const shortsPlatforms = isShorts ? deriveShortsPlatforms(uploadInfo) : null
+      const shortsScheduledRows = isShorts
+        ? {
+          instagram: scheduledMap.get(`${ext.id}:shorts_instagram`) || null,
+          youtube: scheduledMap.get(`${ext.id}:shorts_youtube`) || null,
+        }
+        : null
+
       return {
         extractionId: ext.id,
         channel: ch.channel,
@@ -53,8 +71,10 @@ function toContentItems(extractions, scheduledMap = new Map()) {
         cards: ch.channel === 'instagram' ? ext.data?.instagramContent?.cards?.length : null,
         data: ext.data,
         nativeSchedule,
-        uploadStatus: uploadInfo.status,
+        uploadStatus: isShorts ? aggregateShortsStatus(shortsPlatforms) : uploadInfo.status,
         uploadStatusMap: ext.uploadStatus || {},
+        shortsPlatforms,
+        shortsScheduledRows,
         scheduledAt: uploadInfo.scheduledAt || null,
         uploadedAt: uploadInfo.uploadedAt || null,
         scheduledId: scheduledMeta?.id || null,
@@ -211,30 +231,63 @@ export default function ContentPage() {
   }
 
   const handleUpload = async (item, options = {}) => {
-    const key = `${item.extractionId}-${item.channel}`
+    // 숏폼은 인스타그램/유튜브를 따로 업로드한다(options.platform).
+    const shortsPlatform = item.channel === 'shorts' ? options.platform || null : null
+    const key = shortsPlatform
+      ? `${item.extractionId}-shorts-${shortsPlatform}`
+      : `${item.extractionId}-${item.channel}`
     setUploadingIds(prev => new Set(prev).add(key))
 
     try {
       const { uploadToPlatform } = await import('../services/platformUploaders')
-      const result = await uploadToPlatform(item.channel, item.extractionId, options)
 
-      const nextUploadInfo = {
-        status: result?.failures?.length ? 'partial_failed' : 'uploaded',
-        uploadedAt: new Date().toISOString(),
-        uploadedUrl: result?.url || null,
+      if (shortsPlatform) {
+        const targets = {
+          instagram: shortsPlatform === 'instagram',
+          youtube: shortsPlatform === 'youtube',
+        }
+        const result = await uploadToPlatform('shorts', item.extractionId, {
+          targets,
+          uploadOrder: [shortsPlatform],
+        })
+        const platformResult = result?.results?.[shortsPlatform]
+        if (!platformResult) {
+          throw new Error(result?.failures?.join(' / ') || '업로드에 실패했습니다.')
+        }
+        // 다른 플랫폼 상태를 보존한 채 이 플랫폼만 업로드 완료로 갱신한다.
+        // 다른 플랫폼 업로드와 동시에 진행될 수 있으므로 최신 상태를 다시 읽어 병합한다.
+        const fresh = await getExtractionById(item.extractionId).catch(() => null)
+        const currentShorts = fresh?.uploadStatus?.shorts || item.uploadStatusMap?.shorts
+        const merged = buildShortsUploadStatus(currentShorts, {
+          [shortsPlatform]: {
+            status: 'uploaded',
+            uploadedAt: new Date().toISOString(),
+            uploadedUrl: platformResult.url || null,
+          },
+        })
+        await updateUploadStatus(item.extractionId, 'shorts', merged)
+        await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+      } else {
+        const result = await uploadToPlatform(item.channel, item.extractionId, options)
+
+        const nextUploadInfo = {
+          status: result?.failures?.length ? 'partial_failed' : 'uploaded',
+          uploadedAt: new Date().toISOString(),
+          uploadedUrl: result?.url || null,
+        }
+        if (result?.uploadedUrls) {
+          nextUploadInfo.uploadedUrls = result.uploadedUrls
+        }
+
+        if (item.channel === 'blog') {
+          nextUploadInfo.nativeSchedule = Boolean(result?.scheduled || options.scheduledAtOverride || item.nativeSchedule)
+          nextUploadInfo.scheduledAt = result?.scheduledAt || options.scheduledAtOverride || item.scheduledAt || null
+        }
+
+        await updateUploadStatus(item.extractionId, item.channel, nextUploadInfo)
+
+        await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
       }
-      if (result?.uploadedUrls) {
-        nextUploadInfo.uploadedUrls = result.uploadedUrls
-      }
-
-      if (item.channel === 'blog' || item.channel === 'shorts') {
-        nextUploadInfo.nativeSchedule = Boolean(result?.scheduled || options.scheduledAtOverride || item.nativeSchedule)
-        nextUploadInfo.scheduledAt = result?.scheduledAt || options.scheduledAtOverride || item.scheduledAt || null
-      }
-
-      await updateUploadStatus(item.extractionId, item.channel, nextUploadInfo)
-
-      await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
     } catch (err) {
       alert(`업로드 실패: ${err.message}`)
     }
@@ -247,6 +300,25 @@ export default function ContentPage() {
   }
 
   const handleScheduleSave = async (extractionId, channel, info, scheduledContent = null, scheduledId = null) => {
+    // 숏폼 플랫폼별 예약 (channel = 'shorts_instagram' | 'shorts_youtube')
+    const shortsPlatformKey = shortsPlatformFromSchedule(channel)
+    if (shortsPlatformKey && info.scheduledAt) {
+      const target = scheduleTarget || editScheduleTarget
+      await createScheduledUpload({
+        platform: channel,
+        content: { title: target?.title || '' },
+        scheduledAt: new Date(info.scheduledAt).toISOString(),
+        extractionId,
+        scheduledId,
+      })
+      const merged = buildShortsUploadStatus(target?.uploadStatusMap?.shorts, {
+        [shortsPlatformKey]: { status: 'scheduled', scheduledAt: info.scheduledAt },
+      })
+      await updateUploadStatus(extractionId, 'shorts', merged)
+      await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+      return
+    }
+
     if (channel === 'blog' && info.scheduledAt) {
       await updateUploadStatus(extractionId, channel, info)
       const target = scheduleTarget || editScheduleTarget
@@ -307,6 +379,20 @@ export default function ContentPage() {
   }
 
   const handleCancelSchedule = async (item) => {
+    // 숏폼 플랫폼별 예약 해제
+    if (item.shortsPlatform) {
+      const schedRow = item.shortsScheduledRows?.[item.shortsPlatform]
+      if (schedRow?.id) {
+        await removeScheduledUpload(schedRow.id)
+      }
+      const merged = buildShortsUploadStatus(item.uploadStatusMap?.shorts, {
+        [item.shortsPlatform]: { status: 'not_uploaded', scheduledAt: null, scheduledId: null },
+      })
+      await updateUploadStatus(item.extractionId, 'shorts', merged)
+      await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
+      return
+    }
+
     if (item.scheduledId) {
       await removeScheduledUpload(item.scheduledId)
     }
@@ -531,7 +617,7 @@ export default function ContentPage() {
                       </div>
                     )}
 
-                    {item.channel !== 'newsletter' && item.uploadStatus === 'not_uploaded' && (
+                    {item.channel !== 'newsletter' && item.channel !== 'shorts' && item.uploadStatus === 'not_uploaded' && (
                       <>
                         <button
                           onClick={() => setScheduleTarget(item)}
@@ -567,7 +653,7 @@ export default function ContentPage() {
                       </>
                     )}
 
-                    {item.channel !== 'newsletter' && item.uploadStatus === 'scheduled' && (
+                    {item.channel !== 'newsletter' && item.channel !== 'shorts' && item.uploadStatus === 'scheduled' && (
                       <button
                         onClick={() => setEditScheduleTarget(item)}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
@@ -580,7 +666,7 @@ export default function ContentPage() {
                       </button>
                     )}
 
-                    {item.channel !== 'newsletter' && item.uploadStatus === 'uploaded' && (
+                    {item.channel !== 'newsletter' && item.channel !== 'shorts' && item.uploadStatus === 'uploaded' && (
                       <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
                         <CheckCircle size={13} />
                         {isNativeSchedule ? '예약 등록 완료' : '업로드 완료'}
@@ -601,6 +687,75 @@ export default function ContentPage() {
                     </button>
                   </div>
                 </div>
+
+                {item.channel === 'shorts' && item.shortsPlatforms && (
+                  <div className="border-t border-border px-3 py-2.5 space-y-2">
+                    {SHORTS_PLATFORMS.map((p) => {
+                      const pmeta = item.shortsPlatforms[p.key]
+                      const pUploading = uploadingIds.has(`${item.extractionId}-shorts-${p.key}`)
+                      return (
+                        <div key={p.key} className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-text-muted shrink-0">{p.label}</span>
+                          <div className="flex items-center gap-2">
+                            {pmeta.status === 'uploaded' && (
+                              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
+                                <CheckCircle size={13} />
+                                업로드 완료
+                                {pmeta.uploadedAt ? (
+                                  <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
+                                ) : null}
+                              </div>
+                            )}
+                            {pmeta.status === 'scheduled' && (
+                              <button
+                                onClick={() => setEditScheduleTarget({ ...item, shortsPlatform: p.key, scheduledAt: pmeta.scheduledAt })}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
+                              >
+                                <Calendar size={13} />
+                                예약 완료
+                                {pmeta.scheduledAt ? (
+                                  <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.scheduledAt)}</span>
+                                ) : null}
+                              </button>
+                            )}
+                            {pmeta.status === 'not_uploaded' && (
+                              <>
+                                <button
+                                  onClick={() => setScheduleTarget({ ...item, shortsPlatform: p.key })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info hover:bg-info/10 transition-colors border border-info/30"
+                                >
+                                  <Calendar size={13} />
+                                  예약
+                                </button>
+                                <button
+                                  onClick={() => handleUpload(item, { platform: p.key })}
+                                  disabled={pUploading}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                    pUploading
+                                      ? 'bg-primary/50 text-white cursor-wait'
+                                      : 'bg-primary text-white hover:bg-primary-dark'
+                                  }`}
+                                >
+                                  {pUploading ? (
+                                    <>
+                                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                      업로드 중...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload size={13} />
+                                      즉시 업로드
+                                    </>
+                                  )}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           })}
@@ -661,16 +816,30 @@ export default function ContentPage() {
       <ScheduleDialog
         open={!!scheduleTarget}
         onClose={() => setScheduleTarget(null)}
-        defaultPlatform={scheduleTarget?.channel}
+        defaultPlatform={scheduleTarget?.shortsPlatform
+          ? shortsSchedulePlatform(scheduleTarget.shortsPlatform)
+          : scheduleTarget?.channel}
         lockPlatform={true}
-        content={scheduleTarget?.channel === 'instagram'
-          ? buildInstagramScheduledContent(scheduleTarget?.data)
-          : {
-            title: scheduleTarget?.title,
-            uploadTargets: scheduleTarget?.channel === 'shorts' ? scheduleTarget?.uploadTargets : undefined,
-          }}
+        content={scheduleTarget?.shortsPlatform
+          ? { title: scheduleTarget?.title }
+          : scheduleTarget?.channel === 'instagram'
+            ? buildInstagramScheduledContent(scheduleTarget?.data)
+            : {
+              title: scheduleTarget?.title,
+              uploadTargets: scheduleTarget?.channel === 'shorts' ? scheduleTarget?.uploadTargets : undefined,
+            }}
         onSave={async ({ scheduledAt, uploadTargets }) => {
           if (!scheduleTarget) return
+          if (scheduleTarget.shortsPlatform) {
+            await handleScheduleSave(
+              scheduleTarget.extractionId,
+              shortsSchedulePlatform(scheduleTarget.shortsPlatform),
+              { scheduledAt },
+              null,
+              scheduleTarget.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.id || null,
+            )
+            return
+          }
           const nextInfo = scheduleTarget.channel === 'blog'
             ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : scheduleTarget.channel === 'shorts'
@@ -686,17 +855,31 @@ export default function ContentPage() {
         open={!!editScheduleTarget}
         mode="edit"
         onClose={() => setEditScheduleTarget(null)}
-        defaultPlatform={editScheduleTarget?.channel}
+        defaultPlatform={editScheduleTarget?.shortsPlatform
+          ? shortsSchedulePlatform(editScheduleTarget.shortsPlatform)
+          : editScheduleTarget?.channel}
         lockPlatform={true}
-        content={editScheduleTarget?.channel === 'instagram'
-          ? buildInstagramScheduledContent(editScheduleTarget?.data)
-          : {
-            title: editScheduleTarget?.title,
-            uploadTargets: editScheduleTarget?.channel === 'shorts' ? editScheduleTarget?.uploadTargets : undefined,
-          }}
+        content={editScheduleTarget?.shortsPlatform
+          ? { title: editScheduleTarget?.title }
+          : editScheduleTarget?.channel === 'instagram'
+            ? buildInstagramScheduledContent(editScheduleTarget?.data)
+            : {
+              title: editScheduleTarget?.title,
+              uploadTargets: editScheduleTarget?.channel === 'shorts' ? editScheduleTarget?.uploadTargets : undefined,
+            }}
         initialDatetime={editScheduleTarget?.scheduledAt}
         onSave={async ({ scheduledAt, uploadTargets }) => {
           if (!editScheduleTarget) return
+          if (editScheduleTarget.shortsPlatform) {
+            await handleScheduleSave(
+              editScheduleTarget.extractionId,
+              shortsSchedulePlatform(editScheduleTarget.shortsPlatform),
+              { scheduledAt },
+              null,
+              editScheduleTarget.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.id || null,
+            )
+            return
+          }
           const nextInfo = editScheduleTarget.channel === 'blog'
             ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : editScheduleTarget.channel === 'shorts'

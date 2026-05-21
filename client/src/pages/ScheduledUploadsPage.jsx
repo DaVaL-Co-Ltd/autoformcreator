@@ -6,11 +6,30 @@ import {
 import { getAll, update, remove } from '../utils/scheduledUploads'
 import { getChannel } from '../constants/channels'
 
+// 숏폼 플랫폼별 예약(shorts_instagram/shorts_youtube)은 CHANNELS 에 없으므로 별도 라벨을 둔다.
+const SUB_PLATFORM_LABELS = {
+  shorts_instagram: '인스타그램 릴스',
+  shorts_youtube: '유튜브 쇼츠',
+}
+
 // Build PLATFORM_CONFIG from CHANNELS for fast lookup
 const buildPlatformConfig = (key) => {
   const ch = getChannel(key)
-  if (!ch) return { label: key, icon: null, color: 'text-text-muted', bg: 'bg-surface-light', border: 'border-border' }
-  return { label: ch.label, icon: ch.Icon, color: ch.color, bg: ch.bg, border: ch.border }
+  if (ch) {
+    return { label: ch.label, icon: ch.Icon, color: ch.color, bg: ch.bg, border: ch.border }
+  }
+  if (SUB_PLATFORM_LABELS[key]) {
+    // 쇼츠/릴스 채널 스타일을 따른다.
+    const shortsCh = getChannel('shorts')
+    return {
+      label: SUB_PLATFORM_LABELS[key],
+      icon: shortsCh?.Icon || null,
+      color: shortsCh?.color || 'text-text-muted',
+      bg: shortsCh?.bg || 'bg-surface-light',
+      border: shortsCh?.border || 'border-border',
+    }
+  }
+  return { label: key, icon: null, color: 'text-text-muted', bg: 'bg-surface-light', border: 'border-border' }
 }
 
 const STATUS_CONFIG = {
@@ -87,7 +106,7 @@ function UploadCard({ item, onRefresh }) {
       {/* Top row: platform + status */}
       <div className="flex items-center justify-between">
         <div className={`flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border ${platform.bg} ${platform.color} ${platform.border}`}>
-          <PlatformIcon size={13} />
+          {PlatformIcon && <PlatformIcon size={13} />}
           {platform.label}
         </div>
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${status.bg} ${status.color} ${status.border}`}>

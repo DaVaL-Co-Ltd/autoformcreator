@@ -2713,6 +2713,79 @@ app.patch('/api/scheduled/:id', async (req, res) => {
   }
 })
 
+// --- 숏폼(쇼츠/릴스) 플랫폼별 업로드 상태 헬퍼 ---
+// upload_status.shorts 는 인스타그램/유튜브를 따로 추적한다.
+// client/src/utils/shortsUploadStatus.js 와 동일한 규칙을 서버에서도 적용한다.
+const SHORTS_PLATFORM_KEYS = ['instagram', 'youtube']
+
+function normalizeShortsPlatformMeta(meta) {
+  const src = meta && typeof meta === 'object' ? meta : {}
+  const status = ['not_uploaded', 'scheduled', 'uploaded'].includes(src.status) ? src.status : 'not_uploaded'
+  return {
+    status,
+    uploadedAt: src.uploadedAt || null,
+    uploadedUrl: src.uploadedUrl || null,
+    scheduledAt: src.scheduledAt || null,
+    scheduledId: src.scheduledId || null,
+  }
+}
+
+function deriveShortsPlatforms(shortsMeta) {
+  const meta = shortsMeta && typeof shortsMeta === 'object' ? shortsMeta : {}
+  if (meta.platforms && typeof meta.platforms === 'object') {
+    return {
+      instagram: normalizeShortsPlatformMeta(meta.platforms.instagram),
+      youtube: normalizeShortsPlatformMeta(meta.platforms.youtube),
+    }
+  }
+  const uploadedUrls = meta.uploadedUrls && typeof meta.uploadedUrls === 'object' ? meta.uploadedUrls : {}
+  const targets = meta.uploadTargets && typeof meta.uploadTargets === 'object' ? meta.uploadTargets : null
+  const result = {}
+  for (const key of SHORTS_PLATFORM_KEYS) {
+    if (uploadedUrls[key]) {
+      result[key] = normalizeShortsPlatformMeta({ status: 'uploaded', uploadedUrl: uploadedUrls[key], uploadedAt: meta.uploadedAt || null })
+    } else if (meta.status === 'uploaded' && (!targets || targets[key])) {
+      result[key] = normalizeShortsPlatformMeta({ status: 'uploaded', uploadedAt: meta.uploadedAt || null })
+    } else if (meta.status === 'scheduled' && (!targets || targets[key])) {
+      result[key] = normalizeShortsPlatformMeta({ status: 'scheduled', scheduledAt: meta.scheduledAt || null })
+    } else {
+      result[key] = normalizeShortsPlatformMeta({ status: 'not_uploaded' })
+    }
+  }
+  return result
+}
+
+function aggregateShortsStatus(platforms) {
+  const list = SHORTS_PLATFORM_KEYS.map((key) => platforms?.[key]?.status || 'not_uploaded')
+  if (list.every((status) => status === 'uploaded')) return 'uploaded'
+  if (list.some((status) => status === 'not_uploaded')) return 'not_uploaded'
+  return 'scheduled'
+}
+
+function buildShortsUploadStatus(prevShortsMeta, patches = {}) {
+  const platforms = deriveShortsPlatforms(prevShortsMeta)
+  for (const key of SHORTS_PLATFORM_KEYS) {
+    if (patches[key]) {
+      platforms[key] = normalizeShortsPlatformMeta({ ...platforms[key], ...patches[key] })
+    }
+  }
+  const uploadedUrls = {
+    instagram: platforms.instagram.uploadedUrl || null,
+    youtube: platforms.youtube.uploadedUrl || null,
+  }
+  const uploadedAts = SHORTS_PLATFORM_KEYS
+    .map((key) => platforms[key].uploadedAt)
+    .filter(Boolean)
+    .sort()
+  return {
+    status: aggregateShortsStatus(platforms),
+    platforms,
+    uploadedUrls,
+    uploadedUrl: uploadedUrls.instagram || uploadedUrls.youtube || null,
+    uploadedAt: uploadedAts.length ? uploadedAts[uploadedAts.length - 1] : null,
+  }
+}
+
 // Called by GitHub Actions to execute due scheduled uploads.
 app.post('/api/scheduled/run', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
@@ -2779,7 +2852,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption })
           uploadResult = { url: result.permalink, mediaId: result.mediaId }
 
-        } else if (item.platform === 'shorts') {
+        } else if (item.platform === 'shorts' || item.platform === 'shorts_instagram' || item.platform === 'shorts_youtube') {
           const { data: ext } = await supabaseAdmin
             .from('extractions')
             .select('shorts_video, shorts_script')
@@ -2791,7 +2864,13 @@ app.post('/api/scheduled/run', async (req, res) => {
           const videoUrl = video.combinedVideoUrl || video.url || video.videoUrl
           if (!videoUrl) throw new Error('쇼츠/릴스 영상 URL이 없습니다.')
 
-          const targets = item.content?.uploadTargets || { instagram: true, youtube: true }
+          // 플랫폼별 예약 행(shorts_instagram/shorts_youtube)이면 해당 플랫폼만,
+          // 레거시 'shorts' 행이면 content.uploadTargets 를 따른다.
+          const targets = item.platform === 'shorts_instagram'
+            ? { instagram: true, youtube: false }
+            : item.platform === 'shorts_youtube'
+              ? { instagram: false, youtube: true }
+              : (item.content?.uploadTargets || { instagram: true, youtube: true })
           const uploadedUrls = { instagram: null, youtube: null }
           const media = {}
 
@@ -2816,6 +2895,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
           uploadResult = {
             ...media,
+            isShorts: true,
             uploadedUrls,
             url: uploadedUrls.instagram || uploadedUrls.youtube || null,
           }
@@ -2843,13 +2923,30 @@ app.post('/api/scheduled/run', async (req, res) => {
               .select('upload_status')
               .eq('id', item.extraction_id)
               .maybeSingle()
-            const newStatus = {
-              ...(extRow?.upload_status || {}),
-              [item.platform]: {
-                status: 'uploaded',
-                uploadedAt: uploadedAtIso,
-                uploadedUrl: uploadResult?.url || null,
-              },
+            const prevStatus = extRow?.upload_status || {}
+            let newStatus
+            if (uploadResult?.isShorts) {
+              // 숏폼: 실제 업로드된 플랫폼만 표시하고 나머지는 기존 상태를 유지한다.
+              const patches = {}
+              if (uploadResult.uploadedUrls?.instagram) {
+                patches.instagram = { status: 'uploaded', uploadedAt: uploadedAtIso, uploadedUrl: uploadResult.uploadedUrls.instagram }
+              }
+              if (uploadResult.uploadedUrls?.youtube) {
+                patches.youtube = { status: 'uploaded', uploadedAt: uploadedAtIso, uploadedUrl: uploadResult.uploadedUrls.youtube }
+              }
+              newStatus = {
+                ...prevStatus,
+                shorts: buildShortsUploadStatus(prevStatus.shorts, patches),
+              }
+            } else {
+              newStatus = {
+                ...prevStatus,
+                [item.platform]: {
+                  status: 'uploaded',
+                  uploadedAt: uploadedAtIso,
+                  uploadedUrl: uploadResult?.url || null,
+                },
+              }
             }
             await supabaseAdmin
               .from('extractions')

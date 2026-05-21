@@ -1,9 +1,11 @@
 import {
   COLOR_PROMPTS,
   DOM_TEXT_OVERLAY_PROMPT,
+  IMAGE_GENERATION_CONCURRENCY,
   NO_LETTER_PROMPT,
   generateImage,
   getStylePrompt,
+  mapWithConcurrency,
   pickPalette,
 } from './commonImageRules'
 import { deriveBlogHeadline, deriveBlogTitleKeywordHeadline } from '../../utils/contentImageOverlay'
@@ -395,41 +397,30 @@ export async function generateBlogImages(sections, options = {}) {
     return sharedOverlayHeadline
   }
 
-  const results = []
-  for (let i = 0; i < targetSections.length; i += 1) {
-    const section = targetSections[i]
+  // 섹션별 이미지 생성을 동시성 상한을 두고 병렬 실행한다(순서는 보존).
+  const results = await mapWithConcurrency(targetSections, IMAGE_GENERATION_CONCURRENCY, async (section, i) => {
+    const versionConfig = getBlogImageVersionConfig({ ...options, section })
+    const base = {
+      heading: section.heading,
+      keyPhrase: section.keyPhrase || section.heading,
+      overlayHeadline: resolveOverlayHeadline(section) || undefined,
+      style: 'overlay',
+      variant: versionConfig.variant,
+      overlayMode: versionConfig.overlayMode,
+      overlayFont: versionConfig.overlayFont,
+      imageVersion: versionConfig.version,
+      subjectTheme: versionConfig.subjectTheme,
+    }
     try {
       const generatedImageUrl = await generateImage(buildBlogImagePrompt(section, options, i), 2, options.signal)
       const imageUrl = isKnowledgeInsightCategory(options)
         ? await removeWhiteBackgroundFromDataUrl(generatedImageUrl)
         : generatedImageUrl
-      results.push({
-        heading: section.heading,
-        imageUrl,
-        keyPhrase: section.keyPhrase || section.heading,
-        overlayHeadline: resolveOverlayHeadline(section) || undefined,
-        style: 'overlay',
-        variant: getBlogImageVersionConfig({ ...options, section }).variant,
-        overlayMode: getBlogImageVersionConfig({ ...options, section }).overlayMode,
-        overlayFont: getBlogImageVersionConfig({ ...options, section }).overlayFont,
-        imageVersion: getBlogImageVersionConfig({ ...options, section }).version,
-        subjectTheme: getBlogImageVersionConfig({ ...options, section }).subjectTheme,
-      })
+      return { ...base, imageUrl }
     } catch {
-      results.push({
-        heading: section.heading,
-        imageUrl: null,
-        keyPhrase: section.keyPhrase || section.heading,
-        overlayHeadline: resolveOverlayHeadline(section) || undefined,
-        style: 'overlay',
-        variant: getBlogImageVersionConfig({ ...options, section }).variant,
-        overlayMode: getBlogImageVersionConfig({ ...options, section }).overlayMode,
-        overlayFont: getBlogImageVersionConfig({ ...options, section }).overlayFont,
-        imageVersion: getBlogImageVersionConfig({ ...options, section }).version,
-        subjectTheme: getBlogImageVersionConfig({ ...options, section }).subjectTheme,
-      })
+      return { ...base, imageUrl: null }
     }
-  }
+  })
 
   if (reuseSingleBackground) {
     const sharedImage = results[0]?.imageUrl || null

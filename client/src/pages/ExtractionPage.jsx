@@ -571,7 +571,10 @@ export default function ExtractionPage() {
     analysis: { focus: '', extra: '' },
     summary: { keywords: '', style: 'auto', extra: '' },
     content: {
-      tone: 'auto',
+      blogTone: 'auto',
+      newsletterTone: 'auto',
+      instagramTone: 'auto',
+      shortsTone: 'auto',
       blogCategoryMode: 'auto',
       blogCategoryId: '',
       includeBlogFooter: true,
@@ -1123,7 +1126,11 @@ export default function ExtractionPage() {
     if (!config) return null
     if (!ensureBlogCategoryReady(channelKey === 'blog')) return null
 
-    const contentOptions = { ...buildContentPromptOptions(), signal: options.signal }
+    const contentOptions = {
+      ...buildContentPromptOptions(),
+      tone: promptSettings.content[`${channelKey}Tone`] || 'auto',
+      signal: options.signal,
+    }
     const result = await config.generate(summary, parsedText, emphasisText, contentOptions)
     config.setter(result)
     if (options.clearError !== false) {
@@ -1258,26 +1265,29 @@ export default function ExtractionPage() {
     const errors = []
     let anySuccess = false
 
-    for (const channel of channels) {
-      if (abortController.signal.aborted) break
-      setRetrying(`content-${channel.key}`)
-      try {
-        const result = await generateContentChannel(channel.key, { clearError: false, signal: abortController.signal })
-        if (result) {
+    // 채널 4종은 서로 의존성이 없어 동시에 생성한다(블로그/인스타는 내부에서 이미지까지 포함).
+    setRetrying('content-all')
+    const settled = await Promise.allSettled(
+      channels.map((channel) => generateContentChannel(channel.key, { clearError: false, signal: abortController.signal })),
+    )
+
+    let cancelled = abortController.signal.aborted
+    settled.forEach((outcome, index) => {
+      const channel = channels[index]
+      if (outcome.status === 'fulfilled') {
+        if (outcome.value) {
           anySuccess = true
         } else {
           errors.push({ service: 'gemini', channel: channel.label, message: '해당 채널 콘텐츠가 생성되지 않았습니다.' })
         }
-      } catch (err) {
-        if (isContentGenerationCancelledError(err)) {
-          resetContentGenerationFlowState()
-          return
-        }
-        errors.push({ service: 'gemini', channel: channel.label, message: err.message || '생성 실패' })
+      } else if (isContentGenerationCancelledError(outcome.reason)) {
+        cancelled = true
+      } else {
+        errors.push({ service: 'gemini', channel: channel.label, message: outcome.reason?.message || '생성 실패' })
       }
-    }
+    })
 
-    if (abortController.signal.aborted) {
+    if (cancelled) {
       resetContentGenerationFlowState()
       return
     }
@@ -3139,18 +3149,38 @@ ${parsedText}
       </div>
 
       {/* Step 3-6: Channel Content Generation */}
+      {currentStep >= 3 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-surface rounded-xl border border-border p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-text">콘텐츠 일괄 생성</p>
+            <p className="text-xs text-text-muted mt-0.5">
+              선택한 {selectedContentChannels().length}개 채널을 한 번에 병렬로 생성합니다. (쇼츠는 대본까지)
+            </p>
+          </div>
+          <button
+            onClick={runContentGeneration}
+            disabled={loading.content || loading.analysis || loading.summary || selectedContentChannels().length === 0}
+            className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-primary text-white hover:bg-primary-dark disabled:opacity-50"
+          >
+            {loading.content
+              ? <><Loader2 size={14} className="animate-spin" /> 생성 중...</>
+              : <><Sparkles size={14} /> 선택 채널 전체 생성</>}
+          </button>
+        </div>
+      )}
       {contentStepRows.map((row) => {
         const Icon = row.icon
         const errObj = stepErrors.content?.find(e => e.channel === (row.errorLabel || row.label))
         const failed = !row.data && !!errObj
         const generating = retrying === `content-${row.key}` || retrying === `regen-${row.key}` || retrying === `${errObj?.service}-${errObj?.channel}`
+          || (retrying === 'content-all' && !!selectedChannels[row.key])
         const generatingLabel = getChannelGenerationLabel(row.key)
         const isAvailable = currentStep >= row.stepId || !!row.data
         return (
           <div key={row.key} id={`step-${row.stepId}`} className="flex gap-4 items-stretch">
             <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${!isAvailable ? 'opacity-50 pointer-events-none' : ''}`}>
               <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> {row.label} 설정</p>
-              {PF('글의 어조', { type: 'select', value: promptSettings.content.tone, onChange: v => updatePrompt('content', 'tone', v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
+              {PF('글의 어조', { type: 'select', value: promptSettings.content[`${row.key}Tone`], onChange: v => updatePrompt('content', `${row.key}Tone`, v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
               {row.key === 'blog' && (
                 <>
                   {PF('카테고리 분류', {
