@@ -70,7 +70,7 @@ function stripMarkdown(value = '') {
 // bullet 변환이 막히지 않아 emoji 앞에 zero-width space 를 끼워 "줄 시작 emoji" 패턴 자체를
 // 깨고, emoji 뒤 공백은 NBSP 로 치환해 시각적으로는 동일하게 유지하면서 트리거를 회피한다.
 const LEADING_EMOJI_SPACE_RE =
-  /^([\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+)([ \t]+)/u
+  /^((?:[0-9#*]\u{FE0F}?\u{20E3}|[\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}])+)([ \t]+)/u
 
 function preserveLeadingEmojiSpace(value = '') {
   const text = String(value || '')
@@ -1747,13 +1747,33 @@ async function clickBodyField(page, preferLast = false) {
   return false
 }
 
-// 줄 맨 앞 이모지가 SMP(surrogate pair, U+10000 이상 — 💡 🎯 👉 등 "진짜" 색깔 이모지) 인지 판정.
-// SmartEditor 는 SMP 이모지로 시작하는 줄만 emoji-bullet 자동변환 대상으로 삼는다.
-function startsWithSmpEmoji(text = '') {
+// 줄 맨 앞 이모지가 SmartEditor 의 자동 목록/불릿 변환을 유발하는 종류인지 판정한다.
+// 대상: SMP 이모지(surrogate pair, U+10000 이상 — 색깔 이모지) +
+//       키캡 이모지(숫자·기호 + U+FE0F + U+20E3, 예: 1~9 키캡).
+function startsWithListTriggerEmoji(text = '') {
   const match = String(text || '').match(LEADING_EMOJI_SPACE_RE)
   if (!match) return false
-  const codePoint = match[1].codePointAt(0)
+  const lead = match[1]
+  // 키캡 이모지는 첫 코드포인트가 일반 숫자라 SMP 판정엔 안 걸리지만
+  // SmartEditor 가 번호 목록으로 자동 변환하므로 특수 입력이 필요하다.
+  if (/^[0-9#*]\u{FE0F}?\u{20E3}/u.test(lead)) return true
+  const codePoint = lead.codePointAt(0)
   return typeof codePoint === 'number' && codePoint >= 0x10000
+}
+
+// 문자열의 grapheme(시각적 글자) 개수 — 방향키 한 번이 이동하는 단위.
+// 키캡 이모지처럼 코드포인트는 여럿이어도 방향키로는 한 칸인 글자가 있어,
+// 코드포인트 수로 세면 ArrowLeft/Right 횟수가 어긋나 글자가 잘린다.
+function graphemeCount(value = '') {
+  const text = String(value || '')
+  try {
+    const segmenter = new Intl.Segmenter('ko', { granularity: 'grapheme' })
+    let count = 0
+    for (const _segment of segmenter.segment(text)) count += 1
+    return count
+  } catch {
+    return [...text].length
+  }
 }
 
 // 단락 텍스트를 SmartEditor 에 입력한다. SMP 이모지로 시작하는 줄은 NBSP+본문 텍스트를 먼저
@@ -1762,7 +1782,7 @@ function startsWithSmpEmoji(text = '') {
 // "이모지 다음 공백 입력" 이벤트가 없어 emoji-bullet 자동변환을 회피한다.
 async function insertParagraphText(page, rawText) {
   const text = String(rawText || '')
-  const emojiMatch = startsWithSmpEmoji(text) ? text.match(LEADING_EMOJI_SPACE_RE) : null
+  const emojiMatch = startsWithListTriggerEmoji(text) ? text.match(LEADING_EMOJI_SPACE_RE) : null
   if (!emojiMatch) {
     await page.keyboard.insertText(preserveLeadingEmojiSpace(text || ' '))
     return
@@ -1772,7 +1792,7 @@ async function insertParagraphText(page, rawText) {
   const restText = text.slice(emojiMatch[0].length)
   // NBSP(이모지 뒤 공백) + 본문 텍스트 — 이모지는 아직 없음
   const leadingBody = ' ' + restText
-  const caretCount = [...leadingBody].length
+  const caretCount = graphemeCount(leadingBody)
 
   // 1) 본문(NBSP 포함) 먼저 입력 — 줄이 이모지로 시작하지 않음
   await page.keyboard.insertText(leadingBody)
