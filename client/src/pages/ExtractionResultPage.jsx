@@ -1625,7 +1625,7 @@ export default function ExtractionResultPage() {
 
               return (
                 <section key={index} className="space-y-5">
-                  {!usesAutomaticBlogQuote && !isLectureEventBlog && headingNode}
+                  {!usesAutomaticBlogQuote && headingNode}
 
                   {sectionImages.length > 0 && (
                     <div className="mb-4 space-y-4">
@@ -1690,7 +1690,7 @@ export default function ExtractionResultPage() {
                     </div>
                   )}
 
-                  {(usesAutomaticBlogQuote || isLectureEventBlog) && headingNode}
+                  {usesAutomaticBlogQuote && headingNode}
 
                   <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
