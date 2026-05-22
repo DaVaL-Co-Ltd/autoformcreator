@@ -274,11 +274,12 @@ function splitNarration(text, maxCharsPerLine = 18) {
 }
 
 const subtitleFontConfigs = {
-  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 20, bold: 0, italic: 0, spacing: 0 },
-  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 20, bold: -1, italic: 0, spacing: 0.2 },
-  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 18, bold: 0, italic: 0, spacing: 0 },
-  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 20, bold: 0, italic: 0, spacing: 0.05 },
-  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 20, bold: 0, italic: 0, spacing: 0.35 },
+  // marginV 110: 자막을 화면 세로 ~58% 지점에 둬 쇼츠·릴스 하단 UI(하단 약 25%)에 가리지 않게 한다.
+  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 110, bold: 0, italic: 0, spacing: 0 },
+  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 110, bold: -1, italic: 0, spacing: 0.2 },
+  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 110, bold: 0, italic: 0, spacing: 0 },
+  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 110, bold: 0, italic: 0, spacing: 0.05 },
+  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 110, bold: 0, italic: 0, spacing: 0.35 },
 }
 const getSubtitleFontConfig = (k) => subtitleFontConfigs[k] || subtitleFontConfigs.default
 function getForceStyle(style, fontKey = 'default') {
@@ -465,7 +466,7 @@ async function concatClips(clipPaths, clipLens, outputPath) {
 // 없으면 글자 수 비율로 전체 duration 을 분배(기존 동작).
 // crossfadeDur 가 있으면 씬 전환마다 그만큼 겹치므로 씬 진행/자막 구간을 (길이-crossfadeDur)로 잡는다.
 function buildSrt(scenes, duration, sceneDurations, crossfadeDur) {
-  const maxCharsPerLine = 16
+  const maxCharsPerLine = 14
   const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
   const fmt = (t) => {
     const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60)
@@ -487,7 +488,7 @@ function buildSrt(scenes, duration, sceneDurations, crossfadeDur) {
     if (!narration.trim()) { currentTime += span; continue }
     const lines = splitNarration(narration, maxCharsPerLine)
     const blocks = []
-    const linesPerBlock = lines.length === 3 ? 3 : 2
+    const linesPerBlock = 2
     for (let j = 0; j < lines.length; j += linesPerBlock) blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
     const blockChars = blocks.map((b) => b.replace(/\n/g, '').length)
     const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1

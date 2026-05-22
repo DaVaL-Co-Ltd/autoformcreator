@@ -881,11 +881,12 @@ function splitNarration(text, maxCharsPerLine = 18) {
 
 // Subtitle style mapping for 9:16 vertical videos.
 const subtitleFontConfigs = {
-  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 20, bold: 0, italic: 0, spacing: 0 },
-  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 20, bold: -1, italic: 0, spacing: 0.2 },
-  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 18, bold: 0, italic: 0, spacing: 0 },
-  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 20, bold: 0, italic: 0, spacing: 0.05 },
-  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 20, bold: 0, italic: 0, spacing: 0.35 },
+  // marginV 110: 자막을 화면 세로 ~58% 지점에 둬 쇼츠·릴스 하단 UI(하단 약 25%)에 가리지 않게 한다.
+  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 110, bold: 0, italic: 0, spacing: 0 },
+  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 110, bold: -1, italic: 0, spacing: 0.2 },
+  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 110, bold: 0, italic: 0, spacing: 0 },
+  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 110, bold: 0, italic: 0, spacing: 0.05 },
+  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 110, bold: 0, italic: 0, spacing: 0.35 },
 }
 
 function getSubtitleFontConfig(fontKey) {
@@ -1040,8 +1041,8 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     })
 
-    // 3) Build SRT blocks, usually 2 lines per block and 3 when it fits cleanly.
-    const maxCharsPerLine = 16
+    // 3) Build SRT blocks — 한 자막은 최대 2줄, 한 줄 14자(한국어 가독·우측 UI 회피).
+    const maxCharsPerLine = 14
     let srtContent = ''
     let srtIdx = 1
     const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
@@ -1052,7 +1053,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       const lines = splitNarration(scene.narration, maxCharsPerLine)
       // Group lines into subtitle blocks while keeping them readable.
       const blocks = []
-      const linesPerBlock = lines.length === 3 ? 3 : 2
+      const linesPerBlock = 2
       for (let j = 0; j < lines.length; j += linesPerBlock) {
         blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
       }
