@@ -1040,7 +1040,14 @@ export default function ExtractionResultPage() {
   // 본문은 문장 단위로 빈 줄을 넣어 줄글 가독성을 높인다.
   const compileBlogBody = useCallback((sections = [], introduction = '') => {
     const isProseCategory = usesAutomaticBlogQuote
-    let imageCounter = 0
+    // 썸네일 이미지는 업로드 이미지 배열(photoPaths)의 0번에 들어간다. 썸네일이 있으면
+    // 본문 맨 앞에 [IMG:1] 마커를 붙이고 섹션 이미지 마커는 [IMG:2]부터 시작해,
+    // 마커 번호와 photoPaths 인덱스를 일치시킨다. (어긋나면 섹션의 첫 이미지 마커가
+    // 썸네일을 끌어와 본문 중간에 끼어든다.)
+    const hasThumbnailImage = ensureArray(blogImages).some(
+      (img) => img?.isThumbnail && (img?.imageUrl || img?.renderedImageUrl || img?.pngUrl)
+    )
+    let imageCounter = hasThumbnailImage ? 1 : 0
     const sectionsText = ensureArray(sections).map((s) => {
       const headingText = String(s.heading || '').trim()
       const baseContent = sanitizeBlogBodyForDisplay(s.content || '')
@@ -1058,13 +1065,16 @@ export default function ExtractionResultPage() {
         : `${heading}${imageMarker}${content}`
     }).join('\n\n')
 
-    // prose·강의/특강 카테고리는 도입부를 본문 맨 앞에 붙인다.
-    if (!isProseCategory && !isLectureEventBlog) return sectionsText
+    // 썸네일이 있으면 본문 맨 앞(도입부보다도 위)에 [IMG:1] 썸네일 마커를 붙인다.
+    const withThumbnail = (body) => (hasThumbnailImage ? `[IMG:1]\n\n${body}` : body)
+
+    // prose·강의/특강 카테고리는 도입부를 썸네일 다음, 본문 앞에 붙인다.
+    if (!isProseCategory && !isLectureEventBlog) return withThumbnail(sectionsText)
 
     const baseIntro = sanitizeBlogBodyForDisplay(introduction || '')
     const introText = isProseCategory ? splitSentencesForBlogProse(baseIntro) : baseIntro
-    return introText ? `${introText}\n\n${sectionsText}` : sectionsText
-  }, [blogHeadingStyle, usesAutomaticBlogQuote, isLectureEventBlog])
+    return withThumbnail(introText ? `${introText}\n\n${sectionsText}` : sectionsText)
+  }, [blogHeadingStyle, usesAutomaticBlogQuote, isLectureEventBlog, blogImages])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     sanitizeBlogBodyForUpload(content || '')
