@@ -1051,8 +1051,9 @@ export default function ExtractionResultPage() {
       imageCounter += 1
       const heading = buildBlogHeadingPrefix(headingText, blogHeadingStyle)
       const imageMarker = `[IMG:${imageCounter}]\n`
-      // prose(자동 인용구)·강의/특강 카테고리는 이미지를 소제목 위에 배치한다.
-      return isProseCategory || isLectureEventBlog
+      // prose(자동 인용구) 카테고리만 이미지를 소제목 위에 배치한다.
+      // 강의·특강은 소제목 → 이미지 → 본문 순서로, 결과 화면과 동일하게 맞춘다.
+      return isProseCategory
         ? `${imageMarker}${heading}${content}`
         : `${heading}${imageMarker}${content}`
     }).join('\n\n')
@@ -1456,11 +1457,6 @@ export default function ExtractionResultPage() {
         </div>
 
         <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
-          {isLectureEventBlog && blogThumbnailImage && (
-            <div className="px-6 pt-6 sm:px-8 sm:pt-8">
-              {renderBlogThumbnail()}
-            </div>
-          )}
           <div className="p-6 sm:p-8 border-b border-border">
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
               {blogContent?.title}
@@ -1479,6 +1475,8 @@ export default function ExtractionResultPage() {
             )}
           </div>
           <div className="p-6 sm:p-8 space-y-10">
+            {/* 강의·특강: 제목·태그 다음, 도입부 앞에 썸네일을 노출한다. */}
+            {isLectureEventBlog && blogThumbnailImage && renderBlogThumbnail()}
             {(usesAutomaticBlogQuote || isLectureEventBlog) && blogContent?.introduction && (
               <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
@@ -1499,7 +1497,7 @@ export default function ExtractionResultPage() {
 
               return (
                 <>
-                  {/* 강의/특강은 제목 위에서 이미 노출했으므로 본문에서는 생략한다. */}
+                  {/* 강의/특강은 도입부 앞에서 이미 노출했으므로 여기서는 생략한다. */}
                   {!isLectureEventBlog && blogThumbnailImage && renderBlogThumbnail()}
                   {ensureArray(blogContent?.sections).map((section, index) => {
                 if (usesKnowledgeInsightCards) {
