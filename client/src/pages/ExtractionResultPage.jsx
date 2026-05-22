@@ -344,6 +344,17 @@ export default function ExtractionResultPage() {
   const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogStylingCategoryId)
   const isCardNewsCategory = blogStylingCategoryId === 'knowledge_insight' || blogStylingCategoryId === 'interview_prep'
 
+  // [임시 진단] 인용구 소제목이 적용되는지 추적용 로그. 원인 확인 후 제거한다.
+  useEffect(() => {
+    console.log('[블로그 스타일 진단]', {
+      categoryInfo존재: Boolean(state.blogContent?.categoryInfo),
+      finalCategoryId: state.blogContent?.categoryInfo?.finalCategoryId || '(없음)',
+      blogStylingCategoryId: blogStylingCategoryId || '(빈값)',
+      blogHeadingStyle,
+      usesAutomaticBlogQuote,
+    })
+  }, [state.blogContent, blogStylingCategoryId, blogHeadingStyle, usesAutomaticBlogQuote])
+
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
   useEffect(() => {
@@ -2223,8 +2234,9 @@ export default function ExtractionResultPage() {
         </div>
 
         <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap lg:items-start">
-          {renderVideoPanel(shortsVideo, '자막 포함 최종본')}
-          {rawShortsVideoUrl && renderVideoPanel({ ...shortsVideo, combinedVideoUrl: rawShortsVideoUrl }, '자막 추가 전 원본', { syncNarration: false })}
+          {/* 자막 포함 영상만 노출. 자막 번인이 성공하면 combinedVideoUrl 이 자막본,
+              실패하면 raw 로 fallback 돼 있으므로 단일 패널로 항상 올바른 영상이 뜬다. */}
+          {renderVideoPanel(shortsVideo, rawShortsVideoUrl ? '자막 포함 최종본' : '영상')}
 
           <div className="space-y-3 min-w-0 flex-1">
             <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
