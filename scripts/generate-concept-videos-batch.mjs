@@ -434,6 +434,32 @@ async function crossfadeClips(clipPaths, clipLens, outputPath) {
   return mergedLen
 }
 
+// 클립들을 크로스페이드 없이 단순 이어붙인다 (컷 전환).
+// 모든 클립이 동일 인코딩이라 concat 필터로 합친다. 반환: 최종 길이 = clipLens 합.
+async function concatClips(clipPaths, clipLens, outputPath) {
+  const n = clipPaths.length
+  if (n === 1) {
+    await fs.copyFile(clipPaths[0], outputPath)
+    return clipLens[0]
+  }
+  const streams = clipPaths.map((_, i) => `[${i}:v][${i}:a]`).join('')
+  const args = [
+    ...clipPaths.flatMap((p) => ['-i', p]),
+    '-filter_complex', `${streams}concat=n=${n}:v=1:a=1[vout][aout]`,
+    '-map', '[vout]', '-map', '[aout]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2',
+    '-y', outputPath,
+  ]
+  await new Promise((resolve, reject) => {
+    execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
+      if (err) reject(new Error(`concat FFmpeg: ${err.message}\n${(stderr || '').slice(-500)}`))
+      else resolve()
+    })
+  })
+  return clipLens.reduce((s, d) => s + d, 0)
+}
+
 // scenes 와 (선택) sceneDurations(클립별 실제 길이)·crossfadeDur 로 SRT 생성.
 // sceneDurations 가 주어지면 각 씬 자막 구간을 그 길이로 정확히 매핑하고,
 // 없으면 글자 수 비율로 전체 duration 을 분배(기존 동작).
@@ -650,11 +676,14 @@ async function main() {
           console.log(`    씬 ${i + 1}: 원본 ${fullDuration.toFixed(2)}s → 트림 ${trimmed > 0.01 ? `-${trimmed.toFixed(2)}s` : '없음'}` +
             ` (끝무음 ${tailSilence.toFixed(2)}s) → ${finalDur.toFixed(2)}s`)
         }
-        // 크로스페이드 연결
-        rawPath = path.join(OUT_DIR, `heygen_xfade_${id}_${ts}.mp4`)
-        const xfadeTotal = await crossfadeClips(processedClips, sceneDurations, rawPath)
+        // 씬 연결 — 컨셉이 sceneTransition:'cut' 이면 단순 컷 concat, 아니면 크로스페이드.
+        const useCut = concept.sceneTransition === 'cut'
+        rawPath = path.join(OUT_DIR, `heygen_join_${id}_${ts}.mp4`)
+        const joinTotal = useCut
+          ? await concatClips(processedClips, sceneDurations, rawPath)
+          : await crossfadeClips(processedClips, sceneDurations, rawPath)
         tmpFiles.push(rawPath)
-        console.log(`  크로스페이드 완료 — ${processedClips.length}개 클립, 전환 ${XFADE_DUR}s ×${processedClips.length - 1}, 최종 ${xfadeTotal.toFixed(2)}s`)
+        console.log(`  ${useCut ? '컷 전환' : '크로스페이드'} 연결 완료 — ${processedClips.length}개 클립, 최종 ${joinTotal.toFixed(2)}s`)
       } else {
         // 솔로 연속 테이크 / Video Agent: 단일 원본 다운로드 (기존 동작)
         const dl = await fetch(videoUrls[0])
@@ -664,8 +693,9 @@ async function main() {
         tmpFiles.push(rawPath)
       }
 
-      // 자막 번인 (perScene 이면 클립별 실제 길이로 정밀 매핑 + 크로스페이드 겹침 반영)
-      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts, sceneDurations, perScene ? XFADE_DUR : 0)
+      // 자막 번인 (perScene 이면 클립별 실제 길이로 정밀 매핑). 크로스페이드 컨셉만 겹침(XFADE_DUR) 반영.
+      const subtitleXfade = (perScene && concept.sceneTransition !== 'cut') ? XFADE_DUR : 0
+      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts, sceneDurations, subtitleXfade)
       const finalBuf = await fs.readFile(finalPath)
       console.log(`  자막 번인 완료 (${duration.toFixed(1)}s, ${(finalBuf.length / 1024 / 1024).toFixed(1)}MB)`)
 

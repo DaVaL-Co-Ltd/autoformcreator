@@ -238,6 +238,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // 영상 통화 컨셉: 두 아바타가 각자 배경에 있되, 프레이밍을 통일하기 위해
     // 모든 씬에 흰색 배경을 깐다 (아바타가 9:16 을 못 채우면 흰 여백으로 일관 처리).
     backgroundColor: '#FFFFFF',
+    // 씬 전환은 크로스페이드(디졸브) 대신 단순 컷 — 영상 통화 컨셉이라 컷 전환이 자연스럽다.
+    sceneTransition: 'cut',
     testScript: {
       title: '영상 통화로 푸는 공부 스타일',
       duration: '15',
@@ -428,6 +430,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // 동완쌤(코치) ↔ 제자(답변 예시 영상) 교차. 각 씬 avatarId 명시로 역할 배정 고정.
     // 동완쌤 씬은 모두 같은 아바타라 배경이 일관되고, 제자 답변 씬은 "예시 영상" 이라
     // 배경이 달라도 자연스럽다 — 그래서 backgroundColor(단색 강제)는 쓰지 않는다.
+    // 씬 전환은 크로스페이드(디졸브) 대신 단순 컷.
+    sceneTransition: 'cut',
     testScript: {
       title: '면접 답변 클리닉 — 지원동기 편',
       duration: '17',
