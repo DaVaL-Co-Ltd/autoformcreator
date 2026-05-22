@@ -18,9 +18,10 @@ const ROOT = path.resolve(__dirname, '..')
 const OUT_DIR = path.join(ROOT, 'output')
 const FONTS_DIR = path.join(ROOT, 'server', 'fonts')
 
-// @ffmpeg-installer/ffmpeg 는 server/node_modules 에 있으므로 server 기준으로 resolve.
+// ffmpeg-static(최신 빌드, xfade 필터 지원)을 server/node_modules 기준으로 resolve.
+// xfade 는 ffmpeg 4.3+ 필요 — @ffmpeg-installer 의 2018 빌드엔 없어 ffmpeg-static 으로 교체했다.
 const serverRequire = createRequire(path.join(ROOT, 'server', 'index.js'))
-const ffmpegPath = serverRequire('@ffmpeg-installer/ffmpeg').path
+const ffmpegPath = serverRequire('ffmpeg-static')
 
 // ---- env 로딩 (server/.env → .env.local → client/.env.local) ----
 async function loadDotenv(envPath) {
@@ -303,9 +304,9 @@ function measureDuration(inputPath, fallback) {
   })
 }
 
-// ---- 트림 + freeze (멀티 씬별 클립 후처리) ----
-// concat 을 위해 모든 클립을 동일 코덱/해상도/fps(libx264·yuv420p·720x1280·30fps·aac 44100) 로 통일.
-const FREEZE_DUR = 0.3 // 마지막 프레임 정지 길이(초)
+// ---- 트림 + 크로스페이드 (멀티 씬별 클립 후처리) ----
+// 크로스페이드 연결을 위해 모든 클립을 동일 코덱/해상도/fps(libx264·yuv420p·720x1280·30fps·aac 44100) 로 통일.
+const XFADE_DUR = 0.3 // 씬 전환 크로스페이드 길이(초)
 const TRIM_PAD = 0.12 // 입 다문 프레임 확보용 여유(초)
 const MIN_TAIL_SILENCE = 0.2 // 끝 무음이 이보다 짧으면 트림 생략(초)
 
@@ -353,10 +354,10 @@ function analyzeTailSilence(inputPath, fallbackDur) {
   })
 }
 
-// 클립 1개를 트림 + freeze + 표준 인코딩으로 변환.
+// 클립 1개를 트림 + 표준 인코딩으로 변환 (씬 전환은 crossfadeClips 의 xfade 가 담당).
 //  - skipTrim 이 true (quiz-countdown 무음 씬 등) 면 트림 없이 인코딩 표준화만.
-// 반환: 처리 후 실제 길이(초)
-async function trimAndFreezeClip(inputPath, outputPath, fallbackDur, skipTrim) {
+// 반환: { finalDur(트림 후 길이), fullDuration, trimAt, tailSilence }
+async function trimClip(inputPath, outputPath, fallbackDur, skipTrim) {
   let trimAt
   let fullDuration
   let tailSilence = 0
@@ -370,67 +371,74 @@ async function trimAndFreezeClip(inputPath, outputPath, fallbackDur, skipTrim) {
     tailSilence = a.tailSilence
   }
   const T = trimAt.toFixed(3)
+  // freeze 없이 트림 + 표준 인코딩만. 씬 전환은 crossfadeClips 의 xfade 가 담당한다.
   const args = [
     '-i', inputPath,
-    '-vf', `trim=0:${T},setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:white,fps=30,tpad=stop_mode=clone:stop_duration=${FREEZE_DUR}`,
-    // apad 의 pad_dur 옵션은 구버전 ffmpeg(@ffmpeg-installer 2018 빌드)에 없다.
-    // 옵션 없는 apad(무한 무음) + -shortest 로 비디오(tpad 로 +FREEZE_DUR)의 끝길이에 맞춰 자른다.
-    '-af', `atrim=0:${T},asetpts=PTS-STARTPTS,apad`,
+    '-vf', `trim=0:${T},setpts=PTS-STARTPTS,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:white,fps=30`,
+    '-af', `atrim=0:${T},asetpts=PTS-STARTPTS`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
     '-c:a', 'aac', '-ar', '44100', '-ac', '2',
-    '-shortest',
     '-y', outputPath,
   ]
   await new Promise((resolve, reject) => {
     execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`trim/freeze FFmpeg: ${err.message}\n${(stderr || '').slice(-400)}`))
+      if (err) reject(new Error(`trim FFmpeg: ${err.message}\n${(stderr || '').slice(-400)}`))
       else resolve()
     })
   })
-  const finalDur = await measureDuration(outputPath, trimAt + FREEZE_DUR)
+  const finalDur = await measureDuration(outputPath, trimAt)
   return { finalDur, fullDuration, trimAt, tailSilence }
 }
 
-// concat demuxer 로 클립들을 합친다. 동일 인코딩이므로 -c copy 우선, 실패 시 재인코딩.
-async function concatClips(clipPaths, outputPath, ts) {
-  const listPath = path.join(OUT_DIR, `concat_${ts}.txt`)
-  // concat demuxer 는 list 내 경로를 list 파일 위치 기준으로 resolve 한다.
-  // Windows 절대경로(C:/...)는 절대경로로 인식되지 않아 list 디렉토리가 앞에 붙는 문제가 있다.
-  // 클립과 list 가 모두 OUT_DIR 에 있으므로 파일명(basename)만 적어 안전하게 resolve 되게 한다.
-  const listBody = clipPaths
-    .map((p) => `file '${path.basename(p).replace(/'/g, "'\\''")}'`)
-    .join('\n')
-  writeFileSync(listPath, listBody, 'utf8')
-  // concat demuxer 는 list 내 basename 을 list 파일의 디렉토리 기준으로 resolve 한다.
-  // list 경로가 백슬래시뿐이면 디렉토리를 추출하지 못해 cwd 기준이 되므로 forward slash 로 넘긴다.
-  const listArg = listPath.replace(/\\/g, '/')
-  const runConcat = (reencode) => new Promise((resolve, reject) => {
-    const args = [
-      '-f', 'concat', '-safe', '0', '-i', listArg,
-      ...(reencode
-        ? ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
-           '-c:a', 'aac', '-ar', '44100', '-ac', '2']
-        : ['-c', 'copy']),
-      '-y', outputPath,
-    ]
+// 클립들을 xfade(비디오)·acrossfade(오디오)로 크로스페이드 연결한다.
+// clipLens 는 각 클립의 실제 길이(초) — xfade offset 누적 계산에 필요.
+// 전환마다 XFADE_DUR 만큼 겹치므로 최종 길이 = sum(clipLens) - (N-1)*XFADE_DUR.
+// 반환: 최종 영상 길이(초).
+async function crossfadeClips(clipPaths, clipLens, outputPath) {
+  const D = XFADE_DUR
+  const n = clipPaths.length
+  if (n === 1) {
+    await fs.copyFile(clipPaths[0], outputPath)
+    return clipLens[0]
+  }
+  // xfade offset = "직전까지 합쳐진 스트림에서 전환이 시작되는 시각" = mergedLen - D.
+  const parts = []
+  let vIn = '[0:v]'
+  let aIn = '[0:a]'
+  let mergedLen = clipLens[0]
+  for (let k = 1; k < n; k++) {
+    const offset = (mergedLen - D).toFixed(3)
+    const last = k === n - 1
+    const vOut = last ? '[vout]' : `[vx${k}]`
+    const aOut = last ? '[aout]' : `[ax${k}]`
+    parts.push(`${vIn}[${k}:v]xfade=transition=fade:duration=${D}:offset=${offset}${vOut}`)
+    parts.push(`${aIn}[${k}:a]acrossfade=d=${D}${aOut}`)
+    mergedLen = mergedLen + clipLens[k] - D
+    vIn = vOut
+    aIn = aOut
+  }
+  const args = [
+    ...clipPaths.flatMap((p) => ['-i', p]),
+    '-filter_complex', parts.join(';'),
+    '-map', '[vout]', '-map', '[aout]',
+    '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', '30',
+    '-c:a', 'aac', '-ar', '44100', '-ac', '2',
+    '-y', outputPath,
+  ]
+  await new Promise((resolve, reject) => {
     execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`concat FFmpeg: ${err.message}\n${(stderr || '').slice(-400)}`))
+      if (err) reject(new Error(`crossfade FFmpeg: ${err.message}\n${(stderr || '').slice(-500)}`))
       else resolve()
     })
   })
-  try {
-    await runConcat(false)
-  } catch (e) {
-    console.log(`  concat -c copy 실패, 재인코딩으로 재시도: ${e.message.split('\n')[0]}`)
-    await runConcat(true)
-  }
-  try { await fs.unlink(listPath) } catch {}
+  return mergedLen
 }
 
-// scenes 와 (선택) sceneDurations(클립별 실제 길이) 로 SRT 생성.
+// scenes 와 (선택) sceneDurations(클립별 실제 길이)·crossfadeDur 로 SRT 생성.
 // sceneDurations 가 주어지면 각 씬 자막 구간을 그 길이로 정확히 매핑하고,
 // 없으면 글자 수 비율로 전체 duration 을 분배(기존 동작).
-function buildSrt(scenes, duration, sceneDurations) {
+// crossfadeDur 가 있으면 씬 전환마다 그만큼 겹치므로 씬 진행/자막 구간을 (길이-crossfadeDur)로 잡는다.
+function buildSrt(scenes, duration, sceneDurations, crossfadeDur) {
   const maxCharsPerLine = 16
   const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
   const fmt = (t) => {
@@ -439,39 +447,40 @@ function buildSrt(scenes, duration, sceneDurations) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`
   }
   const useActual = Array.isArray(sceneDurations) && sceneDurations.length === scenes.length
+  const xf = useActual ? (Number(crossfadeDur) || 0) : 0
   let srt = ''
   let idx = 1
   let currentTime = 0
   for (let si = 0; si < scenes.length; si++) {
     const scene = scenes[si]
     const narration = String(scene.narration || '')
-    // 실제 길이 모드: 무음/빈 씬도 시간축에서 건너뛰어야 자막이 밀리지 않는다.
     const sceneDur = useActual ? sceneDurations[si] : (narration.length / totalChars) * duration
-    if (!narration.trim()) { currentTime += sceneDur; continue }
+    // 크로스페이드 겹침(xf)을 빼서 씬 진행 간격·자막 구간을 잡는다 (전환 구간엔 자막 미배치).
+    // 무음/빈 씬도 시간축에서 건너뛰어야 자막이 밀리지 않는다.
+    const span = useActual ? Math.max(0.1, sceneDur - xf) : sceneDur
+    if (!narration.trim()) { currentTime += span; continue }
     const lines = splitNarration(narration, maxCharsPerLine)
     const blocks = []
     const linesPerBlock = lines.length === 3 ? 3 : 2
     for (let j = 0; j < lines.length; j += linesPerBlock) blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
     const blockChars = blocks.map((b) => b.replace(/\n/g, '').length)
     const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
-    // 실제 길이 모드: 씬 끝의 freeze 0.3초는 자막을 깔지 않아 마지막 자막이 freeze 전에 끝나도록.
-    const captionSpan = useActual ? Math.max(0.1, sceneDur - FREEZE_DUR) : sceneDur
     let sceneCursor = currentTime
     for (let b = 0; b < blocks.length; b++) {
-      const blockDur = (blockChars[b] / blockTotalChars) * captionSpan
+      const blockDur = (blockChars[b] / blockTotalChars) * span
       srt += `${idx++}\n${fmt(sceneCursor)} --> ${fmt(sceneCursor + blockDur)}\n${blocks[b]}\n\n`
       sceneCursor += blockDur
     }
-    currentTime += sceneDur
+    currentTime += span
   }
   return srt
 }
 
-async function burnSubtitles(inputPath, scenes, outputPath, ts, sceneDurations) {
+async function burnSubtitles(inputPath, scenes, outputPath, ts, sceneDurations, crossfadeDur) {
   const fallback = scenes.reduce((s, sc) => s + (Number(sc.duration) || 5), 0)
   const duration = await measureDuration(inputPath, fallback)
   const srtPath = path.join(OUT_DIR, `subtitle_${ts}.srt`)
-  writeFileSync(srtPath, buildSrt(scenes, duration, sceneDurations), 'utf8')
+  writeFileSync(srtPath, buildSrt(scenes, duration, sceneDurations, crossfadeDur), 'utf8')
 
   const srtEsc = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:')
   const fontsEsc = FONTS_DIR.replace(/\\/g, '/').replace(/:/g, '\\:')
@@ -527,7 +536,7 @@ async function main() {
 
   // Phase 1: HeyGen 생성 요청
   // job.videoIds: video_id 배열 (솔로/Video Agent 는 [id], 멀티 씬별은 [id, id, ...]).
-  // job.perScene: 멀티 씬별 분리 렌더 여부 (true 면 클립별 트림+freeze+concat 후처리).
+  // job.perScene: 멀티 씬별 분리 렌더 여부 (true 면 클립별 트림 + 크로스페이드 후처리).
   const jobs = []
   for (const id of CONCEPT_IDS) {
     const concept = findShortsVideoConcept(id)
@@ -603,7 +612,7 @@ async function main() {
     }
   }
 
-  // Phase 3: (멀티 씬별이면 트림+freeze+concat) → 자막 번인 → 업로드 → DB 저장 (순차)
+  // Phase 3: (멀티 씬별이면 트림 + 크로스페이드) → 자막 번인 → 업로드 → DB 저장 (순차)
   console.log('\n후처리 + 자막 번인 + 업로드 + DB 저장\n')
   for (const job of jobs.filter((j) => j.status === 'rendered')) {
     const { id, concept, script, videoIds, videoUrls, perScene, sceneClips } = job
@@ -616,7 +625,7 @@ async function main() {
       const finalPath = path.join(OUT_DIR, `concept_${id}_${ts}.mp4`)
 
       if (perScene) {
-        // 멀티 씬별: 각 클립 다운로드 → 트림+freeze → concat
+        // 멀티 씬별: 각 클립 다운로드 → 트림 → 크로스페이드 연결
         console.log(`  씬별 ${videoUrls.length}개 클립 후처리`)
         const processedClips = []
         sceneDurations = []
@@ -633,20 +642,19 @@ async function main() {
           const clipOut = path.join(OUT_DIR, `heygen_clip_${id}_${ts}_${i}_p.mp4`)
           const fallbackDur = Number(scene?.duration) || 5
           const { finalDur, fullDuration, trimAt, tailSilence } =
-            await trimAndFreezeClip(clipRaw, clipOut, fallbackDur, skipTrim)
+            await trimClip(clipRaw, clipOut, fallbackDur, skipTrim)
           tmpFiles.push(clipOut)
           processedClips.push(clipOut)
           sceneDurations.push(finalDur)
           const trimmed = fullDuration - trimAt
           console.log(`    씬 ${i + 1}: 원본 ${fullDuration.toFixed(2)}s → 트림 ${trimmed > 0.01 ? `-${trimmed.toFixed(2)}s` : '없음'}` +
-            ` (끝무음 ${tailSilence.toFixed(2)}s) + freeze ${FREEZE_DUR}s → ${finalDur.toFixed(2)}s`)
+            ` (끝무음 ${tailSilence.toFixed(2)}s) → ${finalDur.toFixed(2)}s`)
         }
-        // concat
-        rawPath = path.join(OUT_DIR, `heygen_concat_${id}_${ts}.mp4`)
-        await concatClips(processedClips, rawPath, ts)
+        // 크로스페이드 연결
+        rawPath = path.join(OUT_DIR, `heygen_xfade_${id}_${ts}.mp4`)
+        const xfadeTotal = await crossfadeClips(processedClips, sceneDurations, rawPath)
         tmpFiles.push(rawPath)
-        const concatDur = sceneDurations.reduce((s, d) => s + d, 0)
-        console.log(`  concat 완료 — ${processedClips.length}개 클립, 합계 ${concatDur.toFixed(2)}s`)
+        console.log(`  크로스페이드 완료 — ${processedClips.length}개 클립, 전환 ${XFADE_DUR}s ×${processedClips.length - 1}, 최종 ${xfadeTotal.toFixed(2)}s`)
       } else {
         // 솔로 연속 테이크 / Video Agent: 단일 원본 다운로드 (기존 동작)
         const dl = await fetch(videoUrls[0])
@@ -656,8 +664,8 @@ async function main() {
         tmpFiles.push(rawPath)
       }
 
-      // 자막 번인 (perScene 이면 클립별 실제 길이로 정밀 매핑)
-      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts, sceneDurations)
+      // 자막 번인 (perScene 이면 클립별 실제 길이로 정밀 매핑 + 크로스페이드 겹침 반영)
+      const { srtPath, duration } = await burnSubtitles(rawPath, script.scenes, finalPath, ts, sceneDurations, perScene ? XFADE_DUR : 0)
       const finalBuf = await fs.readFile(finalPath)
       console.log(`  자막 번인 완료 (${duration.toFixed(1)}s, ${(finalBuf.length / 1024 / 1024).toFixed(1)}MB)`)
 
@@ -715,4 +723,9 @@ async function main() {
   console.log(`\n완료: ${ok.length}/${jobs.length}개 DB 저장`)
 }
 
-main().catch((err) => { console.error('\n치명적 오류:', err.message); process.exit(1) })
+// CLI 로 직접 실행될 때만 main 을 돌린다 (다른 스크립트에서 import 시엔 export 함수만 재사용).
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => { console.error('\n치명적 오류:', err.message); process.exit(1) })
+}
+
+export { heygenGenerateOne, heygenPoll, trimClip, crossfadeClips, burnSubtitles, uploadToStorage, OUT_DIR, XFADE_DUR }
