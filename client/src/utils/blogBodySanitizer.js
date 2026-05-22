@@ -217,8 +217,11 @@ const EXPLICIT_LABELS = [
 ]
 
 // 라벨과 내용을 항상 같은 줄에 유지하는 라벨(콜론 뒤 줄바꿈 금지).
-// 수능 과목별 출제범위처럼 "과목: 범위" 한 줄이 자연스러운 항목에 사용한다.
+// 수능 과목별 출제범위("과목: 범위"), 일시 정보("강의 일시: 날짜")처럼
+// "라벨: 내용"이 길어도 한 줄로 두는 게 자연스러운 항목에 사용한다.
 const KEEP_INLINE_LABELS = new Set([
+  '강의 일시',
+  '특강 일시',
   '국어',
   '수학',
   '영어',
@@ -479,10 +482,10 @@ export function splitSentencesForBlogProse(raw = '') {
 export function stripResultCtaText(value) {
   if (typeof value !== 'string' || !value.trim()) return ''
 
+  // CTA 줄만 제거하고 문단 사이 빈 줄은 보존한다.
   const lines = value
     .split('\n')
     .map((line) => line.trim())
-    .filter(Boolean)
     .filter((line) => !(
       /프로필\s*링크/i.test(line) ||
       /자세한\s*내용/i.test(line) ||
@@ -493,7 +496,7 @@ export function stripResultCtaText(value) {
       /확인하세요/i.test(line)
     ))
 
-  return lines.join('\n').trim()
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 // 블로그 섹션 본문(또는 도입부)을 화면 표시용 평문으로 가공한다.

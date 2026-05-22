@@ -1,20 +1,44 @@
 import { useMemo, useState } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
+import { composeBlogSectionBody } from '../utils/blogBodySanitizer'
 import { isAutomaticBlogQuoteCategory } from '../utils/blogHeadingStyle'
 
 // 채널별 결과물의 "본문 텍스트"만 수정하는 모달. 이미지·영상은 편집 대상이 아니다.
 // content 는 채널 콘텐츠 객체(blogContent/newsletterContent/instagramContent/shortsScript).
 // onSave(updatedContent) 로 수정본을 돌려준다.
 
-// 결과 화면이 section.content 를 원본으로 보고 렌더 시 composeBlogSectionBody 를
-// 적용하므로, 수정 모달은 원본을 그대로 편집·저장해야 한다(여기서 미리 가공하면
-// 결과 화면에서 이중 변환되어 본문이 깨진다).
 const deepClone = (value) => {
   try {
     return JSON.parse(JSON.stringify(value ?? {}))
   } catch {
     return {}
   }
+}
+
+// blog 채널 본문(도입부·섹션)을 결과·생성 화면과 동일한 표시 규칙으로 정규화한다.
+// composeBlogSectionBody 는 멱등이라 모달 진입(표시)·저장 양쪽에 적용해도 안전하며,
+// section.content 가 항상 같은 고정형이 되어 생성·결과·수정 3개 화면이 일치한다.
+function composeBlogContent(channel, content) {
+  const cloned = deepClone(content)
+  if (channel !== 'blog') return cloned
+
+  const prose = isAutomaticBlogQuoteCategory(cloned?.categoryInfo?.finalCategoryId || '')
+  if (typeof cloned.introduction === 'string') {
+    cloned.introduction = composeBlogSectionBody(cloned.introduction, { prose })
+  }
+  if (Array.isArray(cloned.sections)) {
+    cloned.sections = cloned.sections.map((section) => {
+      const next = { ...section }
+      if (typeof next.content === 'string') {
+        next.content = composeBlogSectionBody(next.content, { prose })
+      }
+      if (typeof next.body === 'string') {
+        next.body = composeBlogSectionBody(next.body, { prose })
+      }
+      return next
+    })
+  }
+  return cloned
 }
 
 const inputClass = 'w-full rounded-lg border border-border bg-surface-light px-3 py-2 text-sm text-text focus:border-primary/50 focus:outline-none'
@@ -60,7 +84,7 @@ function SectionCard({ title, children }) {
 }
 
 export default function ContentEditModal({ channel, channelLabel, content, onClose, onSave }) {
-  const [draft, setDraft] = useState(() => deepClone(content))
+  const [draft, setDraft] = useState(() => composeBlogContent(channel, content))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -92,7 +116,9 @@ export default function ContentEditModal({ channel, channelLabel, content, onClo
     setSaving(true)
     setError('')
     try {
-      const updated = { ...draft }
+      // 저장 직전에도 결과·생성 화면과 동일한 표시 규칙으로 정규화해,
+      // 편집 결과가 결과 화면에 추가 변형 없이 그대로 반영되게 한다.
+      const updated = composeBlogContent(channel, draft)
       if (channel === 'instagram' || channel === 'shorts') {
         updated.hashtags = hashtagsText
           .split(/\s+/)
