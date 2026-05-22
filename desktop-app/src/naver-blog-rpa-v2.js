@@ -900,23 +900,11 @@ function getToolbarSelectors(kind) {
   }
 
   if (kind === 'quote') {
-    return [
-      'button[aria-label*="quote" i]',
-      '[role="button"][aria-label*="quote" i]',
-      'button[title*="quote" i]',
-      '[role="button"][title*="quote" i]',
-      '[data-name="quote"]',
-      '[data-name="blockquote"]',
-      '[data-command="quote"]',
-      '[data-command="blockquote"]',
-      '[data-tool="quote"]',
-      '[data-tool="blockquote"]',
-      '[data-click-area*="quote"]',
-      '[data-click-area*="blockquote"]',
-      'button.se-toolbar-item-quote',
-      '.se-toolbar-item-quote button',
-      '[class*="quote"] button',
-    ]
+    // 네이버 SmartEditor ONE 의 인용구 버튼은 data-name/class 가 "quotation" 이고
+    // 라벨 텍스트는 한글 "인용구" 라, quote/blockquote 만 보는 좁은 셀렉터로는 못 잡는다
+    // (quote 는 quotation 의 부분문자열이 아님). 구분선과 동일하게 모든 버튼을 후보로 넣고
+    // score 함수(인용·quote·blockquote 라벨 점수)가 인용구 버튼을 고르게 한다.
+    return ['button', '[role="button"]', 'a']
   }
 
   if (kind === 'divider') {
