@@ -342,6 +342,8 @@ export default function ExtractionResultPage() {
     [blogStylingCategoryId, blogSectionList]
   )
   const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogStylingCategoryId)
+  // 강의/특강(lecture_event) 카테고리는 이미지를 소제목 위에 배치한다.
+  const isLectureEventBlog = blogStylingCategoryId === 'lecture_event'
   const isCardNewsCategory = blogStylingCategoryId === 'knowledge_insight' || blogStylingCategoryId === 'interview_prep'
 
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
@@ -1066,7 +1068,8 @@ export default function ExtractionResultPage() {
       imageCounter += 1
       const heading = buildBlogHeadingPrefix(headingText, blogHeadingStyle)
       const imageMarker = `[IMG:${imageCounter}]\n`
-      return isProseCategory
+      // prose(자동 인용구)·강의/특강 카테고리는 이미지를 소제목 위에 배치한다.
+      return isProseCategory || isLectureEventBlog
         ? `${imageMarker}${heading}${content}`
         : `${heading}${imageMarker}${content}`
     }).join('\n\n')
@@ -1075,7 +1078,7 @@ export default function ExtractionResultPage() {
 
     const introText = splitSentencesForBlogProse(sanitizeBlogBodyForDisplay(introduction || ''))
     return introText ? `${introText}\n\n${sectionsText}` : sectionsText
-  }, [blogHeadingStyle, usesAutomaticBlogQuote])
+  }, [blogHeadingStyle, usesAutomaticBlogQuote, isLectureEventBlog])
 
   const sanitizeBlogUploadContent = useCallback((content = '') => (
     sanitizeBlogBodyForUpload(content || '')
@@ -1344,8 +1347,6 @@ export default function ExtractionResultPage() {
     const blogTags = normalizeBlogTags(blogContent)
     const blogTagText = buildBlogTagText(blogTags)
 
-    // 강의/특강(lecture_event) 카테고리는 썸네일/첨부 이미지를 제목보다 위(최상단)에 노출한다.
-    const isLectureEventBlog = blogStylingCategoryId === 'lecture_event'
     const blogThumbnailImage = ensureArray(blogImages)
       .find((image) => image?.isThumbnail && (image?.imageUrl || image?.renderedImageUrl || image?.pngUrl)) || null
     const blogThumbnailHeading = cleanCardText(blogThumbnailImage?.overlayHeadline || blogContent?.title || '')
@@ -1624,7 +1625,7 @@ export default function ExtractionResultPage() {
 
               return (
                 <section key={index} className="space-y-5">
-                  {!usesAutomaticBlogQuote && headingNode}
+                  {!usesAutomaticBlogQuote && !isLectureEventBlog && headingNode}
 
                   {sectionImages.length > 0 && (
                     <div className="mb-4 space-y-4">
@@ -1689,7 +1690,7 @@ export default function ExtractionResultPage() {
                     </div>
                   )}
 
-                  {usesAutomaticBlogQuote && headingNode}
+                  {(usesAutomaticBlogQuote || isLectureEventBlog) && headingNode}
 
                   <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
