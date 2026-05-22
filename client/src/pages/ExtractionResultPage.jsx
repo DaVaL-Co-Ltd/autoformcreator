@@ -330,12 +330,11 @@ export default function ExtractionResultPage() {
     setPreviewImage({ url, alt: alt || '미리보기' })
   }, [])
   const blogCategoryPath = String(platformConnections?.blog?.categoryPath || state.blogContent?.categoryPath || '').trim()
-  // AI 가 자동 선택한 카테고리 ID(`admissions_strategy_style_1` 등)는 categoryInfo 에 들어있다.
-  // 네이버 폴더 경로(blogCategoryPath)와 별도로 스타일 결정용으로 사용한다.
+  // 스타일(소제목 인용구 등) 판정은 글의 카테고리로 정한다 — 자동 분류든 수동 선택이든
+  // 그 결과가 담기는 categoryInfo.finalCategoryId 를 쓴다. 업로드할 네이버 폴더 경로
+  // (blogCategoryPath)는 스타일과 무관하므로 판정에 섞지 않는다.
   const blogStylingCategoryId = String(
-    blogCategoryPath
-    || state.blogContent?.categoryInfo?.finalCategoryId
-    || ''
+    state.blogContent?.categoryInfo?.finalCategoryId || ''
   ).trim()
   const blogSectionList = useMemo(() => ensureArray(state.blogContent?.sections), [state.blogContent?.sections])
   const blogHeadingStyle = useMemo(
