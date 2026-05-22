@@ -52,6 +52,7 @@ const {
   getPublishDialogTargets,
   openPublishDialog,
   resolvePublishOutcome,
+  saveDebug,
 } = publishHelpers
 
 function stripMarkdown(value = '') {
@@ -1030,10 +1031,16 @@ async function clickToolbarButtonByKind(scope, kind) {
         if (label.includes('font') || label.includes('size')) return 70
         return 0
       }
-      if (label.includes('blockquote')) return 100
-      if (label.includes('quote')) return 95
-      if (label.includes('인용')) return 92
-      return 0
+      let base = 0
+      if (label.includes('blockquote')) base = 100
+      else if (label.includes('quote')) base = 95
+      else if (label.includes('인용')) base = 92
+      if (!base) return 0
+      // 인용구 버튼은 메인(기본 따옴표 즉시 삽입) + 드롭다운(스타일 팝업)으로 나뉜다.
+      // 포스트잇·라인&따옴표 스타일을 고르려면 드롭다운(aria-haspopup="true")을 눌러야 한다.
+      const hasPopup = String(element.getAttribute?.('aria-haspopup') || '').toLowerCase() === 'true'
+      const isOptionButton = /select-option/.test(String(element.className || ''))
+      return hasPopup || isOptionButton ? base + 50 : base
     }
 
     const button = selectors
@@ -1318,38 +1325,29 @@ async function clickFontSizeOptionAcrossPage(page, sizeLabel, timeoutMs = 3500) 
 
 async function selectQuoteStyleOption(page, quoteStyle) {
   const styleKey = normalizeQuoteStyle(quoteStyle)
-  if (!styleKey) return false
+  // 네이버 인용구 스타일 옵션 버튼은 클래스에 스타일 키가 들어있다
+  // (예: se-toolbar-option-insert-quotation-quotation_postit-button). 라벨은 "인용구N" 으로만
+  // 표기돼 의미가 없어, 클래스로 찾는다. postit → quotation_postit, line-quote → quotation_underline.
+  const styleClass = styleKey === 'postit' ? 'quotation_postit'
+    : styleKey === 'line-quote' ? 'quotation_underline'
+      : ''
+  if (!styleClass) return false
 
-  const labels = QUOTE_STYLE_LABELS[styleKey] || []
   for (const scope of getFormattingScopes(page)) {
-    const clicked = await scope.evaluate((styleLabels) => {
-      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
-      const normalizedLabels = styleLabels.map((label) => normalize(label))
+    const clicked = await scope.evaluate((cls) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect()
         const style = window.getComputedStyle(element)
         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
       }
-      const labelOf = (element) => normalize([
-        element.textContent,
-        element.getAttribute?.('aria-label'),
-        element.getAttribute?.('title'),
-        element.getAttribute?.('data-name'),
-        element.getAttribute?.('data-command'),
-        element.getAttribute?.('data-tool'),
-        element.className,
-      ].filter(Boolean).join(' '))
-
-      const candidates = Array.from(document.querySelectorAll('button, [role="button"], li, [data-name], [data-command], [data-tool]'))
+      const target = Array.from(document.querySelectorAll('button, [role="button"], li, a'))
         .filter((element) => element instanceof HTMLElement && isVisible(element))
-        .map((element) => ({ element, label: labelOf(element) }))
-        .filter(({ label }) => normalizedLabels.some((target) => label.includes(target)))
-
-      if (!candidates.length) return false
-
-      candidates[0].element.click()
+        .find((element) => String(element.className || '').includes(cls))
+      if (!target) return false
+      target.scrollIntoView({ block: 'center', inline: 'center' })
+      target.click()
       return true
-    }, labels).catch(() => false)
+    }, styleClass).catch(() => false)
 
     if (clicked) {
       await page.waitForTimeout(180)
@@ -1357,6 +1355,46 @@ async function selectQuoteStyleOption(page, quoteStyle) {
     }
   }
 
+  return false
+}
+
+// [임시 진단] 인용구 스타일 팝업을 한 번만 캡처하기 위한 플래그.
+let quotePopupDebugCaptured = false
+
+// 인용구 드롭다운을 열어 지정 스타일(포스트잇/라인&따옴표)을 골라 인용구를 삽입한다.
+async function insertQuoteByToolbar(page, quoteStyle) {
+  for (const scope of getFormattingScopes(page)) {
+    const opened = await clickToolbarButtonByKind(scope, 'quote')
+    if (!opened) continue
+    await page.waitForTimeout(250)
+    if (!quotePopupDebugCaptured) {
+      quotePopupDebugCaptured = true
+      await saveDebug(page, 'quote-popup').catch(() => {})
+    }
+    if (await selectQuoteStyleOption(page, quoteStyle)) {
+      await page.waitForTimeout(200)
+      return true
+    }
+  }
+  return false
+}
+
+// 문서 맨 끝의 "본문 추가"(se-canvas-bottom-button) 버튼을 눌러 인용구 등 컴포넌트 밖
+// 새 단락으로 커서를 옮긴다. 인용구는 quote+cite 두 칸짜리 컴포넌트라 방향키로는 못 빠져나온다.
+async function clickCanvasBottomButton(page) {
+  for (const scope of getFormattingScopes(page)) {
+    const clicked = await scope.evaluate(() => {
+      const btn = document.querySelector('.se-canvas-bottom-button')
+      if (!(btn instanceof HTMLElement)) return false
+      btn.scrollIntoView({ block: 'center' })
+      btn.click()
+      return true
+    }).catch(() => false)
+    if (clicked) {
+      await page.waitForTimeout(150)
+      return true
+    }
+  }
   return false
 }
 
@@ -1384,15 +1422,22 @@ async function clickDividerToolbarButton(scope) {
     ].filter(Boolean).join(' '))
     const score = (element) => {
       const label = labelOf(element)
-      if (label.includes('구분선')) return 100
-      if (
+      let base = 0
+      if (label.includes('구분선')) base = 100
+      else if (
         label.includes('horizontal line') ||
         label.includes('horizontal-line') ||
         label.includes('horizontalline')
-      ) return 98
-      if (label.includes('divider')) return 90
-      if (label.includes('separator')) return 88
-      return 0
+      ) base = 98
+      else if (label.includes('divider')) base = 90
+      else if (label.includes('separator')) base = 88
+      if (!base) return 0
+      // 구분선 버튼은 메인 버튼(클릭 시 짧은 기본 스타일 즉시 삽입)과 드롭다운 버튼
+      // (스타일 팝업 열기)으로 나뉜다. 긴 구분선을 고르려면 팝업을 열어야 하므로
+      // aria-haspopup="true" / select-option 버튼을 우선한다.
+      const hasPopup = String(element.getAttribute?.('aria-haspopup') || '').toLowerCase() === 'true'
+      const isOptionButton = /select-option/.test(String(element.className || ''))
+      return hasPopup || isOptionButton ? base + 50 : base
     }
 
     const button = Array.from(document.querySelectorAll('button, [role="button"], a'))
@@ -1412,131 +1457,36 @@ async function clickDividerToolbarButton(scope) {
 // 각 옵션의 미리보기 선 — 가로로 길고 얇은 자식 요소 — 의 폭을 재서 제일 넓은 옵션을 선택한다.
 // 인덱스 추측은 팝업 구성이 바뀌면 빗나가므로(0번·1번 모두 짧게 나왔던 이력) 폭 측정으로 대체했다.
 // 선 폭을 전혀 못 재면 fallbackIndex(top→left 정렬 기준)로 폴백한다.
-async function selectDividerStyle(page, fallbackIndex = 1) {
+async function selectDividerStyle(page) {
+  // 네이버 SmartEditor ONE 구분선 8종 중 line1(구분선2)이 700px 전체폭 — 사용자가 원하는
+  // 긴 구분선이다(기본 se-l-default = 구분선1 은 220px 로 짧음). 드롭다운 팝업에서 line1 을 고른다.
   for (const scope of getFormattingScopes(page)) {
-    const clicked = await scope.evaluate((fbIndex) => {
-      const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
-      const isVisible = (element) => {
-        const rect = element.getBoundingClientRect()
-        const style = window.getComputedStyle(element)
+    const clicked = await scope.evaluate(() => {
+      const isVisible = (el) => {
+        const rect = el.getBoundingClientRect()
+        const style = window.getComputedStyle(el)
         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'
       }
-      const hasPopupAncestor = (element) => {
-        let current = element.parentElement
-        while (current) {
-          const meta = normalize([
-            current.className,
-            current.getAttribute?.('role'),
-            current.getAttribute?.('data-name'),
-            current.getAttribute?.('data-tool'),
-          ].filter(Boolean).join(' '))
-          if (
-            meta.includes('popup') ||
-            meta.includes('popover') ||
-            meta.includes('layer') ||
-            meta.includes('dropdown') ||
-            meta.includes('menu') ||
-            meta.includes('list') ||
-            meta.includes('dialog')
-          ) {
-            return true
-          }
-          current = current.parentElement
-        }
-        return false
-      }
-      const labelOf = (element) => normalize([
-        element.textContent,
-        element.getAttribute?.('aria-label'),
-        element.getAttribute?.('title'),
-        element.getAttribute?.('data-name'),
-        element.getAttribute?.('data-command'),
-        element.getAttribute?.('data-tool'),
-        element.getAttribute?.('data-click-area'),
-        element.className,
-      ].filter(Boolean).join(' '))
-      const looksLikeDividerOption = (element) => {
-        const label = labelOf(element)
-        return (
-          label.includes('divider') ||
-          label.includes('separator') ||
-          label.includes('horizontal line') ||
-          label.includes('구분선') ||
-          label.includes('hr') ||
-          label.includes('line')
-        )
-      }
-
-      const popupElements = Array.from(document.querySelectorAll([
-        '[role="menu"] button',
-        '[role="menu"] [role="menuitem"]',
-        '[role="dialog"] button',
-        '[role="dialog"] [role="button"]',
-        '[class*="popup"] button',
-        '[class*="popover"] button',
-        '[class*="layer"] button',
-        '[class*="dropdown"] button',
-        '[class*="menu"] button',
-        '[class*="list"] button',
-        'li[role="menuitem"]',
-        'li button',
-        '[class*="divider"]',
-        '[class*="separator"]',
-        '[class*="line"]',
-      ].join(',')))
-        .filter((element) => element instanceof HTMLElement && isVisible(element))
-        .filter((element) => hasPopupAncestor(element))
-
-      const sortTopLeft = (left, right) => {
-        const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
-        if (Math.abs(topDiff) > 2) return topDiff
-        return left.getBoundingClientRect().left - right.getBoundingClientRect().left
-      }
-
-      const candidates = popupElements
-        .filter((element) => looksLikeDividerOption(element))
-        .sort(sortTopLeft)
-      const fallbackCandidates = popupElements
-        .filter((element) => element.matches?.('button, [role="button"], [role="menuitem"]'))
-        .sort(sortTopLeft)
-      const options = candidates.length ? candidates : fallbackCandidates
-      if (!options.length) return false
-
-      // 옵션 안에서 "가로 선"으로 보이는 자식의 최대 폭을 잰다.
-      // 가로폭이 세로높이의 2.5배 이상이거나 <hr> 이면 선으로 간주한다 — 짧은 구분선일수록 이 폭이 작다.
-      const measureLineWidth = (optionEl) => {
-        let widest = 0
-        for (const el of optionEl.querySelectorAll('*')) {
-          const r = el.getBoundingClientRect()
-          if (r.width <= 0 || r.height <= 0) continue
-          const tag = el.tagName ? el.tagName.toLowerCase() : ''
-          if ((r.width >= r.height * 2.5 || tag === 'hr') && r.width > widest) {
-            widest = r.width
-          }
-        }
-        return widest
-      }
-
-      let best = null
-      let bestWidth = -1
-      for (const opt of options) {
-        const width = measureLineWidth(opt)
-        if (width > bestWidth) {
-          bestWidth = width
-          best = opt
-        }
-      }
-
-      // 선 폭을 전혀 못 잰 경우(모두 0)에만 인덱스 폴백.
-      const option = (bestWidth > 0 && best) ? best : (options[fbIndex] || options[0])
-      if (!option) return false
-      option.scrollIntoView({ block: 'center', inline: 'center' })
-      option.click()
-      option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
-      option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
-      option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+      const candidates = Array.from(
+        document.querySelectorAll('button, [role="button"], li, a, [data-value]'),
+      ).filter((el) => el instanceof HTMLElement && isVisible(el))
+      // line1(구분선2) 옵션을 클래스 / data-value / 접근성 라벨 어느 것으로든 찾는다.
+      const target = candidates.find((el) => {
+        const cls = String(el.className || '')
+        const dataValue = String(el.getAttribute('data-value') || '').toLowerCase()
+        const text = String(el.textContent || '').replace(/\s+/g, '')
+        return /horizontalline-line1(?![0-9])/i.test(cls)
+          || dataValue === 'line1'
+          || text === '구분선2'
+      })
+      if (!target) return false
+      target.scrollIntoView({ block: 'center', inline: 'center' })
+      target.click()
+      target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }))
+      target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
       return true
-    }, fallbackIndex).catch(() => false)
+    }).catch(() => false)
 
     if (clicked) {
       await page.waitForTimeout(180)
@@ -1556,13 +1506,19 @@ async function insertDividerByToolbar(page) {
     const opened = await clickDividerToolbarButton(scope)
     if (!opened) continue
     await page.waitForTimeout(250)
-    if (await selectDividerStyle(page, 1)) {
+    // [임시 진단] 구분선 팝업이 열린 상태를 캡처한다(스크린샷 + HTML). 실제 팝업 구조를
+    // 확인해 가장 긴 구분선을 정확히 선택하도록 고치기 위한 것. 원인 확인 후 제거한다.
+    await saveDebug(page, 'divider-popup').catch(() => {})
+    if (await selectDividerStyle(page)) {
       await page.waitForTimeout(250)
       await clickBodyField(page, true)
       return true
     }
   }
 
+  // [임시 진단] 구분선 버튼을 못 찾았거나 스타일 선택에 실패한 경우의 화면도 캡처한다.
+  // (이 경우 본문엔 텍스트 구분선 ──── 으로 대체 삽입돼 짧게 보인다.)
+  await saveDebug(page, 'divider-fail').catch(() => {})
   return false
 }
 
@@ -1579,24 +1535,23 @@ async function setBoldFormatting(page, enabled, currentState = null) {
 }
 
 async function setQuoteFormatting(page, enabled, currentState = null, quoteStyle = '') {
+  // 네이버 인용구 버튼은 토글이 아니라 "삽입" 버튼이다 — 끄려고 누르면 새 인용구가 더 생긴다.
+  // 따라서 비활성화 요청에는 버튼을 누르지 않는다. 인용구에서 빠져나오는 건 커서 이동으로 처리한다.
+  if (!enabled) return false
   for (const scope of getFormattingScopes(page)) {
     const state = await findToolbarButtonStateByKind(scope, 'quote')
-    if (enabled && state?.active) {
-      if (quoteStyle) {
-        const selected = await selectQuoteStyleOption(page, quoteStyle)
-        if (!selected && await clickToolbarButtonByKind(scope, 'quote')) {
-          await page.waitForTimeout(120)
-          await selectQuoteStyleOption(page, quoteStyle)
-        }
-      }
-      return true
+    if (!state) continue
+    // 우리가 추적하는 currentState 가 boolean 으로 명확하면 그걸 신뢰하고,
+    // null(초기 미상태)일 때만 DOM active 감지로 폴백한다.
+    const isOn = typeof currentState === 'boolean' ? currentState : Boolean(state.active)
+    if (isOn === enabled) {
+      // 이미 원하는 상태 — 인용구가 켜진 채면 스타일만 다시 지정할 수 있다.
+      if (enabled && quoteStyle) await selectQuoteStyleOption(page, quoteStyle)
+      return enabled
     }
-    if (state && state.active === enabled) return enabled
-    if (state && await clickToolbarButtonByKind(scope, 'quote')) {
+    if (await clickToolbarButtonByKind(scope, 'quote')) {
       await page.waitForTimeout(120)
-      if (enabled && quoteStyle) {
-        await selectQuoteStyleOption(page, quoteStyle)
-      }
+      if (enabled && quoteStyle) await selectQuoteStyleOption(page, quoteStyle)
       return enabled
     }
   }
@@ -1795,6 +1750,9 @@ async function insertParagraphText(page, rawText) {
     await page.keyboard.press('ArrowRight')
   }
 }
+// [임시 진단] 인용구 포함 본문 입력 결과를 한 번만 캡처하기 위한 플래그.
+let quoteFlowDebugCaptured = false
+
 async function insertBodyTextV4(
   page,
   text,
@@ -1839,9 +1797,17 @@ async function insertBodyTextV4(
     }
 
     if (index > 0 && bodyBlocks[index - 1]?.type !== 'divider') {
-      await page.keyboard.press('Enter')
-      if (block.type === 'heading') {
+      if (bodyBlocks[index - 1]?.type === 'quote') {
+        // 인용구는 quote(인용문)+cite(출처) 두 칸짜리 컴포넌트라 Enter/ArrowDown 으로는
+        // 못 빠져나온다(ArrowDown 은 cite 칸으로 들어가 본문이 인용구 안에 작성됨).
+        // 문서 끝 "본문 추가" 버튼으로 인용구 밖 새 단락에 커서를 둔다.
+        const exited = await clickCanvasBottomButton(page)
+        if (!exited) await page.keyboard.press('ArrowDown')
+      } else {
         await page.keyboard.press('Enter')
+        if (block.type === 'heading') {
+          await page.keyboard.press('Enter')
+        }
       }
     }
     if (block.type === 'heading') {
@@ -1851,13 +1817,24 @@ async function insertBodyTextV4(
     } else if (block.type === 'quote') {
       formatState.bold = await setBoldFormatting(page, false, formatState.bold)
       formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
-      formatState.quote = await setQuoteFormatting(page, true, formatState.quote, quoteStyle)
+      // 인용구 드롭다운을 열어 지정 스타일(포스트잇/라인&따옴표)로 인용구를 삽입한다.
+      const quoted = await insertQuoteByToolbar(page, quoteStyle)
+      if (!quoted) {
+        console.warn('[quote] 인용구 스타일 삽입 실패 — 일반 텍스트로 진행합니다.')
+      }
+      formatState.quote = quoted
     } else {
       formatState.bold = await setBoldFormatting(page, false, formatState.bold)
       formatState.fontSize = await setFontSizeFormatting(page, style.bodyFontSize, formatState.fontSize)
       formatState.quote = await setQuoteFormatting(page, false, formatState.quote)
     }
     await insertParagraphText(page, block.text)
+  }
+
+  // [임시 진단] 인용구가 포함된 본문 입력 결과를 한 번 캡처해 둔다. 원인 확인 후 제거.
+  if (!quoteFlowDebugCaptured && bodyBlocks.some((block) => block.type === 'quote')) {
+    quoteFlowDebugCaptured = true
+    await saveDebug(page, 'quote-flow').catch(() => {})
   }
 
   formatState.bold = await setBoldFormatting(page, false, formatState.bold)

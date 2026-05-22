@@ -4525,6 +4525,7 @@ module.exports = {
     normalizeScheduledPublishAt,
     parseContentWithImageMarkers,
     resolvePublishOutcome,
+    saveDebug,
     withPopupRecovery,
   },
   getPlaywrightDiagnostics,
