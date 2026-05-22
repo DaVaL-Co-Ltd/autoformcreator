@@ -1408,6 +1408,16 @@ async function countBodyTextComponents(page) {
   return 0
 }
 
+// 본문에 삽입된 이미지(se-image) 컴포넌트 개수를 센다. 본문 입력을 시작할 때
+// Control+A 전체 선택이 이미지를 잡아 지우지 않도록 판단하는 데 쓴다.
+async function countImageComponents(page) {
+  for (const scope of getFormattingScopes(page)) {
+    const count = await scope.locator('.se-component.se-image').count().catch(() => 0)
+    if (count) return count
+  }
+  return 0
+}
+
 // 인용구(quote 인용문 + cite 출처 2칸 컴포넌트) 다음에 본문을 쓰려면, 인용구 밖
 // 흰색 본문 영역에 새 단락을 만들고 그 단락을 직접 클릭해 커서를 둬야 한다.
 // "본문 추가" 버튼만 누르면 포커스가 인용구 cite 칸에 남아 본문이 출처에 입력된다.
@@ -1815,7 +1825,12 @@ async function insertBodyTextV4(
   const bodyBlocks = buildBodyTextBlocks(text)
   if (!bodyBlocks.length) return
   if (clear) {
-    await page.keyboard.press('Control+A')
+    // 본문에 이미 이미지가 삽입돼 있으면(강의·특강처럼 이미지가 본문 맨 앞에 오는
+    // 경우) Control+A 전체 선택이 이미지까지 잡아, 이어지는 글꼴 변경·텍스트 입력에서
+    // 선택된 이미지가 통째로 삭제된다. 이미지가 없을 때만 전체 선택한다.
+    if ((await countImageComponents(page)) === 0) {
+      await page.keyboard.press('Control+A')
+    }
     // 본문 입력 전에 서체를 기본서체로 지정 (실패해도 업로드는 계속 진행)
     if (!(await setFontFamily(page, '기본서체'))) {
       console.warn('[font] 기본서체 선택 실패 — 계정 기본 서체로 진행합니다.')
