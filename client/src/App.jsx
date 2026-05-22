@@ -16,6 +16,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const ContentPage = lazy(() => import('./pages/ContentPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const ScheduledUploadsPage = lazy(() => import('./pages/ScheduledUploadsPage'))
+const PhotoAvatarPage = lazy(() => import('./pages/PhotoAvatarPage'))
 
 function PageLoader() {
   return (
@@ -62,6 +63,7 @@ function AppLayout() {
           <Route path="/contents/view" element={<LazyPage><ExtractionResultPage /></LazyPage>} />
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
           <Route path="/scheduled" element={<LazyPage><ScheduledUploadsPage /></LazyPage>} />
+          <Route path="/photo-avatar" element={<LazyPage><PhotoAvatarPage /></LazyPage>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
