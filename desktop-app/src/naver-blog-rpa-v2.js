@@ -57,7 +57,10 @@ const {
 function stripMarkdown(value = '') {
   return String(value)
     .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/[*_`~>|[\](){}]/g, '')
+    // 마크다운 강조 기호만 제거한다. 괄호 ( ) [ ] { } 는 본문/제목의 정상 문장부호
+    // ("1) 제목", "(주)" 등)이므로 지우지 않는다. 마크다운 링크는 클라이언트 단계에서
+    // 이미 평문으로 변환돼 들어온다.
+    .replace(/[*_`~>|]/g, '')
     .replace(/\r/g, '')
     .trim()
 }
@@ -68,11 +71,6 @@ function stripMarkdown(value = '') {
 // 깨고, emoji 뒤 공백은 NBSP 로 치환해 시각적으로는 동일하게 유지하면서 트리거를 회피한다.
 const LEADING_EMOJI_SPACE_RE =
   /^([\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+)([ \t]+)/u
-
-// 이모지로 시작하는 줄은 paragraph 합치기에서 분리해 줄당 단독 블록으로 처리해야
-// preserveLeadingEmojiSpace 가 모든 줄의 emoji+공백을 NBSP 로 치환할 수 있다.
-const LEADING_EMOJI_LINE_RE =
-  /^[\p{Extended_Pictographic}️‍\u{1F1E6}-\u{1F1FF}]+[ \t]+\S/u
 
 function preserveLeadingEmojiSpace(value = '') {
   const text = String(value || '')
@@ -104,15 +102,8 @@ function getBlogTextStylePreset(value = '') {
 function parseBlogBlocks(content = '') {
   const lines = String(content || '').replace(/\r/g, '').split('\n')
   const blocks = []
-  let paragraph = []
   let quote = []
   let blankRun = 0
-
-  const flushParagraph = () => {
-    const text = paragraph.join(' ').replace(/\s+/g, ' ').trim()
-    if (text) blocks.push({ type: 'paragraph', text })
-    paragraph = []
-  }
 
   const flushQuote = () => {
     const text = quote.join(' ').replace(/\s+/g, ' ').trim()
@@ -120,11 +111,12 @@ function parseBlogBlocks(content = '') {
     quote = []
   }
 
-  // 연속 빈 줄 N개(= 소스의 \n N+1개) 가 들어오면 단락 사이 기본 여백 외에 추가 빈 단락 N-1 개를
-  // 끼워 화면에 N개 빈 줄로 보이게 한다. 선행/후행 빈 줄은 무시.
+  // 빈 줄(소스의 \n\n …)은 그 개수만큼 빈 단락을 넣어 결과 화면에서 본 빈 줄을 그대로 재현한다.
+  // 일반 줄은 아래에서 줄마다 독립 단락이 되므로 단일 \n 도 그 자체로 줄바꿈이 된다.
+  // 선행/후행 빈 줄은 무시.
   const consumeBlanks = () => {
-    if (blocks.length > 0 && blankRun > 1) {
-      for (let i = 0; i < blankRun - 1; i += 1) {
+    if (blocks.length > 0) {
+      for (let i = 0; i < blankRun; i += 1) {
         blocks.push({ type: 'paragraph', text: '' })
       }
     }
@@ -134,7 +126,6 @@ function parseBlogBlocks(content = '') {
   for (const rawLine of lines) {
     const line = rawLine.trim()
     if (!line) {
-      flushParagraph()
       flushQuote()
       blankRun += 1
       continue
@@ -143,7 +134,6 @@ function parseBlogBlocks(content = '') {
     consumeBlanks()
 
     if (line === DIVIDER_MARKER) {
-      flushParagraph()
       flushQuote()
       blocks.push({ type: 'divider' })
       continue
@@ -151,7 +141,6 @@ function parseBlogBlocks(content = '') {
 
     const headingMatch = line.match(/^#{1,3}\s+(.+)$/)
     if (headingMatch) {
-      flushParagraph()
       flushQuote()
       blocks.push({ type: 'heading', text: stripMarkdown(headingMatch[1]) })
       continue
@@ -159,31 +148,24 @@ function parseBlogBlocks(content = '') {
 
     const quoteMatch = line.match(/^>\s+(.+)$/)
     if (quoteMatch) {
-      flushParagraph()
       quote.push(stripMarkdown(quoteMatch[1]))
       continue
     }
 
     const listMatch = line.match(/^[-*]\s+(.+)$/)
     if (listMatch) {
-      flushParagraph()
       flushQuote()
       blocks.push({ type: 'paragraph', text: `- ${stripMarkdown(listMatch[1])}` })
       continue
     }
 
-    if (LEADING_EMOJI_LINE_RE.test(line)) {
-      flushParagraph()
-      flushQuote()
-      blocks.push({ type: 'paragraph', text: stripMarkdown(line) })
-      continue
-    }
-
+    // 일반 텍스트 줄 — 원문의 줄바꿈을 그대로 살리기 위해 줄마다 독립 단락으로 만든다.
+    // (예전엔 단일 \n 으로 이어진 줄을 공백으로 이어붙여 한 단락으로 합쳐, 결과 화면의
+    //  목록·라벨 줄바꿈이 업로드 본문에서 한 줄로 뭉개졌다.)
     flushQuote()
-    paragraph.push(stripMarkdown(line))
+    blocks.push({ type: 'paragraph', text: stripMarkdown(line) })
   }
 
-  flushParagraph()
   flushQuote()
   return blocks
 }
@@ -1428,11 +1410,13 @@ async function clickDividerToolbarButton(scope) {
   }).catch(() => false)
 }
 
-// styleIndex(0-based) 번째 구분선 스타일을 고른다. 팝업 옵션을 top→left 위치순으로 정렬하므로
-// styleIndex 1 이면 팝업의 2번째(긴 구분선) 스타일이 된다.
-async function selectDividerStyle(page, styleIndex = 0) {
+// 구분선 팝업에서 "가장 긴(가로로 가장 넓은)" 스타일을 자동으로 고른다.
+// 각 옵션의 미리보기 선 — 가로로 길고 얇은 자식 요소 — 의 폭을 재서 제일 넓은 옵션을 선택한다.
+// 인덱스 추측은 팝업 구성이 바뀌면 빗나가므로(0번·1번 모두 짧게 나왔던 이력) 폭 측정으로 대체했다.
+// 선 폭을 전혀 못 재면 fallbackIndex(top→left 정렬 기준)로 폴백한다.
+async function selectDividerStyle(page, fallbackIndex = 1) {
   for (const scope of getFormattingScopes(page)) {
-    const clicked = await scope.evaluate((wantedIndex) => {
+    const clicked = await scope.evaluate((fbIndex) => {
       const normalize = (value = '') => String(value).replace(/\s+/g, ' ').trim().toLowerCase()
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect()
@@ -1505,24 +1489,48 @@ async function selectDividerStyle(page, styleIndex = 0) {
         .filter((element) => element instanceof HTMLElement && isVisible(element))
         .filter((element) => hasPopupAncestor(element))
 
+      const sortTopLeft = (left, right) => {
+        const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
+        if (Math.abs(topDiff) > 2) return topDiff
+        return left.getBoundingClientRect().left - right.getBoundingClientRect().left
+      }
+
       const candidates = popupElements
         .filter((element) => looksLikeDividerOption(element))
-        .sort((left, right) => {
-          const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
-          if (Math.abs(topDiff) > 2) return topDiff
-          return left.getBoundingClientRect().left - right.getBoundingClientRect().left
-        })
-
+        .sort(sortTopLeft)
       const fallbackCandidates = popupElements
         .filter((element) => element.matches?.('button, [role="button"], [role="menuitem"]'))
-        .sort((left, right) => {
-          const topDiff = left.getBoundingClientRect().top - right.getBoundingClientRect().top
-          if (Math.abs(topDiff) > 2) return topDiff
-          return left.getBoundingClientRect().left - right.getBoundingClientRect().left
-        })
+        .sort(sortTopLeft)
+      const options = candidates.length ? candidates : fallbackCandidates
+      if (!options.length) return false
 
-      const option = candidates[wantedIndex] || fallbackCandidates[wantedIndex]
-        || candidates[0] || fallbackCandidates[0]
+      // 옵션 안에서 "가로 선"으로 보이는 자식의 최대 폭을 잰다.
+      // 가로폭이 세로높이의 2.5배 이상이거나 <hr> 이면 선으로 간주한다 — 짧은 구분선일수록 이 폭이 작다.
+      const measureLineWidth = (optionEl) => {
+        let widest = 0
+        for (const el of optionEl.querySelectorAll('*')) {
+          const r = el.getBoundingClientRect()
+          if (r.width <= 0 || r.height <= 0) continue
+          const tag = el.tagName ? el.tagName.toLowerCase() : ''
+          if ((r.width >= r.height * 2.5 || tag === 'hr') && r.width > widest) {
+            widest = r.width
+          }
+        }
+        return widest
+      }
+
+      let best = null
+      let bestWidth = -1
+      for (const opt of options) {
+        const width = measureLineWidth(opt)
+        if (width > bestWidth) {
+          bestWidth = width
+          best = opt
+        }
+      }
+
+      // 선 폭을 전혀 못 잰 경우(모두 0)에만 인덱스 폴백.
+      const option = (bestWidth > 0 && best) ? best : (options[fbIndex] || options[0])
       if (!option) return false
       option.scrollIntoView({ block: 'center', inline: 'center' })
       option.click()
@@ -1530,7 +1538,7 @@ async function selectDividerStyle(page, styleIndex = 0) {
       option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }))
       option.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
       return true
-    }, styleIndex).catch(() => false)
+    }, fallbackIndex).catch(() => false)
 
     if (clicked) {
       await page.waitForTimeout(180)

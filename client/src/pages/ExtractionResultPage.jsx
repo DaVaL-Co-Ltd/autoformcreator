@@ -1088,10 +1088,11 @@ export default function ExtractionResultPage() {
     return ensureArray(sections)
       .map((section, index) => {
         const heading = buildBlogHeadingPrefix(section?.heading, blogHeadingStyle)
-        const keyPhrase = section?.keyPhrase ? `${section.keyPhrase}\n\n` : ''
+        // keyPhrase 는 카드 이미지 안에 합성되는 짧은 제목이라 본문 텍스트로 다시 넣지 않는다.
+        // (결과 화면도 keyPhrase 를 본문에 노출하지 않음 — 사진 아래 중복 문구가 생기던 원인)
         const imageMarker = `[IMG:${index + 1}]\n`
         const body = sanitizeBlogUploadContent(section?.content || section?.body || '')
-        return `${heading}${imageMarker}${keyPhrase}${body}`.trim()
+        return `${heading}${imageMarker}${body}`.trim()
       })
       .filter(Boolean)
       .join(`\n\n${BLOG_DIVIDER_MARKER}\n\n`)
