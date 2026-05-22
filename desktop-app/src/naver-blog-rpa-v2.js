@@ -1383,18 +1383,62 @@ async function insertQuoteByToolbar(page, quoteStyle) {
 // 새 단락으로 커서를 옮긴다. 인용구는 quote+cite 두 칸짜리 컴포넌트라 방향키로는 못 빠져나온다.
 async function clickCanvasBottomButton(page) {
   for (const scope of getFormattingScopes(page)) {
-    const clicked = await scope.evaluate(() => {
-      const btn = document.querySelector('.se-canvas-bottom-button')
-      if (!(btn instanceof HTMLElement)) return false
-      btn.scrollIntoView({ block: 'center' })
-      btn.click()
+    const locator = scope.locator('.se-canvas-bottom-button').first()
+    try {
+      if (!(await locator.isVisible({ timeout: 500 }))) continue
+      await locator.scrollIntoViewIfNeeded({ timeout: 1000 }).catch(() => {})
+      // evaluate 내부 DOM .click() 은 SmartEditor 가 무시할 때가 있다 — 새 본문 단락이
+      // 안 생기고 커서가 인용구 cite(출처) 칸에 남아 본문이 출처에 입력된다.
+      // 실제 마우스 이벤트가 가는 Playwright 클릭으로 눌러야 "본문 추가" 가 동작한다.
+      await locator.click({ timeout: 1500 })
+      await page.waitForTimeout(200)
       return true
-    }).catch(() => false)
-    if (clicked) {
-      await page.waitForTimeout(150)
-      return true
+    } catch {}
+  }
+  return false
+}
+
+// 현재 문서의 본문(se-text) 컴포넌트 개수를 센다. 인용구 밖으로 빠져나갈 때
+// 새 본문 단락이 실제로 생겼는지 검증하는 용도.
+async function countBodyTextComponents(page) {
+  for (const scope of getFormattingScopes(page)) {
+    const count = await scope.locator('.se-component.se-text').count().catch(() => 0)
+    if (count) return count
+  }
+  return 0
+}
+
+// 인용구(quote 인용문 + cite 출처 2칸 컴포넌트) 다음에 본문을 쓰려면, 인용구 밖
+// 흰색 본문 영역에 새 단락을 만들고 그 단락을 직접 클릭해 커서를 둬야 한다.
+// "본문 추가" 버튼만 누르면 포커스가 인용구 cite 칸에 남아 본문이 출처에 입력된다.
+async function exitQuoteToBodyParagraph(page) {
+  const before = await countBodyTextComponents(page)
+
+  // 1) "본문 추가"(se-canvas-bottom-button) 버튼을 실제 클릭해 본문 단락을 만든다.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await clickCanvasBottomButton(page)
+    await page.waitForTimeout(250)
+    if (await countBodyTextComponents(page) > before) break
+  }
+
+  // 2) 버튼 클릭이 막혀 본문 단락이 안 생겼으면, 마지막 인용구 컴포넌트 바로 아래
+  //    빈 영역을 마우스 좌표로 직접 클릭해 본문 단락 생성을 유도한다.
+  if (await countBodyTextComponents(page) <= before) {
+    for (const scope of getFormattingScopes(page)) {
+      const box = await scope.locator('.se-component.se-quotation').last()
+        .boundingBox()
+        .catch(() => null)
+      if (!box) continue
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height + 8).catch(() => {})
+      await page.waitForTimeout(250)
+      break
     }
   }
+
+  // 3) 인용구 밖 마지막 본문 단락(흰색 본문 영역)을 직접 클릭해 키보드 포커스를 둔다.
+  if (await clickBodyField(page, true)) return true
+  // 폴백: 본문 영역을 못 잡으면 ArrowDown — 최소한 진행은 시킨다.
+  await page.keyboard.press('ArrowDown')
   return false
 }
 
@@ -1799,10 +1843,9 @@ async function insertBodyTextV4(
     if (index > 0 && bodyBlocks[index - 1]?.type !== 'divider') {
       if (bodyBlocks[index - 1]?.type === 'quote') {
         // 인용구는 quote(인용문)+cite(출처) 두 칸짜리 컴포넌트라 Enter/ArrowDown 으로는
-        // 못 빠져나온다(ArrowDown 은 cite 칸으로 들어가 본문이 인용구 안에 작성됨).
-        // 문서 끝 "본문 추가" 버튼으로 인용구 밖 새 단락에 커서를 둔다.
-        const exited = await clickCanvasBottomButton(page)
-        if (!exited) await page.keyboard.press('ArrowDown')
+        // 못 빠져나온다(ArrowDown 은 cite 칸으로 들어가 본문이 출처에 작성됨).
+        // 인용구 밖 흰색 본문 영역에 새 단락을 만들고 그 단락을 직접 클릭해 커서를 둔다.
+        await exitQuoteToBodyParagraph(page)
       } else {
         await page.keyboard.press('Enter')
         if (block.type === 'heading') {
