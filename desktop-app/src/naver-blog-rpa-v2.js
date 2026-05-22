@@ -167,7 +167,17 @@ function parseBlogBlocks(content = '') {
   }
 
   flushQuote()
-  return blocks
+
+  // 구분선 바로 앞뒤의 빈 단락은 제거한다. 구분선 마커는 항상 양옆에 빈 줄을 하나씩 두고
+  // 들어오는데, 구분선 삽입 로직이 앞뒤로 한 줄씩 여백을 만들므로 빈 단락까지 더하면
+  // 공백이 2줄로 늘어난다. 빈 단락을 빼서 구분선 앞뒤 공백을 1줄로 맞춘다.
+  return blocks.filter((block, index) => {
+    const isEmptyParagraph = block.type === 'paragraph' && !String(block.text || '').trim()
+    if (!isEmptyParagraph) return true
+    const prev = blocks[index - 1]
+    const next = blocks[index + 1]
+    return !(prev?.type === 'divider' || next?.type === 'divider')
+  })
 }
 
 function buildBodyHtml(content = '') {

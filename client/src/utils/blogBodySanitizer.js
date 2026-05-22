@@ -345,18 +345,23 @@ function shouldBreakAfterColon(label, body = '') {
   return normalizedBody.length > 36
 }
 
-function applyItemsSplitRule(line = '') {
+// prefix 는 라벨 앞 명사구 머리말("면접 문항 " 등)을 라벨에 붙여 한 줄로 유지할 때 쓴다.
+function applyItemsSplitRule(line = '', prefix = '') {
   const match = String(line || '').match(LINE_START_LABEL_RE)
-  if (!match) return line
+  if (!match) return prefix ? `${prefix}${line}` : line
 
   const [, indent, label, restRaw] = match
   const rest = splitInlineListMarkers(normalizeInlineSpaces(restRaw))
+  const labelText = prefix ? `${prefix}${label}` : label
 
   if (!shouldBreakAfterColon(label, rest)) {
-    return `${indent}${label}: ${rest}`
+    return `${indent}${labelText}: ${rest}`
   }
 
-  return `${indent}${label}:\n${rest}`
+  // 콜론 뒤 본문을 블록으로 내릴 때 문장 단위(. ! ?)로도 줄을 나눠,
+  // 여러 문장(질문 등)이 한 줄에 뭉치지 않게 한다.
+  const restBySentence = rest.replace(/([.!?])[ \t]+(?=\S)/gu, '$1\n')
+  return `${indent}${labelText}:\n${restBySentence}`
 }
 
 function findExplicitLabelStarts(line = '') {
@@ -373,6 +378,16 @@ export function splitNumberedListItems(raw = '') {
     .join('\n')
 }
 
+// 라벨 앞 머리말이 문장/절이 아니라 명사구 수식어인지 판별한다.
+// (예: "면접 문항 예시:" 의 "면접 문항" — 라벨에서 떼지 않고 붙여 한 줄로 유지)
+function isModifierPreamble(text = '') {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return false
+  if (/[.!?]/u.test(trimmed)) return false              // 문장부호 → 별도 문장/절
+  if (countInlineLabelColons(trimmed) > 0) return false  // 다른 라벨 콜론 포함
+  return trimmed.length <= 20                            // 짧은 명사구만 대상
+}
+
 export function splitLabeledLines(raw = '') {
   const reflowed = reflowBrokenExpressions(raw)
   const lines = reflowed.split('\n')
@@ -385,6 +400,16 @@ export function splitLabeledLines(raw = '') {
     if (labelStarts.length === 0) return line
 
     const uniqueStarts = [...new Set(labelStarts)].sort((a, b) => a - b)
+
+    // 단일 라벨 앞에 짧은 명사구 머리말이 있으면(예: "면접 문항" + "예시:"),
+    // 머리말을 별도 줄로 떼지 않고 라벨에 붙여 "면접 문항 예시:" 한 줄로 유지한다.
+    if (uniqueStarts.length === 1 && uniqueStarts[0] > 0) {
+      const preamble = line.slice(0, uniqueStarts[0])
+      if (isModifierPreamble(preamble)) {
+        return applyItemsSplitRule(line.slice(uniqueStarts[0]), preamble)
+      }
+    }
+
     const needsSplit = uniqueStarts.length >= 2 || uniqueStarts[0] > 0
     if (!needsSplit) {
       return applyItemsSplitRule(line)
