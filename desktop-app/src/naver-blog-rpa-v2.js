@@ -1824,11 +1824,19 @@ async function insertBodyTextV4(
 
   const bodyBlocks = buildBodyTextBlocks(text)
   if (!bodyBlocks.length) return
+
+  // 본문에 이미 이미지(se-image)가 삽입돼 있으면 두 가지 문제가 생긴다.
+  //  1) clickBodyField 가 이미지 앞의 빈 단락을 잡아, 이어지는 본문이 이미지 앞에
+  //     끼어 들어간다(특히 강의·특강처럼 이미지가 본문 중간·앞에 오는 구조).
+  //     → Control+End 로 커서를 문서 끝(마지막 이미지 뒤)으로 옮겨 바로잡는다.
+  //  2) Control+A 전체 선택이 이미지까지 잡아 통째로 삭제한다.
+  //     → 이미지가 없을 때만 전체 선택한다.
+  const hasInsertedImage = (await countImageComponents(page)) > 0
+  if (hasInsertedImage) {
+    await page.keyboard.press('Control+End')
+  }
   if (clear) {
-    // 본문에 이미 이미지가 삽입돼 있으면(강의·특강처럼 이미지가 본문 맨 앞에 오는
-    // 경우) Control+A 전체 선택이 이미지까지 잡아, 이어지는 글꼴 변경·텍스트 입력에서
-    // 선택된 이미지가 통째로 삭제된다. 이미지가 없을 때만 전체 선택한다.
-    if ((await countImageComponents(page)) === 0) {
+    if (!hasInsertedImage) {
       await page.keyboard.press('Control+A')
     }
     // 본문 입력 전에 서체를 기본서체로 지정 (실패해도 업로드는 계속 진행)
