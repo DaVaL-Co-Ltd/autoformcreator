@@ -423,7 +423,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
     ].join(' '),
     preferredAvatarIds: [
       HEYGEN_AVATAR_IDS.dongwan_ssaem,
-      HEYGEN_AVATAR_IDS.female_student,
+      HEYGEN_AVATAR_IDS.interview_student,
     ],
     // 동완쌤(코치) ↔ 제자(답변 예시 영상) 교차. 각 씬 avatarId 명시로 역할 배정 고정.
     // 동완쌤 씬은 모두 같은 아바타라 배경이 일관되고, 제자 답변 씬은 "예시 영상" 이라
@@ -438,7 +438,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
           narration: '면접 답변, 합격하는 답엔 공식이 있어요. 실제 예시로 짚어드릴게요.',
           visualDescription: 'Dongwan teacher in a clean dark navy suit, confident friendly coach expression, chest-up framing',
           textOverlay: '면접 답변 클리닉' },
-        { sceneNumber: 2, duration: '4', avatarId: HEYGEN_AVATAR_IDS.female_student,
+        { sceneNumber: 2, duration: '4', avatarId: HEYGEN_AVATAR_IDS.interview_student,
           narration: '저는 어릴 때부터 의사가 멋있어 보여서 의대에 지원했습니다.',
           visualDescription: 'Female student in a neat white blouse answering an interview question, composed candidate posture, chest-up framing',
           textOverlay: '면접 답변 예시' },

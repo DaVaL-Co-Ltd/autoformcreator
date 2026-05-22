@@ -4,6 +4,8 @@
 // voice_id 는 같은 인물에 어울리는 기본 목소리. 사용자가 다른 voice 선택 시 덮어쓸 수 있음.
 // samplePreviewUrl 은 미리듣기 ▶ 버튼 클릭 시 재생할 자기소개 mp3 (scripts/generate_voice_previews.mjs 로 1회 생성).
 
+import { DOG_STUDENT_AVATAR_ID } from './heygenAvatars'
+
 export const PRESET_SHORTS_AVATARS = [
   {
     id: 'dongwan_ssaem',
@@ -26,7 +28,7 @@ export const PRESET_SHORTS_AVATARS = [
     id: 'male_student',
     name: '남자 제자',
     kind: 'Person Avatar',
-    avatarId: '885c95d7fced49bba5cb230ca5a3e332',
+    avatarId: '29708244eaa5487e976af960aa51e207',
     defaultVoiceId: '3097f9a8fd3b4340b6bbe913177b378f',
     samplePreviewUrl: '/voice-previews/male_student.mp3',
   },
@@ -35,7 +37,7 @@ export const PRESET_SHORTS_AVATARS = [
     name: '여자 제자',
     kind: 'Person Avatar',
     // 9:16 세로 Alexa 룩 — heygenAvatars.js 의 female_student 와 동일하게 유지.
-    avatarId: '62b02a920a78424e94f63f2ddb85dc99',
+    avatarId: '59fbce86969e49d5bb33cd0a443b8cff',
     defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
     samplePreviewUrl: '/voice-previews/female_student.mp3',
   },
@@ -43,9 +45,18 @@ export const PRESET_SHORTS_AVATARS = [
     id: 'dog_student',
     name: '강아지 제자',
     kind: 'Animal Avatar',
-    avatarId: 'f51d84b6b19645dbbeedf326379be949',
+    avatarId: DOG_STUDENT_AVATAR_ID,
     defaultVoiceId: 'aceb4659b9e7420483800bbf698e9e24',
     samplePreviewUrl: '/voice-previews/dog_student.mp3',
+  },
+  {
+    id: 'interview_student',
+    name: '면접 제자',
+    kind: 'Person Avatar',
+    // mock_interview 답변 예시 제자 — 여자 제자 voice 와 동일하므로 preview 도 공유한다.
+    avatarId: '035099a76bb048d49ea59ec8d34588e0',
+    defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
+    samplePreviewUrl: '/voice-previews/female_student.mp3',
   },
 ]
 

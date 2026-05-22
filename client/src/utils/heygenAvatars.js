@@ -4,6 +4,16 @@
 // scripts/generate_voice_previews.mjs 는 Node 격리상 같은 데이터를 별도 보관하므로
 // 이 파일을 변경하면 그 스크립트도 함께 동기화해야 한다.
 
+// 강아지 제자는 두 사진 아바타를 번갈아 쓴다.
+// 모듈 로드 시(스크립트 실행 / 앱 세션)마다 풀에서 1개를 랜덤으로 골라 그 세션 동안 사용한다.
+// presetShortsAvatars.js 가 DOG_STUDENT_AVATAR_ID 를 import 해 같은 값을 공유한다.
+const DOG_STUDENT_AVATAR_POOL = [
+  '0217c7e94ab548df9f4422d29cbd0fea',
+  'f51d84b6b19645dbbeedf326379be949',
+]
+export const DOG_STUDENT_AVATAR_ID =
+  DOG_STUDENT_AVATAR_POOL[Math.floor(Math.random() * DOG_STUDENT_AVATAR_POOL.length)]
+
 export const HEYGEN_AVATARS = {
   dongwan_ssaem: {
     id: 'dongwan_ssaem',
@@ -28,7 +38,7 @@ export const HEYGEN_AVATARS = {
     id: 'male_student',
     name: '남자 제자',
     kind: 'Person Avatar',
-    avatarId: '885c95d7fced49bba5cb230ca5a3e332',
+    avatarId: '29708244eaa5487e976af960aa51e207',
     defaultVoiceId: '3097f9a8fd3b4340b6bbe913177b378f',
   },
   female_student: {
@@ -37,16 +47,23 @@ export const HEYGEN_AVATARS = {
     kind: 'Person Avatar',
     // 9:16 세로 Alexa 룩(창가 미소). 쇼츠(9:16) 프레이밍을 위해 세로 룩만 사용한다.
     // (이전 a5454d8b… 룩은 16:9 가로라 세로 영상에서 프레이밍이 깨져 교체함)
-    avatarId: '62b02a920a78424e94f63f2ddb85dc99',
+    avatarId: '59fbce86969e49d5bb33cd0a443b8cff',
     defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
   },
   dog_student: {
     id: 'dog_student',
     name: '강아지 제자',
     kind: 'Animal Avatar',
-    avatarId: 'f51d84b6b19645dbbeedf326379be949',
+    avatarId: DOG_STUDENT_AVATAR_ID,
     defaultVoiceId: 'aceb4659b9e7420483800bbf698e9e24',
-    avatarGroupId: 'f51d84b6b19645dbbeedf326379be949',
+  },
+  interview_student: {
+    id: 'interview_student',
+    name: '면접 제자',
+    kind: 'Person Avatar',
+    // mock_interview(면접 클리닉)의 답변 예시 제자. voice 는 여자 제자 voice 를 쓴다.
+    avatarId: '035099a76bb048d49ea59ec8d34588e0',
+    defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
   },
 }
 
