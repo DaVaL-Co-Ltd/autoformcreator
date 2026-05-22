@@ -49,3 +49,6 @@ desktop-app/build/
 desktop-app/*.log
 client/public/downloads/Naver-RPA-Setup.exe
 
+# Claude Code 런타임 락 파일 (세션·PID 등 임시 상태)
+.claude/*.lock
+
