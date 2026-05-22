@@ -344,17 +344,6 @@ export default function ExtractionResultPage() {
   const usesAutomaticBlogQuote = isAutomaticBlogQuoteCategory(blogStylingCategoryId)
   const isCardNewsCategory = blogStylingCategoryId === 'knowledge_insight' || blogStylingCategoryId === 'interview_prep'
 
-  // [임시 진단] 인용구 소제목이 적용되는지 추적용 로그. 원인 확인 후 제거한다.
-  useEffect(() => {
-    console.log('[블로그 스타일 진단]', {
-      categoryInfo존재: Boolean(state.blogContent?.categoryInfo),
-      finalCategoryId: state.blogContent?.categoryInfo?.finalCategoryId || '(없음)',
-      blogStylingCategoryId: blogStylingCategoryId || '(빈값)',
-      blogHeadingStyle,
-      usesAutomaticBlogQuote,
-    })
-  }, [state.blogContent, blogStylingCategoryId, blogHeadingStyle, usesAutomaticBlogQuote])
-
   const isBusy = Object.values(uploadStatus).some(s => s === 'loading') || downloading
 
   useEffect(() => {
@@ -1355,6 +1344,59 @@ export default function ExtractionResultPage() {
     const blogTags = normalizeBlogTags(blogContent)
     const blogTagText = buildBlogTagText(blogTags)
 
+    // 강의/특강(lecture_event) 카테고리는 썸네일/첨부 이미지를 제목보다 위(최상단)에 노출한다.
+    const isLectureEventBlog = blogStylingCategoryId === 'lecture_event'
+    const blogThumbnailImage = ensureArray(blogImages)
+      .find((image) => image?.isThumbnail && (image?.imageUrl || image?.renderedImageUrl || image?.pngUrl)) || null
+    const blogThumbnailHeading = cleanCardText(blogThumbnailImage?.overlayHeadline || blogContent?.title || '')
+    const blogThumbnailDescription = blogThumbnailImage?.overlayMode === 'headline-only'
+      ? ''
+      : deriveBlogImageDescription(
+        blogThumbnailImage?.keyPhrase || '',
+        cleanCardText(blogContent?.title || ''),
+        blogContent?.introduction || ensureArray(blogContent?.sections)[0]?.content || '',
+      )
+    const renderBlogThumbnail = () => (
+      <div className="mb-8 space-y-4">
+        {blogThumbnailImage?.renderedImageUrl || blogThumbnailImage?.pngUrl ? (
+          <img
+            src={blogThumbnailImage.renderedImageUrl || blogThumbnailImage.pngUrl}
+            alt={blogThumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+            className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+            onClick={() => openImagePreview(
+              blogThumbnailImage.renderedImageUrl || blogThumbnailImage.pngUrl,
+              blogThumbnailImage?.title || blogContent?.title || '블로그 썸네일',
+            )}
+          />
+        ) : blogThumbnailImage?.imageUrl ? (
+          blogThumbnailImage?.overlayMode === 'none' ? (
+            <img
+              src={blogThumbnailImage.imageUrl}
+              alt={blogThumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+              className="block w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
+              onClick={() => openImagePreview(
+                blogThumbnailImage.imageUrl,
+                blogThumbnailImage?.title || blogContent?.title || '블로그 썸네일',
+              )}
+            />
+          ) : (
+            <BlogImageArtwork
+              src={blogThumbnailImage.imageUrl}
+              alt={blogThumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
+              headline={blogThumbnailHeading}
+              description={blogThumbnailDescription}
+              accentColor="#6366f1"
+              showTextOverlay={showBlogImageTextOverlay}
+              variant={blogThumbnailImage?.variant || 'circle'}
+              fontPreset={blogThumbnailImage?.overlayFont || 'pretendard'}
+              mode="modal"
+              containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
+            />
+          )
+        ) : null}
+      </div>
+    )
+
     return (
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1428,6 +1470,11 @@ export default function ExtractionResultPage() {
         </div>
 
         <article className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
+          {isLectureEventBlog && blogThumbnailImage && (
+            <div className="px-6 pt-6 sm:px-8 sm:pt-8">
+              {renderBlogThumbnail()}
+            </div>
+          )}
           <div className="p-6 sm:p-8 border-b border-border">
             <h1 className="text-3xl font-bold tracking-tight text-gray-900 leading-tight">
               {blogContent?.title}
@@ -1455,7 +1502,6 @@ export default function ExtractionResultPage() {
             )}
             {(() => {
               const blogImageList = ensureArray(blogImages)
-              const thumbnailImage = blogImageList.find((image) => image?.isThumbnail && (image?.imageUrl || image?.renderedImageUrl || image?.pngUrl)) || null
               const sectionImageList = blogImageList.filter((image) => !image?.isThumbnail)
               const bgColors = ['bg-[#FFF3E0]', 'bg-[#E8F5E9]', 'bg-[#E3F2FD]', 'bg-[#F3E5F5]']
               const accentPalette = {
@@ -1464,57 +1510,11 @@ export default function ExtractionResultPage() {
                 'bg-[#E3F2FD]': '#1565c0',
                 'bg-[#F3E5F5]': '#7b1fa2',
               }
-              const thumbnailHeading = cleanCardText(thumbnailImage?.overlayHeadline || blogContent?.title || '')
-              const thumbnailDescription = thumbnailImage?.overlayMode === 'headline-only'
-                ? ''
-                : deriveBlogImageDescription(
-                  thumbnailImage?.keyPhrase || '',
-                  cleanCardText(blogContent?.title || ''),
-                  blogContent?.introduction || ensureArray(blogContent?.sections)[0]?.content || '',
-                )
 
               return (
                 <>
-                  {thumbnailImage && (
-                    <div className="mb-8 space-y-4">
-                      {thumbnailImage?.renderedImageUrl || thumbnailImage?.pngUrl ? (
-                        <img
-                          src={thumbnailImage.renderedImageUrl || thumbnailImage.pngUrl}
-                          alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
-                          className="w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
-                          onClick={() => openImagePreview(
-                            thumbnailImage.renderedImageUrl || thumbnailImage.pngUrl,
-                            thumbnailImage?.title || blogContent?.title || '블로그 썸네일',
-                          )}
-                        />
-                      ) : thumbnailImage?.imageUrl ? (
-                        thumbnailImage?.overlayMode === 'none' ? (
-                          <img
-                            src={thumbnailImage.imageUrl}
-                            alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
-                            className="block w-full max-w-xl rounded-xl shadow-sm cursor-zoom-in"
-                            onClick={() => openImagePreview(
-                              thumbnailImage.imageUrl,
-                              thumbnailImage?.title || blogContent?.title || '블로그 썸네일',
-                            )}
-                          />
-                        ) : (
-                          <BlogImageArtwork
-                            src={thumbnailImage.imageUrl}
-                            alt={thumbnailImage?.title || blogContent?.title || '블로그 썸네일'}
-                            headline={thumbnailHeading}
-                            description={thumbnailDescription}
-                            accentColor="#6366f1"
-                            showTextOverlay={showBlogImageTextOverlay}
-                            variant={thumbnailImage?.variant || 'circle'}
-                            fontPreset={thumbnailImage?.overlayFont || 'pretendard'}
-                            mode="modal"
-                            containerClassName="w-full max-w-xl rounded-xl shadow-sm border border-border"
-                          />
-                        )
-                      ) : null}
-                    </div>
-                  )}
+                  {/* 강의/특강은 제목 위에서 이미 노출했으므로 본문에서는 생략한다. */}
+                  {!isLectureEventBlog && blogThumbnailImage && renderBlogThumbnail()}
                   {ensureArray(blogContent?.sections).map((section, index) => {
                 if (usesKnowledgeInsightCards) {
                   const cardSummary = section?.cardSummary || {}
