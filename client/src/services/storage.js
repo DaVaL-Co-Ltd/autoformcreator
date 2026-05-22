@@ -157,10 +157,13 @@ export async function updateExtractionContent(id, content = {}) {
 // 콘텐츠 목록 캐시 — 상세보기 왕복 등 짧은 재방문에서 재요청을 막는다.
 // 생성/수정/삭제 시 즉시 무효화하고, 그 외에는 TTL 동안 유지한다.
 let _extractionsCache = null
+// 페이지네이션 목록 캐시 — page/channel/status/search 조합별로 따로 저장한다.
+const _extractionsPagedCache = new Map()
 const EXTRACTIONS_CACHE_TTL_MS = 60000
 
 export function invalidateExtractionsCache() {
   _extractionsCache = null
+  _extractionsPagedCache.clear()
 }
 
 export async function getExtractions() {
@@ -176,13 +179,36 @@ export async function getExtractions() {
   return value
 }
 
-export async function getExtractionsPaged({ page = 1, pageSize = 10 } = {}) {
-  const result = await apiRequest(`/api/extractions?page=${page}&pageSize=${pageSize}`)
-  return {
+export async function getExtractionsPaged({
+  page = 1,
+  pageSize = 10,
+  channel = 'all',
+  status = 'all',
+  search = '',
+} = {}) {
+  const trimmedSearch = String(search || '').trim()
+  // 캐시 키는 모든 파라미터를 포함해 조합별로 따로 캐싱한다.
+  const cacheKey = `${page}|${pageSize}|${channel}|${status}|${trimmedSearch}`
+  const cached = _extractionsPagedCache.get(cacheKey)
+  if (cached && Date.now() - cached.ts < EXTRACTIONS_CACHE_TTL_MS) {
+    return cached.value
+  }
+
+  const params = new URLSearchParams()
+  params.set('page', String(page))
+  params.set('pageSize', String(pageSize))
+  if (channel && channel !== 'all') params.set('channel', channel)
+  if (status && status !== 'all') params.set('status', status)
+  if (trimmedSearch) params.set('search', trimmedSearch)
+
+  const result = await apiRequest(`/api/extractions?${params.toString()}`)
+  const value = {
     items: (result?.items || []).map(rowToItem),
     total: result?.total || 0,
     aggregateCounts: result?.aggregateCounts || null,
   }
+  _extractionsPagedCache.set(cacheKey, { value, ts: Date.now() })
+  return value
 }
 
 export async function getExtractionById(id) {

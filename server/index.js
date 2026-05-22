@@ -2967,10 +2967,11 @@ app.get('/api/extractions', async (req, res) => {
     ensureSupabaseConfigured()
     const page = req.query.page ? Number(req.query.page) : null
     const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null
+    const { channel, status, search } = req.query
     const result = await listExtractions(
       Number.isFinite(page) && Number.isFinite(pageSize)
-        ? { page, pageSize }
-        : {}
+        ? { page, pageSize, channel, status, search }
+        : { channel, status, search }
     )
     res.json(result)
   } catch (err) {

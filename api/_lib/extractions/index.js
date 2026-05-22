@@ -10,10 +10,11 @@ module.exports = async function handler(req, res) {
     if (req.method === 'GET') {
       const page = req.query.page ? Number(req.query.page) : null
       const pageSize = req.query.pageSize ? Number(req.query.pageSize) : null
+      const { channel, status, search } = req.query
       const result = await listExtractions(
         Number.isFinite(page) && Number.isFinite(pageSize)
-          ? { page, pageSize }
-          : {}
+          ? { page, pageSize, channel, status, search }
+          : { channel, status, search }
       )
       return res.status(200).json(result)
     }

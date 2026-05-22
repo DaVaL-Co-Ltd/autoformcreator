@@ -366,7 +366,54 @@ async function fetchContentStats() {
   }
 }
 
-async function listExtractions({ page, pageSize } = {}) {
+// 채널 키 → 추출 행의 본문 컬럼명. 채널 필터/상태 필터에서 공통으로 쓴다.
+const CHANNEL_CONTENT_COLUMN = {
+  blog: 'blog_content',
+  newsletter: 'newsletter_content',
+  instagram: 'instagram_content',
+  shorts: 'shorts_script',
+}
+const FILTERABLE_CHANNELS = ['blog', 'newsletter', 'instagram', 'shorts']
+
+// PostgREST or= 값에 들어가는 ilike 패턴은 콤마/괄호가 구분자로 오인되므로 인코딩한다.
+function encodeOrValue(value) {
+  return String(value).replace(/[(),]/g, (ch) => encodeURIComponent(ch))
+}
+
+// 검색어로 PostgREST or= 절을 만든다. file_name 과 채널별 제목(JSON ->> )을 모두 본다.
+function buildSearchOrClause(search) {
+  const q = String(search || '').trim()
+  if (!q) return null
+  const pattern = encodeOrValue(`*${q}*`)
+  return [
+    `file_name.ilike.${pattern}`,
+    `blog_content->>title.ilike.${pattern}`,
+    `newsletter_content->>subject.ilike.${pattern}`,
+    `instagram_content->>title.ilike.${pattern}`,
+    `shorts_script->>title.ilike.${pattern}`,
+  ].join(',')
+}
+
+// 특정 채널의 upload_status 상태 필터 절을 만든다. PostgREST or= 안에 들어갈 콤마 구분 조각들의 배열을 반환한다.
+// 블로그 예약은 status 가 not_uploaded 인 채 nativeSchedule=true 로만 표시될 수 있어 이를 함께 처리한다.
+//  - not_uploaded: 키 없음 / status=not_uploaded(단, nativeSchedule=true 인 예약 행은 제외)
+//  - scheduled:    status=scheduled / nativeSchedule=true (네이티브 블로그 예약)
+//  - uploaded:     status=uploaded (nativeSchedule=true 인 행은 '예약'으로 보므로 제외)
+function buildChannelStatusParts(channel, status) {
+  const statusPath = `upload_status->${channel}->>status`
+  const nativePath = `upload_status->${channel}->>nativeSchedule`
+  if (status === 'not_uploaded') {
+    // 채널 키가 아예 없으면 미업로드. 키가 있으면 status=not_uploaded 인 것만(예약 행 제외).
+    return [`${statusPath}.is.null`, `${statusPath}.eq.not_uploaded`]
+  }
+  if (status === 'scheduled') {
+    return [`${statusPath}.eq.scheduled`, `${nativePath}.eq.true`]
+  }
+  // uploaded
+  return [`${statusPath}.eq.uploaded`]
+}
+
+async function listExtractions({ page, pageSize, channel, status, search } = {}) {
   const paged = typeof page === 'number' && typeof pageSize === 'number'
   const params = buildSelectParams({
     select: EXTRACTION_LIST_COLUMNS,
@@ -375,6 +422,36 @@ async function listExtractions({ page, pageSize } = {}) {
     limit: paged ? pageSize : 500,
     offset: paged ? (page - 1) * pageSize : 0,
   })
+
+  // 채널 필터: 해당 채널 본문이 있는 행만. ('all' 또는 미지정이면 필터 없음)
+  const activeChannel = channel && channel !== 'all' ? channel : null
+  if (activeChannel && CHANNEL_CONTENT_COLUMN[activeChannel]) {
+    params.set(CHANNEL_CONTENT_COLUMN[activeChannel], 'not.is.null')
+  }
+
+  // 상태 필터: upload_status JSON 컬럼 기준. PostgREST or= 절로 표현한다.
+  // 뉴스레터는 업로드 개념이 없어 상태 집계/필터에서 제외한다(content_stats 와 동일).
+  const activeStatus = status && status !== 'all' ? status : null
+  if (activeStatus) {
+    const statusChannels = activeChannel && CHANNEL_CONTENT_COLUMN[activeChannel]
+      ? [activeChannel]
+      : FILTERABLE_CHANNELS.filter((ch) => ch !== 'newsletter')
+    const orParts = statusChannels.flatMap((ch) => buildChannelStatusParts(ch, activeStatus))
+    params.set('or', `(${orParts.join(',')})`)
+  }
+
+  // 검색어 필터.
+  const searchClause = buildSearchOrClause(search)
+  if (searchClause) {
+    // 상태 필터가 이미 or= 를 점유했다면 and= 로 두 조건을 묶는다.
+    if (params.has('or')) {
+      const statusOr = params.get('or')
+      params.delete('or')
+      params.set('and', `(or${statusOr},or(${searchClause}))`)
+    } else {
+      params.set('or', `(${searchClause})`)
+    }
+  }
 
   const headers = buildRestHeaders(paged ? { prefer: 'count=exact' } : {})
   const [{ data, response }, aggregateCounts] = await Promise.all([

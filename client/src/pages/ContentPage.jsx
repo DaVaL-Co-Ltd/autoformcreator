@@ -16,7 +16,7 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { deleteExtractionChannel, getExtractionById, getExtractions, updateUploadStatus } from '../services/storage'
+import { deleteExtractionChannel, getExtractionById, getExtractionsPaged, updateUploadStatus } from '../services/storage'
 import ScheduleDialog from '../components/ScheduleDialog'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
@@ -85,19 +85,6 @@ function toContentItems(extractions, scheduledMap = new Map()) {
   )
 }
 
-function matchesFilters(item, activeChannel, activeStatus, searchQuery) {
-  if (activeChannel !== 'all' && item.channel !== activeChannel) return false
-  const isNativeSchedule = Boolean(item.nativeSchedule && item.scheduledAt)
-  if (activeStatus === 'scheduled' && !(item.uploadStatus === 'scheduled' || isNativeSchedule)) return false
-  if (activeStatus === 'uploaded' && !(item.uploadStatus === 'uploaded' && !isNativeSchedule)) return false
-  if (!['all', 'scheduled', 'uploaded'].includes(activeStatus) && item.uploadStatus !== activeStatus) return false
-  if (searchQuery) {
-    const query = searchQuery.toLowerCase()
-    if (!item.title?.toLowerCase().includes(query) && !item.source?.toLowerCase().includes(query)) return false
-  }
-  return true
-}
-
 // 상세보기 왕복 시 목록 상태(필터·페이지·검색·데이터·스크롤)를 그대로 복원하기 위한 모듈 레벨 스냅샷.
 let pageStateSnapshot = null
 
@@ -145,9 +132,10 @@ export default function ContentPage() {
     }
 
     try {
+      // 서버 페이지네이션: 현재 페이지분(추출 문서 행 size개)만 가져온다.
       const [scheduledRows, extractionResult] = await Promise.all([
         getAllScheduledUploads(),
-        getExtractions(),
+        getExtractionsPaged({ page, pageSize: size, channel, status, search: query }),
       ])
       const scheduledMap = new Map(
         scheduledRows
@@ -155,42 +143,26 @@ export default function ContentPage() {
           .map((row) => [`${row.extractionId}:${row.platform}`, row]),
       )
 
-      const allItems = toContentItems(extractionResult.items || [], scheduledMap)
-      const filtered = allItems.filter(item => matchesFilters(item, channel, status, query))
-      const totalMatched = filtered.length
-      const startIndex = (page - 1) * size
-      const pageItems = filtered.slice(startIndex, startIndex + size)
-      const resolvedTotalPages = Math.max(1, Math.ceil(totalMatched / size))
+      // 페이지 행만 채널 아이템으로 펼친다. 채널 필터가 있으면 해당 채널 카드만 남긴다.
+      const pageRowItems = toContentItems(extractionResult.items || [], scheduledMap)
+      const pageItems = channel === 'all'
+        ? pageRowItems
+        : pageRowItems.filter(item => item.channel === channel)
+
+      const total = extractionResult.total || 0
+      const resolvedTotalPages = Math.max(1, Math.ceil(total / size))
 
       const serverStats = extractionResult.aggregateCounts?.[channel] || null
-      const nextCounts = (serverStats && !query)
+      const nextCounts = serverStats
         ? {
           all: serverStats.all,
           not_uploaded: serverStats.not_uploaded,
           scheduled: serverStats.scheduled,
           uploaded: serverStats.uploaded,
         }
-        : (() => {
-          const counted = allItems.filter(item => matchesFilters(item, channel, 'all', query))
-          const counts = { all: 0, not_uploaded: 0, scheduled: 0, uploaded: 0 }
-          counted.forEach((item) => {
-            counts.all += 1
-            if (item.channel === 'newsletter') return
-            if (item.uploadStatus === 'scheduled' || item.nativeSchedule) {
-              counts.scheduled += 1
-              return
-            }
-            if (item.uploadStatus === 'uploaded') {
-              counts.uploaded += 1
-              return
-            }
-            if (item.uploadStatus === 'not_uploaded') {
-              counts.not_uploaded += 1
-            }
-          })
-          return counts
-        })()
+        : { all: 0, not_uploaded: 0, scheduled: 0, uploaded: 0 }
 
+      // 마지막 페이지의 행이 모두 삭제돼 빈 페이지가 됐다면 이전 페이지로 보낸다.
       if (page > 1 && pageItems.length === 0) {
         setCurrentPage(page - 1)
         return
