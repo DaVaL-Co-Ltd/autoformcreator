@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
+import { composeBlogSectionBody } from '../utils/blogBodySanitizer'
+import { isAutomaticBlogQuoteCategory } from '../utils/blogHeadingStyle'
 
 // 채널별 결과물의 "본문 텍스트"만 수정하는 모달. 이미지·영상은 편집 대상이 아니다.
 // content 는 채널 콘텐츠 객체(blogContent/newsletterContent/instagramContent/shortsScript).
@@ -11,6 +13,32 @@ const deepClone = (value) => {
   } catch {
     return {}
   }
+}
+
+// blog 채널은 콘텐츠 생성·결과 화면과 동일한 본문을 편집하도록,
+// 도입부·섹션 본문을 결과 화면과 같은 표시 규칙(composeBlogSectionBody)으로 가공한다.
+function buildInitialDraft(channel, content) {
+  const cloned = deepClone(content)
+  if (channel !== 'blog') return cloned
+
+  const categoryId = cloned?.categoryInfo?.finalCategoryId || ''
+  const prose = isAutomaticBlogQuoteCategory(categoryId)
+  if (typeof cloned.introduction === 'string') {
+    cloned.introduction = composeBlogSectionBody(cloned.introduction, { prose })
+  }
+  if (Array.isArray(cloned.sections)) {
+    cloned.sections = cloned.sections.map((section) => {
+      const next = { ...section }
+      if (typeof next.content === 'string') {
+        next.content = composeBlogSectionBody(next.content, { prose })
+      }
+      if (typeof next.body === 'string') {
+        next.body = composeBlogSectionBody(next.body, { prose })
+      }
+      return next
+    })
+  }
+  return cloned
 }
 
 const inputClass = 'w-full rounded-lg border border-border bg-surface-light px-3 py-2 text-sm text-text focus:border-primary/50 focus:outline-none'
@@ -56,7 +84,7 @@ function SectionCard({ title, children }) {
 }
 
 export default function ContentEditModal({ channel, channelLabel, content, onClose, onSave }) {
-  const [draft, setDraft] = useState(() => deepClone(content))
+  const [draft, setDraft] = useState(() => buildInitialDraft(channel, content))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -66,6 +94,11 @@ export default function ContentEditModal({ channel, channelLabel, content, onClo
     [content],
   )
   const [hashtagsText, setHashtagsText] = useState(initialHashtags)
+
+  // 도입부를 실제 본문에 노출하는 카테고리(프로즈·강의/특강)에서만 도입부 필드를 보여준다.
+  // 그래야 콘텐츠 생성·결과 화면과 수정 화면의 본문 구성이 동일하게 유지된다.
+  const blogCategoryId = channel === 'blog' ? (content?.categoryInfo?.finalCategoryId || '') : ''
+  const blogUsesIntroduction = isAutomaticBlogQuoteCategory(blogCategoryId) || blogCategoryId === 'lecture_event'
 
   const setTop = (key, value) => setDraft((d) => ({ ...d, [key]: value }))
   const setArrayItem = (arrKey, index, itemKey, value) => setDraft((d) => ({
@@ -101,7 +134,7 @@ export default function ContentEditModal({ channel, channelLabel, content, onClo
   const renderBlog = () => (
     <>
       <TextField label="제목" value={draft.title} onChange={(v) => setTop('title', v)} />
-      {typeof content?.introduction === 'string' && content.introduction.trim() && (
+      {blogUsesIntroduction && typeof draft.introduction === 'string' && draft.introduction.trim() && (
         <AreaField label="도입부" value={draft.introduction} rows={4} onChange={(v) => setTop('introduction', v)} />
       )}
       {(Array.isArray(draft.sections) ? draft.sections : []).map((section, i) => (

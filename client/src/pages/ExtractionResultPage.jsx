@@ -52,9 +52,11 @@ import {
   isClosingBlogSection,
 } from '../utils/contentImageOverlay'
 import {
+  composeBlogSectionBody,
   sanitizeBlogBodyForDisplay,
   sanitizeBlogBodyForUpload,
   splitSentencesForBlogProse,
+  stripResultCtaText,
 } from '../utils/blogBodySanitizer'
 import { buildBlogUploadImageDataUrls } from '../utils/uploadImageComposite'
 import {
@@ -129,25 +131,6 @@ const appendBlogTagsToBody = (content = '', tags = []) => {
   return `${trimmedContent}\n\n\n${tagText}`
 }
 
-const stripResultCtaText = (value) => {
-  if (typeof value !== 'string' || !value.trim()) return ''
-
-  const lines = value
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean)
-    .filter(line => !(
-      /프로필\s*링크/i.test(line) ||
-      /자세한\s*내용/i.test(line) ||
-      /더\s*자세한\s*(분석|내용|데이터|인사이트)/i.test(line) ||
-      /링크에서\s*확인/i.test(line) ||
-      /전체\s*리포트/i.test(line) ||
-      /확인해보세요/i.test(line) ||
-      /확인하세요/i.test(line)
-    ))
-
-  return lines.join('\n').trim()
-}
 const BLOG_UPLOAD_SOURCE = USE_REMOTE_BLOG_PUBLISH ? 'server-api' : 'desktop-helper'
 const BLOG_UPLOAD_ENDPOINT = USE_REMOTE_BLOG_PUBLISH ? `${API_BASE}/api/naver/publish` : `${BLOG_UPLOAD_SERVER}/api/upload`
 const BLOG_UPLOAD_HEADERS = { 'x-autoform-client': 'web-client' }
@@ -1074,9 +1057,11 @@ export default function ExtractionResultPage() {
         : `${heading}${imageMarker}${content}`
     }).join('\n\n')
 
-    if (!isProseCategory) return sectionsText
+    // prose·강의/특강 카테고리는 도입부를 본문 맨 앞에 붙인다.
+    if (!isProseCategory && !isLectureEventBlog) return sectionsText
 
-    const introText = splitSentencesForBlogProse(sanitizeBlogBodyForDisplay(introduction || ''))
+    const baseIntro = sanitizeBlogBodyForDisplay(introduction || '')
+    const introText = isProseCategory ? splitSentencesForBlogProse(baseIntro) : baseIntro
     return introText ? `${introText}\n\n${sectionsText}` : sectionsText
   }, [blogHeadingStyle, usesAutomaticBlogQuote, isLectureEventBlog])
 
@@ -1494,10 +1479,10 @@ export default function ExtractionResultPage() {
             )}
           </div>
           <div className="p-6 sm:p-8 space-y-10">
-            {usesAutomaticBlogQuote && blogContent?.introduction && (
+            {(usesAutomaticBlogQuote || isLectureEventBlog) && blogContent?.introduction && (
               <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                  {normalizeMd(splitSentencesForBlogProse(stripResultCtaText(sanitizeBlogBodyForDisplay(blogContent.introduction))))}
+                  {normalizeMd(composeBlogSectionBody(blogContent.introduction, { prose: usesAutomaticBlogQuote }))}
                 </ReactMarkdown>
               </div>
             )}
@@ -1534,7 +1519,7 @@ export default function ExtractionResultPage() {
                     || null
                   const cornerImageUrl = matchedKnowledgeImage?.imageUrl || null
                   const sectionHeadingText = String(section?.heading || '').trim()
-                  const sectionContent = stripResultCtaText(sanitizeBlogBodyForDisplay(section?.content || ''))
+                  const sectionContent = composeBlogSectionBody(section?.content, { prose: false })
                   const isLastKnowledgeSection = index === ensureArray(blogContent?.sections).length - 1
                   return (
                     <section key={`knowledge-section-${index}`} className="space-y-5">
@@ -1694,11 +1679,7 @@ export default function ExtractionResultPage() {
 
                   <div className="prose prose-gray max-w-none text-gray-700 leading-8">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                      {normalizeMd(
-                        usesAutomaticBlogQuote
-                          ? splitSentencesForBlogProse(stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || '')))
-                          : stripResultCtaText(sanitizeBlogBodyForDisplay(section.content || ''))
-                      )}
+                      {normalizeMd(composeBlogSectionBody(section.content, { prose: usesAutomaticBlogQuote }))}
                     </ReactMarkdown>
                   </div>
                 </section>

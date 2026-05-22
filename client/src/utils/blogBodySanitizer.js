@@ -241,8 +241,11 @@ const FORCE_BLOCK_LABELS = new Set([
   '학습 포인트',
 ])
 
+// 콜론 뒤 본문을 항상 블록(여러 줄)으로 내리는 라벨.
+// 보통 여러 문장으로 길게 서술되는 항목에만 쓴다. '강의 일시'는
+// "2026.04.14. (화)"처럼 짧은 단일 값이 자연스러워 제외한다 — 본문이
+// 실제로 길거나 여러 항목일 때만 shouldBreakAfterColon 일반 규칙으로 나뉜다.
 const SENTENCE_BREAK_LABELS = new Set([
-  '강의 일시',
   '라이브 강의 시간',
   '영상 송출 시간',
   '강사 소개',
@@ -362,7 +365,8 @@ function applyItemsSplitRule(line = '', prefix = '') {
 
   // 콜론 뒤 본문을 블록으로 내릴 때 문장 단위(. ! ?)로도 줄을 나눠,
   // 여러 문장(질문 등)이 한 줄에 뭉치지 않게 한다.
-  const restBySentence = rest.replace(/([.!?])[ \t]+(?=\S)/gu, '$1\n')
+  // 단, 마침표 앞이 숫자면 날짜·소수("2026.04.14.")의 일부이므로 문장 끝으로 보지 않는다.
+  const restBySentence = rest.replace(/((?<![0-9])[.!?])[ \t]+(?=\S)/gu, '$1\n')
   return `${indent}${labelText}:\n${restBySentence}`
 }
 
@@ -456,6 +460,7 @@ export function sanitizeBlogBodyForUpload(raw = '') {
 }
 
 // 입시 및 학습 전략(글 위주) 카테고리에서 문장 단위로 빈 줄을 넣어 가독성을 높인다.
+// 마침표 앞이 숫자면 날짜·소수("2026.04.14.")의 일부이므로 문장 끝으로 보지 않는다.
 export function splitSentencesForBlogProse(raw = '') {
   return String(raw || '')
     .split('\n')
@@ -463,9 +468,38 @@ export function splitSentencesForBlogProse(raw = '') {
       const trimmed = line.trim()
       if (!trimmed) return []
       return trimmed
-        .split(/(?<=[.!?])\s+/)
+        .split(/(?<=(?<![0-9])[.!?])\s+/)
         .map((sentence) => sentence.trim())
         .filter(Boolean)
     })
     .join('\n\n')
+}
+
+// 결과·업로드 본문에서 노출하지 않을 CTA성 줄(프로필 링크 안내 등)을 제거한다.
+export function stripResultCtaText(value) {
+  if (typeof value !== 'string' || !value.trim()) return ''
+
+  const lines = value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !(
+      /프로필\s*링크/i.test(line) ||
+      /자세한\s*내용/i.test(line) ||
+      /더\s*자세한\s*(분석|내용|데이터|인사이트)/i.test(line) ||
+      /링크에서\s*확인/i.test(line) ||
+      /전체\s*리포트/i.test(line) ||
+      /확인해보세요/i.test(line) ||
+      /확인하세요/i.test(line)
+    ))
+
+  return lines.join('\n').trim()
+}
+
+// 블로그 섹션 본문(또는 도입부)을 화면 표시용 평문으로 가공한다.
+// 콘텐츠 생성·결과·수정 화면이 모두 이 함수를 거쳐 동일한 본문을 보여준다.
+// prose(입시·학습 전략 글 위주) 카테고리는 문장 단위로 빈 줄을 넣어 가독성을 높인다.
+export function composeBlogSectionBody(raw = '', { prose = false } = {}) {
+  const base = stripResultCtaText(sanitizeBlogBodyForDisplay(raw))
+  return prose ? splitSentencesForBlogProse(base) : base
 }

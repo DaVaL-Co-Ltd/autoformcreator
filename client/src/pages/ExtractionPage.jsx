@@ -40,6 +40,8 @@ import {
   BLOG_CATEGORY_OPTIONS,
   getBlogCategoryProfile,
 } from '../services/blogCategoryProfile'
+import { composeBlogSectionBody } from '../utils/blogBodySanitizer'
+import { isAutomaticBlogQuoteCategory } from '../utils/blogHeadingStyle'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
@@ -3333,21 +3335,35 @@ ${parsedText}
                       {errObj.message}
                     </div>
                   )}
-                  {row.key === 'blog' && blogContent && (
+                  {row.key === 'blog' && blogContent && (() => {
+                    // 결과·수정 화면과 동일한 본문을 보여주도록 같은 가공 함수를 거친다.
+                    const blogCategoryId = blogContent?.categoryInfo?.finalCategoryId || ''
+                    const isProseBlog = isAutomaticBlogQuoteCategory(blogCategoryId)
+                    const showIntro = (isProseBlog || blogCategoryId === 'lecture_event')
+                      && typeof blogContent.introduction === 'string'
+                      && blogContent.introduction.trim()
+                    const introText = showIntro
+                      ? composeBlogSectionBody(blogContent.introduction, { prose: isProseBlog })
+                      : ''
+                    return (
                     <div className="space-y-4">
                       <ContentImagePreviewStrip items={blogPreviewItems} label="블로그 이미지 미리보기" />
                       <div>
                         <h4 className="text-base font-bold text-text">{blogContent.title}</h4>
                         {blogContent.metaDescription && <p className="text-xs text-text-muted mt-1">{blogContent.metaDescription}</p>}
                       </div>
+                      {introText && (
+                        <p className="text-sm text-text-muted whitespace-pre-wrap">{introText}</p>
+                      )}
                       {blogContent.sections?.map((sec, i) => (
                         <div key={i} className="border-l-2 border-primary/30 pl-3">
                           <h5 className="font-semibold text-sm text-text">{sec.heading}</h5>
-                          <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{sec.content}</p>
+                          <p className="text-sm text-text-muted mt-1.5 whitespace-pre-wrap">{composeBlogSectionBody(sec.content, { prose: isProseBlog })}</p>
                         </div>
                       ))}
                     </div>
-                  )}
+                    )
+                  })()}
                   {row.key === 'newsletter' && newsletterContent && (
                     <div className="space-y-3">
                       <h4 className="text-base font-bold text-text">{stripMarkdownEmphasis(newsletterContent.subject || '')}</h4>
