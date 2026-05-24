@@ -140,13 +140,32 @@ const BLOG_UPLOAD_START_TIMEOUT_MS = 30000
 const BLOG_UPLOAD_MAX_WAIT_MS = 600000
 const API_RESPONSE_TIMEOUT_MS = 10000
 
+// 서버 업로드에 안전한 URL 인지 검증.
+// - http(s) URL 통과
+// - "/output/..." 같은 로컬 path 통과
+// - data:image/...;base64,<충분히 큰 payload> 만 통과 (빈/잘린 dataURL 거부 → 서버 500 차단)
+const VALID_DATA_IMAGE_RE = /^data:image\/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=]+$/
+function isValidImageUrl(value) {
+  if (typeof value !== 'string' || !value) return false
+  if (/^https?:\/\//i.test(value)) return true
+  if (value.startsWith('/')) return true
+  if (!VALID_DATA_IMAGE_RE.test(value)) return false
+  // dataURL 의 base64 payload 가 너무 짧으면(빈 캔버스/캡처 실패) 거부.
+  // "data:image/png;base64,".length 는 22 — 의미 있는 PNG 면 보통 1KB 이상이지만
+  // 보수적으로 128자(약 96바이트)를 최저선으로 둔다.
+  const comma = value.indexOf(',')
+  return comma > 0 && value.length - comma - 1 >= 128
+}
+
 const attachRenderedImageUrls = (images, urls, options = {}) => {
   const list = ensureArray(images).map((image) => ({ ...image }))
   const nextUrls = ensureArray(urls)
 
+  const pickValid = (...candidates) => candidates.find((c) => isValidImageUrl(c)) || null
+
   if (!options.blogSections) {
     return list.map((image, index) => {
-      const renderedImageUrl = nextUrls[index] || image?.renderedImageUrl || image?.pngUrl || null
+      const renderedImageUrl = pickValid(nextUrls[index], image?.renderedImageUrl, image?.pngUrl)
       return renderedImageUrl
         ? { ...image, renderedImageUrl, pngUrl: renderedImageUrl }
         : image
@@ -163,7 +182,7 @@ const attachRenderedImageUrls = (images, urls, options = {}) => {
   }, [])
 
   nextUrls.forEach((url, sectionIndex) => {
-    if (!url) return
+    if (!isValidImageUrl(url)) return
     const section = sections[sectionIndex] || {}
     let targetIndex = -1
 
@@ -228,7 +247,26 @@ function getDistinctRawShortsUrl(videoData = {}) {
   return rawUrl
 }
 
+// 캡처 대상 element 안의 <img> 들이 모두 디코딩 완료되도록 대기.
+// 외부 이미지가 비동기 로딩 중이면 modern-screenshot 이 빈 자리로 그려 카드가 깨진다.
+async function waitForInnerImagesReady(el) {
+  if (!el || typeof el.querySelectorAll !== 'function') return
+  const imgs = Array.from(el.querySelectorAll('img'))
+  if (imgs.length === 0) return
+  await Promise.all(imgs.map((img) => {
+    if (img.complete && img.naturalWidth > 0) return Promise.resolve()
+    return new Promise((resolve) => {
+      const done = () => { img.removeEventListener('load', done); img.removeEventListener('error', done); resolve() }
+      img.addEventListener('load', done)
+      img.addEventListener('error', done)
+    })
+  }))
+  // decode() 호출이 가능하면 한 번 더 보장
+  await Promise.all(imgs.map((img) => (typeof img.decode === 'function' ? img.decode().catch(() => {}) : null)))
+}
+
 async function captureElementPng(el, label) {
+  if (!el) throw new Error(`[captureElementPng] element 없음: ${label}`)
   if (typeof document !== 'undefined' && document.fonts?.ready) {
     try {
       await document.fonts.ready
@@ -236,11 +274,33 @@ async function captureElementPng(el, label) {
       // 일부 환경에서 fonts.ready가 거부될 수 있으나 캡쳐 자체는 계속 진행
     }
   }
-  return withTimeout(
+  // 화면에 마운트는 됐지만 layout 이 0 인 element 는 캡처하면 빈 dataURL 이 나와
+  // 서버 업로드가 "Invalid data URL" 로 실패한다. 짧게 한 frame 양보 후 한번 더 본다.
+  if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    if (el.offsetWidth === 0 || el.offsetHeight === 0) {
+      throw new Error(`[captureElementPng] element 사이즈 0 (${label}, w=${el.offsetWidth} h=${el.offsetHeight})`)
+    }
+  }
+  await waitForInnerImagesReady(el)
+
+  const attempt = () => withTimeout(
     () => domToPng(el, { scale: 2, quality: 1, fetchOptions: { mode: 'cors' } }),
     BLOG_IMAGE_CAPTURE_TIMEOUT_MS,
-    label
+    label,
   )
+
+  // 첫 캡처가 빈 dataURL 이거나 매우 짧으면 한 번만 재시도(짧은 backoff 후).
+  let dataUrl = await attempt()
+  if (!isValidImageUrl(dataUrl)) {
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    await waitForInnerImagesReady(el)
+    dataUrl = await attempt()
+  }
+  if (!isValidImageUrl(dataUrl)) {
+    throw new Error(`[captureElementPng] 결과가 유효한 dataURL 이 아님 (${label}, len=${dataUrl?.length || 0})`)
+  }
+  return dataUrl
 }
 
 function formatBlogUploadError(data, fallbackMessage) {
@@ -1196,11 +1256,21 @@ export default function ExtractionResultPage() {
   }, [extractionId])
 
   useEffect(() => {
-    if (activeMenu === 'instagram' && instagramContent && instaPngUrls.length === 0) {
-      const timer = setTimeout(() => convertInstaCardsToPng(), 500)
-      return () => clearTimeout(timer)
-    }
-  }, [activeMenu, instagramContent, instaPngUrls.length, convertInstaCardsToPng])
+    if (activeMenu !== 'instagram' || !instagramContent || instaPngUrls.length !== 0) return
+    // DB 에 이미 모든 카드의 유효 URL 이 있으면 재캡처 skip — modern-screenshot 캡처는
+    // 외부 이미지/폰트 로딩 타이밍에 따라 가끔 빈 결과를 만들 수 있는데, 굳이 매번
+    // 다시 도박할 필요가 없다. 한 번 정상 저장된 카드는 그대로 신뢰한다.
+    const cardCount = buildInstagramDisplayCards(instagramContent).length
+    const savedImages = ensureArray(instagramImages)
+    const allHaveValid = cardCount > 0 &&
+      savedImages.length >= cardCount &&
+      savedImages.slice(0, cardCount).every((img) =>
+        isValidImageUrl(img?.renderedImageUrl) || isValidImageUrl(img?.pngUrl),
+      )
+    if (allHaveValid) return
+    const timer = setTimeout(() => convertInstaCardsToPng(), 500)
+    return () => clearTimeout(timer)
+  }, [activeMenu, instagramContent, instagramImages, instaPngUrls.length, convertInstaCardsToPng])
 
   useEffect(() => {
     if (!extractionId || !instaPngUrls.some(Boolean)) return

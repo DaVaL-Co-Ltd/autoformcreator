@@ -101,11 +101,14 @@ function normalizeRemoteUrl(url, requestOrigin) {
 }
 
 function dataUrlToBuffer(dataUrl) {
-  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) throw new Error('Invalid data URL.')
+  const value = String(dataUrl || '')
+  const match = value.match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/)
+  if (!match) throw new Error(`Invalid data URL. (len=${value.length}, head=${value.slice(0, 32)})`)
+  const b64 = match[2].replace(/\s+/g, '')
+  if (b64.length < 16) throw new Error(`Empty data URL payload. (len=${value.length})`)
   return {
     mimeType: match[1],
-    buffer: Buffer.from(match[2], 'base64'),
+    buffer: Buffer.from(b64, 'base64'),
   }
 }
 
@@ -132,7 +135,14 @@ async function uploadDataUrlToStorage(dataUrl, bucket, prefix) {
 async function uploadIfNeeded(url, bucket, prefix, requestOrigin) {
   if (!url || typeof url !== 'string') return url
   if (url.startsWith('data:')) {
-    return uploadDataUrlToStorage(url, bucket, prefix)
+    try {
+      return await uploadDataUrlToStorage(url, bucket, prefix)
+    } catch (err) {
+      // 한 이미지 업로드 실패가 전체 PATCH 를 깨뜨리지 않게 null 로 떨어뜨린다.
+      // 클라이언트는 renderedImageUrl/pngUrl 이 비면 다음 캡처에서 재시도한다.
+      console.warn(`[uploadIfNeeded] data URL 업로드 실패 → 필드 제거 (${prefix}): ${err.message}`)
+      return null
+    }
   }
   return normalizeRemoteUrl(url, requestOrigin)
 }
