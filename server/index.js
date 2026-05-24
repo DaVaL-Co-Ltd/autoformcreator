@@ -862,12 +862,14 @@ app.post('/api/heygen/quiz-countdown', async (req, res) => {
 // 한 문장이 너무 길면(maxCharsPerLine*2 초과) 두 블록(=두 자막 화면)으로 다시 끊어 표시.
 
 // 문장 부호(. ! ? 。 ！ ？) 기준으로 sentence 단위 분할. 줄바꿈도 sentence 경계로 본다.
+// 단, 마침표(.)는 앞뒤가 모두 숫자면 소수점(12.3 등)으로 보고 문장 끝으로 판단하지 않는다.
 function splitIntoSentences(text) {
   const source = String(text || '').replace(/\r/g, '').trim()
   if (!source) return []
   const result = []
   let buf = ''
-  for (const ch of source) {
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
     if (ch === '\n') {
       const t = buf.trim()
       if (t) result.push(t)
@@ -875,11 +877,12 @@ function splitIntoSentences(text) {
       continue
     }
     buf += ch
-    if (/[.!?。！？]/.test(ch)) {
-      const t = buf.trim()
-      if (t) result.push(t)
-      buf = ''
-    }
+    if (!/[.!?。！？]/.test(ch)) continue
+    // 12.3, 1.5GB 같은 소수점/번호는 문장 끝이 아니다.
+    if (ch === '.' && /[0-9]/.test(source[i - 1] || '') && /[0-9]/.test(source[i + 1] || '')) continue
+    const t = buf.trim()
+    if (t) result.push(t)
+    buf = ''
   }
   const tail = buf.trim()
   if (tail) result.push(tail)

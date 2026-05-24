@@ -263,7 +263,8 @@ function splitIntoSentences(text) {
   if (!source) return []
   const result = []
   let buf = ''
-  for (const ch of source) {
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]
     if (ch === '\n') {
       const t = buf.trim()
       if (t) result.push(t)
@@ -271,11 +272,12 @@ function splitIntoSentences(text) {
       continue
     }
     buf += ch
-    if (/[.!?。！？]/.test(ch)) {
-      const t = buf.trim()
-      if (t) result.push(t)
-      buf = ''
-    }
+    if (!/[.!?。！？]/.test(ch)) continue
+    // 12.3, 1.5GB 같은 소수점은 문장 끝이 아니다.
+    if (ch === '.' && /[0-9]/.test(source[i - 1] || '') && /[0-9]/.test(source[i + 1] || '')) continue
+    const t = buf.trim()
+    if (t) result.push(t)
+    buf = ''
   }
   const tail = buf.trim()
   if (tail) result.push(tail)
