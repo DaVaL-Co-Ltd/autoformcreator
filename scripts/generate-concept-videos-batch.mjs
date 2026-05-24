@@ -257,6 +257,83 @@ async function heygenPoll(videoId) {
 }
 
 // ---- 자막 번인 (server/index.js /api/subtitle/burn 복제) ----
+// 한 문장 = 한 자막 블록(1~2줄). 너무 긴 문장은 두 블록으로 분할.
+function splitIntoSentences(text) {
+  const source = String(text || '').replace(/\r/g, '').trim()
+  if (!source) return []
+  const result = []
+  let buf = ''
+  for (const ch of source) {
+    if (ch === '\n') {
+      const t = buf.trim()
+      if (t) result.push(t)
+      buf = ''
+      continue
+    }
+    buf += ch
+    if (/[.!?。！？]/.test(ch)) {
+      const t = buf.trim()
+      if (t) result.push(t)
+      buf = ''
+    }
+  }
+  const tail = buf.trim()
+  if (tail) result.push(tail)
+  return result
+}
+
+function splitSentenceToLines(sentence, maxCharsPerLine) {
+  const s = String(sentence || '').trim()
+  if (!s) return []
+  if (s.length <= maxCharsPerLine) return [s]
+  const target = Math.ceil(s.length / 2)
+  const search = Math.max(2, Math.floor(maxCharsPerLine / 2))
+  let cut = -1
+  for (let span = 0; span <= search; span++) {
+    const r = target + span
+    if (r > 0 && r < s.length && /[,，、\s]/.test(s[r])) { cut = r + 1; break }
+    const l = target - span
+    if (l > 0 && l < s.length && /[,，、\s]/.test(s[l])) { cut = l + 1; break }
+  }
+  if (cut === -1) cut = target
+  return [s.slice(0, cut).trim(), s.slice(cut).trim()].filter(Boolean)
+}
+
+function buildBlocksForSentence(sentence, maxCharsPerLine) {
+  const s = String(sentence || '').trim()
+  if (!s) return []
+  if (s.length <= maxCharsPerLine * 2) {
+    return [splitSentenceToLines(s, maxCharsPerLine).join('\n')]
+  }
+  const mid = Math.ceil(s.length / 2)
+  const search = maxCharsPerLine
+  let cut = -1
+  for (let span = 0; span <= search; span++) {
+    const r = mid + span
+    if (r > 0 && r < s.length && /[,，、\s]/.test(s[r])) { cut = r + 1; break }
+    const l = mid - span
+    if (l > 0 && l < s.length && /[,，、\s]/.test(s[l])) { cut = l + 1; break }
+  }
+  if (cut === -1) cut = mid
+  return [
+    splitSentenceToLines(s.slice(0, cut).trim(), maxCharsPerLine).join('\n'),
+    splitSentenceToLines(s.slice(cut).trim(), maxCharsPerLine).join('\n'),
+  ].filter(Boolean)
+}
+
+function buildSubtitleBlocks(text, maxCharsPerLine) {
+  const sentences = splitIntoSentences(text)
+  if (sentences.length === 0) return []
+  const blocks = []
+  for (const sentence of sentences) {
+    for (const block of buildBlocksForSentence(sentence, maxCharsPerLine)) {
+      if (block) blocks.push(block)
+    }
+  }
+  return blocks
+}
+
+// 호환용 — 외부에서 splitNarration 을 직접 호출하던 곳은 없지만 시그니처만 유지.
 function splitNarration(text, maxCharsPerLine = 18) {
   const chunks = []
   let remaining = String(text || '').trim()
@@ -274,12 +351,12 @@ function splitNarration(text, maxCharsPerLine = 18) {
 }
 
 const subtitleFontConfigs = {
-  // marginV 110: 자막을 화면 세로 ~58% 지점에 둬 쇼츠·릴스 하단 UI(하단 약 25%)에 가리지 않게 한다.
-  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 110, bold: 0, italic: 0, spacing: 0 },
-  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 110, bold: -1, italic: 0, spacing: 0.2 },
-  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 110, bold: 0, italic: 0, spacing: 0 },
-  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 110, bold: 0, italic: 0, spacing: 0.05 },
-  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 110, bold: 0, italic: 0, spacing: 0.35 },
+  // marginV 40: 영상 하단에서 ~40px 위 — 쇼츠/릴스 하단 UI 위쪽 안전 영역.
+  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 40, bold: 0, italic: 0, spacing: 0 },
+  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 40, bold: -1, italic: 0, spacing: 0.2 },
+  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 40, bold: 0, italic: 0, spacing: 0 },
+  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 40, bold: 0, italic: 0, spacing: 0.05 },
+  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 40, bold: 0, italic: 0, spacing: 0.35 },
 }
 const getSubtitleFontConfig = (k) => subtitleFontConfigs[k] || subtitleFontConfigs.default
 function getForceStyle(style, fontKey = 'default') {
@@ -489,10 +566,7 @@ function buildSrt(scenes, duration, sceneDurations, crossfadeDur) {
     // 무음/빈 씬도 시간축에서 건너뛰어야 자막이 밀리지 않는다.
     const span = useActual ? Math.max(0.1, sceneDur - xf) : sceneDur
     if (!narration.trim()) { currentTime += span; continue }
-    const lines = splitNarration(captionText, maxCharsPerLine)
-    const blocks = []
-    const linesPerBlock = 2
-    for (let j = 0; j < lines.length; j += linesPerBlock) blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
+    const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
     const blockChars = blocks.map((b) => b.replace(/\n/g, '').length)
     const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
     let sceneCursor = currentTime

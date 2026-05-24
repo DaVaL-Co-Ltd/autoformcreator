@@ -1,4 +1,33 @@
-﻿export const SHORTS_SUBTITLE_FONT_OPTIONS = [
+﻿// 오프닝 훅을 첫 'speaking' 씬의 narration/caption 에 흡수시키고 hook 필드를 비운 사본을 반환.
+// HeyGen 표준 endpoint, Video Agent, SRT 자막 모두 동일한 변환된 script 를 사용하므로
+// hook 이 별도 첫 대사로 한 번, 첫 씬 narration 으로 또 한 번 — 식의 중복 진행을 막는다.
+// 원본 script 는 그대로 두고 새 객체를 반환(편집/저장 데이터는 hook 필드 유지).
+export function absorbHookIntoFirstScene(script) {
+  const hookText = String(script?.hook || '').trim()
+  if (!hookText) return script
+  const scenes = Array.isArray(script?.scenes) ? script.scenes : []
+  if (scenes.length === 0) return script
+  // quiz-countdown 처럼 무음 씬은 skip, narration 이 있는 첫 씬을 고른다.
+  const targetIdx = scenes.findIndex((s) =>
+    s && s.layout !== 'quiz-countdown' && String(s?.narration || '').trim(),
+  )
+  if (targetIdx < 0) return script
+  const sep = /[.!?。！？]$/.test(hookText) ? ' ' : '. '
+  const target = scenes[targetIdx] || {}
+  const prevNarration = String(target?.narration || '').trim()
+  const prevCaption = String(target?.caption || '').trim() || prevNarration
+  const nextScenes = scenes.map((s, i) => {
+    if (i !== targetIdx) return s
+    return {
+      ...s,
+      narration: `${hookText}${sep}${prevNarration}`.trim(),
+      caption: prevCaption ? `${hookText}${sep}${prevCaption}`.trim() : hookText,
+    }
+  })
+  return { ...script, scenes: nextScenes, hook: '' }
+}
+
+export const SHORTS_SUBTITLE_FONT_OPTIONS = [
   { value: 'default', label: '기본', promptLabel: 'clean modern sans-serif' },
   { value: 'bold', label: '볼드', promptLabel: 'bold display-style Korean font' },
   { value: 'dongle', label: '동글체', promptLabel: 'rounded friendly Korean font' },
@@ -143,7 +172,8 @@ export function buildShortsVideoAgentPrompt({
     videoStyle && videoStyle !== 'auto' ? `Visual direction: ${videoStyle}.` : '',
     narrationTone && narrationTone !== 'auto' ? `Narration tone: ${narrationTone}.` : '',
     script?.title ? `Video title reference: ${script.title}` : '',
-    script?.hook ? `Opening hook: ${script.hook}` : '',
+    // hook 은 영상 생성 직전에 첫 씬 narration 에 흡수되므로 별도 인트로로 노출하지 않는다.
+    // (Video Agent 에 "Opening hook" 을 따로 전달하면 첫 씬 앞에 hook 을 한 번 더 읽어 중복됨.)
     sceneLines ? `Use the following scene plan exactly as the speaking structure:\n${sceneLines}` : '',
     script?.cta ? `Closing CTA: ${script.cta}` : '',
     'Add concise scene-specific on-screen text in the top-safe area only, and preserve the vertical mobile-safe composition.',

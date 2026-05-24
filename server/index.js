@@ -858,35 +858,103 @@ app.post('/api/heygen/quiz-countdown', async (req, res) => {
 })
 
 // ===== Subtitle burn-in with FFmpeg =====
-// Split narration into readable subtitle lines.
-function splitNarration(text, maxCharsPerLine = 18) {
-  const chunks = []
-  let remaining = text.trim()
-  while (remaining.length > 0) {
-    if (remaining.length <= maxCharsPerLine) {
-      chunks.push(remaining)
-      break
+// 자막은 "한 문장 = 한 자막 블록(1~2줄)" 단위로 나뉘어 표시된다.
+// 한 문장이 너무 길면(maxCharsPerLine*2 초과) 두 블록(=두 자막 화면)으로 다시 끊어 표시.
+
+// 문장 부호(. ! ? 。 ！ ？) 기준으로 sentence 단위 분할. 줄바꿈도 sentence 경계로 본다.
+function splitIntoSentences(text) {
+  const source = String(text || '').replace(/\r/g, '').trim()
+  if (!source) return []
+  const result = []
+  let buf = ''
+  for (const ch of source) {
+    if (ch === '\n') {
+      const t = buf.trim()
+      if (t) result.push(t)
+      buf = ''
+      continue
     }
-    // Prefer punctuation or spaces for natural wrapping.
-    let cut = -1
-    for (let i = Math.min(maxCharsPerLine, remaining.length) - 1; i >= Math.floor(maxCharsPerLine * 0.5); i--) {
-      if (/[.!?。！？、，,\s]/.test(remaining[i])) { cut = i + 1; break }
+    buf += ch
+    if (/[.!?。！？]/.test(ch)) {
+      const t = buf.trim()
+      if (t) result.push(t)
+      buf = ''
     }
-    if (cut === -1) cut = maxCharsPerLine
-    chunks.push(remaining.slice(0, cut).trim())
-    remaining = remaining.slice(cut).trim()
   }
-  return chunks
+  const tail = buf.trim()
+  if (tail) result.push(tail)
+  return result
+}
+
+// 한 문장을 두 줄까지로 분할. maxCharsPerLine 이하면 한 줄, 초과면 자연 break(쉼표/공백) 으로 split.
+function splitSentenceToLines(sentence, maxCharsPerLine) {
+  const s = String(sentence || '').trim()
+  if (!s) return []
+  if (s.length <= maxCharsPerLine) return [s]
+  // 약 절반 지점 기준으로 가장 가까운 자연 break 찾기
+  const target = Math.ceil(s.length / 2)
+  const search = Math.max(2, Math.floor(maxCharsPerLine / 2))
+  let cut = -1
+  for (let span = 0; span <= search; span++) {
+    const r = target + span
+    if (r > 0 && r < s.length && /[,，、\s]/.test(s[r])) { cut = r + 1; break }
+    const l = target - span
+    if (l > 0 && l < s.length && /[,，、\s]/.test(s[l])) { cut = l + 1; break }
+  }
+  if (cut === -1) cut = target
+  const first = s.slice(0, cut).trim()
+  const rest = s.slice(cut).trim()
+  return [first, rest].filter(Boolean)
+}
+
+// 한 문장 → 1~2개의 자막 블록. 블록은 \n 으로 구분된 1~2 줄짜리 자막 화면 하나.
+function buildBlocksForSentence(sentence, maxCharsPerLine) {
+  const s = String(sentence || '').trim()
+  if (!s) return []
+  // 두 줄 한 블록까지 허용
+  if (s.length <= maxCharsPerLine * 2) {
+    return [splitSentenceToLines(s, maxCharsPerLine).join('\n')]
+  }
+  // 두 줄로도 넘치면 절반에서 끊어 두 블록(=두 자막 화면)으로 분할 → 각 블록은 다시 1~2 줄
+  const mid = Math.ceil(s.length / 2)
+  const search = maxCharsPerLine
+  let cut = -1
+  for (let span = 0; span <= search; span++) {
+    const r = mid + span
+    if (r > 0 && r < s.length && /[,，、\s]/.test(s[r])) { cut = r + 1; break }
+    const l = mid - span
+    if (l > 0 && l < s.length && /[,，、\s]/.test(s[l])) { cut = l + 1; break }
+  }
+  if (cut === -1) cut = mid
+  const first = s.slice(0, cut).trim()
+  const second = s.slice(cut).trim()
+  return [
+    splitSentenceToLines(first, maxCharsPerLine).join('\n'),
+    splitSentenceToLines(second, maxCharsPerLine).join('\n'),
+  ].filter(Boolean)
+}
+
+// 한 씬의 자막 텍스트를 자막 블록 배열로. 한 블록 = 한 화면 자막(1~2 줄).
+function buildSubtitleBlocks(text, maxCharsPerLine) {
+  const sentences = splitIntoSentences(text)
+  if (sentences.length === 0) return []
+  const blocks = []
+  for (const sentence of sentences) {
+    for (const block of buildBlocksForSentence(sentence, maxCharsPerLine)) {
+      if (block) blocks.push(block)
+    }
+  }
+  return blocks
 }
 
 // Subtitle style mapping for 9:16 vertical videos.
+// marginV 40: 영상 하단에서 약 40px 위 — 쇼츠/릴스 하단 UI(좋아요/댓글 아이콘) 위쪽 안전 영역.
 const subtitleFontConfigs = {
-  // marginV 110: 자막을 화면 세로 ~58% 지점에 둬 쇼츠·릴스 하단 UI(하단 약 25%)에 가리지 않게 한다.
-  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 110, bold: 0, italic: 0, spacing: 0 },
-  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 110, bold: -1, italic: 0, spacing: 0.2 },
-  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 110, bold: 0, italic: 0, spacing: 0 },
-  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 110, bold: 0, italic: 0, spacing: 0.05 },
-  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 110, bold: 0, italic: 0, spacing: 0.35 },
+  default: { fontName: 'Pretendard Variable', fontSize: 10, marginV: 40, bold: 0, italic: 0, spacing: 0 },
+  bold: { fontName: 'A2z', fontSize: 10.8, marginV: 40, bold: -1, italic: 0, spacing: 0.2 },
+  dongle: { fontName: 'TmoneyRoundWind', fontSize: 11.2, marginV: 40, bold: 0, italic: 0, spacing: 0 },
+  handwriting: { fontName: 'Maplestory', fontSize: 10.4, marginV: 40, bold: 0, italic: 0, spacing: 0.05 },
+  gothic: { fontName: 'KBODiaGothic', fontSize: 10.2, marginV: 40, bold: 0, italic: 0, spacing: 0.35 },
 }
 
 function getSubtitleFontConfig(fontKey) {
@@ -1041,8 +1109,9 @@ app.post('/api/subtitle/burn', async (req, res) => {
       })
     })
 
-    // 3) Build SRT blocks — 한 자막은 최대 2줄, 한 줄 14자(한국어 가독·우측 UI 회피).
-    const maxCharsPerLine = 14
+    // 3) Build SRT blocks — 한 자막 블록 = 한 문장(1~2줄). 너무 긴 문장은 두 블록으로 끊는다.
+    // 한 줄 18자 까지 (한국어 가독 + 쇼츠 9:16 폭 안에 안전).
+    const maxCharsPerLine = 18
     let srtContent = ''
     let srtIdx = 1
     const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
@@ -1053,13 +1122,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
       // 시간 계산은 narration(TTS 길이) 기준. 화면 표시 텍스트는 caption 이 있으면 그걸 쓴다
       // (caption: 숫자·기호 원본 표기. narration: TTS 발음용 한글 표기).
       const captionText = String(scene.caption || '').trim() || scene.narration
-      const lines = splitNarration(captionText, maxCharsPerLine)
-      // Group lines into subtitle blocks while keeping them readable.
-      const blocks = []
-      const linesPerBlock = 2
-      for (let j = 0; j < lines.length; j += linesPerBlock) {
-        blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))
-      }
+      const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
       const blockChars = blocks.map(b => b.replace(/\n/g, '').length)
       const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
 
