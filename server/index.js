@@ -1710,8 +1710,10 @@ async function ensurePublicInstagramVideoUrl(videoUrl) {
     if (value.startsWith('/output/')) return path.join(__dirname, '..', value)
     try {
       const parsed = new URL(value)
-      const isLocal = ['localhost', '127.0.0.1'].includes(parsed.hostname)
-      if (isLocal && parsed.pathname.startsWith('/output/')) {
+      // /output/ 경로면 hostname(localhost, render 공개 도메인 등) 무관하게 일단
+      // 로컬 파일 경로로 시도한다. 파일이 실제로 있으면 호출부의 fs.existsSync 가
+      // true 라서 Supabase 로 옮기고, 없으면 false 라서 외부 URL fallback 으로 넘어간다.
+      if (parsed.pathname.startsWith('/output/')) {
         return path.join(__dirname, '..', parsed.pathname)
       }
     } catch {}
@@ -2463,7 +2465,21 @@ async function publishYouTubeVideoUpload(body = {}) {
   const youtube = google.youtube({ version: 'v3', auth: client })
 
   let videoBuffer
-  const localPath = videoUrl.startsWith('/output/') ? path.join(__dirname, '..', videoUrl) : null
+  // /output/ 경로는 hostname 무관하게 일단 로컬 파일을 시도한다 — 절대 URL
+  // (https://<render-host>/output/...) 도 서버 자체 디스크를 가리키는 경우라서,
+  // fetch 로 빙 돌리지 않고 직접 읽는 게 더 빠르고 안전하다 (Render 자체로의 외부
+  // fetch 가 timeout 으로 실패하는 사례가 있었음).
+  let localPath = null
+  if (videoUrl.startsWith('/output/')) {
+    localPath = path.join(__dirname, '..', videoUrl)
+  } else {
+    try {
+      const parsed = new URL(videoUrl)
+      if (parsed.pathname.startsWith('/output/')) {
+        localPath = path.join(__dirname, '..', parsed.pathname)
+      }
+    } catch {}
+  }
   if (localPath && fs.existsSync(localPath)) {
     videoBuffer = fs.readFileSync(localPath)
   } else {

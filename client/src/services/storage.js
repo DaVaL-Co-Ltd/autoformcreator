@@ -65,8 +65,16 @@ function isLocalOutputUrl(url) {
   if (url.startsWith('/output/')) return true
   try {
     const u = new URL(url)
-    const isLocalhost = u.hostname === 'localhost' || u.hostname === '127.0.0.1'
-    return isLocalhost && u.pathname.startsWith('/output/')
+    if (!u.pathname.startsWith('/output/')) return false
+    // localhost · 127.0.0.1 · API_BASE 가 가리키는 서버(Render 등) 의 /output/ 은
+    // 모두 ephemeral 디스크라 deploy 마다 사라진다. Supabase Storage 로 옮겨야 한다.
+    if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true
+    if (API_BASE) {
+      try {
+        if (u.hostname === new URL(API_BASE).hostname) return true
+      } catch {}
+    }
+    return false
   } catch {
     return false
   }
