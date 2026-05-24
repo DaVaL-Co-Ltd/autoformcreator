@@ -481,12 +481,15 @@ function buildSrt(scenes, duration, sceneDurations, crossfadeDur) {
   for (let si = 0; si < scenes.length; si++) {
     const scene = scenes[si]
     const narration = String(scene.narration || '')
+    // 시간 계산은 narration(TTS 길이) 기준. 화면 표시 텍스트는 caption 이 있으면 그걸 쓴다
+    // (caption: 숫자·기호 원본 표기. narration: TTS 발음용 한글 표기).
+    const captionText = String(scene.caption || '').trim() || narration
     const sceneDur = useActual ? sceneDurations[si] : (narration.length / totalChars) * duration
     // 크로스페이드 겹침(xf)을 빼서 씬 진행 간격·자막 구간을 잡는다 (전환 구간엔 자막 미배치).
     // 무음/빈 씬도 시간축에서 건너뛰어야 자막이 밀리지 않는다.
     const span = useActual ? Math.max(0.1, sceneDur - xf) : sceneDur
     if (!narration.trim()) { currentTime += span; continue }
-    const lines = splitNarration(narration, maxCharsPerLine)
+    const lines = splitNarration(captionText, maxCharsPerLine)
     const blocks = []
     const linesPerBlock = 2
     for (let j = 0; j < lines.length; j += linesPerBlock) blocks.push(lines.slice(j, j + linesPerBlock).join('\n'))

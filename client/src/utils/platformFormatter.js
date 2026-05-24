@@ -84,8 +84,9 @@ export function formatInstagramReelsRequest(shortsScript = {}, videoUrl = '') {
     if (shortsScript.hook) captionParts.push(stripMarkdownEmphasis(shortsScript.hook))
     if (Array.isArray(shortsScript.scenes)) {
       shortsScript.scenes.forEach((scene, index) => {
-        if (scene?.narration) {
-          captionParts.push(`${index + 1}. ${stripMarkdownEmphasis(scene.narration)}`)
+        const text = scene?.caption || scene?.narration
+        if (text) {
+          captionParts.push(`${index + 1}. ${stripMarkdownEmphasis(text)}`)
         }
       })
     }
@@ -136,8 +137,9 @@ export function formatYouTubeRequest(shortsScript = {}, videoUrl = '', scheduled
     if (shortsScript.hook) descParts.push(stripMarkdownEmphasis(shortsScript.hook))
     if (Array.isArray(shortsScript.scenes)) {
       shortsScript.scenes.forEach((scene, index) => {
-        if (scene.narration) {
-          descParts.push(`${index + 1}. ${stripMarkdownEmphasis(scene.narration)}`)
+        const text = scene.caption || scene.narration
+        if (text) {
+          descParts.push(`${index + 1}. ${stripMarkdownEmphasis(text)}`)
         }
       })
     }

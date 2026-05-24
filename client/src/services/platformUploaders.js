@@ -270,8 +270,9 @@ export async function uploadToYoutube(extractionId, options = {}) {
   if (script?.hook) descParts.push(stripMarkdownEmphasis(script.hook))
   if (Array.isArray(script?.scenes)) {
     script.scenes.forEach((scene, index) => {
-      if (scene.narration) {
-        descParts.push(`${index + 1}. ${stripMarkdownEmphasis(scene.narration)}`)
+      const text = scene.caption || scene.narration
+      if (text) {
+        descParts.push(`${index + 1}. ${stripMarkdownEmphasis(text)}`)
       }
     })
   }

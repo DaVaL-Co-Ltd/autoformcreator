@@ -207,10 +207,12 @@ export default function ContentEditModal({ channel, channelLabel, content, onClo
       <AreaField label="오프닝 훅" value={draft.hook} rows={2} onChange={(v) => setTop('hook', v)} />
       {(Array.isArray(draft.scenes) ? draft.scenes : []).map((scene, i) => (
         <SectionCard key={i} title={`씬 ${scene.sceneNumber || i + 1}`}>
-          <AreaField label="나레이션" value={scene.narration} rows={3}
+          <AreaField label="나레이션 (TTS 음성용 · 한글 발음 표기)" value={scene.narration} rows={3}
             onChange={(v) => setArrayItem('scenes', i, 'narration', v)} />
+          <AreaField label="자막 (화면 표시용 · 숫자·기호 원본 표기)" value={scene.caption || ''} rows={3}
+            onChange={(v) => setArrayItem('scenes', i, 'caption', v)} />
           {scene.textOverlay !== undefined && (
-            <TextField label="자막" value={scene.textOverlay}
+            <TextField label="텍스트 오버레이" value={scene.textOverlay}
               onChange={(v) => setArrayItem('scenes', i, 'textOverlay', v)} />
           )}
         </SectionCard>

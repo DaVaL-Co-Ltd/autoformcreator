@@ -3420,7 +3420,7 @@ ${parsedText}
                                 <span className="text-xs font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded">씬 {scene.sceneNumber}</span>
                                 <span className="text-xs text-text-muted">{scene.duration}초</span>
                               </div>
-                              <p className="text-sm text-text">{scene.narration}</p>
+                              <p className="text-sm text-text">{scene.caption || scene.narration}</p>
                               {scene.textOverlay && <p className="text-xs text-text-muted mt-1">{scene.textOverlay}</p>}
                             </div>
                           ))}

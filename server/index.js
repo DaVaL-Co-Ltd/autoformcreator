@@ -1050,7 +1050,10 @@ app.post('/api/subtitle/burn', async (req, res) => {
 
     for (const scene of scenes) {
       const sceneDur = (scene.narration.length / totalChars) * duration
-      const lines = splitNarration(scene.narration, maxCharsPerLine)
+      // 시간 계산은 narration(TTS 길이) 기준. 화면 표시 텍스트는 caption 이 있으면 그걸 쓴다
+      // (caption: 숫자·기호 원본 표기. narration: TTS 발음용 한글 표기).
+      const captionText = String(scene.caption || '').trim() || scene.narration
+      const lines = splitNarration(captionText, maxCharsPerLine)
       // Group lines into subtitle blocks while keeping them readable.
       const blocks = []
       const linesPerBlock = 2
@@ -1834,7 +1837,8 @@ function buildShortsUploadPayload({ script = {}, videoUrl, scheduledAt = null })
     if (script.hook) descriptionParts.push(stripMarkdownText(script.hook))
     if (Array.isArray(script.scenes)) {
       script.scenes.forEach((scene, index) => {
-        if (scene.narration) descriptionParts.push(`${index + 1}. ${stripMarkdownText(scene.narration)}`)
+        const text = scene.caption || scene.narration
+        if (text) descriptionParts.push(`${index + 1}. ${stripMarkdownText(text)}`)
       })
     }
     if (script.cta) descriptionParts.push(stripMarkdownText(script.cta))

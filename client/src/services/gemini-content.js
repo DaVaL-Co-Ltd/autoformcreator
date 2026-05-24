@@ -647,6 +647,7 @@ function sanitizeShortsContent(content) {
       ? content.scenes.map((scene) => ({
           ...scene,
           narration: stripMarkdownEmphasis(scene?.narration || ''),
+          caption: stripMarkdownEmphasis(scene?.caption || ''),
           textOverlay: stripMarkdownEmphasis(scene?.textOverlay || ''),
         }))
       : [],
@@ -1146,6 +1147,7 @@ ${buildInstagramCaptionRules()}
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
 - 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 - scenes는 3개 이상으로 구성하세요.
 - 총 길이는 20~30초 사이로 작성하세요.
@@ -1219,7 +1221,8 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
       {
         "sceneNumber": 1,
         "duration": "6",
-        "narration": "나레이션",
+        "narration": "TTS용 한글 발음 텍스트",
+        "caption": "자막용 원본 표기 텍스트(숫자·기호 유지)",
         "visualDescription": "Visual description in English",
         "textOverlay": "텍스트 오버레이"
       }
@@ -1264,7 +1267,7 @@ const CHANNEL_SCHEMAS = {
   blog: `"blog":{"title":"블로그 제목","metaDescription":"메타 설명","introduction":"글 소개","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English","cardSummary":{"headline":"카드 헤드라인","bullets":["불릿1","불릿2"]}}],"tags":["태그"],"summary":"글 요약"}`,
   newsletter: `"newsletter":{"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`,
   instagram: `"instagram":{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`,
-  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
+  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"TTS용 한글 발음 텍스트","caption":"자막용 원본 표기 텍스트(숫자·기호 유지)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
 }
 
 const CHANNEL_LABELS = {
@@ -1296,6 +1299,7 @@ ${buildInstagramCaptionRules()}
 ## 유튜브 숏폼 규칙
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
 - 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 
 ${buildBlogTitleRules()}
@@ -1425,8 +1429,9 @@ function buildShortsConceptFewShot(conceptId) {
 선택된 컨셉: ${concept.label}
 아래 testScript 는 이 컨셉의 정확한 JSON 출력 포맷 예시입니다.
 scenes[].layout 같은
-메타필드 패턴을 그대로 따라하세요. narration / visualDescription / textOverlay 는
+메타필드 패턴을 그대로 따라하세요. narration / caption / visualDescription / textOverlay 는
 현재 입력 데이터 기반으로 새로 작성하되 layout 등의 메타필드는 예시와 동일한 구조로 채우세요.
+참고: testScript 예시에 caption 필드가 없더라도, 실제 출력에는 모든 씬에 caption 필드를 반드시 포함하세요(자막용 원본 표기 텍스트).
 
 \`\`\`json
 ${JSON.stringify(concept.testScript, null, 2)}
@@ -1444,6 +1449,7 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - scenes는 3개 이상으로 구성하세요.
 - hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
+- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
 - 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
@@ -1463,7 +1469,7 @@ ${fewShot}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"나레이션","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
+{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"TTS용 한글 발음 텍스트","caption":"자막용 원본 표기 텍스트(숫자·기호 유지)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(
