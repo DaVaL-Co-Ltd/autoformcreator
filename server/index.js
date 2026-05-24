@@ -1872,19 +1872,24 @@ async function waitForInstagramMediaReady(mediaIds, accessToken, maxWait = 60000
 
   for (const id of mediaIds) {
     const startedAt = Date.now()
+    let lastMedia = null
     while (Date.now() - startedAt < maxWait) {
-      const media = await instagramGraphGet(id, accessToken, { fields: 'status_code' })
+      const media = await instagramGraphGet(id, accessToken, { fields: 'status_code,status' })
+      lastMedia = media
       if (media.status_code === 'FINISHED') {
         break
       }
       if (media.status_code === 'ERROR' || media.status_code === 'EXPIRED') {
-        throw new Error(`Instagram media processing failed (${id}): ${media.status_code}`)
+        const reason = media.status || media.status_code
+        console.error(`[Instagram] media ${id} failed:`, media)
+        throw new Error(`Instagram media processing failed (${id}): ${reason}`)
       }
       await new Promise((resolve) => setTimeout(resolve, interval))
     }
 
     if (Date.now() - startedAt >= maxWait) {
-      throw new Error(`Instagram media processing timed out (${id})`)
+      const reason = lastMedia?.status || lastMedia?.status_code || 'unknown'
+      throw new Error(`Instagram media processing timed out (${id}): ${reason}`)
     }
   }
 }
