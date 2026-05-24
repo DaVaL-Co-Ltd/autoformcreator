@@ -45,9 +45,9 @@ function registerOptionalFont(filename, family) {
 
 registerOptionalFont('PretendardVariable.ttf', 'Pretendard')
 registerOptionalFont('Maplestory-Bold.ttf', 'Maplestory')
-registerOptionalFont('TmoneyRoundWind-Regular.woff', 'TmoneyRoundWind')
-registerOptionalFont('KBODiaGothic-Light.woff', 'KBODiaGothic')
-registerOptionalFont('A2z-Bold.woff2', 'A2z')
+registerOptionalFont('TmoneyRoundWind-Regular.ttf', 'TmoneyRoundWind')
+registerOptionalFont('KBODiaGothic-Light.ttf', 'KBODiaGothic')
+registerOptionalFont('A2z-Bold.ttf', 'A2z')
 
 function getLlamaParseApiKey() {
   return process.env.LLAMAPARSE_API_KEY
