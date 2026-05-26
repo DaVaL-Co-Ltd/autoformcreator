@@ -16,7 +16,9 @@ export function stripBlogAutoFormatMarkers(raw = '') {
     .replace(/_([^_\s][^_]*[^_\s])_/g, '$1')
     .replace(/(^|[^*])\*([^*\s][^*]*[^*\s])\*(?!\*)/g, '$1$2')
     .replace(/`([^`]+)`/g, '$1')
-    .replace(/~/g, '')
+    // 짝이 안 맞는 strikethrough(~~ 2개 이상 연속) 잔여물만 제거.
+    // 범위 표기로 쓰는 단일 ~("9월~2월", "9.07.(월)~11.(금)") 는 보존한다.
+    .replace(/~{2,}/g, '')
 }
 
 // 날짜 토큰("2026. 04. 14.", "3. 24.(화)") 내부의 공백을 제거한다.
@@ -449,14 +451,104 @@ export function splitLabeledLines(raw = '') {
   }).join('\n')
 }
 
+// "<직전 값 끝의 ")"> <한글 라벨>: <MM.DD. 날짜>" 패턴에서 두 번째 라벨 앞에 줄바꿈을 넣는다.
+// 라벨 시작 위치를 "값 끝의 )" 으로 고정해 "수시모집 원서접수" 같은 다단어 라벨을 통째로 살린다.
+// 트리거 조건은 라벨 뒤에 "\d{1,2}\.\d{1,2}\." 형태의 날짜가 따라올 때로만 한정해 일반 산문 오작동을 막는다.
+// 예: "원서접수: 9.07.(월)~11.(금) (3일 이상) 수시 합격자 발표 마감: 12.18.(금)" →
+//     "원서접수: 9.07.(월)~11.(금) (3일 이상)\n수시 합격자 발표 마감: 12.18.(금)"
+const INLINE_DATE_LABEL_RE = /\)[ \t]+(?=[가-힣][가-힣 \t·/]{0,30}:[ \t]*\d{1,2}\.\d{1,2}\.)/gu
+
+export function splitInlineDateLabels(raw = '') {
+  return String(raw || '').replace(INLINE_DATE_LABEL_RE, ')\n')
+}
+
+// "<직전 항목 끝의 한글 또는 ')'> + 공백 + <MM.DD.(요일)>" 패턴에서 다음 날짜 항목 앞에 줄바꿈을 넣는다.
+// 콜론 없이 "9.02.(수) 대수능모의평가 9.07.(월)~11.(금) 수시 원서접수" 처럼 날짜와 항목명이
+// 줄줄이 이어진 일정 목록을 항목당 한 줄로 끊는다.
+//
+// 트리거 조건:
+//  1) 같은 줄에 "MM.DD.(요일) + 공백 + 명사(조사가 아닌 한글)" 패턴이 2개 이상
+//  2) 날짜 뒤가 조사(부터·까지·에·동안 등)면 산문이므로 분리하지 않음
+//
+// 이 두 조건으로 "본 강의는 9.02.(수) 부터 12.18.(금) 까지 진행됩니다" 같은 산문을 건드리지 않는다.
+// 범위 끝 날짜는 "MM.DD.(요일)" 또는 약식 "DD.(요일)"을 모두 허용하고, 가운데 구분자는 "~"·공백·없음을 모두 허용한다
+// (Gemini 출력이 "9.07.(월)~11.(금)"이거나 "~"가 누락된 "9.07.(월)11.(금)"으로 나올 수 있음).
+const DATE_RANGE_SOURCE = String.raw`\d{1,2}\.\d{1,2}\.\([월화수목금토일]\)(?:[ \t]*~?[ \t]*\d{1,2}\.(?:\d{1,2}\.)?\([월화수목금토일]\))?`
+// 날짜 직후에 오면 산문으로 판단되는 한국어 조사(긴 것부터 정렬).
+const POSTPOSITION_NEGATIVE_LOOKAHEAD = '(?!부터|까지|동안|에는|에서|이전|이후|즈음|무렵|으로|이며|이고|에|로)'
+const ITEM_LIKE_DATE_RE = new RegExp(
+  `${DATE_RANGE_SOURCE}[ \\t]+${POSTPOSITION_NEGATIVE_LOOKAHEAD}[가-힣]`,
+  'gu',
+)
+const INLINE_DATE_LEAD_RE = new RegExp(
+  `(?<=[가-힣)])[ \\t]+(?=${DATE_RANGE_SOURCE}[ \\t]+${POSTPOSITION_NEGATIVE_LOOKAHEAD}[가-힣])`,
+  'gu',
+)
+
+export function splitInlineDateLeadItems(raw = '') {
+  return String(raw || '')
+    .split('\n')
+    .map((line) => {
+      const itemMatches = line.match(ITEM_LIKE_DATE_RE) || []
+      if (itemMatches.length < 2) return line
+      return line.replace(INLINE_DATE_LEAD_RE, '\n')
+    })
+    .join('\n')
+}
+
+// 글머리 헤딩 다음 빈 줄 너머에 "짧은 한글 단어(1~4자) + 한글라벨:날짜" 형태가 오면
+// 그 짧은 단어는 헤딩 꼬리에서 떨어진 것으로 보고 헤딩에 다시 붙인다.
+// 예: "✔ 9월~2월 대입 주요\n\n일정 수시모집 원서접수: 9.07.~..." →
+//     "✔ 9월~2월 대입 주요 일정\n수시모집 원서접수: 9.07.~..."
+// 트리거 조건은 본문 첫 라벨 뒤에 날짜 형식이 따라올 때로 한정한다.
+const HEADING_ORPHAN_TAIL_RE = /^(\s*)([가-힣]{1,4})\s+(?=[가-힣][가-힣\s·/]{0,30}:\s*\d{1,2}\.\d{1,2}\.)/u
+
+export function reflowOrphanHeadingTail(raw = '') {
+  const lines = String(raw || '').split('\n')
+  const out = []
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]
+    const trimmed = line.trim()
+    const isBulletHead = BULLET_LINE_PREFIX_RE.test(trimmed) && !trimmed.endsWith(':')
+
+    if (!isBulletHead) {
+      out.push(line)
+      continue
+    }
+
+    let j = i + 1
+    while (j < lines.length && lines[j].trim() === '') j += 1
+    if (j >= lines.length) {
+      out.push(line)
+      continue
+    }
+
+    const nextLine = lines[j]
+    const match = nextLine.match(HEADING_ORPHAN_TAIL_RE)
+    if (!match) {
+      out.push(line)
+      continue
+    }
+
+    const [, indent, word] = match
+    const rest = nextLine.slice(indent.length + word.length).trimStart()
+    out.push(`${line.replace(/\s+$/, '')} ${word}`)
+    out.push(`${indent}${rest}`)
+    i = j
+  }
+
+  return out.join('\n')
+}
+
 export function sanitizeBlogBodyForDisplay(raw = '') {
-  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw))))))
+  return splitLabeledLines(splitNumberedListItems(splitInlineDateLeadItems(splitInlineDateLabels(reflowOrphanHeadingTail(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw)))))))))
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 }
 
 export function sanitizeBlogBodyForUpload(raw = '') {
-  return splitLabeledLines(splitNumberedListItems(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw))))))
+  return splitLabeledLines(splitNumberedListItems(splitInlineDateLeadItems(splitInlineDateLabels(reflowOrphanHeadingTail(reflowBulletLabelLines(normalizeDateTokens(convertMarkdownTables(stripBlogAutoFormatMarkers(raw)))))))))
     .replace(/^\s*---+\s*$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
