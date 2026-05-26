@@ -1117,14 +1117,14 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const maxCharsPerLine = 18
     let srtContent = ''
     let srtIdx = 1
-    const totalChars = scenes.reduce((sum, s) => sum + (s.narration || '').length, 0) || 1
+    // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration 만 있음) 도 함께 지원.
+    const sceneSpokenText = (s) => String(s?.caption || s?.narration || '')
+    const totalChars = scenes.reduce((sum, s) => sum + sceneSpokenText(s).length, 0) || 1
     let currentTime = 0
 
     for (const scene of scenes) {
-      const sceneDur = (scene.narration.length / totalChars) * duration
-      // 시간 계산은 narration(TTS 길이) 기준. 화면 표시 텍스트는 caption 이 있으면 그걸 쓴다
-      // (caption: 숫자·기호 원본 표기. narration: TTS 발음용 한글 표기).
-      const captionText = String(scene.caption || '').trim() || scene.narration
+      const captionText = sceneSpokenText(scene).trim()
+      const sceneDur = (sceneSpokenText(scene).length / totalChars) * duration
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
       const blockChars = blocks.map(b => b.replace(/\n/g, '').length)
       const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
@@ -1153,7 +1153,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const titleOverlays = []
     let titleTime = 0
     for (const scene of scenes) {
-      const sceneDur = (scene.narration.length / totalChars) * duration
+      const sceneDur = (sceneSpokenText(scene).length / totalChars) * duration
       if (scene.type === 'avatar_keyword' && scene.keyword) {
         const animatedPath = animatedTitleMap[scene.sceneNumber]
         if (animatedPath) {

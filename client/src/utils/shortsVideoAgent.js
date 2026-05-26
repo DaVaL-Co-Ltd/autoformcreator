@@ -1,26 +1,27 @@
-﻿// 오프닝 훅을 첫 'speaking' 씬의 narration/caption 에 흡수시키고 hook 필드를 비운 사본을 반환.
+﻿// 오프닝 훅을 첫 'speaking' 씬의 caption 에 흡수시키고 hook 필드를 비운 사본을 반환.
 // HeyGen 표준 endpoint, Video Agent, SRT 자막 모두 동일한 변환된 script 를 사용하므로
-// hook 이 별도 첫 대사로 한 번, 첫 씬 narration 으로 또 한 번 — 식의 중복 진행을 막는다.
+// hook 이 별도 첫 대사로 한 번, 첫 씬 본문으로 또 한 번 — 식의 중복 진행을 막는다.
+// caption 은 자막이자 TTS 입력으로 함께 쓰이는 단일 필드.
+// 옛 스크립트는 narration 만 있을 수 있어 fallback 으로 함께 본다.
 // 원본 script 는 그대로 두고 새 객체를 반환(편집/저장 데이터는 hook 필드 유지).
 export function absorbHookIntoFirstScene(script) {
   const hookText = String(script?.hook || '').trim()
   if (!hookText) return script
   const scenes = Array.isArray(script?.scenes) ? script.scenes : []
   if (scenes.length === 0) return script
-  // quiz-countdown 처럼 무음 씬은 skip, narration 이 있는 첫 씬을 고른다.
+  // quiz-countdown 처럼 무음 씬은 skip, 발화 텍스트가 있는 첫 씬을 고른다.
+  const sceneSpokenText = (s) => String(s?.caption || s?.narration || '').trim()
   const targetIdx = scenes.findIndex((s) =>
-    s && s.layout !== 'quiz-countdown' && String(s?.narration || '').trim(),
+    s && s.layout !== 'quiz-countdown' && sceneSpokenText(s),
   )
   if (targetIdx < 0) return script
   const sep = /[.!?。！？]$/.test(hookText) ? ' ' : '. '
   const target = scenes[targetIdx] || {}
-  const prevNarration = String(target?.narration || '').trim()
-  const prevCaption = String(target?.caption || '').trim() || prevNarration
+  const prevCaption = sceneSpokenText(target)
   const nextScenes = scenes.map((s, i) => {
     if (i !== targetIdx) return s
     return {
       ...s,
-      narration: `${hookText}${sep}${prevNarration}`.trim(),
       caption: prevCaption ? `${hookText}${sep}${prevCaption}`.trim() : hookText,
     }
   })
@@ -77,7 +78,9 @@ function hasDenseDataFormatting(text) {
 }
 
 function sceneNeedsTextOnlyOverlay(scene) {
-  const combined = [scene?.narration, scene?.textOverlay].filter(Boolean).join(' ')
+  // caption 이 새 표준. 옛 데이터 호환을 위해 narration 도 함께 본다.
+  const spoken = scene?.caption || scene?.narration
+  const combined = [spoken, scene?.textOverlay].filter(Boolean).join(' ')
   const dataSignalCount = countDataSignals(combined)
   const overlayLength = String(scene?.textOverlay || '').trim().length
   const denseFormatting = hasDenseDataFormatting(combined)
@@ -92,6 +95,8 @@ function sceneNeedsTextOnlyOverlay(scene) {
 function buildSceneLines(script) {
   return (script?.scenes || [])
     .map((scene) => {
+      // caption 이 새 표준. 옛 데이터(narration 만 있음)도 지원하기 위해 fallback.
+      const spokenText = scene?.caption || scene?.narration || ''
       // noTextOverlay: true 인 씬은 화면 텍스트 카드를 일절 넣지 않으므로 textOverlay 도 프롬프트에서 제외한다.
       const overlay = scene?.textOverlay && !scene?.noTextOverlay ? ` / 화면 텍스트: ${scene.textOverlay}` : ''
       // layout === 'infographic-full' 은 컨셉이 명시적으로 "이 씬은 아바타 없는 풀화면 인포그래픽" 으로
@@ -100,7 +105,7 @@ function buildSceneLines(script) {
         const visual = scene?.visualDescription
           ? ` / Visual content for HeyGen to render: ${scene.visualDescription}`
           : ''
-        return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${scene.narration}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The chart, graph, or table MUST be ANIMATED motion graphics — bars grow in, line graphs draw on progressively, pie/donut segments sweep in, key numbers count up — never a flat static image. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
+        return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${spokenText}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The chart, graph, or table MUST be ANIMATED motion graphics — bars grow in, line graphs draw on progressively, pie/donut segments sweep in, key numbers count up — never a flat static image. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
       }
       // noTextOverlay: true 면 화면 텍스트 카드/키워드 오버레이를 금지하고 아바타만 풀프레임으로
       // (briefing_dongwan 인트로·아웃트로처럼 깔끔한 등장/마무리 컷). 모션 등 다른 연출은 그대로 둔다.
@@ -109,7 +114,7 @@ function buildSceneLines(script) {
         : sceneNeedsTextOnlyOverlay(scene)
           ? ' / Layout direction: this scene is unusually data-dense, so switch away from the avatar and use a clean full-screen text or infographic scene.'
           : ' / Layout direction: keep the avatar on screen and use only a small, compact text overlay away from the subtitle zone and avatar face.'
-      return `- 장면 ${scene.sceneNumber} (${scene.duration}초): ${scene.narration}${overlay}${layoutDirection}`
+      return `- 장면 ${scene.sceneNumber} (${scene.duration}초): ${spokenText}${overlay}${layoutDirection}`
     })
     .join('\n')
 }
@@ -125,7 +130,7 @@ export function buildShortsVideoAgentPrompt({
   videoStyle = 'avatar',
   narrationTone = 'auto',
 }) {
-  const duration = script?.duration || '30'
+  const duration = script?.duration || '60'
   const sceneLines = buildSceneLines(script)
   const avatarName = avatar?.name || ''
   const avatarKind = avatar?.kind || 'avatar'

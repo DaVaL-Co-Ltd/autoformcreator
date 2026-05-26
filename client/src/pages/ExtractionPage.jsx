@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
-  XCircle, AlertTriangle, RefreshCw, Film, Settings2, ToggleLeft, ToggleRight, Download,
+  XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
   Mail, Play
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
@@ -35,6 +35,7 @@ import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { absorbHookIntoFirstScene, buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+import { toSpokenText } from '../utils/shortsTtsText.js'
 import { callGeminiWithFallback, findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
   BLOG_CATEGORY_OPTIONS,
@@ -262,73 +263,6 @@ const aiServiceInfo = {
   gemini: { name: 'Gemini', color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
 }
 
-const MOCK_DELAY = 800
-
-const mockParsedText = `[데모 모드] 2026년 디지털 교육 전환 트렌드 보고서
-
-1. 교육 현장 도입 현황
-- 초중고 디지털 학습 플랫폼 도입률: 78.4%
-- 대학 및 평생교육기관 LMS 활용률: 83.1%
-- AI 기반 학습 지원 도구 도입 학교 비율: 46.7%
-
-2. 학습 성과 변화
-- 개인화 학습 적용 시 과제 완수율: +26.8%
-- 실시간 피드백 제공 시 학습 지속률: +18.5%
-- AI 튜터 활용 수업 만족도: 91.2점
-
-3. 주요 운영 방식
-- 실시간 수업과 비동기 학습 병행: 64.3%
-- 마이크로러닝 콘텐츠 운영: 58.9%
-- 교사 지원형 자동 채점 및 피드백: 42.6%
-
-4. 핵심 트렌드
-- AI 기반 맞춤형 학습 경로 추천 확대
-- 짧고 반복 가능한 마이크로러닝 콘텐츠 증가
-- 교사 행정 업무를 줄이는 자동 피드백 도구 확산
-- 온오프라인 혼합형 수업 운영 모델 정착`
-
-// 데모 모드에서는 Gemini 를 호출하지 않고 아래 더미 데이터를 그대로 사용한다.
-const mockVerification = {
-  isValid: true,
-  issues: [],
-  correctedText: mockParsedText,
-  confidence: 0.95,
-}
-
-const mockSummary = {
-  title: '2026 디지털 교육 전환 트렌드 보고서',
-  keyData: [
-    { label: '초중등 AI 학습 플랫폼 도입률', value: '78.4%', context: '2026년 기준 전국 표본' },
-    { label: '대학·평생교육기관 LMS 활용률', value: '83.1%', context: '전년 대비 확대' },
-    { label: '개인화 학습 과제 완수율', value: '+26.8%', context: '맞춤형 수업 적용 시' },
-    { label: '실시간 피드백 학습 지속률', value: '+18.5%', context: '즉시 피드백 환경' },
-    { label: 'AI 튜터 활용 만족도', value: '91.2점', context: '학습자 응답' },
-    { label: '마이크로러닝 운영 비율', value: '58.9%', context: '전체 콘텐츠 중' },
-  ],
-  insights: [
-    'AI 기반 개인화 학습이 과제 완수율과 지속률을 동시에 끌어올린다.',
-    '실시간 피드백과 마이크로러닝이 디지털 학습 만족도를 좌우한다.',
-    '혼합형 수업 모델(실시간 + 비동기)이 교육기관 표준으로 정착하고 있다.',
-  ],
-  keywords: ['디지털 전환', 'AI 학습', '개인화 학습', '실시간 피드백', '마이크로러닝', '혼합형 수업'],
-  summary:
-    '2026년 교육 기관 다수가 AI 기반 개인화 학습과 실시간 피드백을 도입했고, 마이크로러닝과 혼합형 수업 모델이 학습 성과를 끌어올리는 핵심 요소로 자리잡고 있다.',
-  rawDataPoints: [
-    '초중등 교육기관의 78.4%가 AI 기반 학습 플랫폼을 도입',
-    '대학 및 평생교육기관 LMS 활용률 83.1%',
-    '개인화 학습 적용 시 과제 완수율 26.8% 상승',
-    '실시간 피드백 제공 시 학습 지속률 18.5% 상승',
-    'AI 튜터 활용 수업 만족도 91.2점',
-    '마이크로러닝 콘텐츠 운영 비율 58.9%',
-  ],
-  blogLabelHints: [
-    { keyPhrase: '디지털 전환', heading: '학교에 자리잡은 AI 플랫폼' },
-    { keyPhrase: '개인화 학습 효과', heading: '맞춤형 수업이 만든 변화' },
-    { keyPhrase: '실시간 피드백', heading: '즉시 피드백이 만드는 힘' },
-    { keyPhrase: '마이크로러닝', heading: '짧고 자주 배우는 흐름' },
-  ],
-}
-
 const BLOG_IMAGE_STYLE_EXAMPLES = {
   pastel: {
     src: '/prompt-examples/style-pastel.png',
@@ -547,7 +481,6 @@ export default function ExtractionPage() {
   const blogImageInputRef = useRef(null)
   const [isDragging, setIsDragging] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const [demoMode, setDemoMode] = useState(true)
   const [selectedChannels, setSelectedChannels] = useState({ blog: true, newsletter: true, instagram: true, shorts: true })
   const [channelsConfirmed, setChannelsConfirmed] = useState(false)
   const [file, setFile] = useState(null)
@@ -1034,7 +967,7 @@ export default function ExtractionPage() {
 
     let text = ''
     try {
-      text = demoMode ? mockParsedText : await parsePDF(file)
+      text = await parsePDF(file)
       setParsedText(text)
     } catch (err) {
       errors.push({ service: 'gemini', message: `PDF 분석 실패 - ${err.message}` })
@@ -1045,22 +978,16 @@ export default function ExtractionPage() {
     }
 
     try {
-      if (demoMode) {
-        // 데모 모드: Gemini 호출 없이 더미 검증 결과 사용
-        setVerification(mockVerification)
-        setParsedText(mockVerification.correctedText || text)
-      } else {
-        const verified = await verifyParsedContent(text, { focus: promptSettings.analysis.focus, extra: promptSettings.analysis.extra })
-        setVerification(verified)
-        // AI 코멘트 제거: "## 발견된 이슈", "## 수정된 텍스트" 등 메타 헤더와 그 직후 빈 줄 제거
-        let cleaned = (verified.correctedText || text)
-          .replace(/^#{1,3}\s*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과|검증\s*결과|이슈\s*수정|오타\s*수정).*\n*/gm, '')
-          .replace(/^\*\*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과).*\n*/gm, '')
-          .replace(/^---+\s*\n*/gm, '')
-          .replace(/^\n{3,}/gm, '\n\n')
-          .trim()
-        setParsedText(cleaned)
-      }
+      const verified = await verifyParsedContent(text, { focus: promptSettings.analysis.focus, extra: promptSettings.analysis.extra })
+      setVerification(verified)
+      // AI 코멘트 제거: "## 발견된 이슈", "## 수정된 텍스트" 등 메타 헤더와 그 직후 빈 줄 제거
+      let cleaned = (verified.correctedText || text)
+        .replace(/^#{1,3}\s*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과|검증\s*결과|이슈\s*수정|오타\s*수정).*\n*/gm, '')
+        .replace(/^\*\*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과).*\n*/gm, '')
+        .replace(/^---+\s*\n*/gm, '')
+        .replace(/^\n{3,}/gm, '\n\n')
+        .trim()
+      setParsedText(cleaned)
     } catch (err) {
       errors.push({ service: 'gemini', message: `데이터 검증 실패 - ${err.message}` })
       setVerification({ isValid: false, issues: ['검증을 건너뛰었습니다.'], confidence: 0 })
@@ -1087,14 +1014,7 @@ export default function ExtractionPage() {
     setSummary(null)
 
     try {
-      let result
-      if (demoMode) {
-        // 데모 모드: Gemini 호출 없이 더미 요약 사용
-        await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY))
-        result = mockSummary
-      } else {
-        result = await summarizeContent(targetText, { keywords: promptSettings.summary.keywords, style: promptSettings.summary.style, extra: promptSettings.summary.extra })
-      }
+      const result = await summarizeContent(targetText, { keywords: promptSettings.summary.keywords, style: promptSettings.summary.style, extra: promptSettings.summary.extra })
       if (result.title === '요약 생성 실패') {
         addStepErrors('summary', [{ service: 'gemini', message: 'Gemini 응답을 JSON으로 파싱하지 못했습니다. 재시도해주세요.' }])
         setCurrentStep(2)
@@ -1692,8 +1612,10 @@ DO NOT:
           setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '연속 테이크 영상 준비 중...' }))
           const soloAvatarId = conceptAvatarIds[0]
           const soloPreset = findPresetShortsAvatar(soloAvatarId) || fallbackPreset
+          // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration 만 있음)도 함께 지원.
+          // toSpokenText 는 분수·영문 약어처럼 HeyGen 이 잘못 읽는 표기만 한글로 변환한다.
           const mergedText = scenesForStandard
-            .map((s) => String(s?.narration || '').trim())
+            .map((s) => toSpokenText(String(s?.caption || s?.narration || '').trim()))
             .filter(Boolean)
             .join(' ')
           const mergedInput = {
@@ -1724,7 +1646,9 @@ DO NOT:
                 ? { type: 'silence', duration: Number(scene?.duration) || 3 }
                 : {
                     type: 'text',
-                    input_text: String(scene?.narration || '').trim(),
+                    // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration) 도 함께 지원.
+                    // toSpokenText 가 분수·영문 약어만 한글로 변환해 HeyGen TTS 가 자연스럽게 읽도록 한다.
+                    input_text: toSpokenText(String(scene?.caption || scene?.narration || '').trim()),
                     voice_id: preset?.defaultVoiceId,
                   },
             }
@@ -2034,8 +1958,8 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    // 숏폼 영상
-    if (selectedChannels.shorts && !avatarImage) incomplete.push('숏폼 아바타')
+    // 숏폼 영상 — 아바타는 수동 클릭(setAvatarConfirmed) OR 컨셉 자동 선택(setAvatarConfirmed) 둘 중 하나라도 일어나면 통과
+    if (selectedChannels.shorts && !avatarConfirmed) incomplete.push('숏폼 아바타')
     if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
     // 실패 항목
     const contentErrors = (stepErrors.content || []).filter(e => isSelectedErrorChannel(e.channel))
@@ -2171,10 +2095,9 @@ ${parsedText}
       shortsScript,
       blogImages: blogImagesForResult, instagramImages, shortsVideo,
       blogFooterEnabled: promptSettings.content.includeBlogFooter !== false,
-      fileName: file?.name || (demoMode ? `demo_${new Date().toISOString().slice(0, 10)}.pdf` : undefined),
+      fileName: file?.name,
       fileBase64,
       savedFromExtraction: true,
-      isDemo: demoMode,
       draftKey: `result_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }
 
@@ -2814,14 +2737,6 @@ ${parsedText}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setDemoMode(prev => !prev)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all shrink-0 ${demoMode ? 'bg-warning/15 text-warning border border-warning/30' : 'bg-surface-light text-text-muted border border-border hover:border-primary/30'}`}
-              title="데모 모드 전환"
-            >
-              {demoMode ? <ToggleRight size={12} /> : <ToggleLeft size={12} />}
-              데모
-            </button>
             {CHANNEL_OPTIONS.map(ch => {
               const Icon = ch.icon
               const isSelected = selectedChannels[ch.key]
@@ -2891,40 +2806,20 @@ ${parsedText}
         </div>
         <div className="p-5">
           {!file ? (
-            demoMode ? (
-              <div className="rounded-xl border border-warning/25 bg-warning/5 p-6 text-center">
-                <Upload size={28} className="mx-auto mb-3 text-warning" />
-                <p className="text-sm text-text">데모 모드에서는 샘플 문서로 바로 진행합니다.</p>
-                <p className="text-xs text-text-muted mt-1">파일 업로드 없이 분석, 콘텐츠, 이미지, 숏폼 생성 흐름을 확인할 수 있습니다.</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFile({ name: 'demo_report.pdf', size: 2048000, type: 'application/pdf' })
-                    clearStepErrors('upload')
-                    setCurrentStep(2)
-                  }}
-                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-all hover:bg-primary-dark"
-                >
-                  <Sparkles size={14} />
-                  데모 파일로 시작
-                </button>
-              </div>
-            ) : (
-              <div
-                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
-                  ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.webp,text/plain,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
-                <Upload size={28} className="mx-auto mb-3 text-text-muted" />
-                <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
+            <div
+              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all
+                ${isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'}`}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.hwp,.hwpx,.docx,.doc,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.webp,text/plain,image/jpeg,image/png,image/webp" onChange={handleFileInput} />
+              <Upload size={28} className="mx-auto mb-3 text-text-muted" />
+              <p className="text-sm text-text">파일을 드래그하거나 <span className="text-primary font-medium">클릭</span>하여 업로드</p>
 
-                <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, TXT, 이미지(JPG/PNG/WEBP) 지원</p>
-              </div>
-            )
+              <p className="text-xs text-text-muted mt-1">PDF, HWP, DOCX, PPTX, TXT, 이미지(JPG/PNG/WEBP) 지원</p>
+            </div>
           ) : (
             <div className="flex items-center gap-4 p-4 bg-success/5 rounded-lg border border-success/20">
               <FileText size={24} className="text-success" />
@@ -3151,9 +3046,11 @@ ${parsedText}
           || (retrying === 'content-all' && !!selectedChannels[row.key])
         const generatingLabel = getChannelGenerationLabel(row.key)
         const isAvailable = currentStep >= row.stepId || !!row.data
+        // 일괄 생성 흐름에서 채널별 프롬프트를 미리 편집할 수 있도록, 콘텐츠 단계에 진입했거나 이미 결과가 있으면 항상 편집 가능.
+        const promptEditable = currentStep >= 3 || !!row.data
         return (
           <div key={row.key} id={`step-${row.stepId}`} className="flex gap-4 items-stretch">
-            <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${!isAvailable ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`w-[34%] shrink-0 bg-surface rounded-xl border border-border p-4 space-y-3 ${!promptEditable ? 'opacity-50 pointer-events-none' : ''}`}>
               <p className="text-sm font-semibold text-text-muted flex items-center gap-2"><Settings2 size={14} /> {row.label} 설정</p>
               {PF('글의 어조', { type: 'select', value: promptSettings.content[`${row.key}Tone`], onChange: v => updatePrompt('content', `${row.key}Tone`, v), options: [{ value: 'auto', label: '자동' }, { value: 'friendly', label: '친근한' }, { value: 'professional', label: '전문적인' }, { value: 'humorous', label: '유머러스' }, { value: 'formal', label: '진지한' }] })}
               {row.key === 'blog' && (

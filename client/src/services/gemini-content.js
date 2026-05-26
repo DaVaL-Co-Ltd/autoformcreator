@@ -644,12 +644,15 @@ function sanitizeShortsContent(content) {
     uploadTitle: stripMarkdownEmphasis(content.uploadTitle || ''),
     uploadDescription: stripMarkdownEmphasis(content.uploadDescription || ''),
     scenes: Array.isArray(content.scenes)
-      ? content.scenes.map((scene) => ({
-          ...scene,
-          narration: stripMarkdownEmphasis(scene?.narration || ''),
-          caption: stripMarkdownEmphasis(scene?.caption || ''),
-          textOverlay: stripMarkdownEmphasis(scene?.textOverlay || ''),
-        }))
+      ? content.scenes.map((scene) => {
+          // caption 이 새 표준. 옛 데이터에 narration 만 있으면 caption 으로 끌어올린다.
+          const caption = stripMarkdownEmphasis(scene?.caption || scene?.narration || '')
+          return {
+            ...scene,
+            caption,
+            textOverlay: stripMarkdownEmphasis(scene?.textOverlay || ''),
+          }
+        })
       : [],
   }
 }
@@ -1145,12 +1148,12 @@ ${buildInstagramCardRules()}
 ${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
-- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
-- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
-- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
+- hook, scenes[].caption, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
+- 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
+- scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
 - scenes는 3개 이상으로 구성하세요.
-- 총 길이는 20~30초 사이로 작성하세요.
+- 총 길이는 60초(1분)를 넘기지 마세요. 내용 분량이 1분을 초과하면 핵심만 남겨 1분 이내로 줄이세요. 1분보다 짧게 끝나는 것은 자연스러우며, 굳이 1분에 맞추려고 내용을 늘리거나 반복하지 마세요.
 - uploadTitle은 60자 이내, uploadDescription은 200~400자 사이로 작성하세요.
 - hashtags는 8~12개 배열로 반환하세요.
 
@@ -1221,8 +1224,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
       {
         "sceneNumber": 1,
         "duration": "6",
-        "narration": "TTS용 한글 발음 텍스트",
-        "caption": "자막용 원본 표기 텍스트(숫자·기호 유지)",
+        "caption": "화면 자막이자 TTS 입력으로 함께 쓰이는 텍스트(숫자·기호는 원본 표기 그대로)",
         "visualDescription": "Visual description in English",
         "textOverlay": "텍스트 오버레이"
       }
@@ -1267,7 +1269,7 @@ const CHANNEL_SCHEMAS = {
   blog: `"blog":{"title":"블로그 제목","metaDescription":"메타 설명","introduction":"글 소개","sections":[{"heading":"섹션 제목","keyPhrase":"핵심 키워드","content":"섹션 본문","imagePrompt":"Image prompt in English","cardSummary":{"headline":"카드 헤드라인","bullets":["불릿1","불릿2"]}}],"tags":["태그"],"summary":"글 요약"}`,
   newsletter: `"newsletter":{"subject":"메일 제목","preheader":"프리헤더","greeting":"인사말","headline":"헤드라인","keyPoints":["핵심 포인트"],"body":"본문","dataHighlights":[{"label":"항목","value":"값"}],"cta":{"text":"CTA","description":"설명"},"closingNote":"마무리 문구"}`,
   instagram: `"instagram":{"title":"게시물 제목","body":"게시물 본문","caption":"인스타그램 캡션","hashtags":["#태그"],"cardTopics":[{"cardNumber":1,"headline":"카드 제목","content":"카드 내용","dataPoint":"핵심 수치"}]}`,
-  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","narration":"TTS용 한글 발음 텍스트","caption":"자막용 원본 표기 텍스트(숫자·기호 유지)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
+  shorts: `"shorts":{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","caption":"화면 자막이자 TTS 입력으로 함께 쓰이는 텍스트(숫자·기호는 원본 표기 그대로)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`,
 }
 
 const CHANNEL_LABELS = {
@@ -1297,10 +1299,10 @@ ${buildInstagramCardRules()}
 ${buildInstagramCaptionRules()}
 
 ## 유튜브 숏폼 규칙
-- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
-- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
-- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
+- hook, scenes[].caption, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
+- 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
+- scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
 
 ${buildBlogTitleRules()}
 ## 블로그 규칙
@@ -1441,16 +1443,16 @@ ${JSON.stringify(concept.testScript, null, 2)}
 
 export async function generateShortsScript(summary, rawText, emphasis, options = {}) {
   const fewShot = buildShortsConceptFewShot(options.videoConceptId)
-  const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 20~30초 분량의 숏폼 대본을 작성하세요.
+  const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 숏폼 대본을 작성하세요. 총 길이는 60초(1분)를 넘기지 마세요. 내용 분량이 1분을 초과하면 핵심만 남겨 1분 이내로 줄이고, 1분보다 짧게 끝나는 것은 자연스러우니 굳이 1분에 맞추려 내용을 늘리지 마세요.
 
 ## 공통 규칙
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실은 추가하지 마세요.
 - scenes는 3개 이상으로 구성하세요.
-- hook, scenes[].narration, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
-- scenes[].narration, hook, cta는 TTS 음성으로 읽히므로 숫자·분수·단위·기호를 소리내어 읽는 그대로 한글로 풀어 쓰세요. 예: 1/2 → 이분의 일, 2/3 → 삼분의 이, 30% → 삼십 퍼센트, 3~5 → 삼에서 오, 5:3 → 오 대 삼, A4 → 에이포, $100 → 백 달러. 약어 단위는 문맥에 맞는 발음으로 풀어 쓰세요(예: 100p가 책 분량이면 백 페이지, 점수면 백 점, 적립이면 백 포인트).
-- 각 씬에는 scenes[].caption 도 반드시 함께 작성하세요. caption은 화면 하단 자막으로 표시되는 텍스트로, 같은 씬의 narration과 의미·문장 구조는 동일하되 숫자·분수·단위·기호는 원래 표기(12.3, 1/2, 30%, $100, A4, 5:3 등)를 그대로 유지하세요. narration이 "정답률은 십이 점 삼 퍼센트야" 이면 caption은 "정답률은 12.3%야" 같은 식입니다. 숫자가 없는 문장은 narration과 동일하게 적으세요.
-- 단 scenes[].textOverlay는 화면에 글자로 표시되는 자막이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하고 풀어쓰지 마세요.
+- hook, scenes[].caption, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
+- 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
+- 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
+- scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)
@@ -1469,7 +1471,7 @@ ${fewShot}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","narration":"TTS용 한글 발음 텍스트","caption":"자막용 원본 표기 텍스트(숫자·기호 유지)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
+{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","caption":"화면 자막이자 TTS 입력으로 함께 쓰이는 텍스트(숫자·기호는 원본 표기 그대로)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(
