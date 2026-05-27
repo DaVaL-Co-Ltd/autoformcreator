@@ -28,6 +28,8 @@ export default function HeygenTestPage() {
   const [myVoices, setMyVoices] = useState([])
   const [selectedAvatar, setSelectedAvatar] = useState(null) // { lookId, groupLabel, preview, defaultVoiceId }
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
+  // 아바타 그리드 카테고리 필터 — 'all' 이면 모든 카테고리, 그 외엔 단일 카테고리만 표시.
+  const [selectedCategory, setSelectedCategory] = useState('all')
   const [script, setScript] = useState(DEFAULT_TEST_SCRIPT)
   const [previewAudio, setPreviewAudio] = useState(null)
 
@@ -72,23 +74,28 @@ export default function HeygenTestPage() {
     return () => { cancelled = true }
   }, [myVoices])
 
-  // 그룹별 룩을 한 줄로 합침. 가로(16:9) 룩까지 포함해 그룹 안 전체를 노출 —
-  // 9:16 영상 프레이밍과 어울리는지는 사용자가 시각적으로 판단.
-  const expandedAvatars = useMemo(() => {
-    const result = []
+  // 그룹별 룩을 동완쌤·후라이쌤·제자 3개 카테고리로 분리. 가로(16:9) 룩까지 포함해 그룹 안 전체를 노출.
+  const avatarCategories = useMemo(() => {
+    const dongwan = []
+    const fry = []
+    const students = []
     for (const group of TEST_GROUPS) {
-      const looks = groupLooks[group.groupId] || []
-      for (const look of looks) {
-        result.push({
-          key: `${group.groupId}:${look.id}`,
-          lookId: look.id,
-          groupLabel: group.label,
-          preview: look.preview || null,
-          defaultVoiceId: group.defaultVoiceId,
-        })
-      }
+      const items = (groupLooks[group.groupId] || []).map((look) => ({
+        key: `${group.groupId}:${look.id}`,
+        lookId: look.id,
+        groupLabel: group.label,
+        preview: look.preview || null,
+        defaultVoiceId: group.defaultVoiceId,
+      }))
+      if (group.groupId === HEYGEN_AVATARS.dongwan_ssaem.avatarGroupId) dongwan.push(...items)
+      else if (group.groupId === HEYGEN_AVATARS.fry_ssaem.avatarGroupId) fry.push(...items)
+      else students.push(...items)
     }
-    return result
+    return [
+      { id: 'dongwan_ssaem', label: '동완쌤', items: dongwan },
+      { id: 'fry_ssaem', label: '후라이쌤', items: fry },
+      { id: 'students', label: '제자', items: students },
+    ]
   }, [groupLooks])
 
   const playVoiceUrl = (url) => {
@@ -171,46 +178,78 @@ export default function HeygenTestPage() {
       {/* 1. 아바타 선택 */}
       <section className="space-y-3">
         <h2 className="text-base font-semibold text-text">1. 아바타 선택</h2>
-        {expandedAvatars.length === 0 ? (
-          <p className="text-xs text-text-muted flex items-center gap-1">
-            <Loader2 size={12} className="animate-spin" /> 그룹별 룩 불러오는 중...
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {expandedAvatars.map(({ key, lookId, groupLabel, preview, defaultVoiceId }) => {
-              const isSelected = selectedAvatar?.lookId === lookId
-              return (
-                <button
-                  type="button"
-                  key={key}
-                  onClick={() => setSelectedAvatar({ lookId, groupLabel, preview, defaultVoiceId })}
-                  className={`relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
-                    isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
-                  }`}
-                  aria-label={`${groupLabel} 룩 선택`}
-                >
-                  <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
-                    {preview ? (
-                      <img src={preview} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
-                        <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
-                      </div>
-                    )}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'all', label: '전체' },
+            { id: 'dongwan_ssaem', label: '동완쌤' },
+            { id: 'fry_ssaem', label: '후라이쌤' },
+            { id: 'students', label: '제자' },
+          ].map((tab) => (
+            <button
+              type="button"
+              key={tab.id}
+              onClick={() => setSelectedCategory(tab.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                selectedCategory === tab.id
+                  ? 'bg-primary text-white'
+                  : 'bg-surface-light text-text-muted hover:bg-surface'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="space-y-5">
+          {avatarCategories
+            .filter((cat) => selectedCategory === 'all' || cat.id === selectedCategory)
+            .map((category) => (
+              <div key={category.id} className="space-y-2">
+                {selectedCategory === 'all' && (
+                  <p className="text-sm font-semibold text-text">{category.label}</p>
+                )}
+                {category.items.length === 0 ? (
+                  <p className="text-xs text-text-muted flex items-center gap-1">
+                    <Loader2 size={12} className="animate-spin" /> 불러오는 중...
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    {category.items.map(({ key, lookId, groupLabel, preview, defaultVoiceId }) => {
+                      const isSelected = selectedAvatar?.lookId === lookId
+                      return (
+                        <button
+                          type="button"
+                          key={key}
+                          onClick={() => setSelectedAvatar({ lookId, groupLabel, preview, defaultVoiceId })}
+                          className={`relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
+                            isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
+                          }`}
+                          aria-label={`${groupLabel} 룩 선택`}
+                        >
+                          <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
+                            {preview ? (
+                              <img src={preview} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
+                                <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
+                              </div>
+                            )}
+                          </div>
+                          <span className="absolute bottom-1 left-1 inline-flex items-center rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                            {groupLabel}
+                          </span>
+                          {isSelected && (
+                            <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
+                              <CheckCircle size={10} /> 선택됨
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
                   </div>
-                  <span className="absolute bottom-1 left-1 inline-flex items-center rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                    {groupLabel}
-                  </span>
-                  {isSelected && (
-                    <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
-                      <CheckCircle size={10} /> 선택됨
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
+                )}
+              </div>
+            ))}
+        </div>
       </section>
 
       {/* 2. 목소리 선택 */}
