@@ -429,7 +429,7 @@ export default function SettingsPage() {
     setTimeout(() => setBlogFooterSaved(false), 1500)
   }
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     setPwError('')
 
     if (!currentPw || !newPw || !confirmPw) {
@@ -447,7 +447,7 @@ export default function SettingsPage() {
       return
     }
 
-    const result = changePassword(currentPw, newPw)
+    const result = await changePassword(currentPw, newPw)
     if (!result.success) {
       setPwError(result.message)
       return

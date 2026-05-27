@@ -15,9 +15,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    const result = login(password)
+    const result = await login(password)
     if (result.success) {
       sessionStorage.setItem('show_desktop_helper_prompt', '1')
       navigate('/', { replace: true })

@@ -2,11 +2,21 @@ import { createContext, useState } from 'react'
 
 const AuthContext = createContext(null)
 
-// 기본 비밀번호
-const DEFAULT_PASSWORD = '1234'
+const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
-function getPassword() {
-  return localStorage.getItem('mybest_password') || DEFAULT_PASSWORD
+async function postJson(path, body) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  let data = null
+  try {
+    data = await response.json()
+  } catch {
+    /* JSON 파싱 실패는 무시 — data 는 null 로 유지 */
+  }
+  return { ok: response.ok, status: response.status, data }
 }
 
 export function AuthProvider({ children }) {
@@ -24,13 +34,19 @@ export function AuthProvider({ children }) {
   })
   const [loading] = useState(false)
 
-  const login = (password) => {
-    if (password !== getPassword()) return { success: false, message: '비밀번호가 올바르지 않습니다.' }
-
-    const userData = { name: '사용자' }
-    setUser(userData)
-    localStorage.setItem('mybest_user', JSON.stringify(userData))
-    return { success: true }
+  const login = async (password) => {
+    try {
+      const { ok, data } = await postJson('/api/auth/verify', { password })
+      if (!ok) {
+        return { success: false, message: data?.message || '비밀번호가 올바르지 않습니다.' }
+      }
+      const userData = { name: '사용자' }
+      setUser(userData)
+      localStorage.setItem('mybest_user', JSON.stringify(userData))
+      return { success: true }
+    } catch (error) {
+      return { success: false, message: error?.message || '서버와 통신할 수 없습니다.' }
+    }
   }
 
   const logout = () => {
@@ -38,10 +54,16 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('mybest_user')
   }
 
-  const changePassword = (currentPw, newPw) => {
-    if (currentPw !== getPassword()) return { success: false, message: '현재 비밀번호가 올바르지 않습니다.' }
-    localStorage.setItem('mybest_password', newPw)
-    return { success: true }
+  const changePassword = async (currentPw, newPw) => {
+    try {
+      const { ok, data } = await postJson('/api/auth/change', { currentPw, newPw })
+      if (!ok) {
+        return { success: false, message: data?.message || '비밀번호 변경에 실패했습니다.' }
+      }
+      return { success: true }
+    } catch (error) {
+      return { success: false, message: error?.message || '서버와 통신할 수 없습니다.' }
+    }
   }
 
   return (
