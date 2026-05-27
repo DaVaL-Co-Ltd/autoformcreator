@@ -30,6 +30,7 @@ const {
   deleteExtraction,
   deleteExtractionChannel,
 } = require('../api/_lib/extractionsStore')
+const authRouter = require('../api/_lib/auth')
 const fontsDir = path.join(__dirname, 'fonts')
 
 function registerOptionalFont(filename, family) {
@@ -160,6 +161,8 @@ app.use((req, res, next) => {
   }
   next()
 })
+
+app.use('/api/auth', authRouter)
 
 // LlamaParse Proxy - Upload (forward multipart as-is)
 app.post('/api/llamaparse/upload', (req, res) => {
