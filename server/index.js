@@ -310,6 +310,49 @@ app.get('/api/heygen/voices', async (req, res) => {
   }
 })
 
+// ===== HeyGen "My Voices" — 본인 계정 voice 만 필터해서 반환 =====
+// /v2/voices 는 공용 voice 도 함께 반환한다. 응답 객체에 보통 voice_type / is_public
+// 같은 단서 필드가 있으므로 그걸로 본인 voice 만 추린다.
+// HeyGen 응답 스키마가 바뀌어 휴리스틱이 깨지면 결과가 비어 보일 수 있다.
+// 그 경우 ?debug=1 쿼리로 raw 응답의 첫 항목을 함께 반환해 필터 키를 재조정한다.
+app.get('/api/heygen/my-voices', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  const debug = req.query?.debug === '1'
+  try {
+    const response = await fetch('https://api.heygen.com/v2/voices', {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
+
+    const rawVoices = data?.data?.voices || data?.voices || []
+    const myVoices = rawVoices.filter((v) => {
+      if (!v) return false
+      if (v.is_public === true) return false
+      if (typeof v.voice_type === 'string' && /public/i.test(v.voice_type)) return false
+      if (typeof v.voice_type === 'string' && /(clone|user|private|custom|mine)/i.test(v.voice_type)) return true
+      if (v.is_public === false) return true
+      // 단서 없으면 공용으로 간주해 제외 (보수적 필터)
+      return false
+    })
+
+    res.json({
+      voices: myVoices.map((v) => ({
+        voice_id: v.voice_id,
+        name: v.name || '',
+        gender: v.gender || '',
+        language: v.language || '',
+        preview_audio: v.preview_audio || v.preview_audio_url || null,
+      })),
+      total: rawVoices.length,
+      ...(debug && { sample: rawVoices[0] || null }),
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== HeyGen avatar group looks =====
 // avatar group ID 안의 룩(look) 목록을 조회한다. 각 룩의 preview 이미지를 재서
 // 9:16 세로 여부(portrait)를 함께 반환한다. 그룹 내용은 자주 안 바뀌므로 10분 캐시.

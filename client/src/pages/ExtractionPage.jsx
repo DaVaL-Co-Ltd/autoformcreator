@@ -583,6 +583,10 @@ export default function ExtractionPage() {
   const [presetVoicePreviews, setPresetVoicePreviews] = useState({})
   // 그룹 룩 캐시 (groupId → looks 배열) — avatarGroupId 가 있는 preset 들에서 펼침 표시용.
   const [groupLooks, setGroupLooks] = useState({})
+  // 내 voice 목록 (HeyGen 본인 계정 voice). voice 선택 그리드에서 사용.
+  const [myVoices, setMyVoices] = useState([])
+  // 사용자가 voice 그리드에서 고른 voice_id. null 이면 아바타 preset.defaultVoiceId 사용.
+  const [selectedVoiceId, setSelectedVoiceId] = useState(null)
   const avatarVoiceAudioRef = useRef(null)
   const [heygenUploading, setHeygenUploading] = useState(false)
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
@@ -688,6 +692,38 @@ export default function ExtractionPage() {
     }
     return result
   }, [groupLooks, presetAvatarPreviews])
+
+  // 내 voice 목록 fetch — 숏폼이 선택됐을 때만 1회.
+  useEffect(() => {
+    if (!selectedChannels.shorts) return
+    if (myVoices.length > 0) return
+    let cancelled = false
+    apiFetch('/api/heygen/my-voices')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const voices = Array.isArray(data?.voices) ? data.voices : []
+        if (voices.length > 0) setMyVoices(voices)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [selectedChannels.shorts, myVoices])
+
+  // voice URL 직접 재생 헬퍼 — voice 그리드에서 ▶ 클릭 시 사용.
+  const playVoiceUrl = (url) => {
+    if (!url) return
+    try {
+      if (avatarVoiceAudioRef.current) {
+        avatarVoiceAudioRef.current.pause()
+        avatarVoiceAudioRef.current.currentTime = 0
+      }
+      const audio = new Audio(url)
+      avatarVoiceAudioRef.current = audio
+      audio.play().catch(() => {})
+    } catch {
+      /* 재생 실패는 조용히 무시 */
+    }
+  }
 
   const playVoicePreview = (preset) => {
     if (!preset) return
@@ -1660,6 +1696,10 @@ DO NOT:
             && s?.layout !== 'quiz-countdown'
             && s?.layout !== 'infographic-full')
 
+        // voice override: 사용자가 voice 그리드에서 voice 를 골랐고 컨셉이 솔로면 그 voice 로 통일.
+        // 멀티 컨셉은 인물별 voice 가 따로 필요하므로 override 하지 않는다.
+        const overrideVoiceId = !useMultiAvatar ? selectedVoiceId : null
+
         let video_inputs
         if (canMergeSoloTake) {
           setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '연속 테이크 영상 준비 중...' }))
@@ -1673,7 +1713,7 @@ DO NOT:
             .join(' ')
           const mergedInput = {
             character: { type: 'talking_photo', talking_photo_id: soloAvatarId },
-            voice: { type: 'text', input_text: mergedText, voice_id: soloPreset?.defaultVoiceId },
+            voice: { type: 'text', input_text: mergedText, voice_id: overrideVoiceId || soloPreset?.defaultVoiceId },
           }
           if (selectedConcept?.backgroundColor) {
             mergedInput.background = { type: 'color', value: selectedConcept.backgroundColor }
@@ -1702,7 +1742,7 @@ DO NOT:
                     // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration) 도 함께 지원.
                     // toSpokenText 가 분수·영문 약어만 한글로 변환해 HeyGen TTS 가 자연스럽게 읽도록 한다.
                     input_text: toSpokenText(String(scene?.caption || scene?.narration || '').trim()),
-                    voice_id: preset?.defaultVoiceId,
+                    voice_id: overrideVoiceId || preset?.defaultVoiceId,
                   },
             }
             if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
@@ -3454,6 +3494,68 @@ ${parsedText}
                               )
                             })}
                           </div>
+                        </div>
+
+                        {/* 목소리 선택 (선택 옵션) — 고르지 않으면 아바타의 defaultVoiceId 가 사용된다. */}
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <p className="text-base font-semibold text-text">목소리 선택</p>
+                            <span className="text-xs text-text-muted">(선택 안 하면 아바타 기본 목소리)</span>
+                            {selectedVoiceId && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedVoiceId(null)}
+                                className="ml-auto text-xs text-text-muted hover:text-primary"
+                              >
+                                선택 해제
+                              </button>
+                            )}
+                          </div>
+                          {myVoices.length === 0 ? (
+                            <p className="text-xs text-text-muted">목소리 목록 불러오는 중...</p>
+                          ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                              {myVoices.map((voice) => {
+                                const isSelected = selectedVoiceId === voice.voice_id
+                                return (
+                                  <button
+                                    type="button"
+                                    key={voice.voice_id}
+                                    onClick={() => setSelectedVoiceId(voice.voice_id)}
+                                    className={`relative rounded-lg border bg-surface-light p-2.5 text-left transition-all ${
+                                      isSelected ? 'border-primary/60 ring-2 ring-primary/30' : 'border-border hover:border-primary/30'
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0 flex-1">
+                                        <p className={`text-sm font-semibold truncate ${isSelected ? 'text-primary' : 'text-text'}`}>{voice.name || voice.voice_id}</p>
+                                        <p className="text-[11px] text-text-muted truncate">{[voice.gender, voice.language].filter(Boolean).join(' · ')}</p>
+                                      </div>
+                                      {voice.preview_audio && (
+                                        <div
+                                          role="button"
+                                          tabIndex={-1}
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            playVoiceUrl(voice.preview_audio)
+                                          }}
+                                          className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
+                                          aria-label="목소리 미리듣기"
+                                        >
+                                          <Play size={12} className="ml-0.5" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    {isSelected && (
+                                      <span className="absolute -top-1 -right-1 inline-flex items-center gap-0.5 rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                                        <CheckCircle size={8} /> 선택
+                                      </span>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
 
                         <div className="space-y-3">
