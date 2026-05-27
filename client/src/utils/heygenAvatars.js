@@ -4,16 +4,6 @@
 // scripts/generate_voice_previews.mjs 는 Node 격리상 같은 데이터를 별도 보관하므로
 // 이 파일을 변경하면 그 스크립트도 함께 동기화해야 한다.
 
-// 강아지 제자는 두 사진 아바타를 번갈아 쓴다.
-// 모듈 로드 시(스크립트 실행 / 앱 세션)마다 풀에서 1개를 랜덤으로 골라 그 세션 동안 사용한다.
-// presetShortsAvatars.js 가 DOG_STUDENT_AVATAR_ID 를 import 해 같은 값을 공유한다.
-const DOG_STUDENT_AVATAR_POOL = [
-  '96d289518a194421b3031d96e2ca8627',
-  '0c7bfe6c196f4e47acaa2a8f0b967b76',
-]
-export const DOG_STUDENT_AVATAR_ID =
-  DOG_STUDENT_AVATAR_POOL[Math.floor(Math.random() * DOG_STUDENT_AVATAR_POOL.length)]
-
 export const HEYGEN_AVATARS = {
   dongwan_ssaem: {
     id: 'dongwan_ssaem',
@@ -53,8 +43,11 @@ export const HEYGEN_AVATARS = {
     id: 'dog_student',
     name: '강아지 제자',
     kind: 'Animal Avatar',
-    avatarId: DOG_STUDENT_AVATAR_ID,
+    // 단일 룩 ID 미사용 — avatarId 자리에 group ID 를 둬서 resolveAvatarGroupLook 이
+    // 항상 그룹 안 룩 중 하나를 자동 선택하도록 한다 (동완·후라이쌤 패턴 동일).
+    avatarId: '0c7bfe6c196f4e47acaa2a8f0b967b76',
     defaultVoiceId: '18ff90e66773483e80660e2a6fbda399',
+    avatarGroupId: '0c7bfe6c196f4e47acaa2a8f0b967b76',
   },
   cat_student: {
     id: 'cat_student',
