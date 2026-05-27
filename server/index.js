@@ -310,89 +310,22 @@ app.get('/api/heygen/voices', async (req, res) => {
   }
 })
 
-// ===== HeyGen "My Voices" — 사용자가 직접 추가한 voice 만 반환 =====
-// 1순위: HeyGen UI 가 쓰는 voice_clone list endpoint
-//        (https://api2.heygen.com/v2/pacific/voice_clone/voice.list).
-//        응답 data.data 배열, voice 객체에 voice_id / display_name / language / gender / preview.movio.
-// 2순위: /v2/voices 응답에서 다양한 단서로 본인 voice 만 필터링 (휴리스틱 폴백).
-// 정확한 응답 스키마를 모를 때를 대비해 sample(raw voice 객체 첫 항목) 도 항상 반환한다.
+// ===== HeyGen "My Voices" — 한국어 voice 20개를 단순 노출 =====
+// HeyGen 공식 API 응답에 본인/공용 식별 필드가 없어 자동 분리가 불가능. /v2/voices 응답에서
+// 한국어 voice 만 추려 앞 20개를 리스트로 보여준다. 사용자가 만든 voice 는 응답 앞쪽에 정렬되는
+// 경향이 있어 자연스럽게 포함된다.
 const mapVoice = (v) => ({
-  voice_id: v?.voice_id || v?.id || v?.voice_clone_id || '',
-  name: v?.display_name || v?.name || v?.voice_name || '',
+  voice_id: v?.voice_id || '',
+  name: v?.name || '',
   gender: v?.gender || '',
   language: v?.language || '',
-  preview_audio: v?.preview?.movio || v?.preview_audio || v?.preview_audio_url || v?.preview_url || null,
+  preview_audio: v?.preview_audio || v?.preview_audio_url || null,
 })
 
 app.get('/api/heygen/my-voices', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
-  // 가장 정확한 식별 — 사용자가 직접 등록한 voice_id 들을 콤마로 연결해 환경변수 HEYGEN_MY_VOICE_IDS 로 둔다.
-  // 예) HEYGEN_MY_VOICE_IDS=2d6a266…,18ff90e66… 화이트리스트가 있으면 그 voice 만 통과.
-  const whitelist = new Set(
-    (process.env.HEYGEN_MY_VOICE_IDS || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  )
   try {
-    // 1순위(동적): HeyGen UI 의 internal API (api2.heygen.com) 를 사용자 세션 cookie 로 호출.
-    // HEYGEN_UI_COOKIE 환경변수에 브라우저 Network 탭의 Request Headers > Cookie 값을 통째로 등록한다.
-    // 세션 만료(보통 며칠) 또는 Cloudflare cf_clearance 만료 시 401/403/503 이 떨어지므로 그때마다 갱신 필요.
-    const uiCookie = process.env.HEYGEN_UI_COOKIE || ''
-    if (uiCookie) {
-      try {
-        const r = await fetch('https://api2.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200', {
-          headers: {
-            'Cookie': uiCookie,
-            'Origin': 'https://app.heygen.com',
-            'Referer': 'https://app.heygen.com/avatar/voices',
-            'Accept': 'application/json, text/plain, */*',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
-          },
-        })
-        if (r.ok) {
-          const d = await r.json().catch(() => ({}))
-          const list = d?.data?.data || d?.data?.voices || (Array.isArray(d?.data) ? d.data : null) || []
-          if (Array.isArray(list) && list.length > 0) {
-            return res.json({
-              voices: list.map(mapVoice).filter((v) => v.voice_id),
-              total: list.length,
-              source: 'api2.heygen.com (HEYGEN_UI_COOKIE)',
-              sample: list[0] || null,
-            })
-          }
-        }
-      } catch { /* 폴백 */ }
-    }
-
-    // 2순위: 공식 API key 로 voice_clone path 시도 (api2 와 다른 호스트에서 같은 path 가 살아 있을 가능성).
-    const cloneEndpoints = [
-      'https://api.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200',
-      'https://api.heygen.com/v2/voice_clone/voice.list?page_size=200',
-      'https://api.heygen.com/v2/voice/clones',
-      'https://api.heygen.com/v1/voice/clone.list',
-    ]
-    for (const url of cloneEndpoints) {
-      try {
-        const r = await fetch(url, { headers: { 'X-Api-Key': apiKey } })
-        if (!r.ok) continue
-        const d = await r.json().catch(() => ({}))
-        const list = d?.data?.data || d?.data?.voices || d?.data?.list || d?.data?.voice_clones
-          || (Array.isArray(d?.data) ? d.data : null)
-          || d?.voices || d?.voice_clones || []
-        if (Array.isArray(list) && list.length > 0) {
-          return res.json({
-            voices: list.map(mapVoice).filter((v) => v.voice_id),
-            total: list.length,
-            source: url,
-            sample: list[0] || null,
-          })
-        }
-      } catch { /* 다음 endpoint 시도 */ }
-    }
-
-    // 2순위: /v2/voices 응답에서 본인 voice 식별을 위한 다양한 단서 동시 시도.
     const response = await fetch('https://api.heygen.com/v2/voices', {
       headers: { 'X-Api-Key': apiKey },
     })
@@ -400,28 +333,11 @@ app.get('/api/heygen/my-voices', async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
 
     const rawVoices = data?.data?.voices || data?.voices || []
-
-    // 화이트리스트가 있으면 정확 매칭으로 우선 처리 — 휴리스틱보다 안전.
-    if (whitelist.size > 0) {
-      const allowed = rawVoices.filter((v) => v?.voice_id && whitelist.has(v.voice_id))
-      return res.json({
-        voices: allowed.map(mapVoice).filter((v) => v.voice_id),
-        total: rawVoices.length,
-        source: '/v2/voices + HEYGEN_MY_VOICE_IDS 화이트리스트',
-        sample: rawVoices[0] || null,
-      })
-    }
-
-    // 최종 폴백: HeyGen 응답에 본인/공용 식별 필드가 없는 게 확정돼서, 한국어 voice 중
-    // 앞에서 20개만 단순히 잘라 리스트로 노출한다. (사용자가 만든 voice 가 응답 앞쪽에 정렬되는
-    // 경향이 있어 본인 voice 도 자연스럽게 포함될 가능성이 큼.)
     const koreanVoices = rawVoices.filter((v) => v?.language === 'Korean').slice(0, 20)
 
     res.json({
       voices: koreanVoices.map(mapVoice).filter((v) => v.voice_id),
       total: rawVoices.length,
-      source: '/v2/voices (Korean top 20)',
-      sample: rawVoices[0] || null,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
