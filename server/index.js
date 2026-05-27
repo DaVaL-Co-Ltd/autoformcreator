@@ -327,14 +327,14 @@ app.get('/api/heygen/my-voices', async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
 
     const rawVoices = data?.data?.voices || data?.voices || []
+    // 명시적 공용 표시만 제외하고 나머지는 포함 (HeyGen 응답에 본인/공용 식별 필드가
+    // 없는 경우가 많아 기존 보수적 필터가 모두 걸러내던 문제 해결). 응답 sample 을 항상
+    // 함께 보내 클라이언트 측에서 raw 구조를 확인할 수 있게 한다.
     const myVoices = rawVoices.filter((v) => {
       if (!v) return false
       if (v.is_public === true) return false
       if (typeof v.voice_type === 'string' && /public/i.test(v.voice_type)) return false
-      if (typeof v.voice_type === 'string' && /(clone|user|private|custom|mine)/i.test(v.voice_type)) return true
-      if (v.is_public === false) return true
-      // 단서 없으면 공용으로 간주해 제외 (보수적 필터)
-      return false
+      return true
     })
 
     res.json({
@@ -346,7 +346,7 @@ app.get('/api/heygen/my-voices', async (req, res) => {
         preview_audio: v.preview_audio || v.preview_audio_url || null,
       })),
       total: rawVoices.length,
-      ...(debug && { sample: rawVoices[0] || null }),
+      sample: rawVoices[0] || null,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
