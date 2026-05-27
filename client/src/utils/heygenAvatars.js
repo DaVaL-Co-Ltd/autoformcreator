@@ -41,7 +41,7 @@ export const HEYGEN_AVATARS = {
   },
   dog_student: {
     id: 'dog_student',
-    name: '강아지 제자',
+    name: '다 제자',
     kind: 'Animal Avatar',
     // 단일 룩 ID 미사용 — avatarId 자리에 group ID 를 둬서 resolveAvatarGroupLook 이
     // 항상 그룹 안 룩 중 하나를 자동 선택하도록 한다 (동완·후라이쌤 패턴 동일).

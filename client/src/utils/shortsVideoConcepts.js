@@ -296,11 +296,11 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // UI 선택 목록에서 임시로 숨김 — 코드·테스트 스크립트에서는 계속 동작. 노출 여부는 추후 결정.
     hiddenFromUI: true,
     direction: [
-      '5명 (동완쌤·후라이쌤·남자 제자·여자 제자·강아지 제자) 이 한 영상에서 모두 등장.',
+      '5명 (동완쌤·후라이쌤·남자 제자·여자 제자·다 제자) 이 한 영상에서 모두 등장.',
       '모든 씬은 동일한 단색 배경(backgroundColor) 위에 올라간다 — 5명이 같은 무대에 선 듯한 일관성. 별도 배경 이미지 합성은 하지 않는다.',
       '한 화면에 1명씩만 등장 (HeyGen 제약). 카메라 정면, 중앙 배치, 풀샷 유지.',
       '각 문제는 3개 씬으로 구성한다: ① 질문 씬(인물이 OX 문제 제시) → ② quiz-countdown 대기 씬(같은 인물이 3초간 말 없이 대기, 3·2·1 카운트다운 영상이 배경) → ③ 정답 씬(같은 인물이 정답·해설). 한 문제의 3개 씬은 반드시 같은 인물(avatarId)로 고정.',
-      '말투는 친근한 쇼호스트 톤. 강아지 제자도 대사·나레이션에 "멍" 같은 의성어 추임새는 넣지 않는다 (음성으로 들으면 어색). 위협·자극 표현 금지, 댓글 유도형 마무리.',
+      '말투는 친근한 쇼호스트 톤. 다 제자도 대사·나레이션에 "멍" 같은 의성어 추임새는 넣지 않는다 (음성으로 들으면 어색). 위협·자극 표현 금지, 댓글 유도형 마무리.',
       '자막은 짧게 — 질문 씬은 Q번호만 노출(정답 스포일 금지), 정답 씬에서 Q번호+정답 공개. 빠른 컷 전환 + 중독성 있는 효과음 느낌.',
     ].join(' '),
     preferredAvatarIds: [
@@ -372,7 +372,7 @@ export const SHORTS_VIDEO_CONCEPTS = [
           narration: '정답은 X! 논술은 수시에 속해요.',
           visualDescription: 'Female student revealing the answer with a cheerful gesture, chest-up framing',
           textOverlay: 'Q4 · 정답 X' },
-        // Q5 — 강아지 제자
+        // Q5 — 다 제자
         { sceneNumber: 13, duration: '3', avatarId: HEYGEN_AVATAR_IDS.dog_student,
           narration: '특목고는 무조건 유리하다! O일까, X일까?',
           visualDescription: 'Cute dog student in the same quiz studio posing the question, wagging tail, friendly tone, chest-up framing',

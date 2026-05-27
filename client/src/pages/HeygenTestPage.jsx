@@ -1,5 +1,5 @@
 // HeyGen 영상 생성 테스트 페이지.
-// 동완쌤·후라이쌤·강아지 제자 세 그룹 안의 9:16 룩들을 모두 펼쳐 표시하고,
+// 동완쌤·후라이쌤·다 제자 세 그룹 안의 9:16 룩들을 모두 펼쳐 표시하고,
 // my voices 그리드에서 voice 를 골라 10초 분량 짧은 대본으로 테스트 영상을 만든다.
 // 자막·합성·DB 저장 등 메인 파이프라인은 건너뛰고 raw HeyGen 영상만 확인한다.
 import { useEffect, useMemo, useState } from 'react'
@@ -13,11 +13,12 @@ function apiFetch(path, options = {}) {
 }
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// 표시할 그룹: 동완쌤·후라이쌤·강아지 제자 (avatarGroupId 가 있는 preset 들).
+// 표시할 그룹: avatarGroupId 가 있는 preset 들. 라벨은 HEYGEN_AVATARS 의 name 을 그대로 따라가
+// 이름이 바뀌면 자동 반영된다.
 const TEST_GROUPS = [
-  { groupId: HEYGEN_AVATARS.dongwan_ssaem.avatarGroupId, label: '동완쌤', defaultVoiceId: HEYGEN_AVATARS.dongwan_ssaem.defaultVoiceId },
-  { groupId: HEYGEN_AVATARS.fry_ssaem.avatarGroupId, label: '후라이쌤', defaultVoiceId: HEYGEN_AVATARS.fry_ssaem.defaultVoiceId },
-  { groupId: HEYGEN_AVATARS.dog_student.avatarGroupId, label: '강아지 제자', defaultVoiceId: HEYGEN_AVATARS.dog_student.defaultVoiceId },
+  { groupId: HEYGEN_AVATARS.dongwan_ssaem.avatarGroupId, label: HEYGEN_AVATARS.dongwan_ssaem.name, defaultVoiceId: HEYGEN_AVATARS.dongwan_ssaem.defaultVoiceId },
+  { groupId: HEYGEN_AVATARS.fry_ssaem.avatarGroupId, label: HEYGEN_AVATARS.fry_ssaem.name, defaultVoiceId: HEYGEN_AVATARS.fry_ssaem.defaultVoiceId },
+  { groupId: HEYGEN_AVATARS.dog_student.avatarGroupId, label: HEYGEN_AVATARS.dog_student.name, defaultVoiceId: HEYGEN_AVATARS.dog_student.defaultVoiceId },
 ]
 
 const DEFAULT_TEST_SCRIPT = '안녕하세요, HeyGen 테스트 영상입니다. 약 10초 분량으로 음성과 입 모양이 잘 맞는지 확인해보세요.'
@@ -162,7 +163,7 @@ export default function HeygenTestPage() {
           <Sparkles size={20} className="text-primary" /> HeyGen 영상 테스트
         </h1>
         <p className="text-sm text-text-muted">
-          동완쌤·후라이쌤·강아지 제자 그룹 안 9:16 룩과 my voices 를 골라 10초 분량 테스트 영상을 만들어본다.
+          동완쌤·후라이쌤·다 제자 그룹 안 9:16 룩과 my voices 를 골라 10초 분량 테스트 영상을 만들어본다.
           자막·합성 없이 raw HeyGen 영상만 확인한다.
         </p>
       </header>

@@ -41,7 +41,7 @@ export const PRESET_SHORTS_AVATARS = [
   },
   {
     id: 'dog_student',
-    name: '강아지 제자',
+    name: '다 제자',
     kind: 'Animal Avatar',
     // avatarId 는 group ID — heygenAvatars.js 와 동일. resolveAvatarGroupLook 이 그룹 안 룩으로 변환.
     avatarId: '0c7bfe6c196f4e47acaa2a8f0b967b76',
