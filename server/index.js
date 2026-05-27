@@ -310,16 +310,47 @@ app.get('/api/heygen/voices', async (req, res) => {
   }
 })
 
-// ===== HeyGen "My Voices" — 본인 계정 voice 만 필터해서 반환 =====
-// /v2/voices 는 공용 voice 도 함께 반환한다. 응답 객체에 보통 voice_type / is_public
-// 같은 단서 필드가 있으므로 그걸로 본인 voice 만 추린다.
-// HeyGen 응답 스키마가 바뀌어 휴리스틱이 깨지면 결과가 비어 보일 수 있다.
-// 그 경우 ?debug=1 쿼리로 raw 응답의 첫 항목을 함께 반환해 필터 키를 재조정한다.
+// ===== HeyGen "My Voices" — 사용자가 직접 추가한 voice 만 반환 =====
+// 1순위: HeyGen 의 voice clone 전용 endpoint 가 있으면 우선 사용 (정확함).
+// 2순위: /v2/voices 응답에서 다양한 단서로 본인 voice 만 필터링.
+// 정확한 응답 스키마를 모를 때를 대비해 sample(raw voice 객체 첫 항목) 도 항상 반환한다.
+const mapVoice = (v) => ({
+  voice_id: v?.voice_id || v?.id || v?.voice_clone_id || '',
+  name: v?.name || v?.voice_name || '',
+  gender: v?.gender || '',
+  language: v?.language || '',
+  preview_audio: v?.preview_audio || v?.preview_audio_url || v?.preview_url || null,
+})
+
 app.get('/api/heygen/my-voices', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
-  const debug = req.query?.debug === '1'
   try {
+    // 1순위: voice clone 전용 endpoint 후보들 시도. HeyGen 계정/버전에 따라 명칭이 다를 수 있어 순차 시도.
+    const cloneEndpoints = [
+      'https://api.heygen.com/v2/voice/clones',
+      'https://api.heygen.com/v2/voice_clones',
+      'https://api.heygen.com/v1/voice/clone.list',
+      'https://api.heygen.com/v1/voice_clone.list',
+    ]
+    for (const url of cloneEndpoints) {
+      try {
+        const r = await fetch(url, { headers: { 'X-Api-Key': apiKey } })
+        if (!r.ok) continue
+        const d = await r.json().catch(() => ({}))
+        const list = d?.data?.voices || d?.data?.list || d?.data?.voice_clones || d?.data || d?.voices || d?.voice_clones || []
+        if (Array.isArray(list) && list.length > 0) {
+          return res.json({
+            voices: list.map(mapVoice).filter((v) => v.voice_id),
+            total: list.length,
+            source: url,
+            sample: list[0] || null,
+          })
+        }
+      } catch { /* 다음 endpoint 시도 */ }
+    }
+
+    // 2순위: /v2/voices 응답에서 본인 voice 식별을 위한 다양한 단서 동시 시도.
     const response = await fetch('https://api.heygen.com/v2/voices', {
       headers: { 'X-Api-Key': apiKey },
     })
@@ -327,25 +358,28 @@ app.get('/api/heygen/my-voices', async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
 
     const rawVoices = data?.data?.voices || data?.voices || []
-    // 명시적 공용 표시만 제외하고 나머지는 포함 (HeyGen 응답에 본인/공용 식별 필드가
-    // 없는 경우가 많아 기존 보수적 필터가 모두 걸러내던 문제 해결). 응답 sample 을 항상
-    // 함께 보내 클라이언트 측에서 raw 구조를 확인할 수 있게 한다.
     const myVoices = rawVoices.filter((v) => {
       if (!v) return false
+      // 공용 표시 제외
       if (v.is_public === true) return false
-      if (typeof v.voice_type === 'string' && /public/i.test(v.voice_type)) return false
-      return true
+      if (typeof v.voice_type === 'string' && /public|premade|official|premium/i.test(v.voice_type)) return false
+      if (Array.isArray(v.tags) && v.tags.some((t) => typeof t === 'string' && /public|premade|official/i.test(t))) return false
+      // 본인 voice 단서
+      if (v.voice_clone_id || v.cloned === true || v.is_cloned === true) return true
+      if (v.is_public === false) return true
+      if (typeof v.voice_type === 'string' && /clone|user|private|custom|mine|instant/i.test(v.voice_type)) return true
+      if (typeof v.category === 'string' && /clone|user|private|custom|mine/i.test(v.category)) return true
+      if (typeof v.source === 'string' && /clone|user|upload|custom/i.test(v.source)) return true
+      if (Array.isArray(v.tags) && v.tags.some((t) => typeof t === 'string' && /clone|user|custom|mine/i.test(t))) return true
+      if (typeof v.voice_id === 'string' && /^(vc_|voice_clone_|user_)/i.test(v.voice_id)) return true
+      // 단서 없음 — 공용으로 간주해 제외
+      return false
     })
 
     res.json({
-      voices: myVoices.map((v) => ({
-        voice_id: v.voice_id,
-        name: v.name || '',
-        gender: v.gender || '',
-        language: v.language || '',
-        preview_audio: v.preview_audio || v.preview_audio_url || null,
-      })),
+      voices: myVoices.map(mapVoice).filter((v) => v.voice_id),
       total: rawVoices.length,
+      source: '/v2/voices',
       sample: rawVoices[0] || null,
     })
   } catch (err) {
