@@ -4,7 +4,7 @@
 // 자막·합성·DB 저장 등 메인 파이프라인은 건너뛰고 raw HeyGen 영상만 확인한다.
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2, Play, CheckCircle, Sparkles, ZoomIn, X } from 'lucide-react'
+import { Loader2, Play, Pause, CheckCircle, Sparkles, ZoomIn, X } from 'lucide-react'
 import { HEYGEN_AVATARS } from '../utils/heygenAvatars'
 import { readApiResponse } from '../utils/apiResponse.js'
 
@@ -33,6 +33,8 @@ export default function HeygenTestPage() {
   const [selectedCategory, setSelectedCategory] = useState('dongwan_ssaem')
   // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
   const [lightboxImageUrl, setLightboxImageUrl] = useState(null)
+  // 현재 재생 중인 voice 미리듣기 voice_id. ▶/⏸ 토글 아이콘 표시 + 같은 voice 다시 누르면 정지.
+  const [playingVoiceId, setPlayingVoiceId] = useState(null)
   const [script, setScript] = useState(DEFAULT_TEST_SCRIPT)
   const [previewAudio, setPreviewAudio] = useState(null)
 
@@ -101,14 +103,35 @@ export default function HeygenTestPage() {
     ]
   }, [groupLooks])
 
-  const playVoiceUrl = (url) => {
+  // voice 토글 재생/정지 — 같은 voice 다시 누르면 정지.
+  const toggleVoiceUrl = (voiceId, url) => {
+    if (playingVoiceId === voiceId && previewAudio) {
+      previewAudio.pause()
+      previewAudio.currentTime = 0
+      setPreviewAudio(null)
+      setPlayingVoiceId(null)
+      return
+    }
+    if (previewAudio) {
+      previewAudio.pause()
+      previewAudio.currentTime = 0
+    }
     if (!url) return
     try {
-      if (previewAudio) { previewAudio.pause() }
       const audio = new Audio(url)
       setPreviewAudio(audio)
-      audio.play().catch(() => {})
-    } catch { /* 재생 실패 무시 */ }
+      setPlayingVoiceId(voiceId)
+      audio.onended = () => {
+        setPreviewAudio((cur) => (cur === audio ? null : cur))
+        setPlayingVoiceId((cur) => (cur === voiceId ? null : cur))
+      }
+      audio.play().catch(() => {
+        setPreviewAudio((cur) => (cur === audio ? null : cur))
+        setPlayingVoiceId((cur) => (cur === voiceId ? null : cur))
+      })
+    } catch {
+      setPlayingVoiceId(null)
+    }
   }
 
   const canGenerate = !!selectedAvatar && !!(selectedVoiceId || selectedAvatar?.defaultVoiceId) && script.trim().length > 0 && !generating
@@ -306,11 +329,11 @@ export default function HeygenTestPage() {
                       <div
                         role="button"
                         tabIndex={-1}
-                        onClick={(e) => { e.stopPropagation(); playVoiceUrl(voice.preview_audio) }}
+                        onClick={(e) => { e.stopPropagation(); toggleVoiceUrl(voice.voice_id, voice.preview_audio) }}
                         className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
-                        aria-label="목소리 미리듣기"
+                        aria-label={playingVoiceId === voice.voice_id ? '목소리 정지' : '목소리 미리듣기'}
                       >
-                        <Play size={12} className="ml-0.5" />
+                        {playingVoiceId === voice.voice_id ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
                       </div>
                     )}
                   </div>

@@ -5,7 +5,7 @@ import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
   XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
-  Mail, Play, ZoomIn, X
+  Mail, Play, Pause, ZoomIn, X
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
@@ -591,6 +591,8 @@ export default function ExtractionPage() {
   const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('dongwan_ssaem')
   // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
   const [lightboxImageUrl, setLightboxImageUrl] = useState(null)
+  // 현재 재생 중인 voice 미리듣기 voice_id. ▶/⏸ 토글 아이콘 표시와 같은 voice 클릭 시 정지에 사용.
+  const [playingVoiceId, setPlayingVoiceId] = useState(null)
   const avatarVoiceAudioRef = useRef(null)
   const [heygenUploading, setHeygenUploading] = useState(false)
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
@@ -721,19 +723,40 @@ export default function ExtractionPage() {
     return () => { cancelled = true }
   }, [selectedChannels.shorts, myVoices])
 
-  // voice URL 직접 재생 헬퍼 — voice 그리드에서 ▶ 클릭 시 사용.
-  const playVoiceUrl = (url) => {
+  // voice 토글 재생/정지 — 같은 voice 다시 누르면 정지, 다른 voice 누르면 정지 후 새로 재생.
+  const toggleVoiceUrl = (voiceId, url) => {
+    const ref = avatarVoiceAudioRef
+    if (playingVoiceId === voiceId && ref.current) {
+      ref.current.pause()
+      ref.current.currentTime = 0
+      ref.current = null
+      setPlayingVoiceId(null)
+      return
+    }
+    if (ref.current) {
+      ref.current.pause()
+      ref.current.currentTime = 0
+      ref.current = null
+    }
     if (!url) return
     try {
-      if (avatarVoiceAudioRef.current) {
-        avatarVoiceAudioRef.current.pause()
-        avatarVoiceAudioRef.current.currentTime = 0
-      }
       const audio = new Audio(url)
-      avatarVoiceAudioRef.current = audio
-      audio.play().catch(() => {})
+      ref.current = audio
+      setPlayingVoiceId(voiceId)
+      audio.onended = () => {
+        if (ref.current === audio) {
+          ref.current = null
+          setPlayingVoiceId(null)
+        }
+      }
+      audio.play().catch(() => {
+        if (ref.current === audio) {
+          ref.current = null
+          setPlayingVoiceId(null)
+        }
+      })
     } catch {
-      /* 재생 실패는 조용히 무시 */
+      setPlayingVoiceId(null)
     }
   }
 
@@ -3614,12 +3637,12 @@ ${parsedText}
                                           tabIndex={-1}
                                           onClick={(e) => {
                                             e.stopPropagation()
-                                            playVoiceUrl(voice.preview_audio)
+                                            toggleVoiceUrl(voice.voice_id, voice.preview_audio)
                                           }}
                                           className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
-                                          aria-label="목소리 미리듣기"
+                                          aria-label={playingVoiceId === voice.voice_id ? '목소리 정지' : '목소리 미리듣기'}
                                         >
-                                          <Play size={12} className="ml-0.5" />
+                                          {playingVoiceId === voice.voice_id ? <Pause size={12} /> : <Play size={12} className="ml-0.5" />}
                                         </div>
                                       )}
                                     </div>
