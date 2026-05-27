@@ -1,0 +1,47 @@
+name: Cleanup Orphan Storage
+
+# extractions 테이블에서 참조되지 않는 Supabase Storage 객체를 주기적으로 삭제한다.
+# 매주 일요일 03:00 UTC (KST 12:00) 자동 실행 + 수동 트리거 가능.
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '실행 모드 (dry-run = 미리보기만, live = 실제 삭제)'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - dry-run
+          - live
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run cleanup script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # schedule 트리거에선 항상 live, 수동 실행에선 입력값 사용.
+          MODE: ${{ github.event_name == 'schedule' && 'live' || inputs.mode }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY secret 가 설정되지 않았습니다."
+            exit 1
+          fi
+          if [ "$MODE" = "live" ]; then
+            node scripts/cleanup-orphan-storage.mjs --live
+          else
+            node scripts/cleanup-orphan-storage.mjs
+          fi
