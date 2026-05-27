@@ -336,10 +336,38 @@ app.get('/api/heygen/my-voices', async (req, res) => {
       .filter(Boolean),
   )
   try {
-    // 1순위: HeyGen UI 가 사용하는 voice_clone list endpoint. api2 호스트가 X-Api-Key 인증을
-    // 안 받아줄 수도 있어 같은 path 를 api 호스트로도 시도하고, 옛 명칭 후보들도 뒤에 남긴다.
+    // 1순위(동적): HeyGen UI 의 internal API (api2.heygen.com) 를 사용자 세션 cookie 로 호출.
+    // HEYGEN_UI_COOKIE 환경변수에 브라우저 Network 탭의 Request Headers > Cookie 값을 통째로 등록한다.
+    // 세션 만료(보통 며칠) 또는 Cloudflare cf_clearance 만료 시 401/403/503 이 떨어지므로 그때마다 갱신 필요.
+    const uiCookie = process.env.HEYGEN_UI_COOKIE || ''
+    if (uiCookie) {
+      try {
+        const r = await fetch('https://api2.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200', {
+          headers: {
+            'Cookie': uiCookie,
+            'Origin': 'https://app.heygen.com',
+            'Referer': 'https://app.heygen.com/avatar/voices',
+            'Accept': 'application/json, text/plain, */*',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
+          },
+        })
+        if (r.ok) {
+          const d = await r.json().catch(() => ({}))
+          const list = d?.data?.data || d?.data?.voices || (Array.isArray(d?.data) ? d.data : null) || []
+          if (Array.isArray(list) && list.length > 0) {
+            return res.json({
+              voices: list.map(mapVoice).filter((v) => v.voice_id),
+              total: list.length,
+              source: 'api2.heygen.com (HEYGEN_UI_COOKIE)',
+              sample: list[0] || null,
+            })
+          }
+        }
+      } catch { /* 폴백 */ }
+    }
+
+    // 2순위: 공식 API key 로 voice_clone path 시도 (api2 와 다른 호스트에서 같은 path 가 살아 있을 가능성).
     const cloneEndpoints = [
-      'https://api2.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200',
       'https://api.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200',
       'https://api.heygen.com/v2/voice_clone/voice.list?page_size=200',
       'https://api.heygen.com/v2/voice/clones',
@@ -350,7 +378,6 @@ app.get('/api/heygen/my-voices', async (req, res) => {
         const r = await fetch(url, { headers: { 'X-Api-Key': apiKey } })
         if (!r.ok) continue
         const d = await r.json().catch(() => ({}))
-        // HeyGen UI 응답: data.data 배열. 기타 후보 endpoint 들의 형태도 함께 지원.
         const list = d?.data?.data || d?.data?.voices || d?.data?.list || d?.data?.voice_clones
           || (Array.isArray(d?.data) ? d.data : null)
           || d?.voices || d?.voice_clones || []
