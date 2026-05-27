@@ -3502,7 +3502,7 @@ ${parsedText}
                                             setHeygenReady(true)
                                             setHeygenUploading(false)
                                           }}
-                                          className={`group relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
+                                          className={`relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
                                             isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
                                           }`}
                                           aria-label={`${preset.name} 아바타 선택`}
@@ -3515,7 +3515,7 @@ ${parsedText}
                                                 <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
                                               </div>
                                             )}
-                                            {/* 돋보기 — 좌상단 항상 노출. 클릭 시 이미지 확대 모달. z-10 으로 ▶ 위에 둔다. */}
+                                            {/* 돋보기 — 좌상단 항상 노출. 클릭 시 이미지 확대 모달. */}
                                             {preview && (
                                               <div
                                                 role="button"
@@ -3530,22 +3530,10 @@ ${parsedText}
                                                 <ZoomIn size={14} />
                                               </div>
                                             )}
-                                            {/* 호버 시 ▶ — 클릭 시 voice 만 재생. 비호버 상태에서는 돋보기·카드 선택을 가로채지 않도록 pointer-events-none. */}
-                                            <div
-                                              role="button"
-                                              tabIndex={-1}
-                                              onClick={(e) => {
-                                                e.stopPropagation()
-                                                playVoicePreview(preset)
-                                              }}
-                                              className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer pointer-events-none group-hover:pointer-events-auto"
-                                              aria-label={`${preset.name} 목소리 미리듣기`}
-                                            >
-                                              <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/95 text-gray-900 shadow-lg">
-                                                <Play size={20} className="ml-0.5" />
-                                              </span>
-                                            </div>
                                           </div>
+                                          <span className="absolute bottom-1 left-1 inline-flex items-center rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                                            {preset.name}
+                                          </span>
                                           {isSelected && (
                                             <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
                                               <CheckCircle size={10} /> 선택됨
