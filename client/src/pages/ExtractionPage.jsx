@@ -667,32 +667,38 @@ export default function ExtractionPage() {
     return () => { cancelled = true }
   }, [selectedChannels.shorts, groupLooks])
 
-  // 아바타 카드 그리드용 — 그룹 있는 preset 은 룩별로 펼쳐 각각 카드 1개로 만든다.
-  // 가로(16:9) 룩까지 모두 포함해서 그룹 안 전체 룩을 노출. 9:16 영상 프레이밍과
-  // 어울리는지는 사용자가 시각적으로 판단.
-  const expandedAvatars = useMemo(() => {
-    const result = []
-    for (const preset of PRESET_SHORTS_AVATARS) {
-      if (preset.avatarGroupId) {
-        const looks = groupLooks[preset.avatarGroupId] || []
-        for (const look of looks) {
-          result.push({
+  // 아바타 카드 그리드용 — 동완쌤·후라이쌤·제자들 3개 카테고리로 분리해서 표시한다.
+  // 그룹 있는 preset 은 룩별로 펼쳐 각각 카드 1개로 만들고, 가로(16:9) 룩까지 모두 포함한다.
+  const avatarCategories = useMemo(() => {
+    const expandPreset = (preset) => (
+      preset.avatarGroupId
+        ? (groupLooks[preset.avatarGroupId] || []).map((look) => ({
             key: `${preset.id}:${look.id}`,
             preset,
             lookId: look.id,
             preview: look.preview || null,
-          })
-        }
-      } else {
-        result.push({
-          key: preset.id,
-          preset,
-          lookId: preset.avatarId,
-          preview: presetAvatarPreviews[preset.avatarId] || null,
-        })
-      }
+          }))
+        : [{
+            key: preset.id,
+            preset,
+            lookId: preset.avatarId,
+            preview: presetAvatarPreviews[preset.avatarId] || null,
+          }]
+    )
+    const dongwan = []
+    const fry = []
+    const students = []
+    for (const preset of PRESET_SHORTS_AVATARS) {
+      const items = expandPreset(preset)
+      if (preset.id === 'dongwan_ssaem') dongwan.push(...items)
+      else if (preset.id === 'fry_ssaem') fry.push(...items)
+      else students.push(...items)
     }
-    return result
+    return [
+      { id: 'dongwan_ssaem', label: '동완쌤', items: dongwan },
+      { id: 'fry_ssaem', label: '후라이쌤', items: fry },
+      { id: 'students', label: '제자들', items: students },
+    ]
   }, [groupLooks, presetAvatarPreviews])
 
   // 내 voice 목록 fetch — 숏폼이 선택됐을 때만 1회.
@@ -3432,69 +3438,82 @@ ${parsedText}
                               <p className="text-xs text-warning">기존에 선택한 컨셉은 초기화됩니다.</p>
                             </div>
                           )}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {expandedAvatars.map(({ key, preset, lookId, preview }) => {
-                              // 그룹 안 룩들도 1개만 선택 표시 — 컨셉 매칭은 원본 preset.avatarId(=group ID) 기준.
-                              const isSelected = heygenAvatarId === lookId
-                              return (
-                                <button
-                                  type="button"
-                                  key={key}
-                                  onClick={() => {
-                                    // 컨셉이 선택돼 있을 때, 같은 그룹 안 다른 룩을 골라도 같은 인물로 간주돼 컨셉이 유지된다.
-                                    // 다른 인물(preset)을 고르면 컨셉 초기화 + 안내.
-                                    const activeConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
-                                    if (activeConcept && !activeConcept.preferredAvatarIds?.includes(preset.avatarId)) {
-                                      updatePrompt('shorts', 'videoConcept', '')
-                                      updatePrompt('shorts', 'extra', '')
-                                      setConceptResetNotice(true)
-                                    } else {
-                                      setConceptResetNotice(false)
-                                    }
-                                    setAvatarPrompt('')
-                                    setAvatarImage(preview)
-                                    setHeygenAvatarId(lookId)
-                                    setAvatarConfirmed(true)
-                                    setHeygenReady(true)
-                                    setHeygenUploading(false)
-                                  }}
-                                  className={`group relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
-                                    isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
-                                  }`}
-                                  aria-label={`${preset.name} 아바타 선택`}
-                                >
-                                  <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
-                                    {preview ? (
-                                      <img src={preview} alt="" className="h-full w-full object-cover" />
-                                    ) : (
-                                      <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
-                                        <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
-                                      </div>
-                                    )}
-                                    {/* 호버 시 ▶ — 클릭 시 voice 만 재생. nested <button> 금지라 div role=button 사용. */}
-                                    <div
-                                      role="button"
-                                      tabIndex={-1}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        playVoicePreview(preset)
-                                      }}
-                                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                                      aria-label={`${preset.name} 목소리 미리듣기`}
-                                    >
-                                      <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/95 text-gray-900 shadow-lg">
-                                        <Play size={20} className="ml-0.5" />
-                                      </span>
-                                    </div>
+                          <div className="space-y-5">
+                            {avatarCategories.map((category) => (
+                              <div key={category.id} className="space-y-2">
+                                <p className="text-sm font-semibold text-text">{category.label}</p>
+                                {category.items.length === 0 ? (
+                                  <p className="text-xs text-text-muted flex items-center gap-1">
+                                    <Loader2 size={12} className="animate-spin" /> 불러오는 중...
+                                  </p>
+                                ) : (
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                                    {category.items.map(({ key, preset, lookId, preview }) => {
+                                      // 그룹 안 룩들도 1개만 선택 표시 — 컨셉 매칭은 원본 preset.avatarId(=group ID) 기준.
+                                      const isSelected = heygenAvatarId === lookId
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={key}
+                                          onClick={() => {
+                                            // 컨셉이 선택돼 있을 때, 같은 그룹 안 다른 룩을 골라도 같은 인물로 간주돼 컨셉이 유지된다.
+                                            // 다른 인물(preset)을 고르면 컨셉 초기화 + 안내.
+                                            const activeConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+                                            if (activeConcept && !activeConcept.preferredAvatarIds?.includes(preset.avatarId)) {
+                                              updatePrompt('shorts', 'videoConcept', '')
+                                              updatePrompt('shorts', 'extra', '')
+                                              setConceptResetNotice(true)
+                                            } else {
+                                              setConceptResetNotice(false)
+                                            }
+                                            setAvatarPrompt('')
+                                            setAvatarImage(preview)
+                                            setHeygenAvatarId(lookId)
+                                            setAvatarConfirmed(true)
+                                            setHeygenReady(true)
+                                            setHeygenUploading(false)
+                                          }}
+                                          className={`group relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
+                                            isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
+                                          }`}
+                                          aria-label={`${preset.name} 아바타 선택`}
+                                        >
+                                          <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
+                                            {preview ? (
+                                              <img src={preview} alt="" className="h-full w-full object-cover" />
+                                            ) : (
+                                              <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
+                                                <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
+                                              </div>
+                                            )}
+                                            {/* 호버 시 ▶ — 클릭 시 voice 만 재생. nested <button> 금지라 div role=button 사용. */}
+                                            <div
+                                              role="button"
+                                              tabIndex={-1}
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                playVoicePreview(preset)
+                                              }}
+                                              className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                              aria-label={`${preset.name} 목소리 미리듣기`}
+                                            >
+                                              <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/95 text-gray-900 shadow-lg">
+                                                <Play size={20} className="ml-0.5" />
+                                              </span>
+                                            </div>
+                                          </div>
+                                          {isSelected && (
+                                            <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
+                                              <CheckCircle size={10} /> 선택됨
+                                            </span>
+                                          )}
+                                        </button>
+                                      )
+                                    })}
                                   </div>
-                                  {isSelected && (
-                                    <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
-                                      <CheckCircle size={10} /> 선택됨
-                                    </span>
-                                  )}
-                                </button>
-                              )
-                            })}
+                                )}
+                              </div>
+                            ))}
                           </div>
                         </div>
 
