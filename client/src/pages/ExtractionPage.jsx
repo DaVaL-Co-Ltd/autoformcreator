@@ -3229,7 +3229,7 @@ ${parsedText}
                       }
                     },
                     options: SHORTS_VIDEO_CONCEPT_OPTIONS,
-                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 모든 아바타가 자동 선택됩니다.',
+                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 모든 아바타가 자동 선택됩니다. 선택하지 않으면 HeyGen 의 자동 연출(Video Agent)에 맡겨 알아서 만들어집니다.',
                   })}
                   {promptSettings.shorts.videoConcept && (() => {
                     const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
@@ -3438,8 +3438,12 @@ ${parsedText}
                             {heygenAvatarId && <CheckCircle size={14} className="text-success" />}
                           </div>
                           {conceptResetNotice && (
-                            <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20">
-                              <p className="text-xs text-warning">기존에 선택한 컨셉은 초기화됩니다.</p>
+                            <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20 flex items-start gap-2">
+                              <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
+                              <p className="text-xs text-warning leading-5">
+                                선택한 컨셉의 인물과 다른 아바타를 골라 <strong>컨셉이 해제</strong>됐습니다.
+                                컨셉 없이 영상을 만들면 HeyGen 의 자동 연출(Video Agent)에 맡겨 알아서 만들어집니다.
+                              </p>
                             </div>
                           )}
                           <div className="flex flex-wrap gap-2">
