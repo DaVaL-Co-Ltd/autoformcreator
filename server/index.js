@@ -311,34 +311,41 @@ app.get('/api/heygen/voices', async (req, res) => {
 })
 
 // ===== HeyGen "My Voices" — 사용자가 직접 추가한 voice 만 반환 =====
-// 1순위: HeyGen 의 voice clone 전용 endpoint 가 있으면 우선 사용 (정확함).
-// 2순위: /v2/voices 응답에서 다양한 단서로 본인 voice 만 필터링.
+// 1순위: HeyGen UI 가 쓰는 voice_clone list endpoint
+//        (https://api2.heygen.com/v2/pacific/voice_clone/voice.list).
+//        응답 data.data 배열, voice 객체에 voice_id / display_name / language / gender / preview.movio.
+// 2순위: /v2/voices 응답에서 다양한 단서로 본인 voice 만 필터링 (휴리스틱 폴백).
 // 정확한 응답 스키마를 모를 때를 대비해 sample(raw voice 객체 첫 항목) 도 항상 반환한다.
 const mapVoice = (v) => ({
   voice_id: v?.voice_id || v?.id || v?.voice_clone_id || '',
-  name: v?.name || v?.voice_name || '',
+  name: v?.display_name || v?.name || v?.voice_name || '',
   gender: v?.gender || '',
   language: v?.language || '',
-  preview_audio: v?.preview_audio || v?.preview_audio_url || v?.preview_url || null,
+  preview_audio: v?.preview?.movio || v?.preview_audio || v?.preview_audio_url || v?.preview_url || null,
 })
 
 app.get('/api/heygen/my-voices', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
-    // 1순위: voice clone 전용 endpoint 후보들 시도. HeyGen 계정/버전에 따라 명칭이 다를 수 있어 순차 시도.
+    // 1순위: HeyGen UI 가 사용하는 voice_clone list endpoint. api2 호스트가 X-Api-Key 인증을
+    // 안 받아줄 수도 있어 같은 path 를 api 호스트로도 시도하고, 옛 명칭 후보들도 뒤에 남긴다.
     const cloneEndpoints = [
+      'https://api2.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200',
+      'https://api.heygen.com/v2/pacific/voice_clone/voice.list?page_size=200',
+      'https://api.heygen.com/v2/voice_clone/voice.list?page_size=200',
       'https://api.heygen.com/v2/voice/clones',
-      'https://api.heygen.com/v2/voice_clones',
       'https://api.heygen.com/v1/voice/clone.list',
-      'https://api.heygen.com/v1/voice_clone.list',
     ]
     for (const url of cloneEndpoints) {
       try {
         const r = await fetch(url, { headers: { 'X-Api-Key': apiKey } })
         if (!r.ok) continue
         const d = await r.json().catch(() => ({}))
-        const list = d?.data?.voices || d?.data?.list || d?.data?.voice_clones || d?.data || d?.voices || d?.voice_clones || []
+        // HeyGen UI 응답: data.data 배열. 기타 후보 endpoint 들의 형태도 함께 지원.
+        const list = d?.data?.data || d?.data?.voices || d?.data?.list || d?.data?.voice_clones
+          || (Array.isArray(d?.data) ? d.data : null)
+          || d?.voices || d?.voice_clones || []
         if (Array.isArray(list) && list.length > 0) {
           return res.json({
             voices: list.map(mapVoice).filter((v) => v.voice_id),
