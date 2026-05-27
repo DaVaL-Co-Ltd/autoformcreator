@@ -5,7 +5,7 @@ import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
   XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
-  Mail, Play
+  Mail, Play, ZoomIn, X
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
@@ -587,8 +587,10 @@ export default function ExtractionPage() {
   const [myVoices, setMyVoices] = useState([])
   // 사용자가 voice 그리드에서 고른 voice_id. null 이면 아바타 preset.defaultVoiceId 사용.
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
-  // 아바타 그리드 카테고리 필터 — 'all' 이면 모든 카테고리, 그 외엔 단일 카테고리만 표시.
-  const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('all')
+  // 아바타 그리드 카테고리 필터 — 동완쌤·후라이쌤·제자 중 하나만 표시.
+  const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('dongwan_ssaem')
+  // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
+  const [lightboxImageUrl, setLightboxImageUrl] = useState(null)
   const avatarVoiceAudioRef = useRef(null)
   const [heygenUploading, setHeygenUploading] = useState(false)
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
@@ -3442,7 +3444,6 @@ ${parsedText}
                           )}
                           <div className="flex flex-wrap gap-2">
                             {[
-                              { id: 'all', label: '전체' },
                               { id: 'dongwan_ssaem', label: '동완쌤' },
                               { id: 'fry_ssaem', label: '후라이쌤' },
                               { id: 'students', label: '제자' },
@@ -3463,12 +3464,9 @@ ${parsedText}
                           </div>
                           <div className="space-y-5">
                             {avatarCategories
-                              .filter((category) => selectedAvatarCategory === 'all' || category.id === selectedAvatarCategory)
+                              .filter((category) => category.id === selectedAvatarCategory)
                               .map((category) => (
                               <div key={category.id} className="space-y-2">
-                                {selectedAvatarCategory === 'all' && (
-                                  <p className="text-sm font-semibold text-text">{category.label}</p>
-                                )}
                                 {category.items.length === 0 ? (
                                   <p className="text-xs text-text-muted flex items-center gap-1">
                                     <Loader2 size={12} className="animate-spin" /> 불러오는 중...
@@ -3513,7 +3511,22 @@ ${parsedText}
                                                 <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
                                               </div>
                                             )}
-                                            {/* 호버 시 ▶ — 클릭 시 voice 만 재생. nested <button> 금지라 div role=button 사용. */}
+                                            {/* 돋보기 — 좌상단 항상 노출. 클릭 시 이미지 확대 모달. z-10 으로 ▶ 위에 둔다. */}
+                                            {preview && (
+                                              <div
+                                                role="button"
+                                                tabIndex={-1}
+                                                onClick={(e) => {
+                                                  e.stopPropagation()
+                                                  setLightboxImageUrl(preview)
+                                                }}
+                                                className="absolute top-1.5 left-1.5 z-10 inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white hover:bg-black/70 cursor-pointer shadow"
+                                                aria-label={`${preset.name} 아바타 확대 보기`}
+                                              >
+                                                <ZoomIn size={14} />
+                                              </div>
+                                            )}
+                                            {/* 호버 시 ▶ — 클릭 시 voice 만 재생. 비호버 상태에서는 돋보기·카드 선택을 가로채지 않도록 pointer-events-none. */}
                                             <div
                                               role="button"
                                               tabIndex={-1}
@@ -3521,7 +3534,7 @@ ${parsedText}
                                                 e.stopPropagation()
                                                 playVoicePreview(preset)
                                               }}
-                                              className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                              className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer pointer-events-none group-hover:pointer-events-auto"
                                               aria-label={`${preset.name} 목소리 미리듣기`}
                                             >
                                               <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/95 text-gray-900 shadow-lg">
@@ -3543,6 +3556,30 @@ ${parsedText}
                             ))}
                           </div>
                         </div>
+
+                        {/* 아바타 확대 모달 — 카드 돋보기 클릭 시 표시. body 로 portal 해 그리드 스택 영향 없게. */}
+                        {lightboxImageUrl && createPortal(
+                          <div
+                            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+                            onClick={() => setLightboxImageUrl(null)}
+                          >
+                            <img
+                              src={lightboxImageUrl}
+                              alt=""
+                              className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setLightboxImageUrl(null)}
+                              className="absolute top-4 right-4 inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/90 text-gray-900 hover:bg-white shadow-lg"
+                              aria-label="확대 보기 닫기"
+                            >
+                              <X size={20} />
+                            </button>
+                          </div>,
+                          document.body,
+                        )}
 
                         {/* 목소리 선택 (선택 옵션) — 고르지 않으면 아바타의 defaultVoiceId 가 사용된다. */}
                         <div className="space-y-3">

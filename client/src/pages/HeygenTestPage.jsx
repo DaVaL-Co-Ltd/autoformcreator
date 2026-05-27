@@ -3,7 +3,8 @@
 // my voices 그리드에서 voice 를 골라 10초 분량 짧은 대본으로 테스트 영상을 만든다.
 // 자막·합성·DB 저장 등 메인 파이프라인은 건너뛰고 raw HeyGen 영상만 확인한다.
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Play, CheckCircle, Sparkles } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Loader2, Play, CheckCircle, Sparkles, ZoomIn, X } from 'lucide-react'
 import { HEYGEN_AVATARS } from '../utils/heygenAvatars'
 import { readApiResponse } from '../utils/apiResponse.js'
 
@@ -28,8 +29,10 @@ export default function HeygenTestPage() {
   const [myVoices, setMyVoices] = useState([])
   const [selectedAvatar, setSelectedAvatar] = useState(null) // { lookId, groupLabel, preview, defaultVoiceId }
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
-  // 아바타 그리드 카테고리 필터 — 'all' 이면 모든 카테고리, 그 외엔 단일 카테고리만 표시.
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  // 아바타 그리드 카테고리 필터 — 동완쌤·후라이쌤·제자 중 하나만 표시.
+  const [selectedCategory, setSelectedCategory] = useState('dongwan_ssaem')
+  // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
+  const [lightboxImageUrl, setLightboxImageUrl] = useState(null)
   const [script, setScript] = useState(DEFAULT_TEST_SCRIPT)
   const [previewAudio, setPreviewAudio] = useState(null)
 
@@ -180,7 +183,6 @@ export default function HeygenTestPage() {
         <h2 className="text-base font-semibold text-text">1. 아바타 선택</h2>
         <div className="flex flex-wrap gap-2">
           {[
-            { id: 'all', label: '전체' },
             { id: 'dongwan_ssaem', label: '동완쌤' },
             { id: 'fry_ssaem', label: '후라이쌤' },
             { id: 'students', label: '제자' },
@@ -201,12 +203,9 @@ export default function HeygenTestPage() {
         </div>
         <div className="space-y-5">
           {avatarCategories
-            .filter((cat) => selectedCategory === 'all' || cat.id === selectedCategory)
+            .filter((cat) => cat.id === selectedCategory)
             .map((category) => (
               <div key={category.id} className="space-y-2">
-                {selectedCategory === 'all' && (
-                  <p className="text-sm font-semibold text-text">{category.label}</p>
-                )}
                 {category.items.length === 0 ? (
                   <p className="text-xs text-text-muted flex items-center gap-1">
                     <Loader2 size={12} className="animate-spin" /> 불러오는 중...
@@ -231,6 +230,21 @@ export default function HeygenTestPage() {
                             ) : (
                               <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
                                 <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
+                              </div>
+                            )}
+                            {/* 돋보기 — 좌상단. 클릭 시 이미지 확대 모달. */}
+                            {preview && (
+                              <div
+                                role="button"
+                                tabIndex={-1}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setLightboxImageUrl(preview)
+                                }}
+                                className="absolute top-1.5 left-1.5 z-10 inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white hover:bg-black/70 cursor-pointer shadow"
+                                aria-label={`${groupLabel} 아바타 확대 보기`}
+                              >
+                                <ZoomIn size={14} />
                               </div>
                             )}
                           </div>
@@ -356,6 +370,30 @@ export default function HeygenTestPage() {
           </div>
         )}
       </section>
+
+      {/* 아바타 확대 모달 — 카드 돋보기 클릭 시 body 로 portal 해 화면 중앙에 표시. */}
+      {lightboxImageUrl && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setLightboxImageUrl(null)}
+        >
+          <img
+            src={lightboxImageUrl}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setLightboxImageUrl(null)}
+            className="absolute top-4 right-4 inline-flex items-center justify-center w-10 h-10 rounded-full bg-white/90 text-gray-900 hover:bg-white shadow-lg"
+            aria-label="확대 보기 닫기"
+          >
+            <X size={20} />
+          </button>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
