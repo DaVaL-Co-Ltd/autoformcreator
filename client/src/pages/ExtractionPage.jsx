@@ -587,6 +587,8 @@ export default function ExtractionPage() {
   const [myVoices, setMyVoices] = useState([])
   // 사용자가 voice 그리드에서 고른 voice_id. null 이면 아바타 preset.defaultVoiceId 사용.
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
+  // 아바타 그리드 카테고리 필터 — 'all' 이면 모든 카테고리, 그 외엔 단일 카테고리만 표시.
+  const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('all')
   const avatarVoiceAudioRef = useRef(null)
   const [heygenUploading, setHeygenUploading] = useState(false)
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
@@ -697,7 +699,7 @@ export default function ExtractionPage() {
     return [
       { id: 'dongwan_ssaem', label: '동완쌤', items: dongwan },
       { id: 'fry_ssaem', label: '후라이쌤', items: fry },
-      { id: 'students', label: '제자들', items: students },
+      { id: 'students', label: '제자', items: students },
     ]
   }, [groupLooks, presetAvatarPreviews])
 
@@ -3438,10 +3440,35 @@ ${parsedText}
                               <p className="text-xs text-warning">기존에 선택한 컨셉은 초기화됩니다.</p>
                             </div>
                           )}
+                          <div className="flex flex-wrap gap-2">
+                            {[
+                              { id: 'all', label: '전체' },
+                              { id: 'dongwan_ssaem', label: '동완쌤' },
+                              { id: 'fry_ssaem', label: '후라이쌤' },
+                              { id: 'students', label: '제자' },
+                            ].map((tab) => (
+                              <button
+                                type="button"
+                                key={tab.id}
+                                onClick={() => setSelectedAvatarCategory(tab.id)}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                                  selectedAvatarCategory === tab.id
+                                    ? 'bg-primary text-white'
+                                    : 'bg-surface-light text-text-muted hover:bg-surface'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
                           <div className="space-y-5">
-                            {avatarCategories.map((category) => (
+                            {avatarCategories
+                              .filter((category) => selectedAvatarCategory === 'all' || category.id === selectedAvatarCategory)
+                              .map((category) => (
                               <div key={category.id} className="space-y-2">
-                                <p className="text-sm font-semibold text-text">{category.label}</p>
+                                {selectedAvatarCategory === 'all' && (
+                                  <p className="text-sm font-semibold text-text">{category.label}</p>
+                                )}
                                 {category.items.length === 0 ? (
                                   <p className="text-xs text-text-muted flex items-center gap-1">
                                     <Loader2 size={12} className="animate-spin" /> 불러오는 중...
