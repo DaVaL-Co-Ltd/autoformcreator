@@ -327,6 +327,14 @@ const mapVoice = (v) => ({
 app.get('/api/heygen/my-voices', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  // 가장 정확한 식별 — 사용자가 직접 등록한 voice_id 들을 콤마로 연결해 환경변수 HEYGEN_MY_VOICE_IDS 로 둔다.
+  // 예) HEYGEN_MY_VOICE_IDS=2d6a266…,18ff90e66… 화이트리스트가 있으면 그 voice 만 통과.
+  const whitelist = new Set(
+    (process.env.HEYGEN_MY_VOICE_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
   try {
     // 1순위: HeyGen UI 가 사용하는 voice_clone list endpoint. api2 호스트가 X-Api-Key 인증을
     // 안 받아줄 수도 있어 같은 path 를 api 호스트로도 시도하고, 옛 명칭 후보들도 뒤에 남긴다.
@@ -365,6 +373,18 @@ app.get('/api/heygen/my-voices', async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
 
     const rawVoices = data?.data?.voices || data?.voices || []
+
+    // 화이트리스트가 있으면 정확 매칭으로 우선 처리 — 휴리스틱보다 안전.
+    if (whitelist.size > 0) {
+      const allowed = rawVoices.filter((v) => v?.voice_id && whitelist.has(v.voice_id))
+      return res.json({
+        voices: allowed.map(mapVoice).filter((v) => v.voice_id),
+        total: rawVoices.length,
+        source: '/v2/voices + HEYGEN_MY_VOICE_IDS 화이트리스트',
+        sample: rawVoices[0] || null,
+      })
+    }
+
     const myVoices = rawVoices.filter((v) => {
       if (!v) return false
       // 공용 표시 제외
