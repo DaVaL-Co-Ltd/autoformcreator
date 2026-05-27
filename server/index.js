@@ -412,35 +412,16 @@ app.get('/api/heygen/my-voices', async (req, res) => {
       })
     }
 
-    const myVoices = rawVoices.filter((v) => {
-      if (!v) return false
-      // 공용 표시 제외
-      if (v.is_public === true) return false
-      if (typeof v.voice_type === 'string' && /public|premade|official|premium/i.test(v.voice_type)) return false
-      if (Array.isArray(v.tags) && v.tags.some((t) => typeof t === 'string' && /public|premade|official/i.test(t))) return false
-      // 본인 voice 단서
-      if (v.voice_clone_id || v.cloned === true || v.is_cloned === true) return true
-      if (v.is_public === false) return true
-      if (typeof v.voice_type === 'string' && /clone|user|private|custom|mine|instant/i.test(v.voice_type)) return true
-      if (typeof v.category === 'string' && /clone|user|private|custom|mine/i.test(v.category)) return true
-      if (typeof v.source === 'string' && /clone|user|upload|custom/i.test(v.source)) return true
-      if (Array.isArray(v.tags) && v.tags.some((t) => typeof t === 'string' && /clone|user|custom|mine/i.test(t))) return true
-      if (typeof v.voice_id === 'string' && /^(vc_|voice_clone_|user_)/i.test(v.voice_id)) return true
-      // 단서 없음 — 공용으로 간주해 제외
-      return false
-    })
+    // 최종 폴백: HeyGen 응답에 본인/공용 식별 필드가 없는 게 확정돼서, 한국어 voice 중
+    // 앞에서 20개만 단순히 잘라 리스트로 노출한다. (사용자가 만든 voice 가 응답 앞쪽에 정렬되는
+    // 경향이 있어 본인 voice 도 자연스럽게 포함될 가능성이 큼.)
+    const koreanVoices = rawVoices.filter((v) => v?.language === 'Korean').slice(0, 20)
 
     res.json({
-      voices: myVoices.map(mapVoice).filter((v) => v.voice_id),
+      voices: koreanVoices.map(mapVoice).filter((v) => v.voice_id),
       total: rawVoices.length,
-      source: '/v2/voices',
+      source: '/v2/voices (Korean top 20)',
       sample: rawVoices[0] || null,
-      // 디버그: HeyGen /v2/voices 응답에 voices 외 다른 배열(voice_clones 등) 이 숨어있는지 확인용.
-      debug: {
-        topLevelKeys: Object.keys(data || {}),
-        dataKeys: Object.keys(data?.data || {}),
-        voiceFieldKeys: Object.keys(rawVoices[0] || {}),
-      },
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
