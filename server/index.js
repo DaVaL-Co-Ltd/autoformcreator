@@ -435,6 +435,12 @@ app.get('/api/heygen/my-voices', async (req, res) => {
       total: rawVoices.length,
       source: '/v2/voices',
       sample: rawVoices[0] || null,
+      // 디버그: HeyGen /v2/voices 응답에 voices 외 다른 배열(voice_clones 등) 이 숨어있는지 확인용.
+      debug: {
+        topLevelKeys: Object.keys(data || {}),
+        dataKeys: Object.keys(data?.data || {}),
+        voiceFieldKeys: Object.keys(rawVoices[0] || {}),
+      },
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
