@@ -71,11 +71,12 @@ export default function HeygenTestPage() {
     return () => { cancelled = true }
   }, [myVoices])
 
-  // 그룹별 9:16 룩만 추려 한 줄로 합침. 각 룩은 그룹 라벨·기본 voice 까지 함께 들고 다닌다.
+  // 그룹별 룩을 한 줄로 합침. 가로(16:9) 룩까지 포함해 그룹 안 전체를 노출 —
+  // 9:16 영상 프레이밍과 어울리는지는 사용자가 시각적으로 판단.
   const expandedAvatars = useMemo(() => {
     const result = []
     for (const group of TEST_GROUPS) {
-      const looks = (groupLooks[group.groupId] || []).filter((l) => l?.portrait)
+      const looks = groupLooks[group.groupId] || []
       for (const look of looks) {
         result.push({
           key: `${group.groupId}:${look.id}`,

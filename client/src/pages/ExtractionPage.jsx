@@ -667,12 +667,14 @@ export default function ExtractionPage() {
     return () => { cancelled = true }
   }, [selectedChannels.shorts, groupLooks])
 
-  // 아바타 카드 그리드용 — 그룹 있는 preset 은 9:16 룩별로 펼쳐 각각 카드 1개로 만든다.
+  // 아바타 카드 그리드용 — 그룹 있는 preset 은 룩별로 펼쳐 각각 카드 1개로 만든다.
+  // 가로(16:9) 룩까지 모두 포함해서 그룹 안 전체 룩을 노출. 9:16 영상 프레이밍과
+  // 어울리는지는 사용자가 시각적으로 판단.
   const expandedAvatars = useMemo(() => {
     const result = []
     for (const preset of PRESET_SHORTS_AVATARS) {
       if (preset.avatarGroupId) {
-        const looks = (groupLooks[preset.avatarGroupId] || []).filter((l) => l.portrait)
+        const looks = groupLooks[preset.avatarGroupId] || []
         for (const look of looks) {
           result.push({
             key: `${preset.id}:${look.id}`,
