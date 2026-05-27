@@ -357,7 +357,7 @@ app.get('/api/heygen/avatar-group/:groupId/looks', async (req, res) => {
         }
       }
       const portrait = width > 0 && height > 0 ? (width / height) <= 0.85 : true
-      looks.push({ id, name, width, height, portrait })
+      looks.push({ id, name, width, height, portrait, preview: preview || null })
     }
 
     avatarGroupLooksCache.set(groupId, { looks, ts: Date.now() })

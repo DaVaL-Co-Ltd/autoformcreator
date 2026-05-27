@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
@@ -581,6 +581,8 @@ export default function ExtractionPage() {
   const [presetAvatarPreviews, setPresetAvatarPreviews] = useState({})
   // 프리셋 voice 샘플 URL 캐시 (voiceId → preview_audio URL)
   const [presetVoicePreviews, setPresetVoicePreviews] = useState({})
+  // 그룹 룩 캐시 (groupId → looks 배열) — avatarGroupId 가 있는 preset 들에서 펼침 표시용.
+  const [groupLooks, setGroupLooks] = useState({})
   const avatarVoiceAudioRef = useRef(null)
   const [heygenUploading, setHeygenUploading] = useState(false)
   const [subtitleStyle, setSubtitleStyle] = useState('style1')
@@ -635,6 +637,57 @@ export default function ExtractionPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [selectedChannels.shorts, presetVoicePreviews])
+
+  // 그룹 룩 fetch — avatarGroupId 가 있는 preset(동완쌤·후라이쌤)의 그룹 안 룩을 받아온다.
+  useEffect(() => {
+    if (!selectedChannels.shorts) return
+    const groupIds = Array.from(new Set(
+      PRESET_SHORTS_AVATARS.map((p) => p.avatarGroupId).filter(Boolean)
+    ))
+    const missing = groupIds.filter((gid) => !groupLooks[gid])
+    if (missing.length === 0) return
+    let cancelled = false
+    Promise.all(missing.map((gid) =>
+      apiFetch(`/api/heygen/avatar-group/${gid}/looks`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => ({ gid, looks: Array.isArray(data?.looks) ? data.looks : [] }))
+        .catch(() => ({ gid, looks: [] }))
+    )).then((results) => {
+      if (cancelled) return
+      setGroupLooks((prev) => {
+        const next = { ...prev }
+        for (const { gid, looks } of results) next[gid] = looks
+        return next
+      })
+    })
+    return () => { cancelled = true }
+  }, [selectedChannels.shorts, groupLooks])
+
+  // 아바타 카드 그리드용 — 그룹 있는 preset 은 9:16 룩별로 펼쳐 각각 카드 1개로 만든다.
+  const expandedAvatars = useMemo(() => {
+    const result = []
+    for (const preset of PRESET_SHORTS_AVATARS) {
+      if (preset.avatarGroupId) {
+        const looks = (groupLooks[preset.avatarGroupId] || []).filter((l) => l.portrait)
+        for (const look of looks) {
+          result.push({
+            key: `${preset.id}:${look.id}`,
+            preset,
+            lookId: look.id,
+            preview: look.preview || null,
+          })
+        }
+      } else {
+        result.push({
+          key: preset.id,
+          preset,
+          lookId: preset.avatarId,
+          preview: presetAvatarPreviews[preset.avatarId] || null,
+        })
+      }
+    }
+    return result
+  }, [groupLooks, presetAvatarPreviews])
 
   const playVoicePreview = (preset) => {
     if (!preset) return
@@ -3338,78 +3391,66 @@ ${parsedText}
                             </div>
                           )}
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                            {PRESET_SHORTS_AVATARS.map((preset) => {
-                              // 컨셉 선택 시: 그 컨셉에 등장하는 모든 아바타(preferredAvatarIds)를 선택 표시.
-                              // 컨셉 미선택 시: 단일 heygenAvatarId 기준.
-                              const conceptAvatarIds = findShortsVideoConcept(promptSettings.shorts.videoConcept)?.preferredAvatarIds
-                              const isSelected = conceptAvatarIds?.length
-                                ? conceptAvatarIds.includes(preset.avatarId)
-                                : heygenAvatarId === preset.avatarId
-                              const previewUrl = presetAvatarPreviews[preset.avatarId] || null
+                            {expandedAvatars.map(({ key, preset, lookId, preview }) => {
+                              // 그룹 안 룩들도 1개만 선택 표시 — 컨셉 매칭은 원본 preset.avatarId(=group ID) 기준.
+                              const isSelected = heygenAvatarId === lookId
                               return (
-                                <div
-                                  key={preset.id}
-                                  className={`group relative rounded-xl border bg-surface-light overflow-hidden transition-all ${
+                                <button
+                                  type="button"
+                                  key={key}
+                                  onClick={() => {
+                                    // 컨셉이 선택돼 있을 때, 같은 그룹 안 다른 룩을 골라도 같은 인물로 간주돼 컨셉이 유지된다.
+                                    // 다른 인물(preset)을 고르면 컨셉 초기화 + 안내.
+                                    const activeConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+                                    if (activeConcept && !activeConcept.preferredAvatarIds?.includes(preset.avatarId)) {
+                                      updatePrompt('shorts', 'videoConcept', '')
+                                      updatePrompt('shorts', 'extra', '')
+                                      setConceptResetNotice(true)
+                                    } else {
+                                      setConceptResetNotice(false)
+                                    }
+                                    setAvatarPrompt('')
+                                    setAvatarImage(preview)
+                                    setHeygenAvatarId(lookId)
+                                    setAvatarConfirmed(true)
+                                    setHeygenReady(true)
+                                    setHeygenUploading(false)
+                                  }}
+                                  className={`group relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
                                     isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
                                   }`}
+                                  aria-label={`${preset.name} 아바타 선택`}
                                 >
                                   <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
-                                    {previewUrl ? (
-                                      <img src={previewUrl} alt={preset.name} className="h-full w-full object-cover" />
+                                    {preview ? (
+                                      <img src={preview} alt="" className="h-full w-full object-cover" />
                                     ) : (
                                       <div className="h-full w-full flex items-center justify-center text-xs text-text-muted">
                                         <Loader2 size={14} className="animate-spin mr-1" /> 미리보기
                                       </div>
                                     )}
-                                    {/* 이미지 영역 호버 시 가운데 ▶ 재생 버튼 — 클릭 시 voice 만 재생 (선택은 아님) */}
-                                    <button
-                                      type="button"
+                                    {/* 호버 시 ▶ — 클릭 시 voice 만 재생. nested <button> 금지라 div role=button 사용. */}
+                                    <div
+                                      role="button"
+                                      tabIndex={-1}
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         playVoicePreview(preset)
                                       }}
-                                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                                      className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                       aria-label={`${preset.name} 목소리 미리듣기`}
                                     >
                                       <span className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/95 text-gray-900 shadow-lg">
                                         <Play size={20} className="ml-0.5" />
                                       </span>
-                                    </button>
+                                    </div>
                                   </div>
-                                  {/* 하단 이름 영역 — 클릭 시 아바타 선택 */}
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      // 컨셉이 선택돼 있는데 그 컨셉에 없는 아바타를 고르면 컨셉을 초기화하고 안내한다.
-                                      const activeConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
-                                      if (activeConcept && !activeConcept.preferredAvatarIds?.includes(preset.avatarId)) {
-                                        updatePrompt('shorts', 'videoConcept', '')
-                                        updatePrompt('shorts', 'extra', '')
-                                        setConceptResetNotice(true)
-                                      } else {
-                                        setConceptResetNotice(false)
-                                      }
-                                      setAvatarPrompt('')
-                                      setAvatarImage(previewUrl)
-                                      setHeygenAvatarId(preset.avatarId)
-                                      setAvatarConfirmed(true)
-                                      setHeygenReady(true)
-                                      setHeygenUploading(false)
-                                    }}
-                                    className={`block w-full px-2 py-2 text-left transition-colors ${
-                                      isSelected ? 'bg-primary/10' : 'hover:bg-surface'
-                                    }`}
-                                    aria-label={`${preset.name} 선택`}
-                                  >
-                                    <p className={`text-sm font-semibold ${isSelected ? 'text-primary' : 'text-text'}`}>{preset.name}</p>
-                                    <p className="text-[11px] text-text-muted">{preset.kind}</p>
-                                  </button>
                                   {isSelected && (
                                     <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
                                       <CheckCircle size={10} /> 선택됨
                                     </span>
                                   )}
-                                </div>
+                                </button>
                               )
                             })}
                           </div>
