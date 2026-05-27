@@ -26,13 +26,15 @@ fs.mkdirSync(OUT_DIR, { recursive: true })
 
 const exec = promisify(execFile)
 
+// 주의: 동완쌤·후라이쌤의 avatarId 는 group ID 라 talking_photo_id 호출이 실패한다.
+// 보이스 프리뷰가 필요해지면 그룹 안 단일 룩 ID 1개씩을 별도로 받아 여기만 교체할 것.
 const PRESETS = [
-  { id: 'dongwan_ssaem', avatarId: 'bd28ab87ed834bf5a72a5923536182c6', voiceId: '8da71a32beeb45ffa0182276233333c6', text: '안녕하세요. 입시 전문가 동완쌤이에요.' },
-  { id: 'fry_ssaem', avatarId: 'adebcddfb2e94c869e484e946bb275ae', voiceId: '3a6f4521058a436ebf97d42152dae017', text: '안녕하세요. 후라이쌤이에요.' },
-  { id: 'male_student', avatarId: '29708244eaa5487e976af960aa51e207', voiceId: '3097f9a8fd3b4340b6bbe913177b378f', text: '공부, 효율적으로 해야죠!' },
-  { id: 'female_student', avatarId: '59fbce86969e49d5bb33cd0a443b8cff', voiceId: '86956bc34b7248d7be34eb3a6f69d03b', text: '오늘도 갓생 시작! 저만의 갓생 꿀팁 알려드릴게요.' },
-  { id: 'dog_student', avatarId: 'f51d84b6b19645dbbeedf326379be949', voiceId: 'aceb4659b9e7420483800bbf698e9e24', text: '멍멍, 입시 용어 쉽게 알려줄게요.' },
-  { id: 'cat_student', avatarId: 'b2f2fda709a2481a8a63a7ea72c747a8', voiceId: 'aUNzYEiHa4XkuSYzaiy1', text: '야옹, 오늘 공부할 준비됐어요?' },
+  { id: 'dongwan_ssaem', avatarId: '618714c6b4054f8fbd2d6a17f0e4a1e8', voiceId: '664ed0c5de6b4532adfb951094ff2707', text: '안녕하세요. 입시 전문가 동완쌤이에요.' },
+  { id: 'fry_ssaem', avatarId: '45b17934d52348e691547a1240f3e49d', voiceId: 'ab103893aefd45fca1d1eea500f2ee4b', text: '안녕하세요. 후라이쌤이에요.' },
+  { id: 'male_student', avatarId: '4685b2dd1eda48d1902b588b122ed613', voiceId: '3097f9a8fd3b4340b6bbe913177b378f', text: '공부, 효율적으로 해야죠!' },
+  { id: 'female_student', avatarId: '302d291002e840baa235a36786358b85', voiceId: '86956bc34b7248d7be34eb3a6f69d03b', text: '오늘도 갓생 시작! 저만의 갓생 꿀팁 알려드릴게요.' },
+  { id: 'dog_student', avatarId: '96d289518a194421b3031d96e2ca8627', voiceId: '18ff90e66773483e80660e2a6fbda399', text: '멍멍, 입시 용어 쉽게 알려줄게요.' },
+  { id: 'cat_student', avatarId: '0d58128ab91d4b9297237fd213112a07', voiceId: '18ff90e66773483e80660e2a6fbda399', text: '야옹, 오늘 공부할 준비됐어요?' },
 ]
 
 async function heygen(method, urlPath, body) {

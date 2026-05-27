@@ -8,8 +8,8 @@
 // 모듈 로드 시(스크립트 실행 / 앱 세션)마다 풀에서 1개를 랜덤으로 골라 그 세션 동안 사용한다.
 // presetShortsAvatars.js 가 DOG_STUDENT_AVATAR_ID 를 import 해 같은 값을 공유한다.
 const DOG_STUDENT_AVATAR_POOL = [
-  '0217c7e94ab548df9f4422d29cbd0fea',
-  'f51d84b6b19645dbbeedf326379be949',
+  '96d289518a194421b3031d96e2ca8627',
+  '0c7bfe6c196f4e47acaa2a8f0b967b76',
 ]
 export const DOG_STUDENT_AVATAR_ID =
   DOG_STUDENT_AVATAR_POOL[Math.floor(Math.random() * DOG_STUDENT_AVATAR_POOL.length)]
@@ -19,35 +19,34 @@ export const HEYGEN_AVATARS = {
     id: 'dongwan_ssaem',
     name: '동완쌤',
     kind: 'Person Avatar',
-    avatarId: 'bd28ab87ed834bf5a72a5923536182c6',
-    defaultVoiceId: '8da71a32beeb45ffa0182276233333c6',
-    // avatarGroupId: HeyGen avatar group — 영상 생성 시 그룹 안 룩 중 9:16 하나를 랜덤 선택.
-    // HeyGen 에서 그룹에 룩을 추가하면 코드 수정 없이 자동 반영된다.
-    avatarGroupId: 'e173e545a897462cb3979eece141d6ed',
+    // 단일 룩 ID 미사용 — avatarId 자리에 group ID 를 둬서 resolveAvatarGroupLook 이
+    // 항상 그룹 안 9:16 룩 중 하나를 자동 선택하도록 한다.
+    avatarId: '618714c6b4054f8fbd2d6a17f0e4a1e8',
+    defaultVoiceId: '664ed0c5de6b4532adfb951094ff2707',
+    avatarGroupId: '618714c6b4054f8fbd2d6a17f0e4a1e8',
   },
   fry_ssaem: {
     id: 'fry_ssaem',
     name: '후라이쌤',
     kind: 'Person Avatar',
-    // avatarId 는 그룹 안 룩 중 하나(폴백용 기본값) — "책상에 앉은 선생님" 9:16(1536x2752).
-    avatarId: 'adebcddfb2e94c869e484e946bb275ae',
-    defaultVoiceId: '3a6f4521058a436ebf97d42152dae017',
-    avatarGroupId: 'cfdf4447704f4e44b92cd984dd9b28cc',
+    // 단일 룩 ID 미사용 — avatarId 자리에 group ID 를 둬서 resolveAvatarGroupLook 이
+    // 항상 그룹 안 9:16 룩 중 하나를 자동 선택하도록 한다.
+    avatarId: '45b17934d52348e691547a1240f3e49d',
+    defaultVoiceId: 'ab103893aefd45fca1d1eea500f2ee4b',
+    avatarGroupId: '45b17934d52348e691547a1240f3e49d',
   },
   male_student: {
     id: 'male_student',
     name: '남자 제자',
     kind: 'Person Avatar',
-    avatarId: '29708244eaa5487e976af960aa51e207',
+    avatarId: '4685b2dd1eda48d1902b588b122ed613',
     defaultVoiceId: '3097f9a8fd3b4340b6bbe913177b378f',
   },
   female_student: {
     id: 'female_student',
     name: '여자 제자',
     kind: 'Person Avatar',
-    // 9:16 세로 Alexa 룩(창가 미소). 쇼츠(9:16) 프레이밍을 위해 세로 룩만 사용한다.
-    // (이전 a5454d8b… 룩은 16:9 가로라 세로 영상에서 프레이밍이 깨져 교체함)
-    avatarId: '59fbce86969e49d5bb33cd0a443b8cff',
+    avatarId: '302d291002e840baa235a36786358b85',
     defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
   },
   dog_student: {
@@ -55,14 +54,21 @@ export const HEYGEN_AVATARS = {
     name: '강아지 제자',
     kind: 'Animal Avatar',
     avatarId: DOG_STUDENT_AVATAR_ID,
-    defaultVoiceId: 'aceb4659b9e7420483800bbf698e9e24',
+    defaultVoiceId: '18ff90e66773483e80660e2a6fbda399',
+  },
+  cat_student: {
+    id: 'cat_student',
+    name: '고양이 제자',
+    kind: 'Animal Avatar',
+    avatarId: '0d58128ab91d4b9297237fd213112a07',
+    defaultVoiceId: '18ff90e66773483e80660e2a6fbda399',
   },
   interview_student: {
     id: 'interview_student',
     name: '면접 제자',
     kind: 'Person Avatar',
-    // mock_interview(면접 클리닉)의 답변 예시 제자. voice 는 여자 제자 voice 를 쓴다.
-    avatarId: '035099a76bb048d49ea59ec8d34588e0',
+    // mock_interview(면접 클리닉)의 답변 예시 제자. voice 는 여자 제자 voice 를 공유한다.
+    avatarId: 'd5ec954460414a7b97625b859a8ce53d',
     defaultVoiceId: '86956bc34b7248d7be34eb3a6f69d03b',
   },
 }

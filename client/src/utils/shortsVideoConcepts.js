@@ -83,18 +83,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // 솔로 + 전 씬 순수 아바타라 canMergeSoloTake 가 발동해 나레이션 전체를
     // video_input 1개로 병합 → 컷 없는 연속 테이크. 자막은 이후 씬별 번인.
     useStandardEndpoint: true,
-    // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용" + 영상마다 분위기 변화.
-    // → randomVariantPerVideo: true 로 영상 1개당 1개 variant 를 랜덤 픽 후 모든 씬에 동일 적용.
-    // 풀은 "아늑한 방" 가이드와 잘 맞는 실내 variant 중 9:16 세로 룩 5개.
-    // ※ 9:16 세로 룩만 등록 — 16:9 가로 룩은 쇼츠(9:16) 프레이밍이 깨지므로 추가 금지.
-    sceneAvatarIds: [
-      '98514c36beb94007a1ab493d583cf5c6', // 의자 컵, 모던 거실 라운지
-      'f3db5b47238c4a4ba58885d24a3f1faa', // 창가 제스처, 회색 맨투맨
-      '726a2f45007c41da89f4fde587796ece', // 스튜디오 정면, 차콜 셔츠
-      '440f2af83f58425ab54a3f163a7dfd52', // 실내 정면샷, 차콜 카라 셔츠
-      'f55a98c799b84d859469982014ab9e3c', // 모던 오피스, 차콜 반팔 셔츠
-    ],
-    randomVariantPerVideo: true,
+    // TODO(heygen-account-switch): 새 계정에서 variant 풀 재구성 필요.
+    // 미설정 동안에는 preferredAvatarIds[0](= 단일 룩 ID) 만 모든 씬에 사용된다.
     testScript: {
       title: '동완쌤 전수 수행평가 치트키 3',
       duration: '15',
@@ -135,19 +125,8 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // 표준 엔드포인트(/v2/video/generate)로 렌더한다 — Video Agent 자동 연출 미사용.
     // 솔로 + 전 씬 순수 아바타라 canMergeSoloTake 가 발동해 컷 없는 연속 테이크로 렌더.
     useStandardEndpoint: true,
-    // 컨셉 가이드: "한 영상 안에서는 같은 공간만 사용" (dongwan_secret 과 동일 방식).
-    // → randomVariantPerVideo: true 로 영상 1개당 Alexa variant 1개를 랜덤 픽해 모든 씬에 동일 적용.
-    // 별도 배경 합성은 쓰지 않는다 — variant 자체 배경을 그대로 사용해 합성 어색함을 없앤다.
-    // 풀은 Alexa variant 중 9:16 세로 룩 5개.
-    // ※ 9:16 세로 룩만 등록 — 16:9 가로 룩은 쇼츠(9:16) 프레이밍이 깨지므로 추가 금지.
-    sceneAvatarIds: [
-      '62b02a920a78424e94f63f2ddb85dc99', // 창가 미소, 흰 홀터넥 + 헤어밴드
-      '62bc0097e3ec4154bd8133e73c6ff12d', // 창가 침실, 핑크 니트
-      '057d99ff22cc47a9be6d5773cb46e2e0', // 거실 셀카, 검정 테두리 가디건
-      '7e16d04300e74074bc77e7c0bfb97e87', // 복도 셀카, 베이지 니트 + 하늘색 셔츠
-      '7a9c3518725e4f788b61df77e7d36c34', // 창가 복도, 흰 홀터넥 + 베이지 가디건
-    ],
-    randomVariantPerVideo: true,
+    // TODO(heygen-account-switch): 새 계정에서 variant 풀 재구성 필요.
+    // 미설정 동안에는 preferredAvatarIds[0](= 단일 룩 ID) 만 모든 씬에 사용된다.
     testScript: {
       title: '상위 0.1퍼센트 갓생 루틴',
       duration: '15',
