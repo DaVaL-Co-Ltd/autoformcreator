@@ -103,7 +103,7 @@ function buildSceneLines(script) {
       // 선언한 것. heuristic 보다 우선해 HeyGen Video Agent 에 강하게 지시한다.
       if (scene?.layout === 'infographic-full') {
         const visual = scene?.visualDescription
-          ? ` / Visual content for HeyGen to render: ${scene.visualDescription}`
+          ? ` / Visual content for HeyGen to render: ${String(scene.visualDescription).slice(0, 600)}`
           : ''
         return `- 장면 ${scene.sceneNumber} (${scene.duration}초, INFOGRAPHIC-ONLY, no avatar visible): voice-over narration "${spokenText}"${overlay}${visual} / Layout direction: REMOVE the avatar from this scene completely. Render a full-frame data infographic / chart / keyword card that fills the entire canvas based on the Visual content above. The chart, graph, or table MUST be ANIMATED motion graphics — bars grow in, line graphs draw on progressively, pie/donut segments sweep in, key numbers count up — never a flat static image. The avatar must NOT appear in any form, not even small or in a corner. The narration plays as a voice-over only, keeping the same single narrator voice and tone as the avatar scenes.`
       }
@@ -143,50 +143,64 @@ export function buildShortsVideoAgentPrompt({
   // (배경색이 씬마다 바뀌는 등). 모든 인포그래픽 씬이 하나의 디자인 시스템을 공유하도록 강제한다.
   const hasMultipleInfographicScenes = (script?.scenes || []).filter((s) => s?.layout === 'infographic-full').length >= 2
 
-  return [
+  // HeyGen Video Agent 의 prompt 는 최대 10000 자. 고정 지시문 + 씬 플랜 + 컨셉 direction(extra)
+  // 합이 이를 넘으면 요청이 거부되므로, 필수 지시는 항상 넣고 부가 지시는 남는 예산만큼만 넣는다.
+  const MAX_PROMPT_CHARS = 10000
+  const cappedExtra = String(extraPrompt || '').slice(0, 2000)
+
+  // 필수 — 영상 정확성·핵심 제약·씬 플랜·사용자 오버라이드. 항상 포함한다.
+  const essentialLines = [
     'Create a polished vertical 9:16 YouTube Shorts video in Korean.',
     `Target duration: about ${duration} seconds.`,
     hasInfographicScenes ? 'This video MIXES AVATAR scenes and INFOGRAPHIC-ONLY scenes — follow each scene\'s Layout direction EXACTLY. In AVATAR scenes the named avatar appears on screen; in INFOGRAPHIC-ONLY scenes the avatar must be completely hidden and the entire frame is replaced with an AI-generated data card / chart / keyword graphic that HeyGen renders from the Visual content given in that scene.' : '',
     hasInfographicScenes ? 'INFOGRAPHIC-ONLY scenes play the narration as a voice-over only — use the same single narrator voice as the avatar scenes so the audio identity is continuous across the whole video.' : '',
     hasMultipleInfographicScenes ? 'CRITICAL — UNIFIED INFOGRAPHIC DESIGN: Every INFOGRAPHIC-ONLY scene in this single video MUST share ONE identical design system — the same background color, the same color palette, the same layout grid and margins, the same typography, and the same chart/graphic styling. They must look like a consistent series of cards generated from one fixed template. NEVER change the background color between infographic scenes (for example, do not show a navy background in one infographic scene and a white background in another) — choose one background treatment and keep it pixel-consistent across all of them.' : '',
-    'Keep the pacing fast, informative, and optimized for short-form retention.',
-    'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment, with any compact rounded text card placed in the upper area of the frame.',
     'CRITICAL — NO SUBTITLES: Do NOT generate, render, or burn in any subtitles, captions, or closed captions. Export the video with zero subtitle/caption text. Korean subtitles are added afterward in a separate post-production step.',
     'CRITICAL — RESERVED BOTTOM BAND: The bottom 30% of the vertical 9:16 frame is a strictly reserved empty zone. Keep it completely clear at all times — no captions, no text, no labels, no headlines, no charts, no callouts, no logos, no decorative graphics. This lower band must stay visually empty so post-production subtitles can sit there cleanly.',
     'CRITICAL — PROTECTED FACE ZONE: The avatar face and the central head area are a protected no-overlay zone. Never place text, labels, headlines, numbers, charts, stickers, or any graphic over the avatar face, mouth, or eyes.',
-    'Place every auto-generated scene keyword card or text overlay only in the top-safe area (upper ~25% of the frame) — never in the bottom 30% band and never over the avatar face.',
-    'Keep all on-screen text and graphic elements out of both the bottom 30% reserved band and the central avatar-face zone.',
-    // 인포그래픽 씬이 명시돼 있으면 "아껴 써라 / 데이터 빽빽할 때만" 류의 옛 heuristic 문구는
-    // 씬별 명시 지시와 정면 충돌하므로 넣지 않는다. 대신 마커가 최종임을 못 박는다.
     hasInfographicScenes
       ? 'The scene plan below explicitly labels each scene as either an AVATAR scene or an INFOGRAPHIC-ONLY scene — these labels are FINAL and authoritative. Do NOT reclassify any scene: never turn a labelled INFOGRAPHIC-ONLY scene back into an avatar scene, and never add the avatar to it, regardless of how few numbers its narration has.'
       : 'Only switch to a text-only or infographic-only scene when a scene is genuinely crowded with numbers, rankings, percentages, comparisons, or multiple dense factual lines.',
     hasInfographicScenes
       ? 'Every scene labelled INFOGRAPHIC-ONLY must fill the entire frame with the data / chart / keyword graphic and contain zero avatar pixels; every scene labelled as an avatar scene keeps the avatar on screen.'
       : 'For normal scenes, keep the avatar on screen and use only a light, compact overlay.',
-    hasInfographicScenes ? '' : 'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
-    'When using a text-only or infographic-only scene, still keep the bottom 30% band completely empty — the data card must not extend into that reserved band.',
-    'Whenever a scene presents data, statistics, numbers, charts, graphs, or tables, render them as ANIMATED motion graphics — bars growing in, line graphs drawing on progressively, pie or donut segments sweeping in, key numbers counting up — never a flat static image.',
-    'For scenes that are NOT data-heavy, keep the avatar on screen and speaking instead of switching to an infographic.',
     avatarName
       ? avatarKind === 'talking_photo'
         ? `Use my custom HeyGen talking photo avatar named "${avatarName}"${hasInfographicScenes ? ' in AVATAR scenes only — it must NOT appear in INFOGRAPHIC-ONLY scenes' : ''}.`
         : `Use the HeyGen stock avatar named "${avatarName}"${hasInfographicScenes ? ' in AVATAR scenes only — it must NOT appear in INFOGRAPHIC-ONLY scenes' : ''}.`
       : '',
     resolvedVoiceInstruction,
+    // hook 은 영상 생성 직전에 첫 씬 narration 에 흡수되므로 별도 인트로로 노출하지 않는다.
+    sceneLines ? `Use the following scene plan exactly as the speaking structure:\n${sceneLines}` : '',
+    script?.cta ? `Closing CTA: ${script.cta}` : '',
+    cappedExtra ? `Highest-priority user override: ${cappedExtra}` : '',
+  ].filter(Boolean)
+
+  // 부가 — 품질 향상용. 10000 자 예산이 허락하는 만큼만 포함한다(초과 시 생략돼도 동작엔 지장 없음).
+  const optionalLines = [
+    'Keep the pacing fast, informative, and optimized for short-form retention.',
+    'Reference the composition style of a polished social short with a realistic subject in a cozy study or interview environment, with any compact rounded text card placed in the upper area of the frame.',
+    'Place every auto-generated scene keyword card or text overlay only in the top-safe area (upper ~25% of the frame) — never in the bottom 30% band and never over the avatar face.',
+    'Keep all on-screen text and graphic elements out of both the bottom 30% reserved band and the central avatar-face zone.',
+    hasInfographicScenes ? '' : 'Use text-only scenes sparingly and only for exceptionally data-dense moments.',
+    'When using a text-only or infographic-only scene, still keep the bottom 30% band completely empty — the data card must not extend into that reserved band.',
+    'Whenever a scene presents data, statistics, numbers, charts, graphs, or tables, render them as ANIMATED motion graphics — bars growing in, line graphs drawing on progressively, pie or donut segments sweeping in, key numbers counting up — never a flat static image.',
+    'For scenes that are NOT data-heavy, keep the avatar on screen and speaking instead of switching to an infographic.',
     videoStyle && videoStyle !== 'auto' ? `Visual direction: ${videoStyle}.` : '',
     narrationTone && narrationTone !== 'auto' ? `Narration tone: ${narrationTone}.` : '',
     script?.title ? `Video title reference: ${script.title}` : '',
-    // hook 은 영상 생성 직전에 첫 씬 narration 에 흡수되므로 별도 인트로로 노출하지 않는다.
-    // (Video Agent 에 "Opening hook" 을 따로 전달하면 첫 씬 앞에 hook 을 한 번 더 읽어 중복됨.)
-    sceneLines ? `Use the following scene plan exactly as the speaking structure:\n${sceneLines}` : '',
-    script?.cta ? `Closing CTA: ${script.cta}` : '',
     'Add concise scene-specific on-screen text in the top-safe area only, and preserve the vertical mobile-safe composition.',
     'Never cover the avatar face with titles, labels, charts, or numeric overlays.',
     'Never use the bottom 30% band for captions, decorative overlays, scene labels, or emphasis text — it stays empty.',
     'Avoid adding extra scenes or stretching the script beyond the target runtime.',
-    extraPrompt ? `Highest-priority user override: ${extraPrompt}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n')
+  ].filter(Boolean)
+
+  let prompt = essentialLines.join('\n')
+  for (const line of optionalLines) {
+    if (prompt.length + 1 + line.length > MAX_PROMPT_CHARS - 50) continue
+    prompt += `\n${line}`
+  }
+  // 최후 안전망: 필수 지시만으로도 한도를 넘는 극단 케이스에서 잘라 API 거부를 막는다.
+  if (prompt.length > MAX_PROMPT_CHARS) prompt = prompt.slice(0, MAX_PROMPT_CHARS)
+  return prompt
 }

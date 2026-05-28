@@ -703,12 +703,36 @@ export default function ExtractionPage() {
       else if (preset.id === 'fry_ssaem') fry.push(...items)
       else students.push(...items)
     }
+    // 같은 lookId 가 개별 preset 카드와 '다 제자' 그룹 룩 양쪽에서 나와 중복될 수 있어 dedup (미리보기 있는 쪽 우선).
+    const dedup = (items) => {
+      const map = new Map()
+      for (const item of items) {
+        const cur = map.get(item.lookId)
+        if (!cur || (!cur.preview && item.preview)) map.set(item.lookId, item)
+      }
+      return [...map.values()]
+    }
     return [
-      { id: 'dongwan_ssaem', label: '동완쌤', items: dongwan },
-      { id: 'fry_ssaem', label: '후라이쌤', items: fry },
-      { id: 'students', label: '제자', items: students },
+      { id: 'dongwan_ssaem', label: '동완쌤', items: dedup(dongwan) },
+      { id: 'fry_ssaem', label: '후라이쌤', items: dedup(fry) },
+      { id: 'students', label: '제자', items: dedup(students) },
     ]
   }, [groupLooks, presetAvatarPreviews])
+
+  // 단일 컨셉이 그룹형 아바타(동완쌤·후라이쌤)를 자동 선택하면 heygenAvatarId 에 그룹 ID 가 들어간다.
+  // 그리드 카드는 그룹을 펼친 개별 룩(look.id)이라 그룹 ID 로는 어떤 카드도 선택 표시되지 않으므로,
+  // 그룹 룩이 로드되면 첫 룩으로 치환해 실제 카드가 선택돼 보이게 한다.
+  useEffect(() => {
+    if (!heygenAvatarId) return
+    const preset = findPresetShortsAvatar(heygenAvatarId)
+    if (preset?.avatarGroupId && preset.avatarGroupId === heygenAvatarId) {
+      const looks = groupLooks[preset.avatarGroupId]
+      if (Array.isArray(looks) && looks.length > 0 && looks[0]?.id) {
+        setHeygenAvatarId(looks[0].id)
+        if (looks[0].preview) setAvatarImage(looks[0].preview)
+      }
+    }
+  }, [heygenAvatarId, groupLooks])
 
   // 내 voice 목록 fetch — 숏폼이 선택됐을 때만 1회.
   useEffect(() => {
