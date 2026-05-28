@@ -1941,6 +1941,9 @@ DO NOT:
           body: JSON.stringify({
             video_inputs: filteredInputs,
             dimension: { width: 720, height: 1280 },
+            // [자막 싱크 검증] caption 사이드카(SRT, 실제 음성 타임스탬프) 생성을 켠다.
+            // 굽지 않고 status 의 caption_url 로만 받아 우리 번인 자막의 타이밍 소스로 쓸 계획.
+            caption: true,
           }),
         })
       } else {
@@ -1970,6 +1973,8 @@ DO NOT:
             config: {
               avatar_id: resolvedAvatarId,
             },
+            // [자막 싱크 검증] video_agent 경로도 caption 사이드카 지원 여부를 함께 확인한다(미지원일 수 있음).
+            caption: true,
           }),
         })
       }
@@ -2004,6 +2009,22 @@ DO NOT:
           const rawUrl = resolveMediaUrl(pollData.data?.video_url)
           if (!rawUrl) {
             throw new Error('HeyGen 영상 URL이 없습니다.')
+          }
+
+          // [자막 싱크 검증 — 1단계] HeyGen 이 caption(SRT 사이드카)을 만들어줬는지 확인한다.
+          // caption_url 이 채워지면 그 SRT 의 실제 음성 타임스탬프를 우리 번인 자막에 쓸 수 있다(B안).
+          const captionUrl = pollData.data?.caption_url || pollData.data?.caption_file_url || null
+          console.log('[caption 검증] caption_url =', captionUrl, '| status.data keys =', Object.keys(pollData.data || {}).join(','))
+          if (captionUrl) {
+            try {
+              const capRes = await fetch(captionUrl)
+              const capText = await capRes.text()
+              console.log('[caption 검증] SRT 내용 (앞 2000자):\n' + capText.slice(0, 2000))
+            } catch (e) {
+              console.log('[caption 검증] caption_url fetch 실패:', e?.message)
+            }
+          } else {
+            console.log('[caption 검증] caption_url 이 비어있음 — 이 경로/영상 유형은 caption 미지원일 수 있음.')
           }
 
           let finalUrl = rawUrl
