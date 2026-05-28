@@ -1743,13 +1743,13 @@ DO NOT:
         console.log(`[shorts] avatar group 랜덤 룩 선택: ${talkingPhotoId} → ${resolvedAvatarId}`)
       }
 
-      // 다음 경우 /v2/video/generate 로 분기:
+      // 항상 /v2/video/generate(표준) 로 만든다 — HeyGen 이 우리 대본(caption)을 그대로 읽어야
+      // 나레이션과 자막 문구가 일치하기 때문. (Video Agent 는 대본을 새로 써서 어긋남)
       //   1) 멀티 아바타 컨셉 (preferredAvatarIds.length > 1)
-      //   2) 솔로이지만 useStandardEndpoint: true 로 표시된 컨셉 (자동 연출 불필요)
-      // 그 외엔 Video Agent 사용 ($2/분, AI 자동 연출 포함).
+      //   2) 솔로 컨셉(useStandardEndpoint) 또는 컨셉 미선택(무컨셉) — 모두 표준으로.
       const selectedConcept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
       const useMultiAvatar = !!selectedConcept && Array.isArray(selectedConcept.preferredAvatarIds) && selectedConcept.preferredAvatarIds.length > 1
-      const useSoloStandard = !!selectedConcept && !useMultiAvatar && selectedConcept.useStandardEndpoint === true
+      const useSoloStandard = !useMultiAvatar && (!selectedConcept || selectedConcept.useStandardEndpoint === true)
       const useStandardEndpoint = useMultiAvatar || useSoloStandard
 
       // 2인 슬롯 컨셉: 사용자가 슬롯별로 고른 아바타+목소리를 실제 영상에 반영한다.

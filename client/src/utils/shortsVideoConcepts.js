@@ -37,8 +37,9 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'PIP·좌상단 작은 아바타 합성 금지.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dongwan_ssaem],
-    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate)
-    // 경로 사용. 표준 엔드포인트($1/분) 대신 $2/분 — 자연어 프롬프트로 인포그래픽 시각화·아바타 미노출 등 직접 지시.
+    // 표준 엔드포인트(/v2/video/generate)로 렌더 — HeyGen 이 우리 대본(caption)을 그대로 읽어
+    // 나레이션과 자막 문구가 일치하게 한다. (Video Agent 자동 연출·자동 인포그래픽은 사용 안 함)
+    useStandardEndpoint: true,
     testScript: {
       title: '의대 선호도 1퍼센트의 진실',
       duration: '15',
@@ -167,8 +168,9 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'CTA는 강요 없이 부드럽게 — 친구한테 도움될 만한 영상으로 공유 유도, 다음 용어 신청 댓글 유도.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dog_student],
-    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate) 경로 사용.
-    // 표준 엔드포인트($1/분) 대신 $2/분 — 자연어 프롬프트로 인포그래픽 시각화·아바타 미노출 등 직접 지시.
+    // 표준 엔드포인트(/v2/video/generate)로 렌더 — HeyGen 이 우리 대본(caption)을 그대로 읽어
+    // 나레이션과 자막 문구가 일치하게 한다. (Video Agent 자동 연출·자동 인포그래픽은 사용 안 함)
+    useStandardEndpoint: true,
     testScript: {
       title: '수시 6장 같이 알아보자',
       duration: '15',
