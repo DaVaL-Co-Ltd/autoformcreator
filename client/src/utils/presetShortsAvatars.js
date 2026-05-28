@@ -76,3 +76,19 @@ export const PRESET_SHORTS_AVATARS = [
 export function findPresetShortsAvatar(avatarId) {
   return PRESET_SHORTS_AVATARS.find((preset) => preset.avatarId === avatarId) || null
 }
+
+export function findPresetById(presetId) {
+  return PRESET_SHORTS_AVATARS.find((preset) => preset.id === presetId) || null
+}
+
+// 아바타 카테고리 — 2인 슬롯 컨셉에서 역할별로 고를 수 있는 범위를 정한다.
+// 'teachers' = 동완쌤·후라이쌤, 'students' = 그 외 제자 카테고리 전체(아바타 그리드의 '제자' 탭과 동일).
+export const TEACHER_PRESET_IDS = ['dongwan_ssaem', 'fry_ssaem']
+
+export function getPresetCategory(presetId) {
+  return TEACHER_PRESET_IDS.includes(presetId) ? 'teachers' : 'students'
+}
+
+export function getPresetsByCategory(category) {
+  return PRESET_SHORTS_AVATARS.filter((preset) => getPresetCategory(preset.id) === category)
+}

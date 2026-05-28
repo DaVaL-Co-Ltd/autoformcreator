@@ -214,6 +214,12 @@ export const SHORTS_VIDEO_CONCEPTS = [
       HEYGEN_AVATAR_IDS.male_student,
       HEYGEN_AVATAR_IDS.female_student,
     ],
+    // 2인 슬롯 — 사용자가 슬롯별로 아바타+목소리를 직접 골라야 영상이 생성된다.
+    // category: 'students' = 제자 카테고리 전체. 기본값은 남자·여자 제자.
+    avatarSlots: [
+      { id: 'student1', role: '제자 1', category: 'students', defaultPresetId: 'male_student' },
+      { id: 'student2', role: '제자 2', category: 'students', defaultPresetId: 'female_student' },
+    ],
     // 영상 통화 컨셉: 두 아바타가 각자 배경에 있되, 프레이밍을 통일하기 위해
     // 모든 씬에 흰색 배경을 깐다 (아바타가 9:16 을 못 채우면 흰 여백으로 일관 처리).
     backgroundColor: '#FFFFFF',
@@ -406,6 +412,12 @@ export const SHORTS_VIDEO_CONCEPTS = [
       HEYGEN_AVATAR_IDS.dongwan_ssaem,
       HEYGEN_AVATAR_IDS.interview_student,
     ],
+    // 2인 슬롯 — 선생님(동완쌤 or 후라이쌤) 1명 + 제자 카테고리 1명을 직접 골라야 생성된다.
+    // 선생님 슬롯 = 코치 역할(인트로·평가·마무리 씬), 제자 슬롯 = 답변 예시 역할.
+    avatarSlots: [
+      { id: 'teacher', role: '선생님', category: 'teachers', defaultPresetId: 'dongwan_ssaem' },
+      { id: 'student', role: '제자(답변 예시)', category: 'students', defaultPresetId: 'interview_student' },
+    ],
     // 동완쌤(코치) ↔ 제자(답변 예시 영상) 교차. 각 씬 avatarId 명시로 역할 배정 고정.
     // 동완쌤 씬은 모두 같은 아바타라 배경이 일관되고, 제자 답변 씬은 "예시 영상" 이라
     // 배경이 달라도 자연스럽다 — 그래서 backgroundColor(단색 강제)는 쓰지 않는다.
@@ -443,11 +455,29 @@ export const SHORTS_VIDEO_CONCEPTS = [
   },
 ]
 
+// 드롭다운(영상 컨셉) 표시 순서. 여기에 없는 보이는 컨셉은 원래 순서대로 맨 뒤에 붙는다.
+const CONCEPT_DISPLAY_ORDER = [
+  'briefing_dongwan',   // 동완쌤 1퍼센트 입시 데이터 브리핑
+  'mock_interview',     // 동완쌤 면접 답변 클리닉
+  'parent_mental_care', // 후라이쌤의 학부모 멘탈 케어
+  'pet_dictionary',     // 입시 강아지의 30초 용어 사전
+  'dongwan_secret',     // 훈남 제자의 수행평가 치트키
+  'godsaeng_routine',   // 미녀 제자 상위 0.1퍼센트 갓생 루틴
+  'study_dialogue',     // 남녀 제자 공부 스타일 영상 통화
+]
+
 export const SHORTS_VIDEO_CONCEPT_OPTIONS = [
   { value: '', label: '컨셉을 선택하지 않음' },
   // hiddenFromUI: true 인 컨셉은 선택 드롭다운에서 제외한다 (코드·테스트에서는 계속 동작).
+  // CONCEPT_DISPLAY_ORDER 순으로 정렬하고, 목록에 없는 컨셉은 원래 순서대로 뒤에 둔다.
   ...SHORTS_VIDEO_CONCEPTS
     .filter((concept) => !concept.hiddenFromUI)
+    .slice()
+    .sort((a, b) => {
+      const ia = CONCEPT_DISPLAY_ORDER.indexOf(a.id)
+      const ib = CONCEPT_DISPLAY_ORDER.indexOf(b.id)
+      return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+    })
     .map(({ id, label }) => ({ value: id, label })),
 ]
 

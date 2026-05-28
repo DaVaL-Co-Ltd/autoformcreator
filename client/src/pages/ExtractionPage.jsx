@@ -16,7 +16,7 @@ import {
 import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
 import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
-import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar } from '../utils/presetShortsAvatars'
+import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar, findPresetById, getPresetCategory, getPresetsByCategory } from '../utils/presetShortsAvatars'
 import { SHORTS_VIDEO_CONCEPT_OPTIONS, findShortsVideoConcept, buildShortsConceptExtra } from '../utils/shortsVideoConcepts'
 import { resolveAvatarGroupLook } from '../utils/avatarGroupLook'
 import {
@@ -587,6 +587,9 @@ export default function ExtractionPage() {
   const [myVoices, setMyVoices] = useState([])
   // 사용자가 voice 그리드에서 고른 voice_id. null 이면 아바타 preset.defaultVoiceId 사용.
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
+  // 2인 슬롯 컨셉(study_dialogue·mock_interview)에서 역할별로 고른 아바타+목소리.
+  // 각 항목: { presetId, voiceId }. 인덱스는 concept.avatarSlots 와 1:1 대응.
+  const [conceptAvatarSlots, setConceptAvatarSlots] = useState([])
   // 아바타 그리드 카테고리 필터 — 동완쌤·후라이쌤·제자 중 하나만 표시.
   const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('dongwan_ssaem')
   // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
@@ -891,8 +894,46 @@ export default function ExtractionPage() {
     })
   }
 
+  // 활성 컨셉이 2인 슬롯 컨셉이면 그 컨셉, 아니면 null.
+  const activeSlotConcept = (() => {
+    const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+    return Array.isArray(concept?.avatarSlots) && concept.avatarSlots.length > 0 ? concept : null
+  })()
+
+  // 슬롯 한 칸 갱신 (avatar 또는 voice).
+  const updateSlot = (index, patch) => {
+    setConceptAvatarSlots((prev) => {
+      const next = prev.slice()
+      next[index] = { ...(next[index] || {}), ...patch }
+      return next
+    })
+  }
+
+  // 2인 슬롯 컨셉 선택 검증. 통과면 null, 위반이면 사용자에게 보여줄 경고 메시지를 반환.
+  const validateSlotConcept = (concept, slots) => {
+    if (!Array.isArray(concept?.avatarSlots) || concept.avatarSlots.length === 0) return null
+    for (let i = 0; i < concept.avatarSlots.length; i++) {
+      const slotDef = concept.avatarSlots[i]
+      const sel = slots[i]
+      if (!sel?.presetId) return `'${slotDef.role}' 아바타를 선택해주세요.`
+      if (getPresetCategory(sel.presetId) !== slotDef.category) {
+        const catLabel = slotDef.category === 'teachers' ? '동완쌤 또는 후라이쌤' : '제자 카테고리'
+        return `'${slotDef.role}' 자리에는 ${catLabel}에서만 선택할 수 있습니다.`
+      }
+      if (!sel?.voiceId) return `'${slotDef.role}'의 목소리를 선택해주세요.`
+    }
+    const presetIds = slots.slice(0, concept.avatarSlots.length).map((s) => s.presetId)
+    if (new Set(presetIds).size !== presetIds.length) return '서로 다른 아바타 2명을 선택해주세요.'
+    return null
+  }
+
+  // 슬롯 컨셉이면 슬롯이 모두 유효해야, 아니면 아바타+목소리 단일 선택이 돼야 준비 완료.
+  const isShortsAvatarVoiceReady = activeSlotConcept
+    ? validateSlotConcept(activeSlotConcept, conceptAvatarSlots) === null
+    : (!!avatarConfirmed && !!selectedVoiceId)
+
   const isShortsVideoReady =
-    !!avatarConfirmed &&
+    isShortsAvatarVoiceReady &&
     !!shortsScript &&
     !loading.shorts &&
     !loading.media
@@ -1259,11 +1300,23 @@ export default function ExtractionPage() {
     const config = contentChannelConfigs.find(channel => channel.key === channelKey)
     if (!config) return
     if (!ensureBlogCategoryReady(channelKey === 'blog')) return
-    if (channelKey === 'shorts' && !avatarConfirmed) {
-      const message = '숏폼 생성 전에 아바타를 먼저 선택하거나 확정해주세요.'
-      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message }])
-      showErrorAlert('숏폼 생성', message)
-      return
+    if (channelKey === 'shorts') {
+      if (activeSlotConcept) {
+        // 2인 슬롯 컨셉: 역할별 아바타+목소리 규칙 위반 시 경고 팝업 후 중단.
+        const violation = validateSlotConcept(activeSlotConcept, conceptAvatarSlots)
+        if (violation) {
+          addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: violation }])
+          setErrorAlert(violation)
+          return
+        }
+      } else if (!avatarConfirmed || !selectedVoiceId) {
+        const message = !avatarConfirmed
+          ? '숏폼 생성 전에 아바타를 먼저 선택해주세요.'
+          : '숏폼 생성 전에 목소리를 먼저 선택해주세요.'
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message }])
+        showErrorAlert('숏폼 생성', message)
+        return
+      }
     }
 
     resetFromStep(CONTENT_CHANNEL_STEPS[channelKey])
@@ -1618,9 +1671,27 @@ DO NOT:
       return
     }
 
-    if (!avatarImage) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '아바타를 먼저 생성해주세요.' }])
-      return
+    const conceptForRun = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+    const slotConcept = Array.isArray(conceptForRun?.avatarSlots) && conceptForRun.avatarSlots.length > 0 ? conceptForRun : null
+
+    if (slotConcept) {
+      // 2인 슬롯 컨셉: 역할별 아바타+목소리 규칙 위반 시 경고 팝업 후 중단.
+      const violation = validateSlotConcept(slotConcept, conceptAvatarSlots)
+      if (violation) {
+        setErrorAlert(violation)
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: violation }])
+        return
+      }
+    } else {
+      if (!avatarImage) {
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '아바타를 먼저 생성해주세요.' }])
+        return
+      }
+
+      if (!selectedVoiceId) {
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '목소리를 먼저 선택해주세요.' }])
+        return
+      }
     }
 
     setStepLoading('shorts', true)
@@ -1628,12 +1699,14 @@ DO NOT:
     setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': true }))
 
     try {
-      const talkingPhotoId = heygenAvatarId || await uploadAvatarToHeyGen()
-      const avatarReady = heygenReady || await waitForHeygenAvatarReady(talkingPhotoId, {
+      const talkingPhotoId = slotConcept
+        ? (findPresetById(conceptAvatarSlots[0]?.presetId)?.avatarId || null)
+        : (heygenAvatarId || await uploadAvatarToHeyGen())
+      const avatarReady = slotConcept ? true : (heygenReady || await waitForHeygenAvatarReady(talkingPhotoId, {
         attempts: 24,
         intervalMs: 5000,
         progressLabel: '아바타 준비 확인 중...',
-      })
+      }))
 
       if (!avatarReady) {
         throw new Error('HeyGen 아바타가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
@@ -1654,6 +1727,32 @@ DO NOT:
       const useMultiAvatar = !!selectedConcept && Array.isArray(selectedConcept.preferredAvatarIds) && selectedConcept.preferredAvatarIds.length > 1
       const useSoloStandard = !!selectedConcept && !useMultiAvatar && selectedConcept.useStandardEndpoint === true
       const useStandardEndpoint = useMultiAvatar || useSoloStandard
+
+      // 2인 슬롯 컨셉: 사용자가 슬롯별로 고른 아바타+목소리를 실제 영상에 반영한다.
+      // slotRoleRemap: 컨셉 기본 역할 아바타 ID → 사용자가 고른 아바타 ID (씬에 역할 avatarId 가 박힌 mock_interview 용).
+      // slotVoiceByAvatarId: 사용자가 고른 아바타 ID → 그 인물에 고른 목소리 ID.
+      const isSlotConcept = Array.isArray(selectedConcept?.avatarSlots) && selectedConcept.avatarSlots.length > 0
+      let slotAvatarIds = null
+      let slotRoleRemap = null
+      let slotVoiceByAvatarId = null
+      if (isSlotConcept) {
+        const resolvedSlots = await Promise.all(
+          selectedConcept.avatarSlots.map(async (slotDef, i) => {
+            const sel = conceptAvatarSlots[i] || {}
+            const preset = findPresetById(sel.presetId)
+            const avatarId = await resolveAvatarGroupLook(preset?.avatarId)
+            return { defaultId: selectedConcept.preferredAvatarIds?.[i], avatarId, voiceId: sel.voiceId || preset?.defaultVoiceId }
+          })
+        )
+        slotAvatarIds = resolvedSlots.map((r) => r.avatarId)
+        slotRoleRemap = {}
+        slotVoiceByAvatarId = {}
+        resolvedSlots.forEach((r) => {
+          if (r.defaultId) slotRoleRemap[r.defaultId] = r.avatarId
+          if (r.avatarId) slotVoiceByAvatarId[r.avatarId] = r.voiceId
+        })
+        console.log(`[shorts] ${selectedConcept.id}: 슬롯 선택 → ${slotAvatarIds.join(', ')}`)
+      }
 
       let generateRes
       let generatedVideoPrompt = null
@@ -1690,13 +1789,15 @@ DO NOT:
         if (shuffledSceneAvatarIds) {
           console.log(`[shorts] ${selectedConcept.id}: variant 셔플 — 앞 ${Math.min(scenesForStandard.length, shuffledSceneAvatarIds.length)}개: ${shuffledSceneAvatarIds.slice(0, scenesForStandard.length).join(', ')}`)
         }
-        const conceptAvatarIds = useMultiAvatar
-          ? await Promise.all(selectedConcept.preferredAvatarIds.map(resolveAvatarGroupLook))
-          : (pickedVariantId
-              ? [pickedVariantId]
-              : (shuffledSceneAvatarIds
-                  ? shuffledSceneAvatarIds
-                  : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [resolvedAvatarId])))
+        const conceptAvatarIds = isSlotConcept
+          ? slotAvatarIds
+          : (useMultiAvatar
+            ? await Promise.all(selectedConcept.preferredAvatarIds.map(resolveAvatarGroupLook))
+            : (pickedVariantId
+                ? [pickedVariantId]
+                : (shuffledSceneAvatarIds
+                    ? shuffledSceneAvatarIds
+                    : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [resolvedAvatarId]))))
 
         // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
         let quizCountdownAssetId = null
@@ -1761,7 +1862,9 @@ DO NOT:
           video_inputs = await Promise.all(scenesForStandard.map(async (scene, idx) => {
             // 씬이 avatarId 를 직접 지정하면 우선 사용 (ox_quiz 처럼 한 문제의 질문/대기/정답
             // 씬을 같은 인물로 고정할 때). 없으면 conceptAvatarIds 순환.
-            const avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
+            let avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
+            // 슬롯 컨셉: 씬에 박힌 기본 역할 아바타 ID 를 사용자가 고른 아바타로 치환 (mock_interview 역할 매핑).
+            if (slotRoleRemap && slotRoleRemap[avatarId]) avatarId = slotRoleRemap[avatarId]
             const preset = findPresetShortsAvatar(avatarId) || fallbackPreset
             // quiz-countdown: 아바타가 3초간 말 없이 대기하는 씬 → voice 를 silence 로.
             const isCountdownScene = scene?.layout === 'quiz-countdown'
@@ -1777,7 +1880,7 @@ DO NOT:
                     // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration) 도 함께 지원.
                     // toSpokenText 가 분수·영문 약어만 한글로 변환해 HeyGen TTS 가 자연스럽게 읽도록 한다.
                     input_text: toSpokenText(String(scene?.caption || scene?.narration || '').trim()),
-                    voice_id: overrideVoiceId || preset?.defaultVoiceId,
+                    voice_id: (slotVoiceByAvatarId && slotVoiceByAvatarId[avatarId]) || overrideVoiceId || preset?.defaultVoiceId,
                   },
             }
             if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
@@ -2086,8 +2189,9 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    // 숏폼 영상 — 아바타는 수동 클릭(setAvatarConfirmed) OR 컨셉 자동 선택(setAvatarConfirmed) 둘 중 하나라도 일어나면 통과
-    if (selectedChannels.shorts && !avatarConfirmed) incomplete.push('숏폼 아바타')
+    // 숏폼 영상 — 아바타는 수동 클릭(setAvatarConfirmed) OR 컨셉 자동 선택(setAvatarConfirmed) 둘 중 하나라도 일어나면 통과.
+    // 2인 슬롯 컨셉은 슬롯 검증(아바타+목소리)이 통과돼야 한다.
+    if (selectedChannels.shorts && !isShortsAvatarVoiceReady) incomplete.push('숏폼 아바타·목소리')
     if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
     // 실패 항목
     const contentErrors = (stepErrors.content || []).filter(e => isSelectedErrorChannel(e.channel))
@@ -3231,50 +3335,44 @@ ${parsedText}
                     onChange: (v) => {
                       updatePrompt('shorts', 'videoConcept', v)
                       setConceptResetNotice(false)
-                      // 컨셉 선택 시: extra 필드 자동 채움 + 첫 번째 추천 아바타 자동 선택
                       const concept = findShortsVideoConcept(v)
                       if (concept) {
                         updatePrompt('shorts', 'extra', buildShortsConceptExtra(v))
-                        const firstAvatarId = concept.preferredAvatarIds?.[0]
-                        if (firstAvatarId) {
-                          const preset = findPresetShortsAvatar(firstAvatarId)
-                          if (preset) {
-                            setAvatarPrompt('')
-                            setAvatarImage(presetAvatarPreviews[firstAvatarId] || null)
-                            setHeygenAvatarId(firstAvatarId)
-                            setAvatarConfirmed(true)
-                            setHeygenReady(true)
-                            setHeygenUploading(false)
+                        if (Array.isArray(concept.avatarSlots) && concept.avatarSlots.length > 0) {
+                          // 2인 슬롯 컨셉: 역할별 기본 아바타를 미리 채우고, 목소리는 직접 선택하도록 비워둔다.
+                          setConceptAvatarSlots(concept.avatarSlots.map((slot) => ({ presetId: slot.defaultPresetId, voiceId: null })))
+                          // 단일 아바타 선택 상태는 쓰지 않으므로 초기화. preset 아바타라 별도 준비 대기 불필요.
+                          setAvatarPrompt('')
+                          setAvatarImage(null)
+                          setHeygenAvatarId(null)
+                          setAvatarConfirmed(false)
+                          setSelectedVoiceId(null)
+                          setHeygenReady(true)
+                          setHeygenUploading(false)
+                        } else {
+                          // 단일 아바타 컨셉: 기존대로 첫 추천 아바타 자동 선택.
+                          setConceptAvatarSlots([])
+                          const firstAvatarId = concept.preferredAvatarIds?.[0]
+                          if (firstAvatarId) {
+                            const preset = findPresetShortsAvatar(firstAvatarId)
+                            if (preset) {
+                              setAvatarPrompt('')
+                              setAvatarImage(presetAvatarPreviews[firstAvatarId] || null)
+                              setHeygenAvatarId(firstAvatarId)
+                              setAvatarConfirmed(true)
+                              setHeygenReady(true)
+                              setHeygenUploading(false)
+                            }
                           }
                         }
                       } else {
                         updatePrompt('shorts', 'extra', '')
+                        setConceptAvatarSlots([])
                       }
                     },
                     options: SHORTS_VIDEO_CONCEPT_OPTIONS,
-                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 모든 아바타가 자동 선택됩니다. 선택하지 않으면 HeyGen 의 자동 연출(Video Agent)에 맡겨 알아서 만들어집니다.',
+                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 아바타가 자동 선택됩니다. 2인 컨셉은 역할별로 아바타·목소리를 직접 골라야 합니다. 선택하지 않으면 HeyGen 의 자동 연출(Video Agent)에 맡깁니다.',
                   })}
-                  {promptSettings.shorts.videoConcept && (() => {
-                    const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
-                    if (!concept?.testScript) return null
-                    return (
-                      <div className="space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShortsScript(concept.testScript)
-                            removeStepError('content', 'gemini', '숏폼 대본')
-                          }}
-                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
-                        >
-                          <Sparkles size={12} /> 테스트 대본 불러오기 (약 {concept.testScript.duration}초)
-                        </button>
-                        <p className="text-[11px] text-text-muted">
-                          현재 쇼츠 대본을 컨셉용 샘플 대본으로 즉시 교체합니다. (HeyGen 비용 절감 — Gemini 호출 없음)
-                        </p>
-                      </div>
-                    )
-                  })()}
                   {PF('나레이션 스타일', {
                     type: 'select',
                     value: shortsVoicePresetValue,
@@ -3458,8 +3556,94 @@ ${parsedText}
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.avatar}</span>
                             <p className="text-base font-semibold text-text">아바타 선택</p>
-                            {heygenAvatarId && <CheckCircle size={14} className="text-success" />}
+                            {(activeSlotConcept ? isShortsAvatarVoiceReady : heygenAvatarId) && <CheckCircle size={14} className="text-success" />}
                           </div>
+                          {activeSlotConcept ? (
+                          <div className="space-y-4">
+                            <p className="text-xs text-text-muted">
+                              이 컨셉은 {activeSlotConcept.avatarSlots.length}명이 등장합니다. 역할별로 아바타와 목소리를 각각 선택해야 영상이 생성됩니다.
+                            </p>
+                            {activeSlotConcept.avatarSlots.map((slotDef, slotIndex) => {
+                              const sel = conceptAvatarSlots[slotIndex] || {}
+                              const slotPresets = getPresetsByCategory(slotDef.category)
+                              const catLabel = slotDef.category === 'teachers' ? '동완쌤·후라이쌤' : '제자 카테고리'
+                              const selVoice = myVoices.find((mv) => mv.voice_id === sel.voiceId)
+                              return (
+                                <div key={slotDef.id} className="rounded-xl border border-border bg-surface-light/40 p-3 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-xs font-semibold">{slotDef.role}</span>
+                                    <span className="text-[11px] text-text-muted">{catLabel}에서 선택</span>
+                                    {sel.presetId && sel.voiceId && <CheckCircle size={13} className="text-success" />}
+                                  </div>
+                                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                                    {slotPresets.map((preset) => {
+                                      const isSel = sel.presetId === preset.id
+                                      const preview = presetAvatarPreviews[preset.avatarId]
+                                        || (preset.avatarGroupId ? groupLooks[preset.avatarGroupId]?.[0]?.preview : null)
+                                        || null
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={preset.id}
+                                          onClick={() => updateSlot(slotIndex, { presetId: preset.id })}
+                                          className={`relative rounded-lg border overflow-hidden bg-surface text-left transition-all ${isSel ? 'border-primary/60 ring-2 ring-primary/30' : 'border-border hover:border-primary/30'}`}
+                                          aria-label={`${slotDef.role} - ${preset.name} 선택`}
+                                        >
+                                          <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
+                                            {preview ? (
+                                              <img src={preview} alt="" className="h-full w-full object-cover" />
+                                            ) : (
+                                              <div className="h-full w-full flex items-center justify-center text-[10px] text-text-muted">
+                                                <Loader2 size={12} className="animate-spin" />
+                                              </div>
+                                            )}
+                                          </div>
+                                          <span className="block px-1.5 py-1 text-[11px] font-medium text-text truncate">{preset.name}</span>
+                                          {isSel && (
+                                            <span className="absolute top-1 right-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-white">
+                                              <CheckCircle size={10} />
+                                            </span>
+                                          )}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      value={sel.voiceId || ''}
+                                      onChange={(e) => updateSlot(slotIndex, { voiceId: e.target.value || null })}
+                                      className="flex-1 min-w-0 rounded-lg border border-border bg-surface px-2.5 py-2 text-sm text-text focus:border-primary/60 focus:outline-none"
+                                    >
+                                      <option value="">목소리 선택 (필수)</option>
+                                      {myVoices.map((voice) => {
+                                        const meta = [voice.gender, voice.language].filter(Boolean).join(' · ')
+                                        return (
+                                          <option key={voice.voice_id} value={voice.voice_id}>
+                                            {voice.name || voice.voice_id}{meta ? ` · ${meta}` : ''}
+                                          </option>
+                                        )
+                                      })}
+                                    </select>
+                                    {selVoice?.preview_audio && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleVoiceUrl(selVoice.voice_id, selVoice.preview_audio)}
+                                        className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10 text-primary hover:bg-primary/20"
+                                        aria-label={playingVoiceId === selVoice.voice_id ? '목소리 정지' : '목소리 미리듣기'}
+                                      >
+                                        {playingVoiceId === selVoice.voice_id ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            {myVoices.length === 0 && (
+                              <p className="text-xs text-text-muted flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> 목소리 목록 불러오는 중...</p>
+                            )}
+                          </div>
+                          ) : (
+                          <>
                           {conceptResetNotice && (
                             <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20 flex items-start gap-2">
                               <AlertTriangle size={14} className="text-warning shrink-0 mt-0.5" />
@@ -3554,9 +3738,6 @@ ${parsedText}
                                               </div>
                                             )}
                                           </div>
-                                          <span className="absolute bottom-1 left-1 inline-flex items-center rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                                            {preset.name}
-                                          </span>
                                           {isSelected && (
                                             <span className="absolute top-1.5 right-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-white">
                                               <CheckCircle size={10} /> 선택됨
@@ -3570,6 +3751,8 @@ ${parsedText}
                               </div>
                             ))}
                           </div>
+                          </>
+                          )}
                         </div>
 
                         {/* 아바타 확대 모달 — 카드 돋보기 클릭 시 표시. body 로 portal 해 그리드 스택 영향 없게. */}
@@ -3596,20 +3779,13 @@ ${parsedText}
                           document.body,
                         )}
 
-                        {/* 목소리 선택 (선택 옵션) — 고르지 않으면 아바타의 defaultVoiceId 가 사용된다. */}
+                        {/* 목소리 선택 (필수, 슬롯 컨셉이 아닐 때만) — 슬롯 컨셉은 슬롯별 목소리를 사용한다. */}
+                        {!activeSlotConcept && (
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
                             <p className="text-base font-semibold text-text">목소리 선택</p>
-                            <span className="text-xs text-text-muted">(선택 안 하면 아바타 기본 목소리)</span>
-                            {selectedVoiceId && (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedVoiceId(null)}
-                                className="ml-auto text-xs text-text-muted hover:text-primary"
-                              >
-                                선택 해제
-                              </button>
-                            )}
+                            <span className="text-xs text-text-muted">(필수)</span>
+                            {selectedVoiceId && <CheckCircle size={14} className="text-success" />}
                           </div>
                           {myVoices.length === 0 ? (
                             <p className="text-xs text-text-muted">목소리 목록 불러오는 중...</p>
@@ -3657,6 +3833,7 @@ ${parsedText}
                             </div>
                           )}
                         </div>
+                        )}
 
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
@@ -3808,6 +3985,22 @@ ${parsedText}
                                 : <><Film size={16} /> 숏폼 영상 생성</>}
                             </button>
                           )}
+                          {activeSlotConcept ? (
+                            !shortsVideo && !loading.shorts && (
+                              isShortsAvatarVoiceReady ? (
+                                <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
+                                  <CheckCircle size={14} className="text-success" />
+                                  <p className="text-xs text-success">역할별 아바타·목소리 준비 완료! 영상을 생성할 수 있습니다.</p>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 p-2.5 bg-warning/10 rounded-lg border border-warning/20">
+                                  <AlertTriangle size={14} className="text-warning" />
+                                  <p className="text-xs text-warning">{validateSlotConcept(activeSlotConcept, conceptAvatarSlots) || '역할별 아바타와 목소리를 모두 선택해주세요.'}</p>
+                                </div>
+                              )
+                            )
+                          ) : (
+                          <>
                           {!avatarImage && !shortsVideo && <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>}
                           {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
                             <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
@@ -3815,11 +4008,19 @@ ${parsedText}
                               <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
                             </div>
                           )}
-                          {avatarConfirmed && heygenReady && !shortsVideo && !loading.shorts && (
+                          {avatarConfirmed && heygenReady && !selectedVoiceId && !shortsVideo && !loading.shorts && (
+                            <div className="flex items-center gap-2 p-2.5 bg-warning/10 rounded-lg border border-warning/20">
+                              <AlertTriangle size={14} className="text-warning" />
+                              <p className="text-xs text-warning">목소리를 선택해주세요. 아바타와 목소리를 모두 선택해야 영상을 생성할 수 있습니다.</p>
+                            </div>
+                          )}
+                          {avatarConfirmed && heygenReady && selectedVoiceId && !shortsVideo && !loading.shorts && (
                             <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
                               <CheckCircle size={14} className="text-success" />
-                              <p className="text-xs text-success">아바타 준비 완료! 영상을 생성할 수 있습니다.</p>
+                              <p className="text-xs text-success">아바타·목소리 준비 완료! 영상을 생성할 수 있습니다.</p>
                             </div>
+                          )}
+                          </>
                           )}
                         </div>
                         <ErrorPanel errors={stepErrors.shorts} onRetry={(err) => {
