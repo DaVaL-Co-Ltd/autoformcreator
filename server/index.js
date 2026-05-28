@@ -1186,11 +1186,12 @@ app.post('/api/subtitle/burn', async (req, res) => {
       if (isSilentScene(scene)) { currentTime += sceneDur; continue }
       const captionText = sceneSpokenText(scene).trim()
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
-      const blockChars = blocks.map(b => b.replace(/\n/g, '').length)
-      const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
+      // 씬 내부 블록 분배도 음절 가중으로 통일 — 숫자 많은 블록이 더 오래 떠 있게 한다.
+      const blockWeights = blocks.map(b => estimateSpokenLen(b.replace(/\n/g, '')))
+      const blockTotalWeight = blockWeights.reduce((s, c) => s + c, 0) || 1
 
       for (let b = 0; b < blocks.length; b++) {
-        const blockDur = (blockChars[b] / blockTotalChars) * sceneDur
+        const blockDur = (blockWeights[b] / blockTotalWeight) * sceneDur
         const startTime = currentTime
         const endTime = currentTime + blockDur
 
