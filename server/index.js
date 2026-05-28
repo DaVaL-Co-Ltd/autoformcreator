@@ -1156,12 +1156,35 @@ app.post('/api/subtitle/burn', async (req, res) => {
     let srtIdx = 1
     // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration 만 있음) 도 함께 지원.
     const sceneSpokenText = (s) => String(s?.caption || s?.narration || '')
-    const totalChars = scenes.reduce((sum, s) => sum + sceneSpokenText(s).length, 0) || 1
+    // 화면 글자 수만으로는 음성 길이를 못 맞춘다 — 숫자·기호는 짧게 적혀도 길게 읽히므로
+    // 대략의 '읽는 음절 수' 로 가중해 씬별 시간 배분 정확도를 높인다. (예: "12.4%" 5글자 → 약 8음절)
+    const estimateSpokenLen = (text) => {
+      let t = String(text || '')
+      t = t.replace(/%/g, '퍼센트').replace(/\$/g, '달러').replace(/&/g, '그리고')
+      // 숫자(소수 포함): 자릿수 1개당 약 1.6음절, 소수점은 '점' 1음절 추가.
+      t = t.replace(/\d+(?:\.\d+)?/g, (m) => {
+        const digitCount = (m.match(/\d/g) || []).length
+        const extra = m.includes('.') ? 1 : 0
+        return '가'.repeat(Math.max(1, Math.round(digitCount * 1.6) + extra))
+      })
+      return t.replace(/\s+/g, '').length || 1
+    }
+    // 무음 씬(quiz-countdown · caption 없는 씬)은 음성이 없으므로 자막 없이 scene.duration 만큼 시간만 진행한다.
+    const isSilentScene = (s) => s?.layout === 'quiz-countdown' || !sceneSpokenText(s).trim()
+    const silentTotal = scenes.reduce((sum, s) => (isSilentScene(s) ? sum + (Number(s?.duration) || 0) : sum), 0)
+    const speakingBudget = Math.max(0.5, duration - silentTotal)
+    const speakingWeight = scenes.reduce((sum, s) => (isSilentScene(s) ? sum : sum + estimateSpokenLen(sceneSpokenText(s))), 0) || 1
+    // 한 씬이 차지하는 영상 시간 — SRT 와 타이틀 오버레이가 동일한 값을 써야 싱크가 맞는다.
+    const sceneDurOf = (s) => (isSilentScene(s)
+      ? (Number(s?.duration) || 0)
+      : (estimateSpokenLen(sceneSpokenText(s)) / speakingWeight) * speakingBudget)
     let currentTime = 0
 
     for (const scene of scenes) {
+      const sceneDur = sceneDurOf(scene)
+      // 무음 씬은 자막 없이 시간만 진행 — 그래야 그 뒤 자막이 밀리지 않는다.
+      if (isSilentScene(scene)) { currentTime += sceneDur; continue }
       const captionText = sceneSpokenText(scene).trim()
-      const sceneDur = (sceneSpokenText(scene).length / totalChars) * duration
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
       const blockChars = blocks.map(b => b.replace(/\n/g, '').length)
       const blockTotalChars = blockChars.reduce((s, c) => s + c, 0) || 1
@@ -1190,7 +1213,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const titleOverlays = []
     let titleTime = 0
     for (const scene of scenes) {
-      const sceneDur = (sceneSpokenText(scene).length / totalChars) * duration
+      const sceneDur = sceneDurOf(scene)
       if (scene.type === 'avatar_keyword' && scene.keyword) {
         const animatedPath = animatedTitleMap[scene.sceneNumber]
         if (animatedPath) {
