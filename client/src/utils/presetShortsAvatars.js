@@ -11,6 +11,8 @@ export const PRESET_SHORTS_AVATARS = [
     kind: 'Person Avatar',
     // avatarId 는 group ID — heygenAvatars.js 와 동일. resolveAvatarGroupLook 이 그룹 안 룩으로 변환.
     avatarId: '618714c6b4054f8fbd2d6a17f0e4a1e8',
+    // avatarGroupId 가 있으면 아바타 선택 그리드가 그룹 안 룩을 모두 펼쳐 보여준다(HeyGen 테스트 페이지와 동일).
+    avatarGroupId: '618714c6b4054f8fbd2d6a17f0e4a1e8',
     defaultVoiceId: '664ed0c5de6b4532adfb951094ff2707',
     samplePreviewUrl: '/voice-previews/dongwan_ssaem.mp3',
   },
@@ -20,6 +22,8 @@ export const PRESET_SHORTS_AVATARS = [
     kind: 'Person Avatar',
     // avatarId 는 group ID — heygenAvatars.js 와 동일. resolveAvatarGroupLook 이 그룹 안 룩으로 변환.
     avatarId: '45b17934d52348e691547a1240f3e49d',
+    // avatarGroupId 가 있으면 아바타 선택 그리드가 그룹 안 룩을 모두 펼쳐 보여준다(HeyGen 테스트 페이지와 동일).
+    avatarGroupId: '45b17934d52348e691547a1240f3e49d',
     defaultVoiceId: 'ab103893aefd45fca1d1eea500f2ee4b',
     samplePreviewUrl: '/voice-previews/fry_ssaem.mp3',
   },
@@ -45,6 +49,8 @@ export const PRESET_SHORTS_AVATARS = [
     kind: 'Animal Avatar',
     // avatarId 는 group ID — heygenAvatars.js 와 동일. resolveAvatarGroupLook 이 그룹 안 룩으로 변환.
     avatarId: '0c7bfe6c196f4e47acaa2a8f0b967b76',
+    // avatarGroupId 가 있으면 아바타 선택 그리드가 그룹 안 룩을 모두 펼쳐 보여준다(HeyGen 테스트 페이지와 동일).
+    avatarGroupId: '0c7bfe6c196f4e47acaa2a8f0b967b76',
     defaultVoiceId: '18ff90e66773483e80660e2a6fbda399',
     samplePreviewUrl: '/voice-previews/dog_student.mp3',
   },
