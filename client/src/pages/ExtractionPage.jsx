@@ -1686,6 +1686,155 @@ DO NOT:
     }
   }
 
+  // 하이브리드 컨셉(인포그래픽 + verbatim): 아바타 씬은 표준 엔드포인트(우리 대본 그대로),
+  // 인포그래픽 씬은 Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다.
+  // infographic-full 이지만 보여줄 데이터(숫자)가 없는 씬은 아바타 씬으로 폴백한다.
+  // 자막은 아바타 씬에만 (server 가 infographic-full 씬은 skip).
+  const runHybridSegmentedShorts = async ({ targetScript, avatarId, voiceId }) => {
+    const scenes = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
+    if (scenes.length === 0) throw new Error('쇼츠 대본에 씬이 없습니다.')
+    const sceneText = (s) => String(s?.caption || s?.narration || '')
+    const hasData = (s) => /\d/.test(`${sceneText(s)} ${s?.textOverlay || ''}`)
+    const typeOf = (s) => ((s?.layout === 'infographic-full' && hasData(s)) ? 'info' : 'avatar')
+
+    // 연속 동일 타입을 세그먼트로 묶는다(순서 유지).
+    const segments = []
+    for (const scene of scenes) {
+      const t = typeOf(scene)
+      const last = segments[segments.length - 1]
+      if (last && last.type === t) last.scenes.push(scene)
+      else segments.push({ type: t, scenes: [scene] })
+    }
+
+    const pollVideoUrl = async (videoId) => {
+      for (let i = 0; i < 240; i++) {
+        await delay(5000)
+        const r = await apiFetch(`/api/heygen/video/status/${videoId}`)
+        const d = await readApiResponse(r)
+        if (!r.ok) continue
+        const st = d.data?.status
+        if (st === 'completed') {
+          const u = resolveMediaUrl(d.data?.video_url)
+          if (!u) throw new Error('HeyGen 영상 URL이 비어 있습니다.')
+          return u
+        }
+        if (st === 'failed') throw new Error('HeyGen 렌더 실패')
+      }
+      throw new Error('HeyGen 렌더 타임아웃')
+    }
+
+    const segmentUrls = []
+    for (let si = 0; si < segments.length; si++) {
+      const seg = segments[si]
+      setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `세그먼트 ${si + 1}/${segments.length} 생성 중 (${seg.type === 'info' ? '인포그래픽' : '아바타'})...` }))
+      if (seg.type === 'avatar') {
+        const video_inputs = seg.scenes
+          .map((scene) => ({
+            character: { type: 'talking_photo', talking_photo_id: avatarId },
+            voice: { type: 'text', input_text: toSpokenText(sceneText(scene).trim()), voice_id: voiceId },
+          }))
+          .filter((v) => v.voice.input_text && v.voice.voice_id)
+        if (video_inputs.length === 0) continue
+        const r = await apiFetch('/api/heygen/video/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_inputs, dimension: { width: 720, height: 1280 } }),
+        })
+        const d = await readApiResponse(r)
+        if (!r.ok) throw new Error(getApiErrorMessage(d, `아바타 세그먼트 생성 실패 (${r.status})`))
+        const vid = d.data?.video_id || d.data?.id || d.video_id || d.id
+        if (!vid) throw new Error('아바타 세그먼트 video_id 를 받지 못했습니다.')
+        segmentUrls.push(await pollVideoUrl(vid))
+      } else {
+        const prompt = buildShortsVideoAgentPrompt({
+          script: { ...targetScript, scenes: seg.scenes },
+          avatar: { id: avatarId, kind: 'talking_photo', name: '', subjectPrompt: '' },
+          subtitleStyle,
+          subtitleFont,
+          extraPrompt: '이 클립은 인포그래픽(차트) 씬만 포함합니다. 인트로/아웃트로 아바타 화면을 추가하지 말고, 각 씬은 아바타 없이 풀화면 인포그래픽으로만 구성하세요.',
+          videoStyle: promptSettings.shorts.videoStyle,
+          narrationTone: promptSettings.shorts.narrationTone,
+        })
+        const r = await apiFetch('/api/heygen/video-agent/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, config: { avatar_id: avatarId, voice_id: voiceId } }),
+        })
+        const d = await readApiResponse(r)
+        if (!r.ok) throw new Error(getApiErrorMessage(d, `인포그래픽 세그먼트 생성 실패 (${r.status})`))
+        const vid = d.data?.video_id || d.data?.id || d.video_id || d.id
+        if (!vid) throw new Error('인포그래픽 세그먼트 video_id 를 받지 못했습니다.')
+        segmentUrls.push(await pollVideoUrl(vid))
+      }
+    }
+    if (segmentUrls.length === 0) throw new Error('생성된 세그먼트가 없습니다.')
+
+    let rawUrl
+    if (segmentUrls.length === 1) {
+      rawUrl = segmentUrls[0]
+    } else {
+      setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '세그먼트 합치는 중...' }))
+      const cr = await apiFetch('/api/video/concat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrls: segmentUrls }),
+      })
+      const cd = await readApiResponse(cr)
+      if (!cr.ok || !cd?.jobId) throw new Error(cd?.error || `합치기 요청 실패 (${cr.status})`)
+      let done = null
+      for (let i = 0; i < 120; i++) {
+        await delay(5000)
+        const sr = await apiFetch(`/api/video/concat/status/${cd.jobId}`)
+        const sd = await readApiResponse(sr)
+        if (!sr.ok) continue
+        if (sd?.status === 'done') { done = sd; break }
+        if (sd?.status === 'failed') throw new Error(sd?.error || '합치기 실패')
+      }
+      if (!done?.url) throw new Error('합치기 시간 초과 또는 결과 URL 없음')
+      rawUrl = resolveMediaUrl(done.url)
+    }
+
+    // 자막 번인 — 아바타 씬에만(server 가 infographic-full 씬은 skip).
+    setShortsVideo({ url: rawUrl, rawUrl, srtUrl: null, duration: targetScript.duration, mode: 'hybrid', subtitleStatus: 'processing' })
+    setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '자막 합성 중...' }))
+    let finalUrl = rawUrl
+    let srtUrl = null
+    let subtitleStatus = 'processing'
+    try {
+      const burnStartRes = await apiFetch('/api/subtitle/burn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: rawUrl,
+          scenes: targetScript.scenes,
+          subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
+          subtitleFont,
+        }),
+      })
+      const burnStartData = await readApiResponse(burnStartRes)
+      if (!burnStartRes.ok || !burnStartData?.jobId) {
+        throw new Error(burnStartData?.error?.message || burnStartData?.error || `자막 번인 요청 실패 (${burnStartRes.status})`)
+      }
+      let burnData = null
+      for (let bi = 0; bi < 120; bi++) {
+        await delay(5000)
+        const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`)
+        const stData = await readApiResponse(stRes)
+        if (!stRes.ok) continue
+        if (stData?.status === 'done') { burnData = stData; break }
+        if (stData?.status === 'failed') throw new Error(stData?.error || '자막 번인 실패')
+      }
+      if (!burnData?.url) throw new Error('자막 번인 시간 초과 또는 결과 URL 없음')
+      finalUrl = resolveMediaUrl(burnData.url)
+      srtUrl = resolveMediaUrl(burnData.srtUrl || null)
+      subtitleStatus = 'done'
+    } catch (burnErr) {
+      console.warn('[하이브리드 자막 합성] 실패:', burnErr.message)
+      subtitleStatus = 'failed'
+    }
+    return { url: finalUrl, rawUrl, srtUrl, duration: targetScript.duration, mode: 'hybrid', subtitleStatus }
+  }
+
   const runShortsGeneration = async (options = {}) => {
     // 오프닝 훅을 첫 씬에 미리 흡수시켜, HeyGen 음성·자막 모두 동일한 흐름으로 진행되게 한다.
     // 원본 shortsScript(편집/저장 데이터) 는 그대로 두고 영상 생성용 사본에서만 합친다.
@@ -1741,6 +1890,21 @@ DO NOT:
       const resolvedAvatarId = await resolveAvatarGroupLook(talkingPhotoId)
       if (resolvedAvatarId !== talkingPhotoId) {
         console.log(`[shorts] avatar group 랜덤 룩 선택: ${talkingPhotoId} → ${resolvedAvatarId}`)
+      }
+
+      // 하이브리드 컨셉(인포그래픽+verbatim): 세그먼트 렌더+합치기 경로로 처리하고 종료.
+      if (conceptForRun?.hybridSegments) {
+        const fbPreset = findPresetShortsAvatar(conceptForRun.preferredAvatarIds?.[0])
+        const finalVideo = await runHybridSegmentedShorts({
+          targetScript,
+          avatarId: resolvedAvatarId,
+          voiceId: selectedVoiceId || fbPreset?.defaultVoiceId,
+        })
+        if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
+        setShortsVideo(finalVideo)
+        setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
+        setStepLoading('shorts', false)
+        return
       }
 
       // 항상 /v2/video/generate(표준) 로 만든다 — HeyGen 이 우리 대본(caption)을 그대로 읽어야

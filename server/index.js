@@ -1324,6 +1324,95 @@ app.get('/api/subtitle/burn/status/:jobId', (req, res) => {
   }
 })
 
+// ===== Shorts 세그먼트 영상 이어붙이기 (concat) =====
+// 하이브리드 컨셉: 아바타 씬(표준 verbatim)과 인포그래픽 씬(Video Agent)을 각각 따로 렌더한 뒤
+// 씬 순서대로 이어붙인다. 입력 코덱·해상도가 달라도 안전하도록 720x1280·30fps·AAC 로 정규화 후 concat.
+// 무거운 작업이라 jobId 즉시 반환 + status 폴링(자막 번인과 동일 패턴).
+const videoConcatJobs = new Map()
+
+app.post('/api/video/concat', async (req, res) => {
+  const { videoUrls } = req.body
+  if (!Array.isArray(videoUrls) || videoUrls.length === 0) {
+    return res.status(400).json({ error: 'videoUrls (배열) 가 필요합니다' })
+  }
+  const jobId = `concat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  videoConcatJobs.set(jobId, { status: 'processing', createdAt: Date.now() })
+  res.json({ jobId })
+
+  const ts = Date.now()
+  const tmpPaths = []
+  const outPath = path.join(outputDir, `concat_${ts}.mp4`)
+  try {
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true })
+    // 1) 각 세그먼트 다운로드
+    for (let i = 0; i < videoUrls.length; i++) {
+      const r = await fetch(videoUrls[i])
+      if (!r.ok) throw new Error(`세그먼트 ${i} 다운로드 실패: ${r.status}`)
+      const p = path.join(outputDir, `concat_${ts}_seg${i}.mp4`)
+      fs.writeFileSync(p, Buffer.from(await r.arrayBuffer()))
+      tmpPaths.push(p)
+    }
+    // 2) 이어붙이기 — 단일 세그먼트면 그대로, 여러 개면 정규화 후 concat
+    if (tmpPaths.length === 1) {
+      fs.copyFileSync(tmpPaths[0], outPath)
+    } else {
+      const inputs = []
+      tmpPaths.forEach((p) => { inputs.push('-i', p) })
+      const filters = []
+      const refs = []
+      tmpPaths.forEach((_, i) => {
+        filters.push(`[${i}:v]scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v${i}]`)
+        filters.push(`[${i}:a]aresample=44100[a${i}]`)
+        refs.push(`[v${i}][a${i}]`)
+      })
+      filters.push(`${refs.join('')}concat=n=${tmpPaths.length}:v=1:a=1[outv][outa]`)
+      const args = [
+        ...inputs,
+        '-filter_complex', filters.join(';'),
+        '-map', '[outv]', '-map', '[outa]',
+        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-r', '30',
+        '-y', outPath,
+      ]
+      await new Promise((resolve, reject) => {
+        execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
+          if (err) reject(new Error((stderr || err.message || '').slice(-500)))
+          else resolve()
+        })
+      })
+    }
+    // 3) 각 세그먼트 실제 길이 측정 (자막 타이밍 정렬 참고용)
+    const segmentDurations = []
+    for (const p of tmpPaths) {
+      const d = await new Promise((resolve) => {
+        execFile(ffmpegPath, ['-i', p], { timeout: 10000 }, (err, stdout, stderr) => {
+          const m = (stderr || '').match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
+          resolve(m ? (parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseInt(m[3]) + parseInt(m[4]) / 100) : 0)
+        })
+      })
+      segmentDurations.push(d)
+    }
+    videoConcatJobs.set(jobId, {
+      status: 'done',
+      url: `/output/concat_${ts}.mp4`,
+      segmentDurations,
+      finishedAt: Date.now(),
+    })
+  } catch (err) {
+    videoConcatJobs.set(jobId, { status: 'failed', error: err.message, finishedAt: Date.now() })
+  } finally {
+    tmpPaths.forEach((p) => { try { fs.unlinkSync(p) } catch {} })
+  }
+})
+
+app.get('/api/video/concat/status/:jobId', (req, res) => {
+  const job = videoConcatJobs.get(req.params.jobId)
+  if (!job) return res.status(404).json({ status: 'not_found', error: 'job not found' })
+  res.json(job)
+  if (job.status === 'done' || job.status === 'failed') {
+    setTimeout(() => videoConcatJobs.delete(req.params.jobId), 60000)
+  }
+})
+
 // ===== Remotion render endpoint =====
 let remotionBundleUrl = null
 let remotionBundleMtime = 0

@@ -37,9 +37,10 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'PIP·좌상단 작은 아바타 합성 금지.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dongwan_ssaem],
-    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate) 경로 사용.
-    // 인포그래픽 씬(layout: infographic-full)에는 자막을 넣지 않는다 — 차트를 가리지 않고,
-    // Video Agent 가 자체 나레이션을 써서 우리 자막과 문구가 어긋나는 것도 그 씬에서는 피한다.
+    // 하이브리드: 아바타 씬은 표준 엔드포인트(우리 대본 verbatim, 자막 일치), 인포그래픽 씬은
+    // Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다. 인포그래픽이지만 데이터가
+    // 없는 씬은 아바타 씬으로 폴백. 자막은 아바타 씬에만(인포그래픽 씬은 server 에서 skip).
+    hybridSegments: true,
     testScript: {
       title: '의대 선호도 1퍼센트의 진실',
       duration: '15',
@@ -168,9 +169,10 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'CTA는 강요 없이 부드럽게 — 친구한테 도움될 만한 영상으로 공유 유도, 다음 용어 신청 댓글 유도.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dog_student],
-    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate) 경로 사용.
-    // 인포그래픽 씬(layout: infographic-full)에는 자막을 넣지 않는다 — 차트를 가리지 않고,
-    // Video Agent 가 자체 나레이션을 써서 우리 자막과 문구가 어긋나는 것도 그 씬에서는 피한다.
+    // 하이브리드: 아바타 씬은 표준 엔드포인트(우리 대본 verbatim, 자막 일치), 인포그래픽 씬은
+    // Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다. 인포그래픽이지만 데이터가
+    // 없는 씬은 아바타 씬으로 폴백. 자막은 아바타 씬에만(인포그래픽 씬은 server 에서 skip).
+    hybridSegments: true,
     testScript: {
       title: '수시 6장 같이 알아보자',
       duration: '15',
