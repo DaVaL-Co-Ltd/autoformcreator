@@ -1101,7 +1101,10 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 const subtitleBurnJobs = new Map()
 
 app.post('/api/subtitle/burn', async (req, res) => {
-  const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles } = req.body
+  const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles, noSubtitleSceneNumbers } = req.body
+  // 자막을 넣지 않을 씬 번호(클라이언트가 실제로 Video Agent 차트로 렌더한 인포그래픽 씬만 지정).
+  // 데이터가 없어 아바타로 폴백한 인포그래픽 씬은 여기에 포함되지 않아 자막이 정상 표시된다.
+  const noSubtitleSet = new Set((Array.isArray(noSubtitleSceneNumbers) ? noSubtitleSceneNumbers : []).map(Number))
   if (!videoUrl || !scenes?.length) return res.status(400).json({ error: 'Missing videoUrl or scenes' })
 
   // jobId 를 즉시 반환하고 FFmpeg 작업은 백그라운드로 진행. 클라이언트는 status 로 폴링.
@@ -1184,9 +1187,9 @@ app.post('/api/subtitle/burn', async (req, res) => {
       const sceneDur = sceneDurOf(scene)
       // 무음 씬은 자막 없이 시간만 진행 — 그래야 그 뒤 자막이 밀리지 않는다.
       if (isSilentScene(scene)) { currentTime += sceneDur; continue }
-      // 인포그래픽 씬(차트 풀화면)은 자막을 넣지 않는다 — 차트를 가리지 않고, Video Agent 자체
-      // 나레이션과 우리 자막이 어긋나는 것도 피한다. 보이스오버 시간만큼 진행시켜 뒤 자막 정렬 유지.
-      if (scene?.layout === 'infographic-full') { currentTime += sceneDur; continue }
+      // 실제 Video Agent 차트로 렌더된 인포그래픽 씬만 자막 skip — 클라이언트가 번호로 지정.
+      // (데이터 없어 아바타로 폴백한 씬은 여기 없으므로 자막이 정상 표시됨)
+      if (noSubtitleSet.has(Number(scene?.sceneNumber))) { currentTime += sceneDur; continue }
       const captionText = sceneSpokenText(scene).trim()
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
       // 씬 내부 블록 분배도 음절 가중으로 통일 — 숫자 많은 블록이 더 오래 떠 있게 한다.

@@ -1809,6 +1809,8 @@ DO NOT:
           scenes: targetScript.scenes,
           subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
           subtitleFont,
+          // 실제 Video Agent 차트로 렌더된 인포그래픽 씬만 자막 제외. 아바타로 폴백한 씬은 자막 표시.
+          noSubtitleSceneNumbers: scenes.filter((s) => typeOf(s) === 'info').map((s) => s.sceneNumber),
         }),
       })
       const burnStartData = await readApiResponse(burnStartRes)
