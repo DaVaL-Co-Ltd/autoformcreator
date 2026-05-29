@@ -37,9 +37,9 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'PIP·좌상단 작은 아바타 합성 금지.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dongwan_ssaem],
-    // 표준 엔드포인트(/v2/video/generate)로 렌더 — HeyGen 이 우리 대본(caption)을 그대로 읽어
-    // 나레이션과 자막 문구가 일치하게 한다. (Video Agent 자동 연출·자동 인포그래픽은 사용 안 함)
-    useStandardEndpoint: true,
+    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate) 경로 사용.
+    // 인포그래픽 씬(layout: infographic-full)에는 자막을 넣지 않는다 — 차트를 가리지 않고,
+    // Video Agent 가 자체 나레이션을 써서 우리 자막과 문구가 어긋나는 것도 그 씬에서는 피한다.
     testScript: {
       title: '의대 선호도 1퍼센트의 진실',
       duration: '15',
@@ -168,9 +168,9 @@ export const SHORTS_VIDEO_CONCEPTS = [
       'CTA는 강요 없이 부드럽게 — 친구한테 도움될 만한 영상으로 공유 유도, 다음 용어 신청 댓글 유도.',
     ].join(' '),
     preferredAvatarIds: [HEYGEN_AVATAR_IDS.dog_student],
-    // 표준 엔드포인트(/v2/video/generate)로 렌더 — HeyGen 이 우리 대본(caption)을 그대로 읽어
-    // 나레이션과 자막 문구가 일치하게 한다. (Video Agent 자동 연출·자동 인포그래픽은 사용 안 함)
-    useStandardEndpoint: true,
+    // 인포그래픽 씬을 HeyGen 자체 AI 가 직접 그리도록 Video Agent (/v1/video_agent/generate) 경로 사용.
+    // 인포그래픽 씬(layout: infographic-full)에는 자막을 넣지 않는다 — 차트를 가리지 않고,
+    // Video Agent 가 자체 나레이션을 써서 우리 자막과 문구가 어긋나는 것도 그 씬에서는 피한다.
     testScript: {
       title: '수시 6장 같이 알아보자',
       duration: '15',

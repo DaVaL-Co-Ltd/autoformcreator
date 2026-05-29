@@ -1184,6 +1184,9 @@ app.post('/api/subtitle/burn', async (req, res) => {
       const sceneDur = sceneDurOf(scene)
       // 무음 씬은 자막 없이 시간만 진행 — 그래야 그 뒤 자막이 밀리지 않는다.
       if (isSilentScene(scene)) { currentTime += sceneDur; continue }
+      // 인포그래픽 씬(차트 풀화면)은 자막을 넣지 않는다 — 차트를 가리지 않고, Video Agent 자체
+      // 나레이션과 우리 자막이 어긋나는 것도 피한다. 보이스오버 시간만큼 진행시켜 뒤 자막 정렬 유지.
+      if (scene?.layout === 'infographic-full') { currentTime += sceneDur; continue }
       const captionText = sceneSpokenText(scene).trim()
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
       // 씬 내부 블록 분배도 음절 가중으로 통일 — 숫자 많은 블록이 더 오래 떠 있게 한다.
