@@ -1100,6 +1100,54 @@ function generateTitleOverlay(text, design, palette, outputPath) {
 // 요청 타임아웃(→ Render 502)을 막는다. POST 는 jobId 만 즉시 반환, 작업은 백그라운드.
 const subtitleBurnJobs = new Map()
 
+// 완성 영상의 음성을 Gemini 로 분석해, 주어진 자막 문장들이 각각 몇 초~몇 초에 나오는지 정렬한다.
+// (forced alignment) 성공 시 { [index]: {start,end} } 반환, 실패 시 null → 호출측은 음절 추정으로 폴백.
+async function alignCaptionsToAudio(audioPath, captions, totalDuration) {
+  const apiKey = getServerGeminiApiKey()
+  if (!apiKey || !Array.isArray(captions) || captions.length === 0) return null
+  let audioB64
+  try { audioB64 = fs.readFileSync(audioPath).toString('base64') } catch { return null }
+  const lines = captions.map((c, i) => `${i}: ${c}`).join('\n')
+  const prompt = `다음 오디오는 한국어 나레이션입니다. 아래 자막 문장들이 오디오에서 각각 언제 시작하고 끝나는지(초) 찾아주세요.
+- 자막은 숫자·기호를 원본 표기("12.4%", "AI")로 적었지만 음성은 한국어 발음("십이 점 사 퍼센트", "에이아이")으로 읽히니 의미로 매칭하세요.
+- 문장 순서는 음성 순서와 같습니다. 모든 문장에 대해 반드시 결과를 주세요(음성에서 못 찾으면 앞뒤 사이로 추정).
+- 전체 길이 약 ${Number(totalDuration || 0).toFixed(1)}초.
+JSON 배열만 반환: [{"index":0,"start":0.0,"end":2.3}, ...]
+
+자막 문장:
+${lines}`
+  const payload = {
+    contents: [{ parts: [
+      { inline_data: { mime_type: 'audio/mp3', data: audioB64 } },
+      { text: prompt },
+    ] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+  }
+  try {
+    const r = await fetch(`${GEMINI_ENDPOINT_BASE}/gemini-2.5-flash:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(payload),
+    })
+    if (!r.ok) return null
+    const data = await r.json()
+    const text = (data?.candidates?.[0]?.content?.parts || []).map((p) => p.text).filter(Boolean).join('')
+    if (!text) return null
+    const arr = JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim())
+    if (!Array.isArray(arr)) return null
+    const map = {}
+    for (const item of arr) {
+      const idx = Number(item?.index)
+      const s = Number(item?.start)
+      const e = Number(item?.end)
+      if (Number.isInteger(idx) && Number.isFinite(s) && Number.isFinite(e) && e > s) map[idx] = { start: s, end: e }
+    }
+    return Object.keys(map).length ? map : null
+  } catch {
+    return null
+  }
+}
+
 app.post('/api/subtitle/burn', async (req, res) => {
   const { videoUrl, scenes, subtitleStyle, subtitleFont, animatedTitles, noSubtitleSceneNumbers } = req.body
   // 자막을 넣지 않을 씬 번호(클라이언트가 실제로 Video Agent 차트로 렌더한 인포그래픽 씬만 지정).
@@ -1177,40 +1225,79 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const silentTotal = scenes.reduce((sum, s) => (isSilentScene(s) ? sum + (Number(s?.duration) || 0) : sum), 0)
     const speakingBudget = Math.max(0.5, duration - silentTotal)
     const speakingWeight = scenes.reduce((sum, s) => (isSilentScene(s) ? sum : sum + estimateSpokenLen(sceneSpokenText(s))), 0) || 1
-    // 한 씬이 차지하는 영상 시간 — SRT 와 타이틀 오버레이가 동일한 값을 써야 싱크가 맞는다.
+    // 한 씬이 차지하는 영상 시간(폴백용 추정) — SRT 와 타이틀 오버레이가 동일한 값을 써야 싱크가 맞는다.
     const sceneDurOf = (s) => (isSilentScene(s)
       ? (Number(s?.duration) || 0)
       : (estimateSpokenLen(sceneSpokenText(s)) / speakingWeight) * speakingBudget)
-    let currentTime = 0
 
-    for (const scene of scenes) {
-      const sceneDur = sceneDurOf(scene)
-      // 무음 씬은 자막 없이 시간만 진행 — 그래야 그 뒤 자막이 밀리지 않는다.
-      if (isSilentScene(scene)) { currentTime += sceneDur; continue }
-      // 실제 Video Agent 차트로 렌더된 인포그래픽 씬만 자막 skip — 클라이언트가 번호로 지정.
-      // (데이터 없어 아바타로 폴백한 씬은 여기 없으므로 자막이 정상 표시됨)
-      if (noSubtitleSet.has(Number(scene?.sceneNumber))) { currentTime += sceneDur; continue }
-      const captionText = sceneSpokenText(scene).trim()
+    const fmt = (t) => {
+      const h = Math.floor(t / 3600)
+      const m = Math.floor((t % 3600) / 60)
+      const s = Math.floor(t % 60)
+      const ms = Math.round((t % 1) * 1000)
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`
+    }
+    // 한 씬 caption 을 블록(줄)으로 나눠 [start,end] 구간에 음절 가중으로 배치해 SRT 에 추가.
+    const emitSceneBlocks = (captionText, start, end) => {
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
-      // 씬 내부 블록 분배도 음절 가중으로 통일 — 숫자 많은 블록이 더 오래 떠 있게 한다.
-      const blockWeights = blocks.map(b => estimateSpokenLen(b.replace(/\n/g, '')))
-      const blockTotalWeight = blockWeights.reduce((s, c) => s + c, 0) || 1
-
+      const w = blocks.map((b) => estimateSpokenLen(b.replace(/\n/g, '')))
+      const wTotal = w.reduce((a, c) => a + c, 0) || 1
+      let t = start
       for (let b = 0; b < blocks.length; b++) {
-        const blockDur = (blockWeights[b] / blockTotalWeight) * sceneDur
-        const startTime = currentTime
-        const endTime = currentTime + blockDur
+        const dur = (w[b] / wTotal) * Math.max(0, end - start)
+        srtContent += `${srtIdx++}\n${fmt(t)} --> ${fmt(t + dur)}\n${blocks[b]}\n\n`
+        t += dur
+      }
+    }
 
-        const fmt = (t) => {
-          const h = Math.floor(t / 3600)
-          const m = Math.floor((t % 3600) / 60)
-          const s = Math.floor(t % 60)
-          const ms = Math.round((t % 1) * 1000)
-          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`
+    // 자막을 넣을 씬(무음·인포그래픽 skip 제외).
+    const subtitleScenes = scenes.filter((s) => !isSilentScene(s) && !noSubtitleSet.has(Number(s?.sceneNumber)))
+
+    // 1순위: 실제 음성을 Gemini 로 분석해 각 자막 씬의 실제 시각을 얻는다(forced alignment).
+    let alignedTimes = null
+    if (subtitleScenes.length > 0) {
+      const audioPath = path.join(outputDir2, `align_${ts}.mp3`)
+      try {
+        await new Promise((resolve) => {
+          execFile(ffmpegPath, ['-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-y', audioPath], { timeout: 60000 }, () => resolve())
+        })
+        const map = await alignCaptionsToAudio(audioPath, subtitleScenes.map((s) => sceneSpokenText(s).trim()), duration)
+        if (map) {
+          const t = []
+          let prev = 0
+          let ok = true
+          for (let i = 0; i < subtitleScenes.length; i++) {
+            const m = map[i]
+            if (!m) { ok = false; break }
+            const s = Math.max(prev, Math.min(Number(m.start), duration))
+            const e = Math.max(s + 0.3, Math.min(Number(m.end), duration))
+            t.push({ start: s, end: e })
+            prev = e
+          }
+          if (ok) { alignedTimes = t; console.log(`[자막 정렬] Gemini 실제 음성 타임스탬프 사용 (씬 ${t.length}개)`) }
         }
+        if (!alignedTimes) console.log('[자막 정렬] Gemini 정렬 실패/불완전 → 음절 추정으로 대체')
+      } catch (e) {
+        console.warn('[자막 정렬] 오류, 음절 추정으로 대체:', e?.message)
+      } finally {
+        try { fs.unlinkSync(audioPath) } catch {}
+      }
+    }
 
-        srtContent += `${srtIdx++}\n${fmt(startTime)} --> ${fmt(endTime)}\n${blocks[b]}\n\n`
-        currentTime = endTime
+    if (alignedTimes) {
+      // 실제 음성 타임스탬프 기준으로 자막 배치.
+      subtitleScenes.forEach((scene, i) => {
+        emitSceneBlocks(sceneSpokenText(scene).trim(), alignedTimes[i].start, alignedTimes[i].end)
+      })
+    } else {
+      // 폴백: 음절 추정 + 무음/인포그래픽 씬은 시간만 진행.
+      let currentTime = 0
+      for (const scene of scenes) {
+        const sceneDur = sceneDurOf(scene)
+        if (isSilentScene(scene)) { currentTime += sceneDur; continue }
+        if (noSubtitleSet.has(Number(scene?.sceneNumber))) { currentTime += sceneDur; continue }
+        emitSceneBlocks(sceneSpokenText(scene).trim(), currentTime, currentTime + sceneDur)
+        currentTime += sceneDur
       }
     }
 
