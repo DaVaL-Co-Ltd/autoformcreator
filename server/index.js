@@ -1355,33 +1355,25 @@ app.post('/api/video/concat', async (req, res) => {
       fs.writeFileSync(p, Buffer.from(await r.arrayBuffer()))
       tmpPaths.push(p)
     }
-    // 2) 이어붙이기 — 단일 세그먼트면 그대로, 여러 개면 정규화 후 concat
+    // 2) 이어붙이기 — 재인코딩 없이 스트림 복사(concat demuxer). 여러 720x1280 영상을 동시에
+    //    디코드·스케일·재인코딩하면 Render 무료 인스턴스(512MB) 메모리를 초과해 서버가 죽으므로,
+    //    -c copy 로 remux 만 한다(HeyGen 출력은 H.264 720x1280 로 호환됨).
     if (tmpPaths.length === 1) {
       fs.copyFileSync(tmpPaths[0], outPath)
     } else {
-      const inputs = []
-      tmpPaths.forEach((p) => { inputs.push('-i', p) })
-      const filters = []
-      const refs = []
-      tmpPaths.forEach((_, i) => {
-        filters.push(`[${i}:v]scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v${i}]`)
-        filters.push(`[${i}:a]aresample=44100[a${i}]`)
-        refs.push(`[v${i}][a${i}]`)
-      })
-      filters.push(`${refs.join('')}concat=n=${tmpPaths.length}:v=1:a=1[outv][outa]`)
-      const args = [
-        ...inputs,
-        '-filter_complex', filters.join(';'),
-        '-map', '[outv]', '-map', '[outa]',
-        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-r', '30',
-        '-y', outPath,
-      ]
-      await new Promise((resolve, reject) => {
-        execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
-          if (err) reject(new Error((stderr || err.message || '').slice(-500)))
-          else resolve()
+      const listPath = path.join(outputDir, `concat_${ts}_list.txt`)
+      fs.writeFileSync(listPath, tmpPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'), 'utf8')
+      try {
+        const args = ['-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', '-movflags', '+faststart', '-y', outPath]
+        await new Promise((resolve, reject) => {
+          execFile(ffmpegPath, args, { timeout: 300000 }, (err, stdout, stderr) => {
+            if (err) reject(new Error((stderr || err.message || '').slice(-500)))
+            else resolve()
+          })
         })
-      })
+      } finally {
+        try { fs.unlinkSync(listPath) } catch {}
+      }
     }
     // 3) 각 세그먼트 실제 길이 측정 (자막 타이밍 정렬 참고용)
     const segmentDurations = []
