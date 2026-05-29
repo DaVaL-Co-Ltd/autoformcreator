@@ -1454,6 +1454,7 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
 - scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
 - 각 나레이션은 1~2문장으로 짧고 명확하게 작성하세요.
+- hook 은 영상에서 '씬 1'로 먼저 나오고 기존 씬들이 그 뒤에 이어집니다. 따라서 hook 은 시선을 끄는 한 문장으로, scenes[0].caption 과 다른 내용으로 작성하세요. hook 과 첫 씬 caption 에 같은 문장을 반복하지 마세요.
 
 ## 씬 메타필드 규칙 (영상 합성용)
 - layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'quiz-countdown' (퀴즈 대기 씬 · 같은 인물 idle · 3초 카운트다운 배경).

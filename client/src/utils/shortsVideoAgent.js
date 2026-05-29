@@ -9,23 +9,34 @@ export function absorbHookIntoFirstScene(script) {
   if (!hookText) return script
   const scenes = Array.isArray(script?.scenes) ? script.scenes : []
   if (scenes.length === 0) return script
-  // quiz-countdown 처럼 무음 씬은 skip, 발화 텍스트가 있는 첫 씬을 고른다.
+
   const sceneSpokenText = (s) => String(s?.caption || s?.narration || '').trim()
-  const targetIdx = scenes.findIndex((s) =>
-    s && s.layout !== 'quiz-countdown' && sceneSpokenText(s),
-  )
-  if (targetIdx < 0) return script
-  const sep = /[.!?。！？]$/.test(hookText) ? ' ' : '. '
-  const target = scenes[targetIdx] || {}
-  const prevCaption = sceneSpokenText(target)
-  const nextScenes = scenes.map((s, i) => {
-    if (i !== targetIdx) return s
-    return {
-      ...s,
-      caption: prevCaption ? `${hookText}${sep}${prevCaption}`.trim() : hookText,
-    }
-  })
-  return { ...script, scenes: nextScenes, hook: '' }
+  // 발화 텍스트가 있는 첫 씬(무음/카운트다운 제외) — 훅과의 중복 판단 기준.
+  const firstSpokenIdx = scenes.findIndex((s) => s && s.layout !== 'quiz-countdown' && sceneSpokenText(s))
+  const firstCaption = firstSpokenIdx >= 0 ? sceneSpokenText(scenes[firstSpokenIdx]) : ''
+
+  // 훅이 첫 씬 대사와 사실상 같으면(가끔 Gemini 가 비슷하게 생성) 같은 말이 두 번 나오므로,
+  // 훅 씬을 따로 추가하지 않고 hook 만 비운다(기존 첫 씬이 곧 훅 역할).
+  const norm = (t) => String(t || '').replace(/[\s.,!?。！？·…"']/g, '').toLowerCase()
+  const nHook = norm(hookText)
+  const nFirst = norm(firstCaption)
+  const isDuplicate = !!nHook && !!nFirst && (nHook === nFirst || nFirst.includes(nHook) || nHook.includes(nFirst))
+  if (isDuplicate) {
+    return { ...script, hook: '' }
+  }
+
+  // 훅을 "씬 1"로 만들고 기존 씬 번호를 +1 (씬1,2,3 → 2,3,4). 훅은 아바타가 말하는 풀화면 씬.
+  const hookScene = {
+    sceneNumber: 1,
+    duration: '3',
+    layout: 'full',
+    caption: hookText,
+    narration: hookText,
+    textOverlay: '',
+    visualDescription: (firstSpokenIdx >= 0 ? scenes[firstSpokenIdx]?.visualDescription : '') || '',
+  }
+  const shifted = scenes.map((s, i) => ({ ...s, sceneNumber: (Number(s?.sceneNumber) || (i + 1)) + 1 }))
+  return { ...script, scenes: [hookScene, ...shifted], hook: '' }
 }
 
 export const SHORTS_SUBTITLE_FONT_OPTIONS = [
