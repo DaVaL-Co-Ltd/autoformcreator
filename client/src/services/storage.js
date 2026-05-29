@@ -88,7 +88,7 @@ function resolveBrowserFetchUrl(url) {
   return url
 }
 
-async function uploadShortsVideoIfLocal(shortsVideo) {
+export async function uploadShortsVideoIfLocal(shortsVideo) {
   if (!shortsVideo || typeof shortsVideo !== 'object') return shortsVideo
   const candidate = shortsVideo.url || shortsVideo.videoUrl || shortsVideo.combinedVideoUrl
   if (!candidate || !isLocalOutputUrl(candidate)) return shortsVideo

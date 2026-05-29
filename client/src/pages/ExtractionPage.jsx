@@ -14,6 +14,7 @@ import {
   generateInstagramContent, generateShortsScript, recommendBlogCategory
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
+import { uploadShortsVideoIfLocal } from '../services/storage'
 import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar, findPresetById, getPresetCategory, getPresetsByCategory } from '../utils/presetShortsAvatars'
@@ -1903,7 +1904,8 @@ DO NOT:
           voiceId: selectedVoiceId || fbPreset?.defaultVoiceId,
         })
         if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
-        setShortsVideo(finalVideo)
+        // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
+        setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
         setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
         setStepLoading('shorts', false)
         return
@@ -2257,7 +2259,8 @@ DO NOT:
         throw new Error('HeyGen 영상 생성 시간 초과 (20분)')
       }
 
-      setShortsVideo(finalVideo)
+      // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
+      setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
     } catch (err) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠 영상', message: err.message || '쇼츠 생성 실패' }])
       showErrorAlert('쇼츠 생성', err.message)
