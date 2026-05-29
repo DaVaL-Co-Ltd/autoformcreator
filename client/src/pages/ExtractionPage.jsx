@@ -2377,9 +2377,9 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    // 숏폼 영상 — 아바타는 수동 클릭(setAvatarConfirmed) OR 컨셉 자동 선택(setAvatarConfirmed) 둘 중 하나라도 일어나면 통과.
-    // 2인 슬롯 컨셉은 슬롯 검증(아바타+목소리)이 통과돼야 한다.
-    if (selectedChannels.shorts && !isShortsAvatarVoiceReady) incomplete.push('숏폼 아바타·목소리')
+    // 숏폼 아바타·목소리 — 영상이 이미 생성됐으면(shortsVideo) 선택이 끝난 것이므로 미완료로 보지 않는다.
+    // 영상이 아직 없을 때만, 아바타+목소리(2인 슬롯은 슬롯 검증)가 안 됐으면 미완료로 안내한다.
+    if (selectedChannels.shorts && !shortsVideo && !isShortsAvatarVoiceReady) incomplete.push('숏폼 아바타·목소리')
     if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
     // 실패 항목
     const contentErrors = (stepErrors.content || []).filter(e => isSelectedErrorChannel(e.channel))
