@@ -41,6 +41,10 @@ export const SHORTS_VIDEO_CONCEPTS = [
     // Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다. 인포그래픽이지만 데이터가
     // 없는 씬은 아바타 씬으로 폴백. 자막은 아바타 씬에만(인포그래픽 씬은 server 에서 skip).
     hybridSegments: true,
+    // 마무리 CTA 를 별도 아바타 씬으로 append 하지 않는다 — 이미 마지막 씬(아웃트로)이
+    // 동완쌤 풀화면이라, 그 뒤에 "구독하세요" 아바타가 한 번 더 나오는 게 어색하다.
+    // (appendCtaAsLastScene 가 이 플래그를 보고 CTA 씬 추가를 건너뛴다.)
+    dropClosingCtaScene: true,
     testScript: {
       title: '의대 선호도 1퍼센트의 진실',
       duration: '15',

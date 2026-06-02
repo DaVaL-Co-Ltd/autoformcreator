@@ -4,9 +4,13 @@
 // 동시에 해결한다 — 항상 마지막 위치에 우리가 직접 씬으로 박아 순서를 고정.
 // cta 가 이미 마지막 씬 caption 과 사실상 같으면 새 씬을 추가하지 않고 cta 만 비운다.
 // 원본 script 는 그대로 두고 새 객체를 반환(편집/저장 데이터는 cta 필드 유지).
-export function appendCtaAsLastScene(script) {
+export function appendCtaAsLastScene(script, options = {}) {
   const ctaText = String(script?.cta || '').trim()
   if (!ctaText) return script
+  // 일부 컨셉(예: 동완쌤 1퍼센트 입시 데이터 브리핑)은 마무리에 아바타가 다시 등장해
+  // "구독하세요" 를 말하는 별도 CTA 씬을 원치 않는다. 이 경우 씬을 추가하지 않고
+  // cta 필드만 비워 영상(표준 endpoint·Video Agent 프롬프트) 어디에도 들어가지 않게 한다.
+  if (options.dropCtaScene) return { ...script, cta: '' }
   const scenes = Array.isArray(script?.scenes) ? script.scenes : []
 
   const sceneSpokenText = (s) => String(s?.caption || s?.narration || '').trim()

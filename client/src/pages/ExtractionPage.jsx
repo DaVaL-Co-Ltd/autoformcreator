@@ -1841,15 +1841,16 @@ DO NOT:
   const runShortsGeneration = async (options = {}) => {
     // 오프닝 훅을 첫 씬에 미리 흡수시키고, 마무리 cta 는 진짜 마지막 씬으로 append.
     // 두 단계 모두 영상 생성용 사본에서만 수행 — 원본 shortsScript(편집/저장 데이터) 는 그대로.
+    // 단 dropClosingCtaScene 컨셉(동완쌤 데이터 브리핑)은 CTA 아바타 씬을 추가하지 않는다.
+    const conceptForRun = findShortsVideoConcept(promptSettings.shorts.videoConcept)
     const targetScript = appendCtaAsLastScene(
       absorbHookIntoFirstScene(options.scriptOverride || shortsScript),
+      { dropCtaScene: conceptForRun?.dropClosingCtaScene === true },
     )
     if (!targetScript) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '쇼츠 대본이 없습니다.' }])
       return
     }
-
-    const conceptForRun = findShortsVideoConcept(promptSettings.shorts.videoConcept)
     const slotConcept = Array.isArray(conceptForRun?.avatarSlots) && conceptForRun.avatarSlots.length > 0 ? conceptForRun : null
 
     if (slotConcept) {
