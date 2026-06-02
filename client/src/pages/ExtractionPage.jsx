@@ -35,7 +35,7 @@ import {
 import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
-import { absorbHookIntoFirstScene, buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
+import { absorbHookIntoFirstScene, appendCtaAsLastScene, buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 import { toSpokenText } from '../utils/shortsTtsText.js'
 import { callGeminiWithFallback, findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
@@ -1839,9 +1839,11 @@ DO NOT:
   }
 
   const runShortsGeneration = async (options = {}) => {
-    // 오프닝 훅을 첫 씬에 미리 흡수시켜, HeyGen 음성·자막 모두 동일한 흐름으로 진행되게 한다.
-    // 원본 shortsScript(편집/저장 데이터) 는 그대로 두고 영상 생성용 사본에서만 합친다.
-    const targetScript = absorbHookIntoFirstScene(options.scriptOverride || shortsScript)
+    // 오프닝 훅을 첫 씬에 미리 흡수시키고, 마무리 cta 는 진짜 마지막 씬으로 append.
+    // 두 단계 모두 영상 생성용 사본에서만 수행 — 원본 shortsScript(편집/저장 데이터) 는 그대로.
+    const targetScript = appendCtaAsLastScene(
+      absorbHookIntoFirstScene(options.scriptOverride || shortsScript),
+    )
     if (!targetScript) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '쇼츠 대본이 없습니다.' }])
       return

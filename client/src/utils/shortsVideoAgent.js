@@ -1,4 +1,52 @@
-﻿// 오프닝 훅을 첫 'speaking' 씬의 caption 에 흡수시키고 hook 필드를 비운 사본을 반환.
+﻿// cta(마무리 멘트)를 영상의 진짜 마지막 씬으로 append 하고 cta 필드를 비운 사본을 반환.
+// 표준 endpoint 는 scenes 만 렌더하므로 cta 가 영상에 들어가지 않는 문제, Video Agent 는
+// "Closing CTA: ..." 프롬프트만 보고 임의 위치(때로는 마지막 씬 직전)에 끼워넣는 문제를
+// 동시에 해결한다 — 항상 마지막 위치에 우리가 직접 씬으로 박아 순서를 고정.
+// cta 가 이미 마지막 씬 caption 과 사실상 같으면 새 씬을 추가하지 않고 cta 만 비운다.
+// 원본 script 는 그대로 두고 새 객체를 반환(편집/저장 데이터는 cta 필드 유지).
+export function appendCtaAsLastScene(script) {
+  const ctaText = String(script?.cta || '').trim()
+  if (!ctaText) return script
+  const scenes = Array.isArray(script?.scenes) ? script.scenes : []
+
+  const sceneSpokenText = (s) => String(s?.caption || s?.narration || '').trim()
+  // 발화 텍스트가 있는 마지막 씬(무음/카운트다운 제외) — cta 와의 중복 판단 기준.
+  let lastSpokenIdx = -1
+  for (let i = scenes.length - 1; i >= 0; i -= 1) {
+    const s = scenes[i]
+    if (s && s.layout !== 'quiz-countdown' && sceneSpokenText(s)) { lastSpokenIdx = i; break }
+  }
+  const lastCaption = lastSpokenIdx >= 0 ? sceneSpokenText(scenes[lastSpokenIdx]) : ''
+
+  // cta 와 마지막 씬 대사가 사실상 같으면(가끔 Gemini 가 동일 문구 생성) 같은 말이 두 번 나오므로
+  // 별도 마무리 씬을 추가하지 않고 cta 만 비운다(기존 마지막 씬이 곧 마무리 역할).
+  const norm = (t) => String(t || '').replace(/[\s.,!?。！？·…"']/g, '').toLowerCase()
+  const nCta = norm(ctaText)
+  const nLast = norm(lastCaption)
+  const isDuplicate = !!nCta && !!nLast && (nCta === nLast || nLast.includes(nCta) || nCta.includes(nLast))
+  if (isDuplicate) {
+    return { ...script, cta: '' }
+  }
+
+  // cta 를 마지막 씬으로 append. 풀화면 아바타가 말하는 짧은 마무리 컷.
+  // 직전 발화 씬의 avatarId·visualDescription 을 그대로 물려받아 같은 무대·인물 유지.
+  const baseScene = lastSpokenIdx >= 0 ? scenes[lastSpokenIdx] : null
+  const lastNumber = scenes.reduce((max, s, i) => Math.max(max, Number(s?.sceneNumber) || (i + 1)), 0)
+  const ctaScene = {
+    sceneNumber: lastNumber + 1,
+    duration: '3',
+    layout: 'full',
+    caption: ctaText,
+    narration: ctaText,
+    textOverlay: '',
+    visualDescription: baseScene?.visualDescription || '',
+    ...(baseScene?.avatarId ? { avatarId: baseScene.avatarId } : {}),
+    noTextOverlay: true,
+  }
+  return { ...script, scenes: [...scenes, ctaScene], cta: '' }
+}
+
+// 오프닝 훅을 첫 'speaking' 씬의 caption 에 흡수시키고 hook 필드를 비운 사본을 반환.
 // HeyGen 표준 endpoint, Video Agent, SRT 자막 모두 동일한 변환된 script 를 사용하므로
 // hook 이 별도 첫 대사로 한 번, 첫 씬 본문으로 또 한 번 — 식의 중복 진행을 막는다.
 // caption 은 자막이자 TTS 입력으로 함께 쓰이는 단일 필드.
