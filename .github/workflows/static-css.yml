@@ -1,8 +1,7 @@
-# Static / CSS-heavy Web CI
+# Client Web CI
 #
-# 이 파일을 프로젝트 루트의 .github/workflows/ci.yml 로 복사하세요.
-# HTML/CSS 중심 프로젝트나 간단한 랜딩/정적 사이트에 맞춘 가벼운 CI입니다.
-# package.json이 있으면 Node 스크립트를 실행하고, 없으면 기본 파일 구조만 확인합니다.
+# 이 프로젝트는 웹 앱이 repo 루트가 아니라 client/ 아래에 있습니다.
+# root package.json은 배포 대상 앱이 아니므로 client 기준으로 설치와 빌드를 검증합니다.
 
 name: CI
 
@@ -19,37 +18,25 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
-        if: hashFiles('package.json') != ''
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
 
       - name: Install dependencies
-        if: hashFiles('package.json') != ''
-        shell: bash
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
-
-      - name: Lint
-        if: hashFiles('package.json') != ''
-        run: npm run lint --if-present
-
-      - name: Test
-        if: hashFiles('package.json') != ''
-        run: npm test --if-present
+        run: npm ci
 
       - name: Build
-        if: hashFiles('package.json') != ''
-        run: npm run build --if-present
+        run: npm run build
 
       - name: Basic static file check
         shell: bash
