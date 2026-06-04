@@ -1,0 +1,49 @@
+# Client Web CI
+#
+# 이 프로젝트는 웹 앱이 repo 루트가 아니라 client/ 아래에 있습니다.
+# root package.json은 배포 대상 앱이 아니므로 client 기준으로 설치와 빌드를 검증합니다.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Basic static file check
+        shell: bash
+        run: |
+          if [ -f index.html ] || [ -d public ] || [ -d src ] || [ -d app ]; then
+            echo "Static/web entry found."
+          else
+            echo "No common static/web entry found. Adjust this CI template for the project structure."
+            exit 1
+          fi
