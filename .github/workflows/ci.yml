@@ -1,7 +1,6 @@
 # Client Web CI
 #
-# 이 프로젝트는 웹 앱이 repo 루트가 아니라 client/ 아래에 있습니다.
-# root package.json은 배포 대상 앱이 아니므로 client 기준으로 설치와 빌드를 검증합니다.
+# APP_DIR를 바꾸면 하위 디렉토리 앱에서도 같은 템플릿을 재사용할 수 있습니다.
 
 name: CI
 
@@ -15,12 +14,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  APP_DIR: client
+
 jobs:
   check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: client
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,20 +29,22 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: ${{ env.APP_DIR }}/package-lock.json
 
       - name: Install dependencies
+        working-directory: ${{ env.APP_DIR }}
         run: npm ci
 
       - name: Build
+        working-directory: ${{ env.APP_DIR }}
         run: npm run build
 
       - name: Basic static file check
         shell: bash
         run: |
-          if [ -f index.html ] || [ -d public ] || [ -d src ] || [ -d app ]; then
+          if [ -f "$APP_DIR/index.html" ] || [ -d "$APP_DIR/public" ] || [ -d "$APP_DIR/src" ] || [ -d "$APP_DIR/app" ]; then
             echo "Static/web entry found."
           else
-            echo "No common static/web entry found. Adjust this CI template for the project structure."
+            echo "No common static/web entry found under $APP_DIR. Adjust APP_DIR or the project structure."
             exit 1
           fi
