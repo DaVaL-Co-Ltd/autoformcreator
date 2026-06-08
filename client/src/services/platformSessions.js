@@ -75,6 +75,7 @@ export async function fetchYoutubeSessionStatus() {
     hasCredentials: Boolean(data.hasCredentials),
     state: data.state || (data.authenticated ? 'connected' : (data.hasCredentials ? 'expired' : 'unconfigured')),
     validationError: data.validationError || null,
+    accounts: Array.isArray(data.accounts) ? data.accounts : [],
   }
 }
 
@@ -112,6 +113,17 @@ export async function disconnectYoutubeSession() {
   return readJsonOrThrow(response, 'Failed to disconnect the YouTube account.')
 }
 
+export async function disconnectYoutubeAccount(accountId) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/platform-accounts/${encodeURIComponent(accountId)}?platform=youtube`,
+    { method: 'DELETE' },
+    REQUEST_TIMEOUT_MS,
+    'YouTube account disconnect request'
+  )
+
+  return readJsonOrThrow(response, 'Failed to disconnect the YouTube account.')
+}
+
 export async function fetchInstagramSessionStatus() {
   const response = await fetchWithTimeout(
     `${API_BASE}/api/instagram/auth-status`,
@@ -131,6 +143,7 @@ export async function fetchInstagramSessionStatus() {
     validationError: data.validationError || null,
     canReconnect: Boolean(data.canReconnect),
     canDisconnect: Boolean(data.canDisconnect),
+    accounts: Array.isArray(data.accounts) ? data.accounts : [],
   }
 }
 
@@ -166,6 +179,28 @@ export async function disconnectInstagramSession() {
   )
 
   return readJsonOrThrow(response, 'Failed to disconnect the Instagram account.')
+}
+
+export async function disconnectInstagramAccount(accountId) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/platform-accounts/${encodeURIComponent(accountId)}?platform=instagram`,
+    { method: 'DELETE' },
+    REQUEST_TIMEOUT_MS,
+    'Instagram account disconnect request'
+  )
+
+  return readJsonOrThrow(response, 'Failed to disconnect the Instagram account.')
+}
+
+export async function fetchPlatformAccounts(platform) {
+  const response = await fetchWithTimeout(
+    `${API_BASE}/api/platform-accounts?platform=${encodeURIComponent(platform)}`,
+    {},
+    REQUEST_TIMEOUT_MS,
+    `${platform} accounts request`
+  )
+  const data = await readJsonOrThrow(response, `Failed to read ${platform} accounts.`)
+  return Array.isArray(data.accounts) ? data.accounts : []
 }
 
 export async function waitForYoutubeReconnect({

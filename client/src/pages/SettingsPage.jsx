@@ -22,8 +22,8 @@ import { DESKTOP_HELPER } from '../constants/desktopHelper.js'
 import {
   beginInstagramReconnect,
   beginYoutubeReconnect,
-  disconnectInstagramSession,
-  disconnectYoutubeSession,
+  disconnectInstagramAccount,
+  disconnectYoutubeAccount,
   fetchInstagramSessionStatus,
   fetchNaverSessionStatus,
   fetchYoutubeSessionStatus,
@@ -171,7 +171,7 @@ function buildPlatformCards(statuses) {
               ? 'Meta 로그인으로 받은 Instagram 토큰이 저장되어 있어 바로 업로드할 수 있습니다.'
               : '서버에 저장된 Instagram Graph API 토큰과 Business ID로 바로 업로드할 수 있습니다.')
           : instagram.state === 'unconfigured'
-            ? 'META_APP_ID 또는 INSTAGRAM_APP_ID, META_APP_SECRET 또는 INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI 설정이 없어 웹에서 다시 로그인할 수 없습니다.'
+            ? 'INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI 설정이 없어 웹에서 다시 로그인할 수 없습니다.'
             : (instagram.validationError
                 ? `Instagram 연결 검증이 실패했습니다: ${instagram.validationError}`
                 : 'Instagram 토큰이 만료되었거나 연결이 끊겼습니다. 다시 로그인하면 즉시 다시 사용할 수 있습니다.'),
@@ -180,6 +180,7 @@ function buildPlatformCards(statuses) {
         instagram.hasBusinessId ? 'Business ID 있음' : 'Business ID 없음',
         instagram.mode === 'oauth' ? 'OAuth 모드' : '서버 토큰 모드',
       ],
+      accounts: instagram.accounts || [],
     },
     {
       key: 'shorts',
@@ -201,6 +202,7 @@ function buildPlatformCards(statuses) {
                 ? `Google 인증 검증이 실패했습니다: ${youtube.validationError}`
                 : '저장된 Google 인증이 끊겼거나 만료되었습니다. 다시 연결해 주세요.'),
       meta: [youtube.hasCredentials ? 'OAuth 클라이언트 설정 있음' : 'OAuth 클라이언트 설정 없음'],
+      accounts: youtube.accounts || [],
     },
   ]
 }
@@ -239,8 +241,9 @@ export default function SettingsPage() {
       canReconnect: false,
       canDisconnect: false,
       mode: 'server-token',
+      accounts: [],
     },
-    shorts: { state: 'loading', connected: false, hasCredentials: false },
+    shorts: { state: 'loading', connected: false, hasCredentials: false, accounts: [] },
   })
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState('')
@@ -493,19 +496,6 @@ export default function SettingsPage() {
     }
   }
 
-  const handleDisconnectYoutube = async () => {
-    setBusyAction('shorts-disconnect')
-    setStatusError('')
-    try {
-      await disconnectYoutubeSession()
-      await refreshPlatformStatuses()
-    } catch (error) {
-      setStatusError(error.message)
-    } finally {
-      setBusyAction('')
-    }
-  }
-
   const handleReconnectInstagram = async () => {
     setBusyAction('instagram')
     setStatusError('')
@@ -521,11 +511,16 @@ export default function SettingsPage() {
     }
   }
 
-  const handleDisconnectInstagram = async () => {
-    setBusyAction('instagram-disconnect')
+  const handleDisconnectPlatformAccount = async (platform, accountId) => {
+    const actionKey = `${platform}-${accountId}-disconnect`
+    setBusyAction(actionKey)
     setStatusError('')
     try {
-      await disconnectInstagramSession()
+      if (platform === 'youtube') {
+        await disconnectYoutubeAccount(accountId)
+      } else if (platform === 'instagram') {
+        await disconnectInstagramAccount(accountId)
+      }
       await refreshPlatformStatuses()
     } catch (error) {
       setStatusError(error.message)
@@ -544,7 +539,7 @@ export default function SettingsPage() {
       title: '인스타그램 연동 안내',
       body: [
         '현재 인스타그램은 Meta OAuth 환경변수 설정이 없어서 웹에서 직접 다시 로그인할 수 없습니다.',
-        '서버 환경변수에 META_APP_ID 또는 INSTAGRAM_APP_ID, META_APP_SECRET 또는 INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI를 먼저 설정해야 합니다.',
+        '서버 환경변수에 INSTAGRAM_APP_ID, INSTAGRAM_APP_SECRET, INSTAGRAM_REDIRECT_URI를 먼저 설정해야 합니다.',
         '그 뒤에는 이 설정 페이지에서 다시 로그인만 눌러도 즉시 재사용할 수 있습니다.',
       ],
     })
@@ -724,6 +719,44 @@ export default function SettingsPage() {
                       </div>
                     )}
 
+                    {(card.key === 'instagram' || card.key === 'shorts') && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-text-muted">연결 계정</div>
+                        {card.accounts?.length ? (
+                          <div className="space-y-2">
+                            {card.accounts.map((account) => {
+                              const platform = card.key === 'shorts' ? 'youtube' : 'instagram'
+                              const accountBusy = busyAction === `${platform}-${account.id}-disconnect`
+                              return (
+                                <div key={account.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-white px-3 py-2">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-text">
+                                      {account.displayName || account.username || account.id}
+                                    </div>
+                                    <div className="truncate text-xs text-text-muted">
+                                      {account.providerAccountId || account.id}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDisconnectPlatformAccount(platform, account.id)}
+                                    disabled={accountBusy}
+                                    className="shrink-0 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-muted hover:border-danger/30 hover:bg-danger/10 hover:text-danger disabled:opacity-60"
+                                  >
+                                    {accountBusy ? '삭제 중' : '삭제'}
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-border bg-white px-3 py-3 text-sm text-text-muted">
+                            아직 연결된 계정이 없습니다.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="mt-1 space-y-2">
                       {card.key === 'blog' && (
                         <>
@@ -753,17 +786,8 @@ export default function SettingsPage() {
                             disabled={isBusy || platformStatuses.shorts.state === 'unconfigured'}
                             className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
                           >
-                            {isBusy ? 'Google 인증 확인 중..' : 'Google 다시 연결'}
+                            {isBusy ? 'Google 인증 확인 중..' : 'Google 계정 추가'}
                           </button>
-                          {platformStatuses.shorts.connected && (
-                            <button
-                              onClick={() => void handleDisconnectYoutube()}
-                              disabled={busyAction === 'shorts-disconnect'}
-                              className="w-full rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text hover:bg-white disabled:opacity-60"
-                            >
-                              연결 해제
-                            </button>
-                          )}
                         </>
                       )}
 
@@ -774,17 +798,8 @@ export default function SettingsPage() {
                             disabled={isBusy || platformStatuses.instagram.state === 'unconfigured'}
                             className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
                           >
-                            {isBusy ? 'Instagram 인증 확인 중..' : platformStatuses.instagram.connected ? 'Instagram 다시 연결' : 'Instagram 로그인'}
+                            {isBusy ? 'Instagram 인증 확인 중..' : 'Instagram 계정 추가'}
                           </button>
-                          {platformStatuses.instagram.canDisconnect && (
-                            <button
-                              onClick={() => void handleDisconnectInstagram()}
-                              disabled={busyAction === 'instagram-disconnect'}
-                              className="w-full rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text hover:bg-white disabled:opacity-60"
-                            >
-                              연결 해제
-                            </button>
-                          )}
                           {platformStatuses.instagram.state === 'unconfigured' && (
                             <button
                               onClick={() => void openInstagramHelp()}

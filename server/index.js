@@ -1684,11 +1684,115 @@ const IG_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN
 const IG_BUSINESS_ID = process.env.INSTAGRAM_BUSINESS_ID
 const META_APP_ID = process.env.META_APP_ID || process.env.INSTAGRAM_APP_ID
 const META_APP_SECRET = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET
-const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'http://localhost:3001/api/instagram/oauth/callback'
+const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || process.env.instagram_redirect_uri || 'http://localhost:3001/api/instagram/oauth/callback'
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
 const instagramTokenPath = path.join(__dirname, '.instagram_tokens.json')
 let instagramTokens = null
 let instagramOAuthState = null
+
+function sanitizeAccountId(value, fallback = 'default') {
+  const normalized = String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
+  return normalized || fallback
+}
+
+function buildPlatformAccountId(platform, providerAccountId) {
+  return sanitizeAccountId(`${platform}_${providerAccountId || crypto.randomUUID()}`)
+}
+
+function publicPlatformAccount(row) {
+  return {
+    id: row.id,
+    platform: row.platform,
+    providerAccountId: row.provider_account_id || null,
+    username: row.username || null,
+    displayName: row.display_name || row.username || null,
+    status: row.status || 'connected',
+    isDefault: Boolean(row.is_default),
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  }
+}
+
+async function upsertPlatformAccount({ id, platform, providerAccountId, username, displayName, isDefault = false, status = 'connected' }) {
+  const account = {
+    id: sanitizeAccountId(id),
+    platform,
+    provider_account_id: providerAccountId || null,
+    username: username || null,
+    display_name: displayName || username || null,
+    status,
+    is_default: Boolean(isDefault),
+    updated_at: new Date().toISOString(),
+  }
+
+  if (!supabaseAdmin) return publicPlatformAccount(account)
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('platform_accounts')
+      .upsert(account, { onConflict: 'id' })
+      .select()
+      .single()
+    if (error) throw error
+    return publicPlatformAccount(data)
+  } catch (error) {
+    console.warn('[platform_accounts] upsert failed:', error.message)
+    return publicPlatformAccount(account)
+  }
+}
+
+async function listPlatformAccounts(platform) {
+  const accounts = []
+
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('platform_accounts')
+        .select('*')
+        .eq('platform', platform)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true })
+      if (!error && Array.isArray(data)) {
+        accounts.push(...data.map(publicPlatformAccount))
+      }
+    } catch (error) {
+      console.warn(`[platform_accounts] ${platform} list failed:`, error.message)
+    }
+  }
+
+  if (platform === 'instagram' && !accounts.length) {
+    const auth = getInstagramAuthMaterial()
+    if (auth?.accessToken && auth?.businessId) {
+      accounts.push({
+        id: 'default',
+        platform,
+        providerAccountId: auth.businessId,
+        username: auth.username || null,
+        displayName: auth.username ? `@${auth.username}` : 'Instagram 기본 계정',
+        status: 'connected',
+        isDefault: true,
+        createdAt: null,
+        updatedAt: instagramTokens?.updatedAt || null,
+      })
+    }
+  }
+
+  if (platform === 'youtube' && !accounts.length && ytTokens) {
+    accounts.push({
+      id: 'default',
+      platform,
+      providerAccountId: ytTokens.channelId || null,
+      username: ytTokens.channelTitle || null,
+      displayName: ytTokens.channelTitle || 'YouTube 기본 계정',
+      status: 'connected',
+      isDefault: true,
+      createdAt: null,
+      updatedAt: null,
+    })
+  }
+
+  return accounts
+}
 
 function isInstagramOAuthConfigured() {
   return Boolean(META_APP_ID && META_APP_SECRET && INSTAGRAM_REDIRECT_URI)
@@ -1729,13 +1833,14 @@ function getInstagramAuthMaterial() {
   return getInstagramFallbackAuth()
 }
 
-async function loadInstagramTokens() {
+async function loadInstagramTokens(accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
     try {
       const { data, error } = await supabaseAdmin
         .from('instagram_tokens')
         .select('tokens')
-        .eq('id', 'default')
+        .eq('id', id)
         .maybeSingle()
       if (!error && data?.tokens) {
         return data.tokens
@@ -1746,7 +1851,13 @@ async function loadInstagramTokens() {
   }
 
   try {
-    if (fs.existsSync(instagramTokenPath)) {
+    const tokenPath = id === 'default'
+      ? instagramTokenPath
+      : path.join(__dirname, `.instagram_tokens.${id}.json`)
+    if (fs.existsSync(tokenPath)) {
+      return JSON.parse(fs.readFileSync(tokenPath, 'utf-8'))
+    }
+    if (id !== 'default' && fs.existsSync(instagramTokenPath)) {
       return JSON.parse(fs.readFileSync(instagramTokenPath, 'utf-8'))
     }
   } catch {}
@@ -1754,11 +1865,12 @@ async function loadInstagramTokens() {
   return null
 }
 
-async function saveInstagramTokens(tokens) {
+async function saveInstagramTokens(tokens, accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
     try {
       const { error } = await supabaseAdmin.from('instagram_tokens').upsert({
-        id: 'default',
+        id,
         tokens,
         updated_at: new Date().toISOString(),
       })
@@ -1772,30 +1884,66 @@ async function saveInstagramTokens(tokens) {
   }
 
   try {
-    fs.writeFileSync(instagramTokenPath, JSON.stringify(tokens, null, 2))
+    const tokenPath = id === 'default'
+      ? instagramTokenPath
+      : path.join(__dirname, `.instagram_tokens.${id}.json`)
+    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2))
   } catch {}
 }
 
-async function persistInstagramTokens(tokens) {
-  instagramTokens = {
-    ...(instagramTokens || {}),
+async function persistInstagramTokens(tokens, accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
+  const merged = {
+    ...(id === 'default' ? (instagramTokens || {}) : {}),
     ...(tokens || {}),
   }
-  await saveInstagramTokens(instagramTokens)
+  if (id === 'default') {
+    instagramTokens = merged
+  }
+  await saveInstagramTokens(merged, id)
+  return merged
 }
 
-async function clearInstagramTokens() {
-  instagramTokens = null
+async function clearInstagramTokens(accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
+  if (id === 'default') {
+    instagramTokens = null
+  }
 
   if (supabaseAdmin) {
     try {
-      await supabaseAdmin.from('instagram_tokens').delete().eq('id', 'default')
+      await supabaseAdmin.from('instagram_tokens').delete().eq('id', id)
+      await supabaseAdmin.from('platform_accounts').delete().eq('id', id).eq('platform', 'instagram')
     } catch {}
   }
 
   try {
-    fs.unlinkSync(instagramTokenPath)
+    const tokenPath = id === 'default'
+      ? instagramTokenPath
+      : path.join(__dirname, `.instagram_tokens.${id}.json`)
+    fs.unlinkSync(tokenPath)
   } catch {}
+}
+
+async function getInstagramAuthMaterialForAccount(accountId = null) {
+  const id = sanitizeAccountId(accountId || 'default')
+  if (!accountId || id === 'default') {
+    return getInstagramAuthMaterial()
+  }
+
+  const tokens = await loadInstagramTokens(id)
+  if (tokens?.accessToken && tokens?.businessId) {
+    return {
+      accessToken: tokens.accessToken,
+      businessId: tokens.businessId,
+      username: tokens.username || null,
+      pageId: tokens.pageId || null,
+      mode: 'oauth',
+      accountId: id,
+    }
+  }
+
+  return null
 }
 
 function buildInstagramGraphUrl(resource, accessToken, params = {}) {
@@ -2039,8 +2187,8 @@ async function ensurePublicInstagramVideoUrl(videoUrl) {
   }
 }
 
-async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
-  const auth = getInstagramAuthMaterial()
+async function publishInstagramPostV2({ imageUrls = [], caption = '', accountId = null }) {
+  const auth = await getInstagramAuthMaterialForAccount(accountId)
   if (!auth?.accessToken || !auth?.businessId) {
     throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
   }
@@ -2095,8 +2243,8 @@ async function publishInstagramPostV2({ imageUrls = [], caption = '' }) {
   return resolveInstagramPublishResult(pub.id, auth.accessToken)
 }
 
-async function publishInstagramReelV2({ videoUrl, caption = '' }) {
-  const auth = getInstagramAuthMaterial()
+async function publishInstagramReelV2({ videoUrl, caption = '', accountId = null }) {
+  const auth = await getInstagramAuthMaterialForAccount(accountId)
   if (!auth?.accessToken || !auth?.businessId) {
     throw new Error('Instagram 인증 정보가 없습니다. 설정에서 다시 연결해 주세요.')
   }
@@ -2217,7 +2365,7 @@ app.post('/api/naver/publish', async (req, res) => {
 
 app.post('/api/instagram/publish', async (req, res) => {
   try {
-    const { imageUrls = [], caption } = req.body
+    const { imageUrls = [], caption, accountId, accountIds } = req.body
     // Convert data URLs into publicly reachable Supabase Storage URLs.
     const publicUrls = []
     for (const url of imageUrls) {
@@ -2227,8 +2375,31 @@ app.post('/api/instagram/publish', async (req, res) => {
         publicUrls.push(url)
       }
     }
-    const result = await publishInstagramPostV2({ imageUrls: publicUrls, caption })
-    res.json({ success: true, ...result, uploadedUrls: publicUrls })
+    const targetAccountIds = Array.isArray(accountIds) && accountIds.length ? accountIds : (accountId ? [accountId] : [null])
+    const results = {}
+    const failures = []
+
+    for (const targetAccountId of targetAccountIds) {
+      try {
+        const result = await publishInstagramPostV2({ imageUrls: publicUrls, caption, accountId: targetAccountId })
+        results[targetAccountId || 'default'] = result
+      } catch (error) {
+        failures.push({ accountId: targetAccountId || 'default', error: error.message })
+      }
+    }
+
+    const firstSuccess = Object.values(results)[0] || null
+    if (!firstSuccess) {
+      throw new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'Instagram 업로드 실패')
+    }
+
+    res.json({
+      success: true,
+      ...firstSuccess,
+      accountResults: results,
+      failures,
+      uploadedUrls: publicUrls,
+    })
   } catch (err) {
     console.error('[Instagram] 업로드 실패:', err.message)
     res.status(500).json({ success: false, error: err.message })
@@ -2237,10 +2408,33 @@ app.post('/api/instagram/publish', async (req, res) => {
 
 app.post('/api/instagram/reel', async (req, res) => {
   try {
-    const { videoUrl, caption } = req.body
+    const { videoUrl, caption, accountId, accountIds } = req.body
     const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
-    const result = await publishInstagramReelV2({ videoUrl: publicVideoUrl, caption })
-    res.json({ success: true, ...result, uploadedUrl: publicVideoUrl })
+    const targetAccountIds = Array.isArray(accountIds) && accountIds.length ? accountIds : (accountId ? [accountId] : [null])
+    const results = {}
+    const failures = []
+
+    for (const targetAccountId of targetAccountIds) {
+      try {
+        const result = await publishInstagramReelV2({ videoUrl: publicVideoUrl, caption, accountId: targetAccountId })
+        results[targetAccountId || 'default'] = result
+      } catch (error) {
+        failures.push({ accountId: targetAccountId || 'default', error: error.message })
+      }
+    }
+
+    const firstSuccess = Object.values(results)[0] || null
+    if (!firstSuccess) {
+      throw new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'Instagram Reels 업로드 실패')
+    }
+
+    res.json({
+      success: true,
+      ...firstSuccess,
+      accountResults: results,
+      failures,
+      uploadedUrl: publicVideoUrl,
+    })
   } catch (err) {
     console.error('[Instagram Reels] 업로드 실패:', err.message)
     res.status(500).json({ success: false, error: err.message })
@@ -2353,24 +2547,30 @@ let ytTokens = null
 // Store OAuth tokens in Supabase when available, otherwise use a local file.
 const ytTokenPath = path.join(__dirname, '.youtube_tokens.json')
 
-async function loadYtTokens() {
+async function loadYtTokens(accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
     try {
-      const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', 'default').maybeSingle()
+      const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', id).maybeSingle()
       if (!error && data?.tokens) return data.tokens
     } catch (err) { console.warn('[YouTube] Supabase 토큰 로드 실패:', err.message) }
   }
   try {
-    if (fs.existsSync(ytTokenPath)) return JSON.parse(fs.readFileSync(ytTokenPath, 'utf-8'))
+    const tokenPath = id === 'default'
+      ? ytTokenPath
+      : path.join(__dirname, `.youtube_tokens.${id}.json`)
+    if (fs.existsSync(tokenPath)) return JSON.parse(fs.readFileSync(tokenPath, 'utf-8'))
+    if (id !== 'default' && fs.existsSync(ytTokenPath)) return JSON.parse(fs.readFileSync(ytTokenPath, 'utf-8'))
   } catch {}
   return null
 }
 
-async function saveYtTokens(tokens) {
+async function saveYtTokens(tokens, accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
     try {
       const { error } = await supabaseAdmin.from('youtube_tokens').upsert({
-        id: 'default',
+        id,
         tokens,
         updated_at: new Date().toISOString(),
       })
@@ -2378,35 +2578,72 @@ async function saveYtTokens(tokens) {
       else return
     } catch (err) { console.warn('[YouTube] Supabase 토큰 저장 오류:', err.message) }
   }
-  try { fs.writeFileSync(ytTokenPath, JSON.stringify(tokens, null, 2)) } catch {}
+  try {
+    const tokenPath = id === 'default'
+      ? ytTokenPath
+      : path.join(__dirname, `.youtube_tokens.${id}.json`)
+    fs.writeFileSync(tokenPath, JSON.stringify(tokens, null, 2))
+  } catch {}
 }
 
-async function persistYtTokens(tokens) {
-  const previousTokens = ytTokens || {}
-  ytTokens = {
+async function persistYtTokens(tokens, accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
+  const previousTokens = id === 'default' ? (ytTokens || {}) : (await loadYtTokens(id) || {})
+  const nextTokens = {
     ...previousTokens,
     ...(tokens || {}),
   }
 
-  if (!ytTokens.refresh_token && previousTokens.refresh_token) {
-    ytTokens.refresh_token = previousTokens.refresh_token
+  if (!nextTokens.refresh_token && previousTokens.refresh_token) {
+    nextTokens.refresh_token = previousTokens.refresh_token
   }
 
-  await saveYtTokens(ytTokens)
+  if (id === 'default') {
+    ytTokens = nextTokens
+  }
+
+  await saveYtTokens(nextTokens, id)
+  return nextTokens
 }
 
-async function clearYtTokens() {
+async function clearYtTokens(accountId = 'default') {
+  const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
-    try { await supabaseAdmin.from('youtube_tokens').delete().eq('id', 'default') } catch {}
+    try {
+      await supabaseAdmin.from('youtube_tokens').delete().eq('id', id)
+      await supabaseAdmin.from('platform_accounts').delete().eq('id', id).eq('platform', 'youtube')
+    } catch {}
   }
-  try { fs.unlinkSync(ytTokenPath) } catch {}
+  try {
+    const tokenPath = id === 'default'
+      ? ytTokenPath
+      : path.join(__dirname, `.youtube_tokens.${id}.json`)
+    fs.unlinkSync(tokenPath)
+  } catch {}
 }
 
 // Load saved tokens asynchronously when the server starts.
 loadYtTokens().then(t => { if (t) ytTokens = t })
 
-function getYtOAuth2Client() {
+function getYtOAuth2Client(accountId = 'default', tokensOverride = null) {
   if (!ytCredentials) return null
+  const id = sanitizeAccountId(accountId)
+  if (id !== 'default') {
+    const client = new google.auth.OAuth2(
+      ytCredentials.client_id,
+      ytCredentials.client_secret,
+      YOUTUBE_REDIRECT_URI
+    )
+    client.on('tokens', (tokens) => {
+      if (!tokens || Object.keys(tokens).length === 0) return
+      persistYtTokens(tokens, id).catch((error) => {
+        console.warn('[YouTube] refreshed token save failed:', error.message)
+      })
+    })
+    if (tokensOverride) client.setCredentials(tokensOverride)
+    return client
+  }
+
   if (!ytOAuth2Client) {
     ytOAuth2Client = new google.auth.OAuth2(
       ytCredentials.client_id,
@@ -2427,17 +2664,44 @@ function getYtOAuth2Client() {
   return ytOAuth2Client
 }
 
+async function getYtOAuth2ClientForAccount(accountId = null) {
+  const id = sanitizeAccountId(accountId || 'default')
+  const tokens = id === 'default' ? ytTokens : await loadYtTokens(id)
+  if (!tokens) return null
+  const client = getYtOAuth2Client(id, tokens)
+  client.setCredentials(tokens)
+  return { client, tokens, accountId: id }
+}
+
+async function fetchYouTubeChannelInfo(client) {
+  const youtube = google.youtube({ version: 'v3', auth: client })
+  const response = await youtube.channels.list({
+    part: ['id', 'snippet'],
+    mine: true,
+    maxResults: 1,
+  })
+  const channel = response.data?.items?.[0]
+  return {
+    channelId: channel?.id || null,
+    channelTitle: channel?.snippet?.title || null,
+  }
+}
+
 async function validateYouTubeSession() {
   if (!ytCredentials) {
     return { authenticated: false, hasCredentials: false, state: 'unconfigured' }
   }
 
-  if (!ytTokens) {
-    return { authenticated: false, hasCredentials: true, state: 'expired' }
+  const accounts = await listPlatformAccounts('youtube')
+  const hasAnyToken = Boolean(ytTokens || accounts.length)
+
+  if (!hasAnyToken) {
+    return { authenticated: false, hasCredentials: true, state: 'expired', accounts: [] }
   }
 
   try {
-    const client = getYtOAuth2Client()
+    const selected = accounts[0]?.id ? await getYtOAuth2ClientForAccount(accounts[0].id) : null
+    const client = selected?.client || getYtOAuth2Client()
     await client.getAccessToken()
 
     const youtube = google.youtube({ version: 'v3', auth: client })
@@ -2451,6 +2715,7 @@ async function validateYouTubeSession() {
       authenticated: true,
       hasCredentials: true,
       state: 'connected',
+      accounts,
     }
   } catch (error) {
     const detail = error?.response?.data?.error || error?.message || ''
@@ -2474,6 +2739,7 @@ async function validateYouTubeSession() {
       hasCredentials: true,
       state: 'expired',
       validationError: typeof detail === 'string' ? detail : JSON.stringify(detail),
+      accounts,
     }
   }
 }
@@ -2535,16 +2801,18 @@ loadInstagramTokens().then((tokens) => {
 async function validateInstagramSession() {
   const fallback = getInstagramFallbackAuth()
   const auth = getInstagramAuthMaterial()
+  const accounts = await listPlatformAccounts('instagram')
 
   if (!auth?.accessToken || !auth?.businessId) {
     return {
-      connected: false,
+      connected: accounts.length > 0,
       hasAccessToken: false,
       hasBusinessId: false,
       mode: isInstagramOAuthConfigured() ? 'oauth' : 'server-token',
-      state: isInstagramOAuthConfigured() ? 'expired' : 'unconfigured',
+      state: accounts.length > 0 ? 'connected' : (isInstagramOAuthConfigured() ? 'expired' : 'unconfigured'),
       canReconnect: isInstagramOAuthConfigured(),
       canDisconnect: false,
+      accounts,
     }
   }
 
@@ -2562,6 +2830,7 @@ async function validateInstagramSession() {
       username: data.username || auth.username || null,
       canReconnect: isInstagramOAuthConfigured(),
       canDisconnect: auth.mode === 'oauth',
+      accounts,
     }
   } catch (error) {
     const detail = error.message
@@ -2580,6 +2849,7 @@ async function validateInstagramSession() {
       validationError: detail,
       canReconnect: isInstagramOAuthConfigured(),
       canDisconnect: auth.mode === 'oauth' && Boolean(instagramTokens?.accessToken),
+      accounts,
     }
   }
 }
@@ -2655,19 +2925,41 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
     const pages = await instagramGraphGet('me/accounts', accessToken, {
       fields: 'id,name,instagram_business_account{id,username}',
     })
-    const page = (pages.data || []).find((item) => item.instagram_business_account?.id)
-    if (!page?.instagram_business_account?.id) {
+    const linkedPages = (pages.data || []).filter((item) => item.instagram_business_account?.id)
+    if (!linkedPages.length) {
       throw new Error('No Instagram Business account is linked to this Meta account.')
     }
 
-    const business = page.instagram_business_account
-    await persistInstagramTokens({
-      accessToken,
-      businessId: business.id,
-      username: business.username || null,
-      pageId: page.id,
-      updatedAt: new Date().toISOString(),
-    })
+    let firstAccountId = null
+    for (const page of linkedPages) {
+      const business = page.instagram_business_account
+      const accountId = buildPlatformAccountId('instagram', business.id)
+      if (!firstAccountId) firstAccountId = accountId
+      await persistInstagramTokens({
+        accessToken,
+        businessId: business.id,
+        username: business.username || null,
+        pageId: page.id,
+        pageName: page.name || null,
+        updatedAt: new Date().toISOString(),
+      }, accountId)
+      await upsertPlatformAccount({
+        id: accountId,
+        platform: 'instagram',
+        providerAccountId: business.id,
+        username: business.username ? `@${business.username}` : null,
+        displayName: business.username ? `@${business.username}` : (page.name || 'Instagram 계정'),
+        isDefault: false,
+      })
+    }
+
+    if (!instagramTokens && firstAccountId) {
+      const firstTokens = await loadInstagramTokens(firstAccountId)
+      if (firstTokens) {
+        instagramTokens = firstTokens
+        await saveInstagramTokens(firstTokens, 'default')
+      }
+    }
 
     res.send('<html><body><h2>Instagram 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
@@ -2677,7 +2969,8 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
 })
 
 app.post('/api/instagram/logout', async (_req, res) => {
-  await clearInstagramTokens()
+  const accountId = _req.body?.accountId || _req.query?.accountId || 'default'
+  await clearInstagramTokens(accountId)
   res.json({ success: true })
 })
 
@@ -2702,7 +2995,27 @@ app.get('/api/youtube/oauth/callback', async (req, res) => {
     const { tokens } = await client.getToken(code)
     console.log('[YouTube OAuth] 토큰 획득 성공, scopes:', tokens.scope)
     client.setCredentials(tokens)
-    await persistYtTokens(tokens)
+    const channelInfo = await fetchYouTubeChannelInfo(client)
+    const accountId = buildPlatformAccountId('youtube', channelInfo.channelId || crypto.randomUUID())
+    const savedTokens = await persistYtTokens({
+      ...tokens,
+      channelId: channelInfo.channelId,
+      channelTitle: channelInfo.channelTitle,
+      updatedAt: new Date().toISOString(),
+    }, accountId)
+    const existingAccounts = await listPlatformAccounts('youtube')
+    await upsertPlatformAccount({
+      id: accountId,
+      platform: 'youtube',
+      providerAccountId: channelInfo.channelId,
+      username: channelInfo.channelTitle,
+      displayName: channelInfo.channelTitle || 'YouTube 채널',
+      isDefault: existingAccounts.length === 0,
+    })
+    if (!ytTokens) {
+      ytTokens = savedTokens
+      await saveYtTokens(savedTokens, 'default')
+    }
     console.log('[YouTube OAuth] 토큰 저장 완료')
     res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
@@ -2725,10 +3038,47 @@ app.get('/api/youtube/auth-status', async (_req, res) => {
   }
 })
 
+app.get('/api/platform-accounts', async (req, res) => {
+  try {
+    const platform = String(req.query.platform || '').trim()
+    if (!['instagram', 'youtube'].includes(platform)) {
+      return res.status(400).json({ error: 'platform은 instagram 또는 youtube 여야 합니다.' })
+    }
+    res.json({ accounts: await listPlatformAccounts(platform) })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.delete('/api/platform-accounts/:id', async (req, res) => {
+  try {
+    const accountId = sanitizeAccountId(req.params.id)
+    const platform = String(req.query.platform || req.body?.platform || '').trim()
+    if (!['instagram', 'youtube'].includes(platform)) {
+      return res.status(400).json({ error: 'platform은 instagram 또는 youtube 여야 합니다.' })
+    }
+    if (platform === 'instagram') {
+      await clearInstagramTokens(accountId)
+    } else {
+      if (accountId === 'default') {
+        ytTokens = null
+        if (ytOAuth2Client) ytOAuth2Client.revokeCredentials().catch(() => {})
+      }
+      await clearYtTokens(accountId)
+    }
+    res.json({ success: true })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
 app.post('/api/youtube/logout', async (req, res) => {
-  ytTokens = null
-  await clearYtTokens()
-  if (ytOAuth2Client) ytOAuth2Client.revokeCredentials().catch(() => {})
+  const accountId = req.body?.accountId || req.query?.accountId || 'default'
+  if (accountId === 'default') {
+    ytTokens = null
+    if (ytOAuth2Client) ytOAuth2Client.revokeCredentials().catch(() => {})
+  }
+  await clearYtTokens(accountId)
   res.json({ success: true })
 })
 
@@ -2742,8 +3092,10 @@ async function publishYouTubeVideoUpload(body = {}) {
   const privacyStatus = body.privacyStatus || status.privacyStatus
   const requestedPublishAt = body.scheduledAt || status.publishAt || null
   const videoUrl = body.videoUrl
+  const accountId = body.accountId || null
 
-  if (!ytTokens) {
+  const accountClient = await getYtOAuth2ClientForAccount(accountId)
+  if (!accountClient?.client) {
     const error = new Error('YouTube 인증이 필요합니다. 먼저 Google 계정을 연결해 주세요.')
     error.code = 401
     throw error
@@ -2761,7 +3113,7 @@ async function publishYouTubeVideoUpload(body = {}) {
     throw error
   }
 
-  const client = getYtOAuth2Client()
+  const client = accountClient.client
   const youtube = google.youtube({ version: 'v3', auth: client })
 
   let videoBuffer
@@ -2830,7 +3182,33 @@ async function publishYouTubeVideoUpload(body = {}) {
 
 app.post('/api/youtube/upload', async (req, res) => {
   try {
-    res.json(await publishYouTubeVideoUpload(req.body || {}))
+    const body = req.body || {}
+    const targetAccountIds = Array.isArray(body.accountIds) && body.accountIds.length
+      ? body.accountIds
+      : (body.accountId ? [body.accountId] : [null])
+    const results = {}
+    const failures = []
+
+    for (const accountId of targetAccountIds) {
+      try {
+        results[accountId || 'default'] = await publishYouTubeVideoUpload({ ...body, accountId })
+      } catch (error) {
+        failures.push({ accountId: accountId || 'default', error: error.response?.data?.error?.message || error.message })
+      }
+    }
+
+    const firstSuccess = Object.values(results)[0] || null
+    if (!firstSuccess) {
+      const error = new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'YouTube 업로드 실패')
+      error.code = failures.some((failure) => /인증|auth|token/i.test(failure.error)) ? 401 : 500
+      throw error
+    }
+
+    res.json({
+      ...firstSuccess,
+      accountResults: results,
+      failures,
+    })
   } catch (err) {
     console.error('[YouTube] 업로드 실패 전체:', JSON.stringify({
       code: err.code,
@@ -2885,12 +3263,16 @@ async function normalizeScheduledContent(platform, rawContent) {
 app.post('/api/scheduled/create', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
-    const { platform, extractionId, content, scheduledAt, scheduledId } = req.body
+    const { platform, extractionId, content, scheduledAt, scheduledId, accountId, accountIds } = req.body
     if (!platform || !extractionId || !scheduledAt) {
       return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
     }
 
     const normalizedContent = await normalizeScheduledContent(platform, content)
+    const normalizedAccountIds = Array.isArray(accountIds)
+      ? accountIds.map((id) => sanitizeAccountId(id)).filter(Boolean)
+      : []
+    const normalizedAccountId = accountId ? sanitizeAccountId(accountId) : (normalizedAccountIds[0] || null)
 
     if (scheduledId) {
       const { data, error } = await supabaseAdmin
@@ -2898,6 +3280,8 @@ app.post('/api/scheduled/create', async (req, res) => {
         .update({
           scheduled_at: scheduledAt,
           content: normalizedContent || {},
+          account_id: normalizedAccountId,
+          account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
         })
         .eq('id', scheduledId)
         .eq('extraction_id', extractionId)
@@ -2931,6 +3315,8 @@ app.post('/api/scheduled/create', async (req, res) => {
         .update({
           scheduled_at: scheduledAt,
           content: normalizedContent || first.content || {},
+          account_id: normalizedAccountId,
+          account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
         })
         .eq('id', first.id)
         .select()
@@ -2947,6 +3333,8 @@ app.post('/api/scheduled/create', async (req, res) => {
         content: normalizedContent || {},
         scheduled_at: scheduledAt,
         status: 'pending',
+        account_id: normalizedAccountId,
+        account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
       })
       .select()
       .single()
@@ -2963,7 +3351,7 @@ app.get('/api/scheduled/list', async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
-      .select('id, platform, extraction_id, scheduled_at, status, uploaded_url, uploaded_at, error, attempts, created_at, content, content_title:content->>title')
+      .select('id, platform, extraction_id, scheduled_at, status, uploaded_url, uploaded_at, error, attempts, created_at, content, account_id, account_ids, content_title:content->>title')
       .order('scheduled_at', { ascending: true })
     if (error) throw error
     res.json(data)
@@ -3120,6 +3508,9 @@ app.post('/api/scheduled/run', async (req, res) => {
 
       try {
         let uploadResult = null
+        const scheduledAccountIds = Array.isArray(item.account_ids) && item.account_ids.length
+          ? item.account_ids
+          : (item.account_id ? [item.account_id] : [null])
 
         // 예약 실행 경로는 인스타그램만 유지한다.
         // 레거시 YouTube/블로그 예약 실행 경로는 제거됨
@@ -3156,8 +3547,21 @@ app.post('/api/scheduled/run', async (req, res) => {
             }
           }
 
-          const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption })
-          uploadResult = { url: result.permalink, mediaId: result.mediaId }
+          const accountResults = {}
+          const failures = []
+          for (const accountId of scheduledAccountIds) {
+            try {
+              const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption, accountId })
+              accountResults[accountId || 'default'] = result
+            } catch (error) {
+              failures.push({ accountId: accountId || 'default', error: error.message })
+            }
+          }
+          const firstSuccess = Object.values(accountResults)[0] || null
+          if (!firstSuccess) {
+            throw new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'Instagram 예약 업로드 실패')
+          }
+          uploadResult = { url: firstSuccess.permalink, mediaId: firstSuccess.mediaId, accountResults, failures }
 
         } else if (item.platform === 'shorts' || item.platform === 'shorts_instagram' || item.platform === 'shorts_youtube') {
           const { data: ext } = await supabaseAdmin
@@ -3183,21 +3587,34 @@ app.post('/api/scheduled/run', async (req, res) => {
 
           if (targets.instagram) {
             const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
-            const result = await publishInstagramReelV2({
-              videoUrl: publicVideoUrl,
-              caption: buildReelsCaption(script),
-            })
-            uploadedUrls.instagram = result.permalink || result.url || null
-            media.instagramMediaId = result.mediaId || result.id || null
+            const accountResults = {}
+            for (const accountId of scheduledAccountIds) {
+              const result = await publishInstagramReelV2({
+                videoUrl: publicVideoUrl,
+                caption: buildReelsCaption(script),
+                accountId,
+              })
+              accountResults[accountId || 'default'] = result
+            }
+            const firstResult = Object.values(accountResults)[0] || null
+            uploadedUrls.instagram = firstResult?.permalink || firstResult?.url || null
+            media.instagramMediaId = firstResult?.mediaId || firstResult?.id || null
+            media.instagramAccountResults = accountResults
           }
 
           if (targets.youtube) {
-            const result = await publishYouTubeVideoUpload(buildShortsUploadPayload({
-              script,
-              videoUrl,
-            }))
-            uploadedUrls.youtube = result.url || null
-            media.youtubeVideoId = result.videoId || null
+            const accountResults = {}
+            for (const accountId of scheduledAccountIds) {
+              const result = await publishYouTubeVideoUpload({
+                ...buildShortsUploadPayload({ script, videoUrl }),
+                accountId,
+              })
+              accountResults[accountId || 'default'] = result
+            }
+            const firstResult = Object.values(accountResults)[0] || null
+            uploadedUrls.youtube = firstResult?.url || null
+            media.youtubeVideoId = firstResult?.videoId || null
+            media.youtubeAccountResults = accountResults
           }
 
           uploadResult = {

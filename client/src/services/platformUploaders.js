@@ -296,6 +296,8 @@ export async function uploadToYoutube(extractionId, options = {}) {
       : { privacyStatus: 'public', selfDeclaredMadeForKids: false },
     scheduledAt,
     videoUrl: sourceVideoUrl.startsWith('/output/') && API_BASE ? `${API_BASE}${sourceVideoUrl}` : sourceVideoUrl,
+    accountIds: Array.isArray(options.accountIds) ? options.accountIds : undefined,
+    accountId: options.accountId,
   }
 
   const res = await fetchWithTimeout(
@@ -323,10 +325,12 @@ export async function uploadToYoutube(extractionId, options = {}) {
     videoId: data.videoId,
     scheduled: Boolean(data.scheduled || scheduledAt),
     scheduledAt: data.scheduledAt || scheduledAt || null,
+    accountResults: data.accountResults || null,
+    failures: data.failures || [],
   }
 }
 
-export async function uploadToInstagramReels(extractionId) {
+export async function uploadToInstagramReels(extractionId, options = {}) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
@@ -336,6 +340,12 @@ export async function uploadToInstagramReels(extractionId) {
 
   const videoUrl = video.combinedVideoUrl || video.url || video.videoUrl
   const requestBody = formatInstagramReelsRequest(script, videoUrl?.startsWith('/output/') && API_BASE ? `${API_BASE}${videoUrl}` : videoUrl)
+  if (Array.isArray(options.accountIds)) {
+    requestBody.accountIds = options.accountIds
+  }
+  if (options.accountId) {
+    requestBody.accountId = options.accountId
+  }
 
   const res = await fetchWithTimeout(
     `${API_BASE}/api/instagram/reel`,
@@ -357,7 +367,12 @@ export async function uploadToInstagramReels(extractionId) {
     throw new Error(getApiErrorMessage(data, `인스타그램 릴스 업로드 실패 (${res.status})`))
   }
 
-  return { url: data.permalink || data.url, mediaId: data.mediaId || data.id || null }
+  return {
+    url: data.permalink || data.url,
+    mediaId: data.mediaId || data.id || null,
+    accountResults: data.accountResults || null,
+    failures: data.failures || [],
+  }
 }
 
 export async function uploadToShortsTargets(extractionId, options = {}) {
@@ -369,7 +384,7 @@ export async function uploadToShortsTargets(extractionId, options = {}) {
   for (const target of order) {
     if (target === 'instagram' && targets.instagram) {
       try {
-        results.instagram = await uploadToInstagramReels(extractionId)
+        results.instagram = await uploadToInstagramReels(extractionId, options)
       } catch (error) {
         failures.push(`인스타그램: ${error.message}`)
       }
@@ -466,7 +481,7 @@ async function ensureInstagramImagesPublished(extractionId, ext) {
   }
 }
 
-export async function uploadToInstagram(extractionId) {
+export async function uploadToInstagram(extractionId, options = {}) {
   const ext = await getExtractionById(extractionId)
   if (!ext) throw new Error('추출 데이터를 찾을 수 없습니다')
 
@@ -492,7 +507,12 @@ export async function uploadToInstagram(extractionId) {
     {
       method: 'POST',
       headers: apiHeaders(),
-      body: JSON.stringify({ imageUrls: images.slice(0, 10), caption }),
+      body: JSON.stringify({
+        imageUrls: images.slice(0, 10),
+        caption,
+        accountIds: Array.isArray(options.accountIds) ? options.accountIds : undefined,
+        accountId: options.accountId,
+      }),
     },
     BLOG_UPLOAD_REQUEST_TIMEOUT_MS,
     'Instagram upload request',
@@ -507,7 +527,12 @@ export async function uploadToInstagram(extractionId) {
     throw new Error(getApiErrorMessage(data, `인스타그램 업로드 실패 (${res.status})`))
   }
 
-  return { url: data.permalink, mediaId: data.mediaId }
+  return {
+    url: data.permalink,
+    mediaId: data.mediaId,
+    accountResults: data.accountResults || null,
+    failures: data.failures || [],
+  }
 }
 
 export async function uploadToPlatform(platform, extractionId, options = {}) {
@@ -519,7 +544,7 @@ export async function uploadToPlatform(platform, extractionId, options = {}) {
     }
   }
   if (platform === 'shorts') return uploadToShortsTargets(extractionId, options)
-  if (platform === 'instagram') return uploadToInstagram(extractionId)
+  if (platform === 'instagram') return uploadToInstagram(extractionId, options)
   if (platform === 'newsletter') throw new Error('뉴스레터 자동 발송은 아직 구현되지 않았습니다')
   throw new Error(`지원하지 않는 플랫폼: ${platform}`)
 }

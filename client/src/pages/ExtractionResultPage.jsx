@@ -7,6 +7,7 @@ import {
   Upload, Loader2, AlertCircle, Calendar, RefreshCw, Eye, EyeOff, X, ZoomIn, Pencil
 } from 'lucide-react'
 import ScheduleDialog from '../components/ScheduleDialog'
+import AccountUploadDialog from '../components/AccountUploadDialog'
 import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -357,6 +358,7 @@ export default function ExtractionResultPage() {
   // 숏폼 업로드 대상 기본값 (플랫폼별 패널에서 명시적으로 targets 를 넘기지 않을 때의 폴백)
   const [shortsUploadTargets] = useState({ instagram: true, youtube: true })
   const [shortsBusy, setShortsBusy] = useState({ instagram: false, youtube: false })
+  const [accountUploadTarget, setAccountUploadTarget] = useState(null)
   const [previewImage, setPreviewImage] = useState(null) // { url, alt } | null
 
   useEffect(() => {
@@ -652,6 +654,9 @@ export default function ExtractionResultPage() {
         const urls = (renderedContent.imageUrls || []).filter(Boolean)
         if (!urls.length) throw new Error('인스타그램 카드 이미지가 없습니다. 먼저 인스타그램 탭을 열어주세요.')
         const formatted = formatInstagramRequest(instagramContent, urls)
+        if (Array.isArray(options.accountIds)) {
+          formatted.accountIds = options.accountIds
+        }
         console.log('[ExtractionResultPage] 인스타그램 업로드 요청:', formatted)
         const response = await fetchWithTimeout(`${API_BASE}/api/instagram/publish`, {
           method: 'POST',
@@ -723,6 +728,9 @@ export default function ExtractionResultPage() {
         const uploadYoutube = async () => {
           try {
             const formatted = formatYouTubeRequest(shortsScript, absVideoUrl, scheduledAt)
+            if (Array.isArray(options.accountIds)) {
+              formatted.accountIds = options.accountIds
+            }
             console.log('[ExtractionResultPage] 유튜브 쇼츠/릴스 업로드 요청:', formatted)
             const response = await fetchWithTimeout(`${API_BASE}/api/youtube/upload`, {
               method: 'POST',
@@ -753,6 +761,9 @@ export default function ExtractionResultPage() {
         const uploadInstagramReels = async () => {
           try {
             const formatted = formatInstagramReelsRequest(shortsScript, absVideoUrl)
+            if (Array.isArray(options.accountIds)) {
+              formatted.accountIds = options.accountIds
+            }
             console.log('[ExtractionResultPage] 인스타그램 릴스 업로드 요청:', formatted)
             const response = await fetchWithTimeout(`${API_BASE}/api/instagram/reel`, {
               method: 'POST',
@@ -854,6 +865,33 @@ export default function ExtractionResultPage() {
         })
       }
     }
+  }
+
+  const requestAccountUpload = (channel, options = {}) => {
+    const targetPlatform = channel === 'instagram'
+      ? 'instagram'
+      : (channel === 'shorts' && options.uploadOrder?.[0] === 'instagram')
+        ? 'instagram'
+        : (channel === 'shorts' && options.uploadOrder?.[0] === 'youtube')
+          ? 'youtube'
+          : null
+
+    if (!targetPlatform) {
+      void handleUpload(channel, options)
+      return
+    }
+
+    setAccountUploadTarget({ channel, options, platform: targetPlatform })
+  }
+
+  const confirmAccountUpload = async (accountIds) => {
+    if (!accountUploadTarget) return
+    const { channel, options } = accountUploadTarget
+    setAccountUploadTarget(null)
+    await handleUpload(channel, {
+      ...options,
+      accountIds,
+    })
   }
 
   const downloadAllImages = async (type) => {
@@ -1193,7 +1231,9 @@ export default function ExtractionResultPage() {
     if (typeof window === 'undefined' || !extractionId || !state?.draftKey) return
     try {
       sessionStorage.removeItem(`${RESULT_DRAFT_STORAGE_PREFIX}${state.draftKey}`)
-    } catch {}
+    } catch {
+      // sessionStorage 접근이 막힌 환경에서는 메모리 정리만 진행한다.
+    }
     const memoryDrafts = window[RESULT_DRAFT_WINDOW_KEY]
     if (memoryDrafts && typeof memoryDrafts === 'object') {
       delete memoryDrafts[state.draftKey]
@@ -2103,7 +2143,6 @@ export default function ExtractionResultPage() {
 
   const renderVideoPanel = (videoData, versionLabel, options = {}) => {
     const videoUrl = videoData?.combinedVideoUrl || videoData?.url || videoData?.videoUrl
-    const timings = videoData?.sceneTimings || []
     const shouldSyncNarration = options.syncNarration !== false
     const isLoading = videoData && !videoUrl
     return (
@@ -2243,7 +2282,7 @@ export default function ExtractionResultPage() {
                         <Calendar size={14} /> 예약 업로드
                       </button>
                       <button
-                        onClick={() => handleUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
+                        onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
                         disabled={busy}
                         className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                           busy
@@ -2493,7 +2532,7 @@ export default function ExtractionResultPage() {
               return (
                 <>
                   <button
-                    onClick={() => handleUpload(ch)}
+                    onClick={() => requestAccountUpload(ch)}
                     disabled={status === 'loading'}
                     className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
                       ${status === 'loading'
@@ -2590,6 +2629,18 @@ export default function ExtractionResultPage() {
           onSave={handleSaveEditedContent}
         />
       )}
+
+      <AccountUploadDialog
+        open={!!accountUploadTarget}
+        platform={accountUploadTarget?.platform}
+        title={
+          accountUploadTarget?.channel === 'shorts'
+            ? (shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스')
+            : (instagramContent?.title || instagramContent?.caption || '인스타그램 콘텐츠')
+        }
+        onClose={() => setAccountUploadTarget(null)}
+        onConfirm={confirmAccountUpload}
+      />
 
       <ScheduleDialog
         open={scheduleDialog.open}
