@@ -8,6 +8,7 @@ api/uploads/
 .omc/
 .omx/
 .tmp/
+.codex/*.png
 
 # OAuth secrets
 server/client_secret.json
@@ -25,6 +26,12 @@ client/public/nar-scene*.mp3
 client/public/scene*-bg.png
 client/public/shorts-combined.html
 client/public/test*.mp4
+client/public/*preview*.html
+client/public/blog-*.html
+client/public/shorts-*.html
+client/public/blog_*.png
+client/public/blog_math*.png
+client/public/final_bg*.png
 output/
 portfolio/
 
@@ -38,6 +45,8 @@ scripts/concept-video-tests-agent/
 scripts/concept-video-tests-*.log
 scripts/concept-test-videos*/
 scripts/avatar-variants/preview-images/
+scripts/avatar-variants/*.md
+scripts/concept-script-tests/*.md
 
 # 네이버 세션 쿠키 (절대 커밋 금지)
 tools/naver-cookies.json
@@ -51,4 +60,3 @@ client/public/downloads/Naver-RPA-Setup.exe
 
 # Claude Code 런타임 락 파일 (세션·PID 등 임시 상태)
 .claude/*.lock
-
