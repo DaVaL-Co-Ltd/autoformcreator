@@ -69,13 +69,18 @@ export async function fetchYoutubeSessionStatus() {
     'YouTube auth status request'
   )
   const data = await readJsonOrThrow(response, 'Failed to read YouTube auth status.')
+  const accounts = Array.isArray(data.accounts) ? data.accounts : []
+  const connected = Boolean(data.authenticated) && accounts.length > 0
+  const state = connected
+    ? 'connected'
+    : (data.hasCredentials ? 'expired' : 'unconfigured')
 
   return {
-    connected: Boolean(data.authenticated),
+    connected,
     hasCredentials: Boolean(data.hasCredentials),
-    state: data.state || (data.authenticated ? 'connected' : (data.hasCredentials ? 'expired' : 'unconfigured')),
+    state,
     validationError: data.validationError || null,
-    accounts: Array.isArray(data.accounts) ? data.accounts : [],
+    accounts,
   }
 }
 
@@ -212,7 +217,7 @@ export async function waitForYoutubeReconnect({
 
   while (Date.now() - startedAt < timeoutMs) {
     const status = await fetchYoutubeSessionStatus()
-    if (status.connected) {
+    if (status.connected && status.accounts.length > 0) {
       return status
     }
 

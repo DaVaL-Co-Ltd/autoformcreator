@@ -1682,8 +1682,8 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }))
 // ===== Instagram Graph API =====
 const IG_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN
 const IG_BUSINESS_ID = process.env.INSTAGRAM_BUSINESS_ID
-const META_APP_ID = process.env.META_APP_ID || process.env.INSTAGRAM_APP_ID
-const META_APP_SECRET = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET
+const META_APP_ID = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
+const META_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET
 const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || process.env.instagram_redirect_uri || 'http://localhost:3001/api/instagram/oauth/callback'
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
 const instagramTokenPath = path.join(__dirname, '.instagram_tokens.json')
@@ -2692,7 +2692,7 @@ async function validateYouTubeSession() {
     return { authenticated: false, hasCredentials: false, state: 'unconfigured' }
   }
 
-  const accounts = await listPlatformAccounts('youtube')
+  let accounts = await listPlatformAccounts('youtube')
   const hasAnyToken = Boolean(ytTokens || accounts.length)
 
   if (!hasAnyToken) {
@@ -2711,10 +2711,30 @@ async function validateYouTubeSession() {
       maxResults: 1,
     })
 
+    if (!accounts.length && ytTokens) {
+      const channelInfo = await fetchYouTubeChannelInfo(client)
+      const accountId = buildPlatformAccountId('youtube', channelInfo.channelId || crypto.randomUUID())
+      await persistYtTokens({
+        ...ytTokens,
+        channelId: channelInfo.channelId,
+        channelTitle: channelInfo.channelTitle,
+        updatedAt: new Date().toISOString(),
+      }, accountId)
+      await upsertPlatformAccount({
+        id: accountId,
+        platform: 'youtube',
+        providerAccountId: channelInfo.channelId,
+        username: channelInfo.channelTitle,
+        displayName: channelInfo.channelTitle || 'YouTube 채널',
+        isDefault: true,
+      })
+      accounts = await listPlatformAccounts('youtube')
+    }
+
     return {
-      authenticated: true,
+      authenticated: accounts.length > 0,
       hasCredentials: true,
-      state: 'connected',
+      state: accounts.length > 0 ? 'connected' : 'expired',
       accounts,
     }
   } catch (error) {

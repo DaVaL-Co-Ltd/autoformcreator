@@ -102,16 +102,16 @@ function getYoutubeCredentials() {
 }
 
 function isInstagramOAuthConfigured() {
-  const appId = process.env.META_APP_ID || process.env.INSTAGRAM_APP_ID
-  const appSecret = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET
+  const appId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
+  const appSecret = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET
   const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || process.env.instagram_redirect_uri
 
   return Boolean(appId && appSecret && redirectUri)
 }
 
 function getInstagramOAuthConfig() {
-  const appId = process.env.META_APP_ID || process.env.INSTAGRAM_APP_ID
-  const appSecret = process.env.META_APP_SECRET || process.env.INSTAGRAM_APP_SECRET
+  const appId = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
+  const appSecret = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET
   const redirectUri = process.env.INSTAGRAM_REDIRECT_URI || process.env.instagram_redirect_uri || 'http://localhost:3001/api/instagram/oauth/callback'
 
   if (!appId || !appSecret || !redirectUri) {
