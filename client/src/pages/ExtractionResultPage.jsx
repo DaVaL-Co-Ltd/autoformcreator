@@ -2249,20 +2249,37 @@ export default function ExtractionResultPage() {
                 <span className="text-sm font-medium text-text">{p.label}</span>
                 <div className="flex items-center gap-2">
                   {pmeta.status === 'uploaded' ? (
-                    pmeta.uploadedUrl ? (
-                      <a
-                        href={pmeta.uploadedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-colors"
+                    <>
+                      {pmeta.uploadedUrl ? (
+                        <a
+                          href={pmeta.uploadedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-colors"
+                        >
+                          <CheckCircle size={14} /> 업로드 완료 <ExternalLink size={12} />
+                        </a>
+                      ) : (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20">
+                          <CheckCircle size={14} /> 업로드 완료
+                        </div>
+                      )}
+                      <button
+                        onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
+                        disabled={busy}
+                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          busy
+                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                            : 'bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40'
+                        }`}
                       >
-                        <CheckCircle size={14} /> 업로드 완료 <ExternalLink size={12} />
-                      </a>
-                    ) : (
-                      <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20">
-                        <CheckCircle size={14} /> 업로드 완료
-                      </div>
-                    )
+                        {busy ? (
+                          <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                        ) : (
+                          <><Upload size={14} /> 다시 업로드</>
+                        )}
+                      </button>
+                    </>
                   ) : pmeta.status === 'scheduled' ? (
                     <button
                       onClick={() => openShortsSchedule(p.key, 'edit')}

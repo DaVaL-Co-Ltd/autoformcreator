@@ -867,13 +867,36 @@ export default function ContentPage() {
                           <span className="text-xs font-medium text-text-muted shrink-0">{p.label}</span>
                           <div className="flex items-center gap-2">
                             {pmeta.status === 'uploaded' && (
-                              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
-                                <CheckCircle size={13} />
-                                업로드 완료
-                                {pmeta.uploadedAt ? (
-                                  <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
-                                ) : null}
-                              </div>
+                              <>
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
+                                  <CheckCircle size={13} />
+                                  업로드 완료
+                                  {pmeta.uploadedAt ? (
+                                    <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
+                                  ) : null}
+                                </div>
+                                <button
+                                  onClick={() => requestAccountUpload(item, { platform: p.key })}
+                                  disabled={pUploading}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                    pUploading
+                                      ? 'bg-primary/50 text-white cursor-wait'
+                                      : 'border border-border text-text-muted hover:text-primary hover:border-primary/40'
+                                  }`}
+                                >
+                                  {pUploading ? (
+                                    <>
+                                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                      업로드 중...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload size={13} />
+                                      다시 업로드
+                                    </>
+                                  )}
+                                </button>
+                              </>
                             )}
                             {pmeta.status === 'scheduled' && (
                               <button
