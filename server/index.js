@@ -1714,14 +1714,14 @@ function publicPlatformAccount(row) {
 }
 
 function accountFromYoutubeTokens(id, tokens, isDefault = false) {
-  if (!tokens?.channelId && !tokens?.channelTitle) return null
+  if (!tokens?.channelId && !tokens?.channelTitle && !tokens?.access_token && !tokens?.refresh_token) return null
 
   return {
     id: sanitizeAccountId(id),
     platform: 'youtube',
     providerAccountId: tokens.channelId || null,
     username: tokens.channelTitle || null,
-    displayName: tokens.channelTitle || 'YouTube 채널',
+    displayName: tokens.channelTitle || 'YouTube 인증 계정',
     status: 'connected',
     isDefault: Boolean(isDefault),
     createdAt: null,
