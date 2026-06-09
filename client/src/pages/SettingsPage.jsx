@@ -485,8 +485,9 @@ export default function SettingsPage() {
     setBusyAction('shorts')
     setStatusError('')
     try {
+      const previousAccountIds = (platformStatuses.shorts.accounts || []).map((account) => account.id).filter(Boolean)
       const { popup } = await beginYoutubeReconnect()
-      await waitForYoutubeReconnect({ popup })
+      await waitForYoutubeReconnect({ popup, previousAccountIds })
       await refreshPlatformStatuses()
       window.alert('Google 인증이 완료되어 바로 유튜브 업로드를 다시 사용할 수 있습니다.')
     } catch (error) {
@@ -500,8 +501,9 @@ export default function SettingsPage() {
     setBusyAction('instagram')
     setStatusError('')
     try {
+      const previousAccountIds = (platformStatuses.instagram.accounts || []).map((account) => account.id).filter(Boolean)
       const { popup } = await beginInstagramReconnect()
-      await waitForInstagramReconnect({ popup })
+      await waitForInstagramReconnect({ popup, previousAccountIds })
       await refreshPlatformStatuses()
       window.alert('Instagram 인증이 완료되어 바로 서비스를 다시 사용할 수 있습니다.')
     } catch (error) {

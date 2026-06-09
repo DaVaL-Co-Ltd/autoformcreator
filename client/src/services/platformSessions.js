@@ -212,13 +212,20 @@ export async function waitForYoutubeReconnect({
   timeoutMs = 180000,
   intervalMs = 2000,
   popup = null,
+  previousAccountIds = [],
 } = {}) {
   const startedAt = Date.now()
   let popupClosedAt = null
+  const previousIds = new Set(previousAccountIds.filter(Boolean))
 
   while (Date.now() - startedAt < timeoutMs) {
     const status = await fetchYoutubeSessionStatus()
-    if (status.connected && status.accounts.length > 0) {
+    const hasNewAccount = status.accounts.some((account) => account?.id && !previousIds.has(account.id))
+    const connectionConfirmed = previousIds.size > 0
+      ? hasNewAccount
+      : status.connected && status.accounts.length > 0
+
+    if (connectionConfirmed) {
       return status
     }
 
@@ -226,8 +233,10 @@ export async function waitForYoutubeReconnect({
       popupClosedAt = Date.now()
     }
 
-    if (popupClosedAt && Date.now() - popupClosedAt > 30000 && status.state !== 'connected') {
-      throw new Error('Google 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
+    if (popupClosedAt && Date.now() - popupClosedAt > 30000) {
+      throw new Error(previousIds.size > 0
+        ? 'Google 인증 창이 닫혔지만 새 YouTube 계정 추가가 확인되지 않았습니다. 이미 연결된 계정인지 확인해 주세요.'
+        : 'Google 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
     }
 
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
@@ -240,13 +249,20 @@ export async function waitForInstagramReconnect({
   timeoutMs = 180000,
   intervalMs = 2000,
   popup = null,
+  previousAccountIds = [],
 } = {}) {
   const startedAt = Date.now()
   let popupClosedAt = null
+  const previousIds = new Set(previousAccountIds.filter(Boolean))
 
   while (Date.now() - startedAt < timeoutMs) {
     const status = await fetchInstagramSessionStatus()
-    if (status.connected) {
+    const hasNewAccount = status.accounts.some((account) => account?.id && !previousIds.has(account.id))
+    const connectionConfirmed = previousIds.size > 0
+      ? hasNewAccount
+      : status.connected && status.accounts.length > 0
+
+    if (connectionConfirmed) {
       return status
     }
 
@@ -254,8 +270,10 @@ export async function waitForInstagramReconnect({
       popupClosedAt = Date.now()
     }
 
-    if (popupClosedAt && Date.now() - popupClosedAt > 30000 && status.state !== 'connected') {
-      throw new Error('Instagram 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
+    if (popupClosedAt && Date.now() - popupClosedAt > 30000) {
+      throw new Error(previousIds.size > 0
+        ? 'Instagram 인증 창이 닫혔지만 새 계정 추가가 확인되지 않았습니다. 이미 연결된 계정인지 확인해 주세요.'
+        : 'Instagram 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
     }
 
     await new Promise((resolve) => setTimeout(resolve, intervalMs))
