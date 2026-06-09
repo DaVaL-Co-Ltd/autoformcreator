@@ -2131,6 +2131,22 @@ function summarizeInstagramPageLinks(pages = []) {
   }))
 }
 
+function extractInstagramPageTargetIds(tokenDebug) {
+  const ids = new Set()
+
+  for (const granularScope of tokenDebug?.granularScopes || []) {
+    if (!['pages_show_list', 'pages_read_engagement'].includes(granularScope.scope)) {
+      continue
+    }
+
+    for (const targetId of granularScope.targetIds || []) {
+      if (targetId) ids.add(String(targetId))
+    }
+  }
+
+  return [...ids]
+}
+
 async function fetchInstagramGraphDiagnostic(resource, accessToken, params = {}) {
   const response = await fetch(buildInstagramGraphUrl(resource, accessToken, params))
   const data = await response.json().catch(() => null)
@@ -2147,6 +2163,31 @@ async function fetchInstagramGraphDiagnostic(resource, accessToken, params = {})
       : null,
     data,
   }
+}
+
+async function lookupInstagramPagesFromGrantedTargets(accessToken, targetIds = []) {
+  const pages = []
+  const diagnostics = []
+
+  for (const targetId of targetIds) {
+    const diagnostic = await fetchInstagramGraphDiagnostic(targetId, accessToken, {
+      fields: 'id,name,tasks,instagram_business_account{id,username}',
+    })
+
+    diagnostics.push({
+      targetId,
+      ok: diagnostic.ok,
+      status: diagnostic.status,
+      error: diagnostic.error,
+      page: diagnostic.ok ? summarizeInstagramPageLinks([diagnostic.data])[0] : null,
+    })
+
+    if (diagnostic.ok && diagnostic.data?.id) {
+      pages.push(diagnostic.data)
+    }
+  }
+
+  return { pages, diagnostics }
 }
 
 async function instagramGraphPost(resource, accessToken, body = {}) {
@@ -3248,13 +3289,33 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
       throw new Error(pagesDiagnostic.error?.message || `Instagram page lookup failed (${pagesDiagnostic.status})`)
     }
 
-    const pages = pagesDiagnostic.data || {}
-    const linkedPages = (pages.data || []).filter((item) => item.instagram_business_account?.id)
+    let pages = pagesDiagnostic.data || {}
+    let pageLookupSource = 'me/accounts'
+    let linkedPages = (pages.data || []).filter((item) => item.instagram_business_account?.id)
+    if (!linkedPages.length) {
+      const targetPageIds = extractInstagramPageTargetIds(tokenDebug)
+      if (targetPageIds.length) {
+        const targetLookup = await lookupInstagramPagesFromGrantedTargets(accessToken, targetPageIds)
+        console.info('[Instagram OAuth] granular page target lookup diagnostic', {
+          targetPageIds,
+          diagnostics: targetLookup.diagnostics,
+        })
+        const targetLinkedPages = targetLookup.pages.filter((item) => item.instagram_business_account?.id)
+        if (targetLinkedPages.length) {
+          pages = { data: targetLookup.pages }
+          pageLookupSource = 'granular_scope_targets'
+          linkedPages = targetLinkedPages
+        }
+      }
+    }
+
     if (!linkedPages.length) {
       console.warn('[Instagram OAuth] no linked Instagram Business account found', {
+        pageLookupSource,
         requestedScopes: INSTAGRAM_OAUTH_SCOPES,
         tokenScopes: tokenDebug?.scopes || null,
         tokenGranularScopes: tokenDebug?.granularScopes || null,
+        targetPageIds: extractInstagramPageTargetIds(tokenDebug),
         missingScopesFromToken: tokenDebug ? missingInstagramScopes(tokenDebug.scopes) : null,
         callbackGrantedScopes: callbackGrantedScopeList,
         callbackDeniedScopes: callbackDeniedScopeList,
