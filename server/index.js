@@ -1713,6 +1713,94 @@ function publicPlatformAccount(row) {
   }
 }
 
+function accountFromYoutubeTokens(id, tokens, isDefault = false) {
+  if (!tokens?.channelId && !tokens?.channelTitle) return null
+
+  return {
+    id: sanitizeAccountId(id),
+    platform: 'youtube',
+    providerAccountId: tokens.channelId || null,
+    username: tokens.channelTitle || null,
+    displayName: tokens.channelTitle || 'YouTube 채널',
+    status: 'connected',
+    isDefault: Boolean(isDefault),
+    createdAt: null,
+    updatedAt: tokens.updatedAt || null,
+  }
+}
+
+function accountFromInstagramTokens(id, tokens, isDefault = false) {
+  if (!tokens?.businessId && !tokens?.username) return null
+
+  return {
+    id: sanitizeAccountId(id),
+    platform: 'instagram',
+    providerAccountId: tokens.businessId || null,
+    username: tokens.username ? `@${String(tokens.username).replace(/^@/, '')}` : null,
+    displayName: tokens.username ? `@${String(tokens.username).replace(/^@/, '')}` : 'Instagram 계정',
+    status: 'connected',
+    isDefault: Boolean(isDefault),
+    createdAt: null,
+    updatedAt: tokens.updatedAt || null,
+  }
+}
+
+function pushUniquePlatformAccount(accounts, account) {
+  if (!account?.id) return
+  if (accounts.some((item) => item.id === account.id)) return
+  accounts.push(account)
+}
+
+async function listTokenBackedPlatformAccounts(platform) {
+  const accounts = []
+
+  const table = platform === 'youtube'
+    ? 'youtube_tokens'
+    : platform === 'instagram'
+      ? 'instagram_tokens'
+      : null
+  if (!table) return accounts
+
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .select('id,tokens,updated_at')
+        .order('updated_at', { ascending: true })
+      if (error) throw error
+
+      for (const row of data || []) {
+        const account = platform === 'youtube'
+          ? accountFromYoutubeTokens(row.id, { ...(row.tokens || {}), updatedAt: row.tokens?.updatedAt || row.updated_at }, row.id === 'default')
+          : accountFromInstagramTokens(row.id, { ...(row.tokens || {}), updatedAt: row.tokens?.updatedAt || row.updated_at }, row.id === 'default')
+        pushUniquePlatformAccount(accounts, account)
+      }
+    } catch (error) {
+      console.warn(`[${table}] account fallback list failed:`, error.message)
+    }
+  }
+
+  try {
+    const filePattern = platform === 'youtube'
+      ? /^\.youtube_tokens(?:\.([^.]+))?\.json$/
+      : /^\.instagram_tokens(?:\.([^.]+))?\.json$/
+    for (const file of fs.readdirSync(__dirname)) {
+      const match = file.match(filePattern)
+      if (!match) continue
+      const id = match[1] || 'default'
+      const tokens = JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf-8'))
+      const account = platform === 'youtube'
+        ? accountFromYoutubeTokens(id, tokens, id === 'default')
+        : accountFromInstagramTokens(id, tokens, id === 'default')
+      pushUniquePlatformAccount(accounts, account)
+    }
+  } catch (error) {
+    console.warn(`[${platform}] local token account fallback list failed:`, error.message)
+  }
+
+  return accounts
+}
+
 async function upsertPlatformAccount({ id, platform, providerAccountId, username, displayName, isDefault = false, status = 'connected' }) {
   const account = {
     id: sanitizeAccountId(id),
@@ -1753,42 +1841,33 @@ async function listPlatformAccounts(platform) {
         .order('is_default', { ascending: false })
         .order('created_at', { ascending: true })
       if (!error && Array.isArray(data)) {
-        accounts.push(...data.map(publicPlatformAccount))
+        for (const account of data.map(publicPlatformAccount)) {
+          pushUniquePlatformAccount(accounts, account)
+        }
       }
     } catch (error) {
       console.warn(`[platform_accounts] ${platform} list failed:`, error.message)
     }
   }
 
+  for (const account of await listTokenBackedPlatformAccounts(platform)) {
+    pushUniquePlatformAccount(accounts, account)
+  }
+
   if (platform === 'instagram' && !accounts.length) {
     const auth = getInstagramAuthMaterial()
     if (auth?.accessToken && auth?.businessId) {
-      accounts.push({
-        id: 'default',
-        platform,
-        providerAccountId: auth.businessId,
+      pushUniquePlatformAccount(accounts, accountFromInstagramTokens('default', {
+        accessToken: auth.accessToken,
+        businessId: auth.businessId,
         username: auth.username || null,
-        displayName: auth.username ? `@${auth.username}` : 'Instagram 기본 계정',
-        status: 'connected',
-        isDefault: true,
-        createdAt: null,
         updatedAt: instagramTokens?.updatedAt || null,
-      })
+      }, true))
     }
   }
 
   if (platform === 'youtube' && !accounts.length && ytTokens) {
-    accounts.push({
-      id: 'default',
-      platform,
-      providerAccountId: ytTokens.channelId || null,
-      username: ytTokens.channelTitle || null,
-      displayName: ytTokens.channelTitle || 'YouTube 기본 계정',
-      status: 'connected',
-      isDefault: true,
-      createdAt: null,
-      updatedAt: null,
-    })
+    pushUniquePlatformAccount(accounts, accountFromYoutubeTokens('default', ytTokens, true))
   }
 
   return accounts
