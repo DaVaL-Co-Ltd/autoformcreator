@@ -45,6 +45,7 @@ Meta Developers에서 할 일:
    - `instagram_content_publish`
    - `pages_show_list`
    - `pages_read_engagement`
+   - `business_management`
 5. 개발 모드에서는 앱 역할에 등록된 사용자/테스터 계정만 연결할 수 있다.
 6. 실제 외부 계정을 연결하려면 Meta App Review에서 필요한 권한 승인을 받아야 한다.
 
