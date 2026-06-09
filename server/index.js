@@ -2688,6 +2688,9 @@ async function persistYtTokens(tokens, accountId = 'default') {
 async function clearYtTokens(accountId = 'default') {
   const id = sanitizeAccountId(accountId)
   const matchingIds = new Set([id])
+  if (id !== 'default') {
+    matchingIds.add('default')
+  }
   const directTokens = id === 'default' ? ytTokens : await loadYtTokens(id)
   let targetChannelId = directTokens?.channelId || null
 
@@ -2728,7 +2731,9 @@ async function clearYtTokens(accountId = 'default') {
           .eq('platform', 'youtube')
           .eq('provider_account_id', targetChannelId)
       }
-    } catch {}
+    } catch (error) {
+      console.warn('[YouTube] token/account delete failed:', error.message)
+    }
   }
 
   try {
@@ -2747,13 +2752,17 @@ async function clearYtTokens(accountId = 'default') {
       }
       if (shouldDelete) fs.unlinkSync(filePath)
     }
-  } catch {}
+  } catch (error) {
+    console.warn('[YouTube] local token file delete failed:', error.message)
+  }
 
   if (matchingIds.has('default') || (targetChannelId && ytTokens?.channelId === targetChannelId)) {
     ytTokens = null
     try {
       if (ytOAuth2Client) ytOAuth2Client.setCredentials({})
-    } catch {}
+    } catch (error) {
+      console.warn('[YouTube] OAuth client credential clear failed:', error.message)
+    }
   }
 }
 
@@ -3167,7 +3176,7 @@ app.get('/api/youtube/oauth/callback', async (req, res) => {
     client.setCredentials(tokens)
     const channelInfo = await fetchYouTubeChannelInfo(client)
     const accountId = buildPlatformAccountId('youtube', channelInfo.channelId || crypto.randomUUID())
-    const savedTokens = await persistYtTokens({
+    await persistYtTokens({
       ...tokens,
       channelId: channelInfo.channelId,
       channelTitle: channelInfo.channelTitle,
@@ -3182,10 +3191,6 @@ app.get('/api/youtube/oauth/callback', async (req, res) => {
       displayName: channelInfo.channelTitle || 'YouTube 채널',
       isDefault: existingAccounts.length === 0,
     })
-    if (!ytTokens) {
-      ytTokens = savedTokens
-      await saveYtTokens(savedTokens, 'default')
-    }
     console.log('[YouTube OAuth] 토큰 저장 완료')
     res.send('<html><body><h2>YouTube 인증 완료!</h2><p>이 창을 닫고 돌아가세요.</p><script>setTimeout(()=>window.close(),500)</script></body></html>')
   } catch (err) {
@@ -3236,7 +3241,7 @@ app.delete('/api/platform-accounts/:id', async (req, res) => {
       }
       await clearYtTokens(accountId)
     }
-    res.json({ success: true })
+    res.json({ success: true, accounts: await listPlatformAccounts(platform) })
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
