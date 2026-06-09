@@ -87,6 +87,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()
 app.use(cors({
   origin: allowedOrigins || true,
   credentials: true,
+  exposedHeaders: ['Retry-After'],
 }))
 
 function getExpectedRequestOrigin(req) {
@@ -251,9 +252,11 @@ app.post('/api/gemini/generate-content', async (req, res) => {
 
     const responseText = await response.text()
     const contentType = response.headers.get('content-type') || 'application/json'
+    const retryAfter = response.headers.get('retry-after')
 
     res.status(response.status)
     res.setHeader('Content-Type', contentType)
+    if (retryAfter) res.setHeader('Retry-After', retryAfter)
     return res.send(responseText)
   } catch (error) {
     return res.status(500).json({

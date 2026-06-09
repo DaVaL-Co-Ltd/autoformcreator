@@ -6,7 +6,7 @@ const path = require('path');
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({ exposedHeaders: ['Retry-After'] }));
 
 // Body parser, but skip llamaparse upload (it reads raw stream)
 app.use((req, res, next) => {

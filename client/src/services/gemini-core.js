@@ -9,8 +9,25 @@ const MODELS = [
   'gemini-2.5-flash-lite',
 ]
 
+const GEMINI_MIN_REQUEST_INTERVAL_MS = 1500
+const GEMINI_DEFAULT_RATE_LIMIT_WAIT_MS = 30000
+const GEMINI_MAX_RATE_LIMIT_WAIT_MS = 120000
+
 // 모델별 429 발생 시각 추적 (60초 뒤 자동 해제)
 const rateLimitedUntil = new Map()
+let geminiRequestQueue = Promise.resolve()
+let geminiNextRequestAt = 0
+let geminiGlobalCooldownUntil = 0
+
+class GeminiProxyError extends Error {
+  constructor(message, { status = null, model = '', retryAfterMs = null } = {}) {
+    super(message)
+    this.name = 'GeminiProxyError'
+    this.status = status
+    this.model = model
+    this.retryAfterMs = retryAfterMs
+  }
+}
 
 function abortableDelay(ms, signal) {
   if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
@@ -47,6 +64,68 @@ function markRateLimited(model) {
   rateLimitedUntil.set(model, Date.now() + 60000)
 }
 
+function parseRetryAfterMs(value) {
+  if (!value) return null
+
+  const retryAfterSeconds = Number(value)
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return retryAfterSeconds * 1000
+  }
+
+  const retryAt = Date.parse(value)
+  if (Number.isFinite(retryAt)) {
+    return Math.max(0, retryAt - Date.now())
+  }
+
+  return null
+}
+
+function extractRetryDelayMs(data) {
+  const candidates = [
+    data?.retryAfterMs,
+    data?.error?.retryAfterMs,
+    data?.error?.details?.retryAfter,
+  ]
+
+  for (const detail of data?.error?.details || []) {
+    if (typeof detail?.retryDelay === 'string') {
+      candidates.push(detail.retryDelay)
+    }
+  }
+
+  for (const value of candidates) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string') {
+      const secondsMatch = value.match(/^(\d+(?:\.\d+)?)s$/)
+      if (secondsMatch) return Number(secondsMatch[1]) * 1000
+      const parsed = parseRetryAfterMs(value)
+      if (parsed != null) return parsed
+    }
+  }
+
+  return null
+}
+
+function normalizeRateLimitWaitMs(retryAfterMs) {
+  const waitMs = retryAfterMs ?? GEMINI_DEFAULT_RATE_LIMIT_WAIT_MS
+  return Math.min(Math.max(waitMs, 5000), GEMINI_MAX_RATE_LIMIT_WAIT_MS)
+}
+
+async function waitForGeminiTurn(signal) {
+  const waitUntil = Math.max(geminiNextRequestAt, geminiGlobalCooldownUntil)
+  const waitMs = waitUntil - Date.now()
+  if (waitMs > 0) {
+    await abortableDelay(waitMs, signal)
+  }
+  geminiNextRequestAt = Date.now() + GEMINI_MIN_REQUEST_INTERVAL_MS
+}
+
+function enqueueGeminiRequest(task) {
+  const run = geminiRequestQueue.catch(() => {}).then(task)
+  geminiRequestQueue = run.catch(() => {})
+  return run
+}
+
 // 429 재시도 대기
 async function waitForRateLimit(retryAfterMs = 5000, signal) {
   console.log(`[Gemini] Rate limit 감지, ${retryAfterMs / 1000}초 대기...`)
@@ -78,27 +157,40 @@ export async function requestGeminiContent({
   systemInstruction,
   signal,
 }) {
-  const response = await fetch(GEMINI_PROXY_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
-      model,
-      contents,
-      generationConfig,
-      safetySettings,
-      tools,
-      toolConfig,
-      systemInstruction,
-    }),
+  return enqueueGeminiRequest(async () => {
+    await waitForGeminiTurn(signal)
+
+    const response = await fetch(GEMINI_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        model,
+        contents,
+        generationConfig,
+        safetySettings,
+        tools,
+        toolConfig,
+        systemInstruction,
+      }),
+    })
+
+    const data = await readGeminiProxyResponse(response)
+    if (!response.ok) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After')) ?? extractRetryDelayMs(data)
+      if (response.status === 429) {
+        const cooldownMs = normalizeRateLimitWaitMs(retryAfterMs)
+        geminiGlobalCooldownUntil = Math.max(geminiGlobalCooldownUntil, Date.now() + cooldownMs)
+      }
+
+      throw new GeminiProxyError(
+        `Gemini API 오류 (${model}): ${response.status} - ${getGeminiErrorMessage(data, `HTTP ${response.status}`).slice(0, 200)}`,
+        { status: response.status, model, retryAfterMs },
+      )
+    }
+
+    return data
   })
-
-  const data = await readGeminiProxyResponse(response)
-  if (!response.ok) {
-    throw new Error(`Gemini API 오류 (${model}): ${response.status} - ${getGeminiErrorMessage(data, `HTTP ${response.status}`).slice(0, 200)}`)
-  }
-
-  return data
 }
 
 export function findInlineDataPart(data) {
@@ -166,12 +258,13 @@ export async function callGeminiWithFallback(prompt, options = {}) {
       } catch (err) {
         const message = String(err?.message || '')
         const statusMatch = message.match(/Gemini API .*: (\d{3}) -/)
-        const statusCode = statusMatch ? Number(statusMatch[1]) : null
+        const statusCode = err?.status || (statusMatch ? Number(statusMatch[1]) : null)
 
         if (statusCode === 429) {
+          lastError = err
           markRateLimited(model)
           if (attempt === 0) {
-            await waitForRateLimit(5000, signal)
+            await waitForRateLimit(normalizeRateLimitWaitMs(err?.retryAfterMs), signal)
             continue
           }
           console.warn(`[Gemini] ${model} 재시도 후에도 429, 다음 모델로 전환`)

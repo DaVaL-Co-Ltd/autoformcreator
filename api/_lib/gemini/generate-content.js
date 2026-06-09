@@ -55,9 +55,11 @@ module.exports = async function handler(req, res) {
 
     const responseText = await response.text()
     const contentType = response.headers.get('content-type') || 'application/json'
+    const retryAfter = response.headers.get('retry-after')
 
     res.status(response.status)
     res.setHeader('Content-Type', contentType)
+    if (retryAfter) res.setHeader('Retry-After', retryAfter)
     return res.send(responseText)
   } catch (error) {
     return res.status(500).json({
