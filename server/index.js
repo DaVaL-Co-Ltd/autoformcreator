@@ -2055,6 +2055,17 @@ async function instagramGraphGet(resource, accessToken, params = {}) {
   return data
 }
 
+function summarizeInstagramPageLinks(pages = []) {
+  return pages.map((page) => ({
+    pageId: page.id || null,
+    pageName: page.name || null,
+    tasks: Array.isArray(page.tasks) ? page.tasks : [],
+    hasInstagramBusinessAccount: Boolean(page.instagram_business_account?.id),
+    instagramBusinessId: page.instagram_business_account?.id || null,
+    instagramUsername: page.instagram_business_account?.username || null,
+  }))
+}
+
 async function instagramGraphPost(resource, accessToken, body = {}) {
   const payload = new URLSearchParams()
 
@@ -3124,10 +3135,14 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
 
     const accessToken = longData.access_token
     const pages = await instagramGraphGet('me/accounts', accessToken, {
-      fields: 'id,name,instagram_business_account{id,username}',
+      fields: 'id,name,tasks,instagram_business_account{id,username}',
     })
     const linkedPages = (pages.data || []).filter((item) => item.instagram_business_account?.id)
     if (!linkedPages.length) {
+      console.warn('[Instagram OAuth] no linked Instagram Business account found', {
+        pageCount: Array.isArray(pages.data) ? pages.data.length : 0,
+        pages: summarizeInstagramPageLinks(pages.data || []),
+      })
       throw new Error('No Instagram Business account is linked to this Meta account.')
     }
 
