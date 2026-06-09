@@ -1727,6 +1727,20 @@ function missingInstagramScopes(scopes = []) {
   return INSTAGRAM_OAUTH_SCOPES.filter((scope) => !granted.has(scope))
 }
 
+function logInstagramOAuthDiagnostic(level, label, payload) {
+  const message = `[Instagram OAuth] ${label}`
+  const serialized = JSON.stringify(payload, null, 2)
+  if (level === 'warn') {
+    console.warn(message, serialized)
+    return
+  }
+  if (level === 'error') {
+    console.error(message, serialized)
+    return
+  }
+  console.info(message, serialized)
+}
+
 function publicPlatformAccount(row) {
   return {
     id: row.id,
@@ -2171,19 +2185,25 @@ async function lookupInstagramPagesFromGrantedTargets(accessToken, targetIds = [
 
   for (const targetId of targetIds) {
     const diagnostic = await fetchInstagramGraphDiagnostic(targetId, accessToken, {
-      fields: 'id,name,tasks,instagram_business_account{id,username}',
+      fields: 'id,name,instagram_business_account{id,username},connected_instagram_account{id,username}',
     })
+    const pageData = diagnostic.ok && diagnostic.data?.connected_instagram_account && !diagnostic.data?.instagram_business_account
+      ? {
+        ...diagnostic.data,
+        instagram_business_account: diagnostic.data.connected_instagram_account,
+      }
+      : diagnostic.data
 
     diagnostics.push({
       targetId,
       ok: diagnostic.ok,
       status: diagnostic.status,
       error: diagnostic.error,
-      page: diagnostic.ok ? summarizeInstagramPageLinks([diagnostic.data])[0] : null,
+      page: diagnostic.ok ? summarizeInstagramPageLinks([pageData])[0] : null,
     })
 
-    if (diagnostic.ok && diagnostic.data?.id) {
-      pages.push(diagnostic.data)
+    if (diagnostic.ok && pageData?.id) {
+      pages.push(pageData)
     }
   }
 
@@ -3208,7 +3228,7 @@ app.get('/api/instagram/auth-url', (_req, res) => {
   url.searchParams.set('scope', INSTAGRAM_OAUTH_SCOPES.join(','))
   url.searchParams.set('state', instagramOAuthState)
 
-  console.info('[Instagram OAuth] auth URL issued', {
+  logInstagramOAuthDiagnostic('info', 'auth URL issued', {
     appId: maskIdentifier(META_APP_ID),
     redirectUri: INSTAGRAM_REDIRECT_URI,
     requestedScopes: INSTAGRAM_OAUTH_SCOPES,
@@ -3263,7 +3283,7 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
     const tokenDebug = await inspectInstagramAccessToken(accessToken)
     const callbackGrantedScopeList = parseScopeList(granted_scopes)
     const callbackDeniedScopeList = parseScopeList(denied_scopes)
-    console.info('[Instagram OAuth] token grant summary', {
+    logInstagramOAuthDiagnostic('info', 'token grant summary', {
       requestedScopes: INSTAGRAM_OAUTH_SCOPES,
       callbackGrantedScopes: callbackGrantedScopeList,
       callbackDeniedScopes: callbackDeniedScopeList,
@@ -3277,7 +3297,7 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
     const pagesDiagnostic = await fetchInstagramGraphDiagnostic('me/accounts', accessToken, {
       fields: 'id,name,tasks,instagram_business_account{id,username}',
     })
-    console.info('[Instagram OAuth] me/accounts diagnostic', {
+    logInstagramOAuthDiagnostic('info', 'me/accounts diagnostic', {
       ok: pagesDiagnostic.ok,
       status: pagesDiagnostic.status,
       error: pagesDiagnostic.error,
@@ -3296,7 +3316,7 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
       const targetPageIds = extractInstagramPageTargetIds(tokenDebug)
       if (targetPageIds.length) {
         const targetLookup = await lookupInstagramPagesFromGrantedTargets(accessToken, targetPageIds)
-        console.info('[Instagram OAuth] granular page target lookup diagnostic', {
+        logInstagramOAuthDiagnostic('info', 'granular page target lookup diagnostic', {
           targetPageIds,
           diagnostics: targetLookup.diagnostics,
         })
@@ -3310,7 +3330,7 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
     }
 
     if (!linkedPages.length) {
-      console.warn('[Instagram OAuth] no linked Instagram Business account found', {
+      logInstagramOAuthDiagnostic('warn', 'no linked Instagram Business account found', {
         pageLookupSource,
         requestedScopes: INSTAGRAM_OAUTH_SCOPES,
         tokenScopes: tokenDebug?.scopes || null,
