@@ -1686,6 +1686,13 @@ const META_APP_ID = process.env.INSTAGRAM_APP_ID || process.env.META_APP_ID
 const META_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || process.env.META_APP_SECRET
 const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || process.env.instagram_redirect_uri || 'http://localhost:3001/api/instagram/oauth/callback'
 const IG_GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+const INSTAGRAM_OAUTH_SCOPES = [
+  'instagram_basic',
+  'instagram_content_publish',
+  'pages_show_list',
+  'pages_read_engagement',
+  'business_management',
+]
 const instagramTokenPath = path.join(__dirname, '.instagram_tokens.json')
 let instagramTokens = null
 let instagramOAuthState = null
@@ -1697,6 +1704,27 @@ function sanitizeAccountId(value, fallback = 'default') {
 
 function buildPlatformAccountId(platform, providerAccountId) {
   return sanitizeAccountId(`${platform}_${providerAccountId || crypto.randomUUID()}`)
+}
+
+function maskIdentifier(value, visible = 6) {
+  const raw = String(value || '')
+  if (!raw) return null
+  return raw.length <= visible ? raw : `...${raw.slice(-visible)}`
+}
+
+function parseScopeList(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap(parseScopeList)
+  }
+  return String(value || '')
+    .split(',')
+    .map((scope) => scope.trim())
+    .filter(Boolean)
+}
+
+function missingInstagramScopes(scopes = []) {
+  const granted = new Set(scopes)
+  return INSTAGRAM_OAUTH_SCOPES.filter((scope) => !granted.has(scope))
 }
 
 function publicPlatformAccount(row) {
@@ -2101,6 +2129,24 @@ function summarizeInstagramPageLinks(pages = []) {
     instagramBusinessId: page.instagram_business_account?.id || null,
     instagramUsername: page.instagram_business_account?.username || null,
   }))
+}
+
+async function fetchInstagramGraphDiagnostic(resource, accessToken, params = {}) {
+  const response = await fetch(buildInstagramGraphUrl(resource, accessToken, params))
+  const data = await response.json().catch(() => null)
+  return {
+    ok: response.ok && !data?.error,
+    status: response.status,
+    error: data?.error
+      ? {
+        message: data.error.message || null,
+        type: data.error.type || null,
+        code: data.error.code || null,
+        subcode: data.error.error_subcode || null,
+      }
+      : null,
+    data,
+  }
 }
 
 async function instagramGraphPost(resource, accessToken, body = {}) {
@@ -3118,17 +3164,16 @@ app.get('/api/instagram/auth-url', (_req, res) => {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('auth_type', 'rerequest')
   url.searchParams.set('return_scopes', 'true')
-  url.searchParams.set(
-    'scope',
-    [
-      'instagram_basic',
-      'instagram_content_publish',
-      'pages_show_list',
-      'pages_read_engagement',
-      'business_management',
-    ].join(',')
-  )
+  url.searchParams.set('scope', INSTAGRAM_OAUTH_SCOPES.join(','))
   url.searchParams.set('state', instagramOAuthState)
+
+  console.info('[Instagram OAuth] auth URL issued', {
+    appId: maskIdentifier(META_APP_ID),
+    redirectUri: INSTAGRAM_REDIRECT_URI,
+    requestedScopes: INSTAGRAM_OAUTH_SCOPES,
+    authType: 'rerequest',
+    returnScopes: true,
+  })
 
   res.json({ url: url.toString() })
 })
@@ -3175,18 +3220,44 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
 
     const accessToken = longData.access_token
     const tokenDebug = await inspectInstagramAccessToken(accessToken)
+    const callbackGrantedScopeList = parseScopeList(granted_scopes)
+    const callbackDeniedScopeList = parseScopeList(denied_scopes)
     console.info('[Instagram OAuth] token grant summary', {
-      callbackGrantedScopes: granted_scopes || null,
-      callbackDeniedScopes: denied_scopes || null,
+      requestedScopes: INSTAGRAM_OAUTH_SCOPES,
+      callbackGrantedScopes: callbackGrantedScopeList,
+      callbackDeniedScopes: callbackDeniedScopeList,
       token: tokenDebug,
+      missingScopesFromToken: tokenDebug ? missingInstagramScopes(tokenDebug.scopes) : null,
+      missingScopesFromCallback: callbackGrantedScopeList.length
+        ? missingInstagramScopes(callbackGrantedScopeList)
+        : null,
     })
 
-    const pages = await instagramGraphGet('me/accounts', accessToken, {
+    const pagesDiagnostic = await fetchInstagramGraphDiagnostic('me/accounts', accessToken, {
       fields: 'id,name,tasks,instagram_business_account{id,username}',
     })
+    console.info('[Instagram OAuth] me/accounts diagnostic', {
+      ok: pagesDiagnostic.ok,
+      status: pagesDiagnostic.status,
+      error: pagesDiagnostic.error,
+      pageCount: Array.isArray(pagesDiagnostic.data?.data) ? pagesDiagnostic.data.data.length : null,
+      hasPaging: Boolean(pagesDiagnostic.data?.paging),
+      pages: summarizeInstagramPageLinks(pagesDiagnostic.data?.data || []),
+    })
+    if (!pagesDiagnostic.ok) {
+      throw new Error(pagesDiagnostic.error?.message || `Instagram page lookup failed (${pagesDiagnostic.status})`)
+    }
+
+    const pages = pagesDiagnostic.data || {}
     const linkedPages = (pages.data || []).filter((item) => item.instagram_business_account?.id)
     if (!linkedPages.length) {
       console.warn('[Instagram OAuth] no linked Instagram Business account found', {
+        requestedScopes: INSTAGRAM_OAUTH_SCOPES,
+        tokenScopes: tokenDebug?.scopes || null,
+        tokenGranularScopes: tokenDebug?.granularScopes || null,
+        missingScopesFromToken: tokenDebug ? missingInstagramScopes(tokenDebug.scopes) : null,
+        callbackGrantedScopes: callbackGrantedScopeList,
+        callbackDeniedScopes: callbackDeniedScopeList,
         pageCount: Array.isArray(pages.data) ? pages.data.length : 0,
         pages: summarizeInstagramPageLinks(pages.data || []),
       })
