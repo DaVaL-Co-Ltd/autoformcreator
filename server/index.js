@@ -2778,68 +2778,83 @@ async function validateYouTubeSession() {
     return { authenticated: false, hasCredentials: true, state: 'expired', accounts: [] }
   }
 
-  try {
-    const selected = accounts[0]?.id ? await getYtOAuth2ClientForAccount(accounts[0].id) : null
-    const client = selected?.client || getYtOAuth2Client()
-    await client.getAccessToken()
+  const candidateIds = accounts.map((account) => account.id).filter(Boolean)
+  if (ytTokens && !candidateIds.includes('default')) {
+    candidateIds.push('default')
+  }
 
-    const youtube = google.youtube({ version: 'v3', auth: client })
-    await youtube.channels.list({
-      part: ['id'],
-      mine: true,
-      maxResults: 1,
-    })
+  let lastValidationError = null
 
-    if (!accounts.length && ytTokens) {
+  for (const accountId of candidateIds.length ? candidateIds : ['default']) {
+    try {
+      const selected = await getYtOAuth2ClientForAccount(accountId)
+      const client = selected?.client
+      if (!client) continue
+
+      await client.getAccessToken()
+
+      const youtube = google.youtube({ version: 'v3', auth: client })
+      await youtube.channels.list({
+        part: ['id'],
+        mine: true,
+        maxResults: 1,
+      })
+
       const channelInfo = await fetchYouTubeChannelInfo(client)
-      const accountId = buildPlatformAccountId('youtube', channelInfo.channelId || crypto.randomUUID())
+      const recoveredAccountId = accountId === 'default' && channelInfo.channelId
+        ? buildPlatformAccountId('youtube', channelInfo.channelId)
+        : accountId
       await persistYtTokens({
-        ...ytTokens,
+        ...(selected?.tokens || {}),
         channelId: channelInfo.channelId,
         channelTitle: channelInfo.channelTitle,
         updatedAt: new Date().toISOString(),
-      }, accountId)
+      }, recoveredAccountId)
       await upsertPlatformAccount({
-        id: accountId,
+        id: recoveredAccountId,
         platform: 'youtube',
         providerAccountId: channelInfo.channelId,
         username: channelInfo.channelTitle,
-        displayName: channelInfo.channelTitle || 'YouTube 채널',
-        isDefault: true,
+        displayName: channelInfo.channelTitle || 'YouTube 인증 계정',
+        isDefault: accounts.length === 0 || accountId === 'default',
       })
       accounts = await listPlatformAccounts('youtube')
-    }
 
-    return {
-      authenticated: accounts.length > 0,
-      hasCredentials: true,
-      state: accounts.length > 0 ? 'connected' : 'expired',
-      accounts,
-    }
-  } catch (error) {
-    const detail = error?.response?.data?.error || error?.message || ''
-    const shouldClearTokens =
-      error?.code === 401 ||
-      error?.status === 401 ||
-      /invalid_grant|invalid_token|invalid credentials|unauthorized/i.test(String(detail))
+      return {
+        authenticated: accounts.length > 0,
+        hasCredentials: true,
+        state: accounts.length > 0 ? 'connected' : 'expired',
+        accounts,
+      }
+    } catch (error) {
+      lastValidationError = error
+      const detail = error?.response?.data?.error || error?.message || ''
+      const shouldClearTokens =
+        error?.code === 401 ||
+        error?.status === 401 ||
+        /invalid_grant|invalid_token|invalid credentials|unauthorized/i.test(String(detail))
 
-    if (shouldClearTokens) {
-      ytTokens = null
-      try {
-        if (ytOAuth2Client) {
-          ytOAuth2Client.setCredentials({})
+      if (shouldClearTokens) {
+        if (accountId === 'default') {
+          ytTokens = null
+          try {
+            if (ytOAuth2Client) {
+              ytOAuth2Client.setCredentials({})
+            }
+          } catch {}
         }
-      } catch {}
-      await clearYtTokens()
+        await clearYtTokens(accountId)
+      }
     }
+  }
 
-    return {
-      authenticated: false,
-      hasCredentials: true,
-      state: 'expired',
-      validationError: typeof detail === 'string' ? detail : JSON.stringify(detail),
-      accounts,
-    }
+  const detail = lastValidationError?.response?.data?.error || lastValidationError?.message || 'No valid YouTube account tokens found.'
+  return {
+    authenticated: false,
+    hasCredentials: true,
+    state: 'expired',
+    validationError: typeof detail === 'string' ? detail : JSON.stringify(detail),
+    accounts: await listPlatformAccounts('youtube'),
   }
 }
 
