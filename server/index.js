@@ -1870,6 +1870,10 @@ async function listPlatformAccounts(platform) {
     pushUniquePlatformAccount(accounts, accountFromYoutubeTokens('default', ytTokens, true))
   }
 
+  if (platform === 'youtube' && accounts.some((account) => account.id !== 'default')) {
+    return accounts.filter((account) => account.id !== 'default')
+  }
+
   return accounts
 }
 
