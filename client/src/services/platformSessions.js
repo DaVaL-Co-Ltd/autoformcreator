@@ -214,6 +214,7 @@ export async function waitForYoutubeReconnect({
   popup = null,
 } = {}) {
   const startedAt = Date.now()
+  let popupClosedAt = null
 
   while (Date.now() - startedAt < timeoutMs) {
     const status = await fetchYoutubeSessionStatus()
@@ -221,7 +222,11 @@ export async function waitForYoutubeReconnect({
       return status
     }
 
-    if (popup && popup.closed && status.state !== 'connected') {
+    if (popup && popup.closed && !popupClosedAt) {
+      popupClosedAt = Date.now()
+    }
+
+    if (popupClosedAt && Date.now() - popupClosedAt > 30000 && status.state !== 'connected') {
       throw new Error('Google 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
     }
 
@@ -237,6 +242,7 @@ export async function waitForInstagramReconnect({
   popup = null,
 } = {}) {
   const startedAt = Date.now()
+  let popupClosedAt = null
 
   while (Date.now() - startedAt < timeoutMs) {
     const status = await fetchInstagramSessionStatus()
@@ -244,7 +250,11 @@ export async function waitForInstagramReconnect({
       return status
     }
 
-    if (popup && popup.closed && status.state !== 'connected') {
+    if (popup && popup.closed && !popupClosedAt) {
+      popupClosedAt = Date.now()
+    }
+
+    if (popupClosedAt && Date.now() - popupClosedAt > 30000 && status.state !== 'connected') {
       throw new Error('Instagram 인증 창이 닫혔지만 연결 완료가 확인되지 않았습니다.')
     }
 
