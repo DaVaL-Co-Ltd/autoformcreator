@@ -2831,6 +2831,12 @@ async function fetchYouTubeChannelInfo(client) {
   }
 }
 
+function getYouTubeAuthErrorMessage(error) {
+  const detail = error?.response?.data?.error || error?.message || ''
+  if (typeof detail === 'string') return detail
+  return detail?.message || JSON.stringify(detail)
+}
+
 async function validateYouTubeSession() {
   if (!ytCredentials) {
     return { authenticated: false, hasCredentials: false, state: 'unconfigured' }
@@ -2893,7 +2899,7 @@ async function validateYouTubeSession() {
       }
     } catch (error) {
       lastValidationError = error
-      const detail = error?.response?.data?.error || error?.message || ''
+      const detail = getYouTubeAuthErrorMessage(error)
       const shouldClearTokens =
         error?.code === 401 ||
         error?.status === 401 ||
@@ -2913,13 +2919,25 @@ async function validateYouTubeSession() {
     }
   }
 
-  const detail = lastValidationError?.response?.data?.error || lastValidationError?.message || 'No valid YouTube account tokens found.'
+  const remainingAccounts = await listPlatformAccounts('youtube')
+  if (!remainingAccounts.length) {
+    return {
+      authenticated: false,
+      hasCredentials: true,
+      state: 'expired',
+      accounts: [],
+    }
+  }
+
+  const detail = lastValidationError
+    ? getYouTubeAuthErrorMessage(lastValidationError)
+    : 'No valid YouTube account tokens found.'
   return {
     authenticated: false,
     hasCredentials: true,
     state: 'expired',
-    validationError: typeof detail === 'string' ? detail : JSON.stringify(detail),
-    accounts: await listPlatformAccounts('youtube'),
+    validationError: detail,
+    accounts: remainingAccounts,
   }
 }
 
