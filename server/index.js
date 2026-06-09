@@ -2687,18 +2687,74 @@ async function persistYtTokens(tokens, accountId = 'default') {
 
 async function clearYtTokens(accountId = 'default') {
   const id = sanitizeAccountId(accountId)
+  const matchingIds = new Set([id])
+  const directTokens = id === 'default' ? ytTokens : await loadYtTokens(id)
+  let targetChannelId = directTokens?.channelId || null
+
   if (supabaseAdmin) {
     try {
-      await supabaseAdmin.from('youtube_tokens').delete().eq('id', id)
-      await supabaseAdmin.from('platform_accounts').delete().eq('id', id).eq('platform', 'youtube')
+      const { data: accountRows } = await supabaseAdmin
+        .from('platform_accounts')
+        .select('id,provider_account_id')
+        .eq('platform', 'youtube')
+      for (const row of accountRows || []) {
+        if (row.id === id) {
+          if (!targetChannelId && row.provider_account_id) targetChannelId = row.provider_account_id
+          matchingIds.add(row.id)
+        }
+        if (targetChannelId && row.provider_account_id === targetChannelId) {
+          matchingIds.add(row.id)
+        }
+      }
+
+      const { data: tokenRows } = await supabaseAdmin
+        .from('youtube_tokens')
+        .select('id,tokens')
+      for (const row of tokenRows || []) {
+        if (row.id === id) matchingIds.add(row.id)
+        if (targetChannelId && row.tokens?.channelId === targetChannelId) {
+          matchingIds.add(row.id)
+        }
+      }
+
+      for (const matchingId of matchingIds) {
+        await supabaseAdmin.from('youtube_tokens').delete().eq('id', matchingId)
+        await supabaseAdmin.from('platform_accounts').delete().eq('id', matchingId).eq('platform', 'youtube')
+      }
+      if (targetChannelId) {
+        await supabaseAdmin
+          .from('platform_accounts')
+          .delete()
+          .eq('platform', 'youtube')
+          .eq('provider_account_id', targetChannelId)
+      }
     } catch {}
   }
+
   try {
-    const tokenPath = id === 'default'
-      ? ytTokenPath
-      : path.join(__dirname, `.youtube_tokens.${id}.json`)
-    fs.unlinkSync(tokenPath)
+    const filePattern = /^\.youtube_tokens(?:\.([^.]+))?\.json$/
+    for (const file of fs.readdirSync(__dirname)) {
+      const match = file.match(filePattern)
+      if (!match) continue
+      const fileId = sanitizeAccountId(match[1] || 'default')
+      const filePath = path.join(__dirname, file)
+      let shouldDelete = matchingIds.has(fileId)
+      if (!shouldDelete && targetChannelId) {
+        try {
+          const tokens = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+          shouldDelete = tokens?.channelId === targetChannelId
+        } catch {}
+      }
+      if (shouldDelete) fs.unlinkSync(filePath)
+    }
   } catch {}
+
+  if (matchingIds.has('default') || (targetChannelId && ytTokens?.channelId === targetChannelId)) {
+    ytTokens = null
+    try {
+      if (ytOAuth2Client) ytOAuth2Client.setCredentials({})
+    } catch {}
+  }
 }
 
 // Load saved tokens asynchronously when the server starts.
