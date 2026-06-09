@@ -278,6 +278,8 @@ function buildInstagramAuthUrl() {
   url.searchParams.set('client_id', config.appId)
   url.searchParams.set('redirect_uri', config.redirectUri)
   url.searchParams.set('response_type', 'code')
+  url.searchParams.set('auth_type', 'rerequest')
+  url.searchParams.set('return_scopes', 'true')
   url.searchParams.set(
     'scope',
     [

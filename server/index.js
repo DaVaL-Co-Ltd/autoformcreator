@@ -2055,6 +2055,43 @@ async function instagramGraphGet(resource, accessToken, params = {}) {
   return data
 }
 
+async function inspectInstagramAccessToken(accessToken) {
+  if (!META_APP_ID || !META_APP_SECRET) return null
+
+  try {
+    const url = new URL(`${IG_GRAPH_BASE}/debug_token`)
+    url.searchParams.set('input_token', accessToken)
+    url.searchParams.set('access_token', `${META_APP_ID}|${META_APP_SECRET}`)
+
+    const response = await fetch(url)
+    const payload = await response.json()
+    if (!response.ok || payload?.error) {
+      console.warn('[Instagram OAuth] token debug failed', {
+        status: response.status,
+        message: payload?.error?.message || null,
+      })
+      return null
+    }
+
+    return {
+      appId: payload?.data?.app_id || null,
+      userId: payload?.data?.user_id || null,
+      isValid: Boolean(payload?.data?.is_valid),
+      scopes: Array.isArray(payload?.data?.scopes) ? payload.data.scopes : [],
+      granularScopes: Array.isArray(payload?.data?.granular_scopes)
+        ? payload.data.granular_scopes.map((scope) => ({
+          scope: scope.scope,
+          targetIds: Array.isArray(scope.target_ids) ? scope.target_ids : [],
+        }))
+        : [],
+      expiresAt: payload?.data?.expires_at || null,
+    }
+  } catch (debugError) {
+    console.warn('[Instagram OAuth] token debug request failed', debugError?.message || debugError)
+    return null
+  }
+}
+
 function summarizeInstagramPageLinks(pages = []) {
   return pages.map((page) => ({
     pageId: page.id || null,
@@ -3079,6 +3116,8 @@ app.get('/api/instagram/auth-url', (_req, res) => {
   url.searchParams.set('client_id', META_APP_ID)
   url.searchParams.set('redirect_uri', INSTAGRAM_REDIRECT_URI)
   url.searchParams.set('response_type', 'code')
+  url.searchParams.set('auth_type', 'rerequest')
+  url.searchParams.set('return_scopes', 'true')
   url.searchParams.set(
     'scope',
     [
@@ -3095,7 +3134,7 @@ app.get('/api/instagram/auth-url', (_req, res) => {
 })
 
 app.get('/api/instagram/oauth/callback', async (req, res) => {
-  const { code, error, state } = req.query
+  const { code, error, state, granted_scopes, denied_scopes } = req.query
 
   if (error) {
     return res.status(400).send(`<html><body><h2>Instagram 인증 거부</h2><p>${error}</p></body></html>`)
@@ -3135,6 +3174,13 @@ app.get('/api/instagram/oauth/callback', async (req, res) => {
     }
 
     const accessToken = longData.access_token
+    const tokenDebug = await inspectInstagramAccessToken(accessToken)
+    console.info('[Instagram OAuth] token grant summary', {
+      callbackGrantedScopes: granted_scopes || null,
+      callbackDeniedScopes: denied_scopes || null,
+      token: tokenDebug,
+    })
+
     const pages = await instagramGraphGet('me/accounts', accessToken, {
       fields: 'id,name,tasks,instagram_business_account{id,username}',
     })
