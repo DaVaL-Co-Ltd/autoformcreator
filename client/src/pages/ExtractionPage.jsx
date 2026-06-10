@@ -759,21 +759,27 @@ export default function ExtractionPage() {
   // 아바타 카드 그리드용 — 동완쌤·후라이쌤·제자들 3개 카테고리로 분리해서 표시한다.
   // 그룹 있는 preset 은 9:16 세로 룩을 우선 펼쳐 보여준다.
   const avatarCategories = useMemo(() => {
-    const expandPreset = (preset) => (
-      preset.avatarGroupId
-        ? pickPortraitLooks(groupLooks[preset.avatarGroupId] || []).map((look) => ({
+    const expandPreset = (preset) => {
+      if (preset.avatarGroupId) {
+        return pickPortraitLooks(groupLooks[preset.avatarGroupId] || [])
+          .filter((look) => look?.preview)
+          .map((look) => ({
             key: `${preset.id}:${look.id}`,
             preset,
             lookId: look.id,
-            preview: look.preview || null,
+            preview: look.preview,
           }))
-        : [{
-            key: preset.id,
-            preset,
-            lookId: preset.avatarId,
-            preview: presetAvatarPreviews[preset.avatarId] || null,
-          }]
-    )
+      }
+
+      const preview = presetAvatarPreviews[preset.avatarId]
+      if (!preview) return []
+      return [{
+        key: preset.id,
+        preset,
+        lookId: preset.avatarId,
+        preview,
+      }]
+    }
     const dongwan = []
     const fry = []
     const students = []
@@ -1068,12 +1074,18 @@ export default function ExtractionPage() {
     || ''
   )
 
-  const getShortsSceneVisual = (scene) => (
-    scene?.visual
-    || scene?.visualDescription
-    || ''
+  const buildSubtitleBurnScenes = (scenes = []) => (
+    Array.isArray(scenes)
+      ? scenes.map((scene) => {
+          const caption = String(scene?.caption || scene?.narration || '').trim()
+          return {
+            ...scene,
+            caption,
+            spokenText: toSpokenText(caption),
+          }
+        })
+      : []
   )
-
 
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
@@ -1955,7 +1967,7 @@ DO NOT:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoUrl: rawUrl,
-          scenes: targetScript.scenes,
+          scenes: buildSubtitleBurnScenes(targetScript.scenes),
           subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
           subtitleFont,
           // 실제 Video Agent 차트로 렌더된 인포그래픽 씬만 자막 제외. 아바타로 폴백한 씬은 자막 표시.
@@ -2367,7 +2379,7 @@ DO NOT:
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 videoUrl: rawUrl,
-                scenes: targetScript.scenes,
+                scenes: buildSubtitleBurnScenes(targetScript.scenes),
                 subtitleStyle: mapShortsSubtitleStyleToBurnStyle(subtitleStyle),
                 subtitleFont,
               }),
@@ -4377,7 +4389,6 @@ ${parsedText}
                                   )}
                                   {shortsScript.scenes?.map((scene, i) => {
                                     const sceneCaption = getShortsSceneCaption(scene)
-                                    const sceneVisual = getShortsSceneVisual(scene)
                                     return (
                                       <div key={i} className="border-l-2 border-primary/30 pl-3">
                                         <p className="text-[11px] font-semibold text-primary">
@@ -4387,7 +4398,6 @@ ${parsedText}
                                         {scene.textOverlay && (
                                           <p className="text-xs text-primary mt-1 whitespace-pre-wrap">화면 텍스트: {scene.textOverlay}</p>
                                         )}
-                                        {sceneVisual && <p className="text-xs text-text-muted mt-1 whitespace-pre-wrap">{sceneVisual}</p>}
                                       </div>
                                     )
                                   })}

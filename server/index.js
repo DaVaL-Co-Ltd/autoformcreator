@@ -1238,8 +1238,11 @@ app.post('/api/subtitle/burn', async (req, res) => {
     const maxCharsPerLine = 18
     let srtContent = ''
     let srtIdx = 1
-    // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration 만 있음) 도 함께 지원.
-    const sceneSpokenText = (s) => String(s?.caption || s?.narration || '')
+    // caption 은 화면 자막, spokenText 는 HeyGen TTS 에 실제로 보낸 문장이다.
+    // 숫자·기호·영문 약어가 TTS용으로 풀린 경우에는 spokenText 기준으로 시간을 계산하고,
+    // 화면에는 caption 원문 표기를 그대로 태워 싱크와 가독성을 함께 맞춘다.
+    const sceneCaptionText = (s) => String(s?.caption || s?.narration || '')
+    const sceneAudioText = (s) => String(s?.spokenText || s?.ttsText || s?.audioText || sceneCaptionText(s))
     // 화면 글자 수만으로는 음성 길이를 못 맞춘다 — 숫자·기호는 짧게 적혀도 길게 읽히므로
     // 대략의 '읽는 음절 수' 로 가중해 씬별 시간 배분 정확도를 높인다. (예: "12.4%" 5글자 → 약 8음절)
     const estimateSpokenLen = (text) => {
@@ -1254,14 +1257,14 @@ app.post('/api/subtitle/burn', async (req, res) => {
       return t.replace(/\s+/g, '').length || 1
     }
     // 무음 씬(quiz-countdown · caption 없는 씬)은 음성이 없으므로 자막 없이 scene.duration 만큼 시간만 진행한다.
-    const isSilentScene = (s) => s?.layout === 'quiz-countdown' || !sceneSpokenText(s).trim()
+    const isSilentScene = (s) => s?.layout === 'quiz-countdown' || !sceneAudioText(s).trim()
     const silentTotal = scenes.reduce((sum, s) => (isSilentScene(s) ? sum + (Number(s?.duration) || 0) : sum), 0)
     const speakingBudget = Math.max(0.5, duration - silentTotal)
-    const speakingWeight = scenes.reduce((sum, s) => (isSilentScene(s) ? sum : sum + estimateSpokenLen(sceneSpokenText(s))), 0) || 1
+    const speakingWeight = scenes.reduce((sum, s) => (isSilentScene(s) ? sum : sum + estimateSpokenLen(sceneAudioText(s))), 0) || 1
     // 한 씬이 차지하는 영상 시간(폴백용 추정) — SRT 와 타이틀 오버레이가 동일한 값을 써야 싱크가 맞는다.
     const sceneDurOf = (s) => (isSilentScene(s)
       ? (Number(s?.duration) || 0)
-      : (estimateSpokenLen(sceneSpokenText(s)) / speakingWeight) * speakingBudget)
+      : (estimateSpokenLen(sceneAudioText(s)) / speakingWeight) * speakingBudget)
 
     const fmt = (t) => {
       const h = Math.floor(t / 3600)
@@ -1294,7 +1297,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
         await new Promise((resolve) => {
           execFile(ffmpegPath, ['-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-y', audioPath], { timeout: 60000 }, () => resolve())
         })
-        const map = await alignCaptionsToAudio(audioPath, subtitleScenes.map((s) => sceneSpokenText(s).trim()), duration)
+        const map = await alignCaptionsToAudio(audioPath, subtitleScenes.map((s) => sceneAudioText(s).trim()), duration)
         if (map) {
           const t = []
           let prev = 0
@@ -1320,7 +1323,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     if (alignedTimes) {
       // 실제 음성 타임스탬프 기준으로 자막 배치.
       subtitleScenes.forEach((scene, i) => {
-        emitSceneBlocks(sceneSpokenText(scene).trim(), alignedTimes[i].start, alignedTimes[i].end)
+        emitSceneBlocks(sceneCaptionText(scene).trim(), alignedTimes[i].start, alignedTimes[i].end)
       })
     } else {
       // 폴백: 음절 추정 + 무음/인포그래픽 씬은 시간만 진행.
@@ -1329,7 +1332,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
         const sceneDur = sceneDurOf(scene)
         if (isSilentScene(scene)) { currentTime += sceneDur; continue }
         if (noSubtitleSet.has(Number(scene?.sceneNumber))) { currentTime += sceneDur; continue }
-        emitSceneBlocks(sceneSpokenText(scene).trim(), currentTime, currentTime + sceneDur)
+        emitSceneBlocks(sceneCaptionText(scene).trim(), currentTime, currentTime + sceneDur)
         currentTime += sceneDur
       }
     }
