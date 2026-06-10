@@ -1650,9 +1650,15 @@ DO NOT:
         throw new Error('group_id를 받지 못했습니다.')
       }
 
-      setHeygenAvatarId(groupId)
-      setHeygenReady(false)
-      return groupId
+      const looksRes = await apiFetch(`/api/heygen/avatar-group/${groupId}/looks`)
+      const looksData = await readApiResponse(looksRes)
+      const firstLook = Array.isArray(looksData?.looks) ? looksData.looks.find((look) => look?.id) : null
+      const talkingPhotoId = firstLook?.id || groupId
+
+      setHeygenAvatarId(talkingPhotoId)
+      setHeygenReady(Boolean(firstLook?.id))
+      if (firstLook?.preview) setAvatarImage(firstLook.preview)
+      return talkingPhotoId
     } finally {
       setHeygenUploading(false)
     }
@@ -4301,4 +4307,3 @@ ${parsedText}
     </div>
   )
 }
-
