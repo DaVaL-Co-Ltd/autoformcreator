@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, Image, Mail, Film, FolderOpen, Layers, Sparkles,
   ExternalLink, ArrowRight, Upload, CheckCircle, Calendar, TrendingUp, Loader2,
 } from 'lucide-react'
-import { getExtractions } from '../services/storage'
+import { getExtractionsPaged } from '../services/storage'
 import {
   getAll as getPlatformConnections,
   loadAll as loadPlatformConnections,
@@ -53,31 +53,45 @@ const platforms = [
 export default function DashboardPage() {
   const navigate = useNavigate()
   const [extractions, setExtractions] = useState([])
+  const [aggregateCounts, setAggregateCounts] = useState(null)
   const [loading, setLoading] = useState(true)
   const [platformConnections, setPlatformConnections] = useState(() => getPlatformConnections())
 
   useEffect(() => {
     let cancelled = false
+
+    const refreshPlatformConnections = async () => {
+      try {
+        const nextConnections = await loadPlatformConnections()
+        if (!cancelled) setPlatformConnections(nextConnections)
+      } catch {
+        // loadPlatformConnections already falls back to the local cache.
+      }
+    }
+
     const load = async (showSpinner = true) => {
       if (showSpinner) setLoading(true)
       try {
-        const [result, nextConnections] = await Promise.all([
-          getExtractions(),
-          loadPlatformConnections(),
-        ])
+        const result = await getExtractionsPaged({ page: 1, pageSize: 5 })
         if (!cancelled) {
           setExtractions(result?.items || [])
-          setPlatformConnections(nextConnections)
+          setAggregateCounts(result?.aggregateCounts || null)
         }
       } catch {
-        if (!cancelled) setExtractions([])
+        if (!cancelled) {
+          setExtractions([])
+          setAggregateCounts(null)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
+
     load(true)
+    refreshPlatformConnections()
     const onFocus = () => {
       load(false)
+      refreshPlatformConnections()
     }
     const unsubscribePlatformConnections = subscribePlatformConnections(setPlatformConnections)
     window.addEventListener('focus', onFocus)
@@ -88,13 +102,13 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const allContents = extractions.flatMap((ext) => ext.channels)
-  const channelCounts = allContents.reduce((acc, ch) => {
+  const recentChannels = extractions.flatMap((ext) => ext.channels)
+  const fallbackChannelCounts = recentChannels.reduce((acc, ch) => {
     acc[ch.channel] = (acc[ch.channel] || 0) + 1
     return acc
   }, {})
 
-  const uploadStats = extractions.reduce((acc, ext) => {
+  const fallbackUploadStats = extractions.reduce((acc, ext) => {
     ext.channels.forEach((ch) => {
       if (ch.channel === 'newsletter') return
       const status = ext.uploadStatus?.[ch.channel]?.status || 'not_uploaded'
@@ -102,6 +116,19 @@ export default function DashboardPage() {
     })
     return acc
   }, {})
+
+  const getChannelCount = (channel) => aggregateCounts?.[channel]?.all ?? fallbackChannelCounts[channel] ?? 0
+  const getChannelUploadedCount = (channel) => aggregateCounts?.[channel]?.uploaded ?? 0
+  const getChannelNotUploadedCount = (channel) => aggregateCounts?.[channel]?.not_uploaded ?? 0
+  const totalContentCount = platforms.reduce((sum, platform) => sum + getChannelCount(platform.key), 0)
+  const uploadStats = aggregateCounts
+    ? platforms.reduce((acc, platform) => {
+      if (platform.key === 'newsletter') return acc
+      acc.uploaded += getChannelUploadedCount(platform.key)
+      acc.not_uploaded += getChannelNotUploadedCount(platform.key)
+      return acc
+    }, { uploaded: 0, not_uploaded: 0 })
+    : fallbackUploadStats
 
   const recentContents = extractions.flatMap((ext) =>
     ext.channels.map((ch) => ({
@@ -117,7 +144,7 @@ export default function DashboardPage() {
   ).slice(0, 5)
 
   const overviewStats = [
-    { label: '총 콘텐츠', value: allContents.length, icon: Layers, color: 'text-info', bg: 'bg-info/10' },
+    { label: '총 콘텐츠', value: totalContentCount, icon: Layers, color: 'text-info', bg: 'bg-info/10' },
     { label: '업로드 완료', value: uploadStats.uploaded || 0, icon: CheckCircle, color: 'text-success', bg: 'bg-success/10' },
     { label: '미업로드', value: uploadStats.not_uploaded || 0, icon: Upload, color: 'text-text-muted', bg: 'bg-surface-light' },
   ]
@@ -179,11 +206,13 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {platforms.map((p) => {
           const PlatformIcon = p.icon
-          const count = channelCounts[p.key] || 0
-          const uploaded = extractions.reduce((acc, ext) => {
-            if (ext.uploadStatus?.[p.key]?.status === 'uploaded') acc += 1
-            return acc
-          }, 0)
+          const count = getChannelCount(p.key)
+          const uploaded = aggregateCounts
+            ? getChannelUploadedCount(p.key)
+            : extractions.reduce((acc, ext) => {
+              if (ext.uploadStatus?.[p.key]?.status === 'uploaded') acc += 1
+              return acc
+            }, 0)
           const conn = platformConnections[p.key] || {}
           const linkUrl = conn.url
           const displayName = conn.displayName?.trim()
