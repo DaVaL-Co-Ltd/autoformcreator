@@ -984,6 +984,20 @@ export default function ExtractionPage() {
     !loading.shorts &&
     !loading.media
 
+  const getShortsSceneCaption = (scene) => (
+    scene?.caption
+    || scene?.narration
+    || scene?.spokenText
+    || scene?.text
+    || ''
+  )
+
+  const getShortsSceneVisual = (scene) => (
+    scene?.visual
+    || scene?.visualDescription
+    || ''
+  )
+
 
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
@@ -4251,15 +4265,22 @@ ${parsedText}
                                       <p className="text-sm text-text whitespace-pre-wrap">{shortsScript.hook}</p>
                                     </div>
                                   )}
-                                  {shortsScript.scenes?.map((scene, i) => (
-                                    <div key={i} className="border-l-2 border-primary/30 pl-3">
-                                      <p className="text-[11px] font-semibold text-primary">
-                                        Scene {i + 1}{scene.duration ? ` · ${scene.duration}초` : ''}
-                                      </p>
-                                      {scene.narration && <p className="text-sm text-text mt-1 whitespace-pre-wrap">{scene.narration}</p>}
-                                      {scene.visual && <p className="text-xs text-text-muted mt-1 whitespace-pre-wrap">{scene.visual}</p>}
-                                    </div>
-                                  ))}
+                                  {shortsScript.scenes?.map((scene, i) => {
+                                    const sceneCaption = getShortsSceneCaption(scene)
+                                    const sceneVisual = getShortsSceneVisual(scene)
+                                    return (
+                                      <div key={i} className="border-l-2 border-primary/30 pl-3">
+                                        <p className="text-[11px] font-semibold text-primary">
+                                          Scene {scene.sceneNumber || i + 1}{scene.duration ? ` · ${scene.duration}초` : ''}
+                                        </p>
+                                        {sceneCaption && <p className="text-sm text-text mt-1 whitespace-pre-wrap">{sceneCaption}</p>}
+                                        {scene.textOverlay && (
+                                          <p className="text-xs text-primary mt-1 whitespace-pre-wrap">화면 텍스트: {scene.textOverlay}</p>
+                                        )}
+                                        {sceneVisual && <p className="text-xs text-text-muted mt-1 whitespace-pre-wrap">{sceneVisual}</p>}
+                                      </div>
+                                    )
+                                  })}
                                   {shortsScript.cta && (
                                     <div className="rounded-lg bg-surface border border-border p-2.5">
                                       <p className="text-[11px] font-semibold text-text-muted mb-1">CTA</p>
