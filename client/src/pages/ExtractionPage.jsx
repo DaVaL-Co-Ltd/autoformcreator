@@ -48,6 +48,59 @@ import { isAutomaticBlogQuoteCategory } from '../utils/blogHeadingStyle'
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const RESULT_DRAFT_WINDOW_KEY = '__AUTOFORM_RESULT_DRAFTS__'
 const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
+const SHORTS_AVATAR_ASPECT_RATIO = 9 / 16
+const SHORTS_AVATAR_EXPORT_WIDTH = 1080
+const SHORTS_AVATAR_EXPORT_HEIGHT = 1920
+
+function pickPortraitLooks(looks = []) {
+  const validLooks = Array.isArray(looks) ? looks.filter((look) => look?.id) : []
+  const portraitLooks = validLooks.filter((look) => look.portrait !== false)
+  return portraitLooks.length > 0 ? portraitLooks : validLooks
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('이미지를 불러오지 못했습니다.'))
+    image.src = src
+  })
+}
+
+async function cropDataUrlToShortsPortrait(dataUrl) {
+  if (!String(dataUrl || '').startsWith('data:image/')) return dataUrl
+
+  try {
+    const image = await loadImageElement(dataUrl)
+    const sourceWidth = image.naturalWidth || image.width
+    const sourceHeight = image.naturalHeight || image.height
+    if (!sourceWidth || !sourceHeight) return dataUrl
+
+    let sx = 0
+    let sy = 0
+    let sw = sourceWidth
+    let sh = sourceHeight
+    const sourceRatio = sourceWidth / sourceHeight
+
+    if (sourceRatio > SHORTS_AVATAR_ASPECT_RATIO) {
+      sw = sourceHeight * SHORTS_AVATAR_ASPECT_RATIO
+      sx = (sourceWidth - sw) / 2
+    } else if (sourceRatio < SHORTS_AVATAR_ASPECT_RATIO) {
+      sh = sourceWidth / SHORTS_AVATAR_ASPECT_RATIO
+      sy = (sourceHeight - sh) / 2
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = SHORTS_AVATAR_EXPORT_WIDTH
+    canvas.height = SHORTS_AVATAR_EXPORT_HEIGHT
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return dataUrl
+    ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/png')
+  } catch {
+    return dataUrl
+  }
+}
 
 function buildSessionPersistedResultDraft(resultState = {}) {
   return {
@@ -681,11 +734,11 @@ export default function ExtractionPage() {
   }, [selectedChannels.shorts, groupLooks])
 
   // 아바타 카드 그리드용 — 동완쌤·후라이쌤·제자들 3개 카테고리로 분리해서 표시한다.
-  // 그룹 있는 preset 은 룩별로 펼쳐 각각 카드 1개로 만들고, 가로(16:9) 룩까지 모두 포함한다.
+  // 그룹 있는 preset 은 9:16 세로 룩을 우선 펼쳐 보여준다.
   const avatarCategories = useMemo(() => {
     const expandPreset = (preset) => (
       preset.avatarGroupId
-        ? (groupLooks[preset.avatarGroupId] || []).map((look) => ({
+        ? pickPortraitLooks(groupLooks[preset.avatarGroupId] || []).map((look) => ({
             key: `${preset.id}:${look.id}`,
             preset,
             lookId: look.id,
@@ -730,7 +783,7 @@ export default function ExtractionPage() {
     if (!heygenAvatarId) return
     const preset = findPresetShortsAvatar(heygenAvatarId)
     if (preset?.avatarGroupId && preset.avatarGroupId === heygenAvatarId) {
-      const looks = groupLooks[preset.avatarGroupId]
+      const looks = pickPortraitLooks(groupLooks[preset.avatarGroupId])
       if (Array.isArray(looks) && looks.length > 0 && looks[0]?.id) {
         setHeygenAvatarId(looks[0].id)
         if (looks[0].preview) setAvatarImage(looks[0].preview)
@@ -1642,7 +1695,8 @@ DO NOT:
       }
       const b64 = imagePart.inlineData.data
       const mime = imagePart.inlineData.mimeType || 'image/png'
-      setAvatarImage(`data:${mime};base64,${b64}`)
+      const rawAvatarImage = `data:${mime};base64,${b64}`
+      setAvatarImage(await cropDataUrlToShortsPortrait(rawAvatarImage))
     } catch (err) {
       addStepErrors('shorts', [{ service: 'gemini', channel: '아바타', message: err.message }])
       showErrorAlert('아바타 생성', err.message)
@@ -1660,7 +1714,12 @@ DO NOT:
       return heygenAvatarId
     }
 
-    const match = avatarImage.match(/^data:([^;]+);base64,(.+)$/)
+    const avatarImageForUpload = await cropDataUrlToShortsPortrait(avatarImage)
+    if (avatarImageForUpload !== avatarImage) {
+      setAvatarImage(avatarImageForUpload)
+    }
+
+    const match = avatarImageForUpload.match(/^data:([^;]+);base64,(.+)$/)
     if (!match) {
       throw new Error('아바타 이미지 형식이 올바르지 않습니다.')
     }
@@ -3806,7 +3865,7 @@ ${parsedText}
                                     {slotPresets.map((preset) => {
                                       const isSel = sel.presetId === preset.id
                                       const preview = presetAvatarPreviews[preset.avatarId]
-                                        || (preset.avatarGroupId ? groupLooks[preset.avatarGroupId]?.[0]?.preview : null)
+                                        || (preset.avatarGroupId ? pickPortraitLooks(groupLooks[preset.avatarGroupId])?.[0]?.preview : null)
                                         || null
                                       return (
                                         <button
