@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
-import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate, useNavigate, useRouteError } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
 import Header from './components/Header'
@@ -19,6 +19,56 @@ const ScheduledUploadsPage = lazy(() => import('./pages/ScheduledUploadsPage'))
 const PhotoAvatarPage = lazy(() => import('./pages/PhotoAvatarPage'))
 const HeygenTestPage = lazy(() => import('./pages/HeygenTestPage'))
 
+const STALE_CHUNK_RELOAD_KEY = 'autoform:stale-chunk-reload'
+const STALE_CHUNK_ERROR_PATTERN =
+  /(text\/html.*valid JavaScript MIME type|valid JavaScript MIME type|Failed to fetch dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk \d+ failed|error loading dynamically imported module)/i
+
+function getErrorText(error) {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+
+  return [
+    error.name,
+    error.message,
+    error.stack,
+    error.reason?.name,
+    error.reason?.message,
+    error.error?.name,
+    error.error?.message,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function isStaleChunkError(error) {
+  return STALE_CHUNK_ERROR_PATTERN.test(getErrorText(error))
+}
+
+function reloadOnceForStaleChunk(error) {
+  if (typeof window === 'undefined' || !isStaleChunkError(error)) {
+    return false
+  }
+
+  const pathKey = `${STALE_CHUNK_RELOAD_KEY}:${window.location.pathname}`
+
+  try {
+    if (sessionStorage.getItem(pathKey) === '1') {
+      return false
+    }
+
+    sessionStorage.setItem(pathKey, '1')
+  } catch {
+    if (window.__autoformStaleChunkReloaded) {
+      return false
+    }
+
+    window.__autoformStaleChunkReloaded = true
+  }
+
+  window.location.reload()
+  return true
+}
+
 function PageLoader() {
   return (
     <div className="min-h-[240px] flex items-center justify-center">
@@ -29,6 +79,47 @@ function PageLoader() {
 
 function LazyPage({ children }) {
   return <Suspense fallback={<PageLoader />}>{children}</Suspense>
+}
+
+function RouterErrorFallback() {
+  const error = useRouteError()
+  const [reloading, setReloading] = useState(false)
+
+  useEffect(() => {
+    if (reloadOnceForStaleChunk(error)) {
+      setReloading(true)
+      return
+    }
+
+    console.error('[router error]', error)
+  }, [error])
+
+  if (reloading) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3 text-text">
+        <Loader2 size={28} className="text-primary animate-spin" />
+        <p className="text-sm text-text-muted">새 버전을 불러오는 중입니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-xl border border-border bg-white p-6 shadow-sm">
+        <h1 className="text-lg font-semibold text-text mb-2">화면을 불러오지 못했습니다</h1>
+        <p className="text-sm text-text-muted leading-6 mb-4">
+          배포 직후 이전 화면이 남아있으면 일시적으로 발생할 수 있습니다. 새로고침 후 다시 시도해 주세요.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="w-full rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark transition-colors"
+        >
+          새로고침
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function ProtectedRoute({ children }) {
@@ -172,6 +263,7 @@ const router = createBrowserRouter([
         <AppRoutes />
       </AuthProvider>
     ),
+    errorElement: <RouterErrorFallback />,
   },
 ])
 
@@ -196,6 +288,28 @@ export default function App() {
 
     return () => {
       window.alert = originalAlert
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleError = (event) => {
+      if (reloadOnceForStaleChunk(event.error || event.message)) {
+        event.preventDefault()
+      }
+    }
+
+    const handleRejection = (event) => {
+      if (reloadOnceForStaleChunk(event.reason)) {
+        event.preventDefault()
+      }
+    }
+
+    window.addEventListener('error', handleError)
+    window.addEventListener('unhandledrejection', handleRejection)
+
+    return () => {
+      window.removeEventListener('error', handleError)
+      window.removeEventListener('unhandledrejection', handleRejection)
     }
   }, [])
 
