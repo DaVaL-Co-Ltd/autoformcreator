@@ -1127,7 +1127,7 @@ export default function SettingsPage() {
                     </div>
                     {geminiValidationResult.summary?.serverSelectedSource && (
                       <div className="mt-1 text-xs leading-5 text-text-muted">
-                        서버 우선순위 기준 선택 소스: {geminiValidationResult.summary.serverSelectedSource}
+                        서버 키 선택 소스: {geminiValidationResult.summary.serverSelectedSource}
                       </div>
                     )}
                     {geminiValidationResult.summary?.precedenceNote && (
@@ -1142,7 +1142,7 @@ export default function SettingsPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {geminiValidationResult.sources?.map((source) => (
                       <div key={source.name} className="rounded-xl border border-border bg-white px-4 py-3">
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

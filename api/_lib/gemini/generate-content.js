@@ -3,8 +3,38 @@ const { isAuthorizedRequest, rejectUnauthorized } = require('../requestAuth')
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 const MODEL_NAME_PATTERN = /^gemini-[a-z0-9._-]+$/i
 
+let apiKeyCursor = 0
+
+function parseApiKeysFromEnv() {
+  const keys = []
+  const addKeys = (value) => {
+    String(value || '')
+      .split(/[\n,;]/)
+      .map((key) => key.trim())
+      .filter(Boolean)
+      .forEach((key) => {
+        if (!keys.includes(key)) keys.push(key)
+      })
+  }
+
+  addKeys(process.env.GEMINI_API_KEYS)
+  addKeys(process.env.GOOGLE_API_KEY)
+  addKeys(process.env.GEMINI_API_KEY)
+
+  for (let i = 1; i <= 10; i += 1) {
+    addKeys(process.env[`GEMINI_API_KEY_${i}`])
+  }
+
+  return keys
+}
+
 function getServerGeminiApiKey() {
-  return String(process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '').trim()
+  const keys = parseApiKeysFromEnv()
+  if (keys.length === 0) return null
+
+  const index = apiKeyCursor % keys.length
+  apiKeyCursor = (index + 1) % keys.length
+  return { key: keys[index], index, total: keys.length }
 }
 
 function sanitizePayload(body) {
@@ -28,9 +58,9 @@ module.exports = async function handler(req, res) {
     return rejectUnauthorized(res)
   }
 
-  const apiKey = getServerGeminiApiKey()
-  if (!apiKey) {
-    return res.status(500).json({ error: 'GOOGLE_API_KEY or GEMINI_API_KEY is not configured on the server.' })
+  const apiKeySelection = getServerGeminiApiKey()
+  if (!apiKeySelection) {
+    return res.status(500).json({ error: 'GEMINI_API_KEYS, GOOGLE_API_KEY, or GEMINI_API_KEY is not configured on the server.' })
   }
 
   const model = String(req.body?.model || '').trim()
@@ -48,7 +78,7 @@ module.exports = async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
+        'x-goog-api-key': apiKeySelection.key,
       },
       body: JSON.stringify(payload),
     })

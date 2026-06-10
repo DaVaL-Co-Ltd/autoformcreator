@@ -5,10 +5,35 @@ const DEFAULT_MODEL = 'gemini-2.5-flash-lite'
 const GEMINI_ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 function getSourceEntries() {
-  return [
-    { name: 'GOOGLE_API_KEY', value: process.env.GOOGLE_API_KEY || '' },
-    { name: 'GEMINI_API_KEY', value: process.env.GEMINI_API_KEY || '' },
-  ]
+  const entries = []
+  const addSplitEntries = (name, value) => {
+    const values = String(value || '')
+      .split(/[\n,;]/)
+      .map((key) => key.trim())
+      .filter(Boolean)
+
+    if (values.length === 0) {
+      entries.push({ name, value: '' })
+      return
+    }
+
+    values.forEach((key, index) => {
+      entries.push({
+        name: values.length === 1 ? name : `${name}[${index + 1}]`,
+        value: key,
+      })
+    })
+  }
+
+  addSplitEntries('GEMINI_API_KEYS', process.env.GEMINI_API_KEYS || '')
+  addSplitEntries('GOOGLE_API_KEY', process.env.GOOGLE_API_KEY || '')
+  addSplitEntries('GEMINI_API_KEY', process.env.GEMINI_API_KEY || '')
+
+  for (let i = 1; i <= 10; i += 1) {
+    addSplitEntries(`GEMINI_API_KEY_${i}`, process.env[`GEMINI_API_KEY_${i}`] || '')
+  }
+
+  return entries
 }
 
 function buildFingerprint(value) {
@@ -103,6 +128,7 @@ async function validateKeyAgainstGemini({ name, value, model }) {
 }
 
 function getServerSelectedSource(results) {
+  if (results.find((entry) => entry.name.startsWith('GEMINI_API_KEYS') && entry.present)) return 'GEMINI_API_KEYS'
   if (results.find((entry) => entry.name === 'GOOGLE_API_KEY' && entry.present)) return 'GOOGLE_API_KEY'
   if (results.find((entry) => entry.name === 'GEMINI_API_KEY' && entry.present)) return 'GEMINI_API_KEY'
   return null
@@ -141,7 +167,11 @@ module.exports = async function handler(req, res) {
     }
 
     const serverSelectedSource = getServerSelectedSource(results)
-    const serverSelectedResult = results.find((entry) => entry.name === serverSelectedSource) || null
+    const serverSelectedResult = results.find((entry) => (
+      serverSelectedSource === 'GEMINI_API_KEYS'
+        ? entry.name.startsWith('GEMINI_API_KEYS') && entry.present
+        : entry.name === serverSelectedSource
+    )) || null
     return res.status(200).json({
       checkedAt: new Date().toISOString(),
       model,
@@ -152,9 +182,13 @@ module.exports = async function handler(req, res) {
         serverSelectedValid: Boolean(serverSelectedResult?.valid),
         clientBuildValid: false,
         precedenceNote:
-          results.some((entry) => entry.name === 'GOOGLE_API_KEY' && entry.present) &&
-          results.some((entry) => entry.name === 'GEMINI_API_KEY' && entry.present)
-            ? 'GOOGLE_API_KEY takes precedence over GEMINI_API_KEY when both are set.'
+          results.some((entry) => entry.name.startsWith('GEMINI_API_KEYS') && entry.present) &&
+          (
+            results.some((entry) => entry.name === 'GOOGLE_API_KEY' && entry.present) ||
+            results.some((entry) => entry.name === 'GEMINI_API_KEY' && entry.present) ||
+            results.some((entry) => /^GEMINI_API_KEY_\d+$/.test(entry.name) && entry.present)
+          )
+            ? 'GEMINI_API_KEYS is used first; other Gemini key variables are appended if they contain distinct keys.'
             : null,
         buildNote: 'Gemini requests now run through the server proxy, so the browser no longer needs a Gemini API key.',
       },
