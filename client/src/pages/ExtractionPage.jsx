@@ -591,6 +591,8 @@ export default function ExtractionPage() {
   // 2인 슬롯 컨셉(study_dialogue·mock_interview)에서 역할별로 고른 아바타+목소리.
   // 각 항목: { presetId, voiceId }. 인덱스는 concept.avatarSlots 와 1:1 대응.
   const [conceptAvatarSlots, setConceptAvatarSlots] = useState([])
+  const [shortsAvatarMode, setShortsAvatarMode] = useState('select')
+  const [shortsScriptExpanded, setShortsScriptExpanded] = useState(false)
   // 아바타 그리드 카테고리 필터 — 동완쌤·후라이쌤·제자 중 하나만 표시.
   const [selectedAvatarCategory, setSelectedAvatarCategory] = useState('dongwan_ssaem')
   // 아바타 카드 확대 모달 — 돋보기 버튼 클릭 시 이미지 URL 을 담아 모달을 띄운다.
@@ -604,7 +606,8 @@ export default function ExtractionPage() {
   const shortsStepNumbers = {
     avatar: 1,
     subtitle: 2,
-    video: 3,
+    script: 3,
+    video: 4,
   }
 
   // 프리셋 아바타 미리보기 URL 1회 fetch — 숏폼이 선택됐을 때만.
@@ -952,10 +955,28 @@ export default function ExtractionPage() {
     return null
   }
 
-  // 슬롯 컨셉이면 슬롯이 모두 유효해야, 아니면 아바타+목소리 단일 선택이 돼야 준비 완료.
+  const hasSingleAvatarChoice = !!avatarConfirmed && (!!heygenAvatarId || !!avatarImage)
+
+  const confirmGeneratedAvatar = () => {
+    if (!avatarImage) return
+    setAvatarConfirmed(true)
+    setHeygenAvatarId(null)
+    setHeygenReady(false)
+    setHeygenUploading(false)
+    setConceptResetNotice(false)
+  }
+
+  const resetGeneratedAvatarSelection = () => {
+    setAvatarConfirmed(false)
+    setHeygenAvatarId(null)
+    setHeygenReady(false)
+    setHeygenUploading(false)
+  }
+
+  // 슬롯 컨셉이면 슬롯이 모두 유효해야, 아니면 아바타 선택/자동 선택/생성 확정 중 하나와 목소리가 필요하다.
   const isShortsAvatarVoiceReady = activeSlotConcept
     ? validateSlotConcept(activeSlotConcept, conceptAvatarSlots) === null
-    : (!!avatarConfirmed && !!selectedVoiceId)
+    : (hasSingleAvatarChoice && !!selectedVoiceId)
 
   const isShortsVideoReady =
     isShortsAvatarVoiceReady &&
@@ -1101,7 +1122,10 @@ export default function ExtractionPage() {
     if (step <= 3) { setBlogContent(null); setBlogImages(null) }
     if (step <= 4) setNewsletterContent(null)
     if (step <= 5) { setInstagramContent(null); setInstagramImages(null) }
-    if (step <= 6) setShortsScript(null)
+    if (step <= 6) {
+      setShortsScript(null)
+      setShortsScriptExpanded(false)
+    }
     if (step <= 7) {
       setMediaItemLoading({})
     }
@@ -1110,7 +1134,18 @@ export default function ExtractionPage() {
       setBlogUploadedImages([])
       setBlogThumbnailDisabled(false)
     }
-    if (step <= 8) { setShortsVideo(null); setAvatarImage(null); setAvatarPrompt(''); setAvatarConfirmed(false) }
+    if (step <= 8) setShortsVideo(null)
+    if (step <= 2) {
+      setAvatarImage(null)
+      setAvatarPrompt('')
+      setAvatarConfirmed(false)
+      setHeygenAvatarId(null)
+      setHeygenReady(false)
+      setHeygenUploading(false)
+      setConceptAvatarSlots([])
+      setConceptResetNotice(false)
+      setShortsAvatarMode('select')
+    }
     // 에러 초기화
     if (step <= 1) clearStepErrors('upload')
     if (step <= 2) { clearStepErrors('analysis'); clearStepErrors('summary') }
@@ -1334,9 +1369,9 @@ export default function ExtractionPage() {
           setErrorAlert(violation)
           return
         }
-      } else if (!avatarConfirmed || !selectedVoiceId) {
-        const message = !avatarConfirmed
-          ? '숏폼 생성 전에 아바타를 먼저 선택해주세요.'
+      } else if (!hasSingleAvatarChoice || !selectedVoiceId) {
+        const message = !hasSingleAvatarChoice
+          ? '숏폼 생성 전에 아바타를 먼저 선택하거나 생성 후 확정해주세요.'
           : '숏폼 생성 전에 목소리를 먼저 선택해주세요.'
         addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message }])
         showErrorAlert('숏폼 생성', message)
@@ -1868,8 +1903,8 @@ DO NOT:
         return
       }
     } else {
-      if (!avatarImage) {
-        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '아바타를 먼저 생성해주세요.' }])
+      if (!hasSingleAvatarChoice) {
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠', message: '아바타를 먼저 선택하거나 생성 후 확정해주세요.' }])
         return
       }
 
@@ -3729,36 +3764,12 @@ ${parsedText}
                   )}
                   {row.key === 'shorts' && (
                     <div className="space-y-3">
-                      {shortsScript && (
-                        <>
-                          <div>
-                            <h4 className="text-base font-bold text-text">{shortsScript.title}</h4>
-                            <p className="text-xs text-text-muted">총 {shortsScript.duration}초 · {shortsScript.scenes?.length || 0}씬</p>
-                          </div>
-                          {shortsScript.hook && (
-                            <div className="bg-warning/10 rounded-lg p-2.5 border border-warning/20">
-                              <p className="text-xs font-semibold text-warning mb-0.5">오프닝 훅</p>
-                              <p className="text-sm text-text">{shortsScript.hook}</p>
-                            </div>
-                          )}
-                          {shortsScript.scenes?.map((scene, i) => (
-                            <div key={i} className="border-l-2 border-warning/30 pl-3">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-bold text-warning bg-warning/10 px-1.5 py-0.5 rounded">씬 {scene.sceneNumber}</span>
-                                <span className="text-xs text-text-muted">{scene.duration}초</span>
-                              </div>
-                              <p className="text-sm text-text">{scene.caption || scene.narration}</p>
-                              {scene.textOverlay && <p className="text-xs text-text-muted mt-1">{scene.textOverlay}</p>}
-                            </div>
-                          ))}
-                        </>
-                      )}
                       <div className="border-t border-border pt-5 space-y-5">
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.avatar}</span>
                             <p className="text-base font-semibold text-text">아바타 선택</p>
-                            {(activeSlotConcept ? isShortsAvatarVoiceReady : heygenAvatarId) && <CheckCircle size={14} className="text-success" />}
+                            {(activeSlotConcept ? isShortsAvatarVoiceReady : hasSingleAvatarChoice) && <CheckCircle size={14} className="text-success" />}
                           </div>
                           {activeSlotConcept ? (
                           <div className="space-y-4">
@@ -3855,6 +3866,27 @@ ${parsedText}
                               </p>
                             </div>
                           )}
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { mode: 'select', label: '아바타 선택' },
+                              { mode: 'generate', label: '아바타 생성' },
+                            ].map((item) => (
+                              <button
+                                type="button"
+                                key={item.mode}
+                                onClick={() => setShortsAvatarMode(item.mode)}
+                                className={`px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${
+                                  shortsAvatarMode === item.mode
+                                    ? 'bg-primary text-white border-primary'
+                                    : 'bg-surface-light text-text-muted border-border hover:border-primary/30'
+                                }`}
+                              >
+                                {item.label}
+                              </button>
+                            ))}
+                          </div>
+                          {shortsAvatarMode === 'select' && (
+                          <>
                           <div className="flex flex-wrap gap-2">
                             {[
                               { id: 'dongwan_ssaem', label: '동완쌤' },
@@ -3953,6 +3985,91 @@ ${parsedText}
                               </div>
                             ))}
                           </div>
+                          </>
+                          )}
+                          {shortsAvatarMode === 'generate' && (
+                          <div className="rounded-xl border border-border bg-surface-light/40 p-3 space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold text-text">아바타 생성</p>
+                                <p className="text-xs text-text-muted mt-0.5">원하는 인물이나 캐릭터를 설명해 새 아바타 이미지를 만듭니다.</p>
+                              </div>
+                              {avatarImage && !heygenAvatarId && avatarConfirmed && (
+                                <span className="shrink-0 text-[11px] text-success flex items-center gap-1">
+                                  <CheckCircle size={11} /> 확정됨
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <input
+                                type="text"
+                                value={avatarPrompt}
+                                onChange={(e) => {
+                                  setAvatarPrompt(e.target.value)
+                                  if (avatarConfirmed && !heygenAvatarId) resetGeneratedAvatarSelection()
+                                }}
+                                placeholder="예: 도서관에서 공부하는 하얀 말티즈"
+                                className="min-w-0 flex-1 px-3 py-2.5 bg-surface border border-border rounded-lg text-sm text-text placeholder:text-text-muted/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                              />
+                              <button
+                                type="button"
+                                onClick={generateAvatar}
+                                disabled={!avatarPrompt.trim() || mediaItemLoading['아바타']}
+                                className="px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shrink-0"
+                              >
+                                {mediaItemLoading['아바타']
+                                  ? <><Loader2 size={14} className="animate-spin" /> 생성중</>
+                                  : avatarImage && !heygenAvatarId
+                                    ? <><RefreshCw size={14} /> 재생성</>
+                                    : <><Sparkles size={14} /> 생성</>}
+                              </button>
+                            </div>
+                            {avatarImage && !heygenAvatarId && (
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                                <div className={`w-28 rounded-xl overflow-hidden bg-surface shadow-sm ${avatarConfirmed ? 'border-2 border-success/50' : 'border-2 border-primary/30'}`} style={{ aspectRatio: '9/16' }}>
+                                  <img
+                                    src={avatarImage}
+                                    alt="생성 아바타"
+                                    className="w-full h-full object-cover cursor-pointer"
+                                    onClick={() => setLightboxImageUrl(avatarImage)}
+                                  />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {avatarConfirmed ? (
+                                    <>
+                                      <span className="text-sm text-success flex items-center gap-1"><CheckCircle size={12} /> 생성 아바타 확정됨</span>
+                                      <button
+                                        type="button"
+                                        onClick={resetGeneratedAvatarSelection}
+                                        className="px-3 py-1.5 bg-surface text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all border border-border"
+                                      >
+                                        변경
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={generateAvatar}
+                                        disabled={mediaItemLoading['아바타']}
+                                        className="px-3 py-1.5 bg-surface text-text-muted text-sm font-medium rounded-lg hover:bg-border transition-all border border-border flex items-center gap-1"
+                                      >
+                                        <RefreshCw size={11} /> 재시도
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={confirmGeneratedAvatar}
+                                        className="px-4 py-1.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-all flex items-center gap-1"
+                                      >
+                                        <CheckCircle size={11} /> 확정
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          )}
                           </>
                           )}
                         </div>
@@ -4103,6 +4220,64 @@ ${parsedText}
 
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.script}</span>
+                            <p className="text-base font-semibold text-text">대본 생성</p>
+                            {shortsScript && <CheckCircle size={14} className="text-success" />}
+                          </div>
+                          {shortsScript ? (
+                            <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => setShortsScriptExpanded((prev) => !prev)}
+                                className="w-full px-3 py-3 flex items-center justify-between gap-3 text-left hover:bg-surface transition-colors"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-text truncate">{shortsScript.title || '생성된 숏폼 대본'}</p>
+                                  <p className="text-xs text-text-muted mt-0.5">
+                                    {(shortsScript.duration || 30)}초 · {shortsScript.scenes?.length || 0}개 장면
+                                  </p>
+                                </div>
+                                {shortsScriptExpanded ? (
+                                  <ChevronUp size={16} className="text-text-muted shrink-0" />
+                                ) : (
+                                  <ChevronDown size={16} className="text-text-muted shrink-0" />
+                                )}
+                              </button>
+                              {shortsScriptExpanded && (
+                                <div className="border-t border-border px-3 py-3 space-y-3">
+                                  {shortsScript.hook && (
+                                    <div className="rounded-lg bg-primary/5 border border-primary/10 p-2.5">
+                                      <p className="text-[11px] font-semibold text-primary mb-1">HOOK</p>
+                                      <p className="text-sm text-text whitespace-pre-wrap">{shortsScript.hook}</p>
+                                    </div>
+                                  )}
+                                  {shortsScript.scenes?.map((scene, i) => (
+                                    <div key={i} className="border-l-2 border-primary/30 pl-3">
+                                      <p className="text-[11px] font-semibold text-primary">
+                                        Scene {i + 1}{scene.duration ? ` · ${scene.duration}초` : ''}
+                                      </p>
+                                      {scene.narration && <p className="text-sm text-text mt-1 whitespace-pre-wrap">{scene.narration}</p>}
+                                      {scene.visual && <p className="text-xs text-text-muted mt-1 whitespace-pre-wrap">{scene.visual}</p>}
+                                    </div>
+                                  ))}
+                                  {shortsScript.cta && (
+                                    <div className="rounded-lg bg-surface border border-border p-2.5">
+                                      <p className="text-[11px] font-semibold text-text-muted mb-1">CTA</p>
+                                      <p className="text-sm text-text whitespace-pre-wrap">{shortsScript.cta}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-border bg-surface-light p-3 text-xs text-text-muted">
+                              콘텐츠 생성 버튼을 누르면 숏폼 대본이 먼저 생성됩니다.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.video}</span>
                             <p className="text-base font-semibold text-text">영상 생성</p>
                             {shortsVideo && <CheckCircle size={14} className="text-success" />}
@@ -4203,23 +4378,29 @@ ${parsedText}
                             )
                           ) : (
                           <>
-                          {!avatarImage && !shortsVideo && <p className="text-xs text-text-muted">아바타를 생성하고 확정해주세요</p>}
+                          {!hasSingleAvatarChoice && !shortsVideo && <p className="text-xs text-text-muted">아바타를 선택하거나 생성 후 확정해주세요</p>}
                           {avatarConfirmed && heygenUploading && !heygenReady && !shortsVideo && (
                             <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
                               <Loader2 size={14} className="text-primary animate-spin" />
                               <p className="text-xs text-primary">아바타를 HeyGen에 등록 중입니다... 목소리를 선택해주세요.</p>
                             </div>
                           )}
-                          {avatarConfirmed && heygenReady && !selectedVoiceId && !shortsVideo && !loading.shorts && (
+                          {hasSingleAvatarChoice && !selectedVoiceId && !shortsVideo && !loading.shorts && (
                             <div className="flex items-center gap-2 p-2.5 bg-warning/10 rounded-lg border border-warning/20">
                               <AlertTriangle size={14} className="text-warning" />
                               <p className="text-xs text-warning">목소리를 선택해주세요. 아바타와 목소리를 모두 선택해야 영상을 생성할 수 있습니다.</p>
                             </div>
                           )}
-                          {avatarConfirmed && heygenReady && selectedVoiceId && !shortsVideo && !loading.shorts && (
+                          {hasSingleAvatarChoice && selectedVoiceId && shortsScript && !shortsVideo && !loading.shorts && (
                             <div className="flex items-center gap-2 p-2.5 bg-success/5 rounded-lg border border-success/20">
                               <CheckCircle size={14} className="text-success" />
                               <p className="text-xs text-success">아바타·목소리 준비 완료! 영상을 생성할 수 있습니다.</p>
+                            </div>
+                          )}
+                          {hasSingleAvatarChoice && selectedVoiceId && !shortsScript && !shortsVideo && !loading.shorts && (
+                            <div className="flex items-center gap-2 p-2.5 bg-primary/5 rounded-lg border border-primary/20">
+                              <Loader2 size={14} className="text-primary animate-spin" />
+                              <p className="text-xs text-primary">대본 생성 후 영상을 생성할 수 있습니다.</p>
                             </div>
                           )}
                           </>
