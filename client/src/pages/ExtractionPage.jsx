@@ -102,6 +102,29 @@ async function cropDataUrlToShortsPortrait(dataUrl) {
   }
 }
 
+function countShortsDataSignals(text) {
+  const source = String(text || '')
+  if (!source.trim()) return 0
+
+  return [
+    ...(source.match(/\d+(?:[.,]\d+)?\s*(?:%|퍼센트|점|명|개|곳|원|만원|억원|등급|년|월|일|배|위|건|회|p|포인트|장|초|분|시간)/gi) || []),
+    ...(source.match(/\d+\s*[:/]\s*\d+/g) || []),
+    ...(source.match(/\d+(?:[.,]\d+)?/g) || []),
+    ...(source.match(/(?:증가|감소|상승|하락|비교|경쟁률|합격률|정원|비율|통계|평균|최고|최저|상위|하위|순위|데이터|그래프|차트)/g) || []),
+  ].length
+}
+
+function sceneHasEnoughInfographicData(scene) {
+  if (scene?.layout !== 'infographic-full') return false
+  const source = [
+    scene?.caption,
+    scene?.narration,
+    scene?.textOverlay,
+    scene?.visualDescription,
+  ].filter(Boolean).join(' ')
+  return countShortsDataSignals(source) >= 4
+}
+
 function buildSessionPersistedResultDraft(resultState = {}) {
   return {
     ...resultState,
@@ -1805,12 +1828,11 @@ DO NOT:
   // 인포그래픽 씬은 Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다.
   // infographic-full 이지만 보여줄 데이터(숫자)가 없는 씬은 아바타 씬으로 폴백한다.
   // 자막은 아바타 씬에만 (server 가 infographic-full 씬은 skip).
-  const runHybridSegmentedShorts = async ({ targetScript, avatarId, voiceId }) => {
+  const runHybridSegmentedShorts = async ({ targetScript, avatarId, voiceId, mergeAvatarSegments = false }) => {
     const scenes = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
     if (scenes.length === 0) throw new Error('쇼츠 대본에 씬이 없습니다.')
     const sceneText = (s) => String(s?.caption || s?.narration || '')
-    const hasData = (s) => /\d/.test(`${sceneText(s)} ${s?.textOverlay || ''}`)
-    const typeOf = (s) => ((s?.layout === 'infographic-full' && hasData(s)) ? 'info' : 'avatar')
+    const typeOf = (s) => (sceneHasEnoughInfographicData(s) ? 'info' : 'avatar')
 
     // 연속 동일 타입을 세그먼트로 묶는다(순서 유지).
     const segments = []
@@ -1843,12 +1865,24 @@ DO NOT:
       const seg = segments[si]
       setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `세그먼트 ${si + 1}/${segments.length} 생성 중 (${seg.type === 'info' ? '인포그래픽' : '아바타'})...` }))
       if (seg.type === 'avatar') {
-        const video_inputs = seg.scenes
-          .map((scene) => ({
-            character: { type: 'talking_photo', talking_photo_id: avatarId },
-            voice: { type: 'text', input_text: toSpokenText(sceneText(scene).trim()), voice_id: voiceId },
-          }))
-          .filter((v) => v.voice.input_text && v.voice.voice_id)
+        const video_inputs = mergeAvatarSegments
+          ? [{
+              character: { type: 'talking_photo', talking_photo_id: avatarId },
+              voice: {
+                type: 'text',
+                input_text: seg.scenes
+                  .map((scene) => toSpokenText(sceneText(scene).trim()))
+                  .filter(Boolean)
+                  .join(' '),
+                voice_id: voiceId,
+              },
+            }].filter((v) => v.voice.input_text && v.voice.voice_id)
+          : seg.scenes
+              .map((scene) => ({
+                character: { type: 'talking_photo', talking_photo_id: avatarId },
+                voice: { type: 'text', input_text: toSpokenText(sceneText(scene).trim()), voice_id: voiceId },
+              }))
+              .filter((v) => v.voice.input_text && v.voice.voice_id)
         if (video_inputs.length === 0) continue
         const r = await apiFetch('/api/heygen/video/generate', {
           method: 'POST',
@@ -2012,6 +2046,23 @@ DO NOT:
         console.log(`[shorts] avatar group 랜덤 룩 선택: ${talkingPhotoId} → ${resolvedAvatarId}`)
       }
 
+      const noConceptHasInfographicScenes = !conceptForRun
+        && Array.isArray(targetScript?.scenes)
+        && targetScript.scenes.some(sceneHasEnoughInfographicData)
+      if (noConceptHasInfographicScenes) {
+        const finalVideo = await runHybridSegmentedShorts({
+          targetScript,
+          avatarId: resolvedAvatarId,
+          voiceId: selectedVoiceId,
+          mergeAvatarSegments: true,
+        })
+        if (!finalVideo) throw new Error('무컨셉 하이브리드 영상 생성 실패')
+        setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
+        setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
+        setStepLoading('shorts', false)
+        return
+      }
+
       // 하이브리드 컨셉(인포그래픽+verbatim): 세그먼트 렌더+합치기 경로로 처리하고 종료.
       if (conceptForRun?.hybridSegments) {
         const fbPreset = findPresetShortsAvatar(conceptForRun.preferredAvatarIds?.[0])
@@ -2139,7 +2190,7 @@ DO NOT:
           && conceptAvatarIds.length === 1
           && scenesForStandard.every((s) => !s?.avatarId
             && s?.layout !== 'quiz-countdown'
-            && s?.layout !== 'infographic-full')
+            && !sceneHasEnoughInfographicData(s))
 
         // voice override: 사용자가 voice 그리드에서 voice 를 골랐고 컨셉이 솔로면 그 voice 로 통일.
         // 멀티 컨셉은 인물별 voice 가 따로 필요하므로 override 하지 않는다.

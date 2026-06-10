@@ -1461,7 +1461,7 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - layout 후보: 'full' (풀화면 1인), 'infographic-full' (풀화면 인포그래픽 · 아바타 미노출 · 보이스오버), 'quiz-countdown' (퀴즈 대기 씬 · 같은 인물 idle · 3초 카운트다운 배경).
 - 'infographic-full' 을 쓰면 scenes[].visualDescription 에 headline, hero value(예: "+12.4%"), chart 종류(bar/pie/line), subtitle, 색상 톤(예: navy + gold)을 영어로 한 문장에 자세히 풀어 쓰세요 — HeyGen Video Agent 가 이 묘사대로 풀화면 인포그래픽을 직접 생성하며, 아바타는 자동으로 숨겨집니다. "no avatar visible", "no people" 을 반드시 포함하세요. 인포그래픽 씬은 첫 씬·마지막 씬에는 쓰지 말고, 수치·통계·비교 또는 강조 키워드가 핵심인 중간 씬에만 쓰세요.
 - 퀴즈형 컨셉(ox_quiz)은 각 문제를 질문 씬('full') → 대기 씬('quiz-countdown', narration 은 빈 문자열) → 정답 씬('full') 3개로 구성하고, 한 문제의 3개 씬은 모두 같은 avatarId 를 지정하세요. 대기 씬 배경 카운트다운 영상은 시스템이 자동 처리하니 visualDescription 만 채우면 됩니다.
-- 컨셉이 선택되지 않았다면: 첫 씬과 마지막 씬은 'full'(아바타가 말하는 화면)로 두고, 중간 씬들은 수치·통계·데이터가 핵심인 씬이면 'infographic-full'(HeyGen 자체 인포그래픽 화면), 그 외에는 'full' 로 지정하세요.
+- 컨셉이 선택되지 않았다면: 기본값은 모든 씬을 'full'(한 아바타가 자연스럽게 이어서 말하는 화면)로 두세요. 단, 중간 씬에 서로 비교 가능한 수치·통계·비율·순위·증감 데이터가 충분히 많아 차트/그래프로 보여주는 편이 명확한 경우에만 'infographic-full' 로 지정하세요. 단순 연도·날짜·숫자 1개 정도는 인포그래픽으로 만들지 말고 'full' 로 유지하세요.
 - 숏폼 배경은 아바타 자체 배경 또는 컨셉이 지정한 단색만 사용합니다. 별도 배경 이미지 합성은 하지 않습니다.
 - visualDescription 은 항상 영어로, 인물 외형·자세·배경·조명·프레이밍을 한 문장으로 충분히 묘사하세요(인포그래픽 씬은 인물 없이 차트·수치 시각화 묘사).
 
@@ -1487,4 +1487,3 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
     }),
   )
 }
-
