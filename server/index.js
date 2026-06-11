@@ -174,7 +174,20 @@ app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path === '/api/output/upload') return next()
   if (req.path === '/api/output/save') return next()
-  express.json({ limit: '150mb' })(req, res, next)
+  express.json({ limit: '150mb' })(req, res, (err) => {
+    if (!err) return next()
+    if (err.type === 'request.aborted' || err.code === 'ECONNABORTED') {
+      console.warn(`[Request] JSON body aborted: ${req.method} ${req.originalUrl || req.url}`)
+      if (!res.headersSent) {
+        return res.status(400).json({ error: '요청 본문 수신 중 연결이 중단되었습니다.' })
+      }
+      return undefined
+    }
+    if (err.type === 'entity.too.large') {
+      return res.status(413).json({ error: '요청 본문이 너무 큽니다.' })
+    }
+    return next(err)
+  })
 })
 
 // API secret middleware for protected /api routes.

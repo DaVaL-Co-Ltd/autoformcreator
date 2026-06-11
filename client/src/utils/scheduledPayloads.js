@@ -1,4 +1,5 @@
-﻿import { cleanCardText as sharedCleanCardText } from './contentImageOverlay'
+﻿import { uploadDataImageUrlToStorage } from '../services/storage'
+import { cleanCardText as sharedCleanCardText } from './contentImageOverlay'
 import { buildInstagramUploadImageUrls } from './uploadImageComposite'
 
 function ensureArray(value) {
@@ -30,6 +31,27 @@ function trimCaption(text = '') {
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+async function normalizeScheduledImageUrls(imageUrls = []) {
+  const urls = ensureArray(imageUrls).filter(Boolean)
+  const normalized = []
+
+  for (let index = 0; index < urls.length; index += 1) {
+    const url = urls[index]
+    if (typeof url === 'string' && url.startsWith('data:image/')) {
+      try {
+        normalized.push(await uploadDataImageUrlToStorage(url, `instagram-scheduled-${index + 1}`))
+      } catch (error) {
+        console.warn('[scheduledPayloads] 예약 이미지 Storage 업로드 실패, 서버 정규화로 대체:', error)
+        normalized.push(url)
+      }
+      continue
+    }
+    normalized.push(url)
+  }
+
+  return normalized
 }
 
 export function buildInstagramCaption(instagramContent = {}) {
@@ -75,9 +97,12 @@ export async function buildInstagramScheduledUploadContent(source = {}) {
     instagramContent,
     instagramImages: rawImages,
   })
+  const normalizedImageUrls = await normalizeScheduledImageUrls(
+    imageUrls.length > 0 ? imageUrls : baseContent.imageUrls,
+  )
 
   return {
     ...baseContent,
-    imageUrls: imageUrls.length > 0 ? imageUrls : baseContent.imageUrls,
+    imageUrls: normalizedImageUrls,
   }
 }
