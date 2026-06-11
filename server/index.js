@@ -1897,6 +1897,37 @@ function pushUniquePlatformAccount(accounts, account) {
   accounts.push(account)
 }
 
+function normalizeAccountsToTokenBackedIds(accounts, tokenBackedAccounts) {
+  if (!Array.isArray(tokenBackedAccounts) || !tokenBackedAccounts.length) return accounts
+
+  const tokenByProviderId = new Map()
+  for (const account of tokenBackedAccounts) {
+    const providerAccountId = String(account?.providerAccountId || '').trim()
+    if (!providerAccountId) continue
+    const existing = tokenByProviderId.get(providerAccountId)
+    if (!existing || (existing.id === 'default' && account.id !== 'default')) {
+      tokenByProviderId.set(providerAccountId, account)
+    }
+  }
+
+  const normalized = []
+  for (const account of accounts) {
+    const providerAccountId = String(account?.providerAccountId || '').trim()
+    const tokenBackedAccount = providerAccountId ? tokenByProviderId.get(providerAccountId) : null
+    const nextAccount = tokenBackedAccount
+      ? {
+          ...account,
+          id: tokenBackedAccount.id,
+          isDefault: Boolean(account.isDefault || tokenBackedAccount.isDefault),
+          updatedAt: account.updatedAt || tokenBackedAccount.updatedAt || null,
+        }
+      : account
+    pushUniquePlatformAccount(normalized, nextAccount)
+  }
+
+  return normalized
+}
+
 async function listTokenBackedPlatformAccounts(platform) {
   const accounts = []
 
@@ -1996,7 +2027,8 @@ async function listPlatformAccounts(platform) {
     }
   }
 
-  for (const account of await listTokenBackedPlatformAccounts(platform)) {
+  const tokenBackedAccounts = await listTokenBackedPlatformAccounts(platform)
+  for (const account of tokenBackedAccounts) {
     pushUniquePlatformAccount(accounts, account)
   }
 
@@ -2016,11 +2048,15 @@ async function listPlatformAccounts(platform) {
     pushUniquePlatformAccount(accounts, accountFromYoutubeTokens('default', ytTokens, true))
   }
 
-  if (platform === 'youtube' && accounts.some((account) => account.id !== 'default')) {
-    return accounts.filter((account) => account.id !== 'default')
+  const normalizedAccounts = platform === 'instagram'
+    ? normalizeAccountsToTokenBackedIds(accounts, tokenBackedAccounts)
+    : accounts
+
+  if (platform === 'youtube' && normalizedAccounts.some((account) => account.id !== 'default')) {
+    return normalizedAccounts.filter((account) => account.id !== 'default')
   }
 
-  return accounts
+  return normalizedAccounts
 }
 
 function isInstagramOAuthConfigured() {
@@ -4063,6 +4099,37 @@ app.post('/api/scheduled/run', async (req, res) => {
   try {
     // Find pending rows whose scheduled time has already passed.
     const nowIso = new Date().toISOString()
+    // If a previous cron/request died after marking the row as uploading, the row
+    // would otherwise never be picked up again. Keep the grace period short so a
+    // stuck Instagram reservation retries on the next cron cycle, while avoiding
+    // immediate duplicate uploads from an in-flight request.
+    const staleUploadingCutoffIso = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
+    const { data: staleUploadingItems, error: staleErr } = await supabaseAdmin
+      .from('scheduled_uploads')
+      .select('id, attempts, scheduled_at, created_at')
+      .eq('status', 'uploading')
+      .lte('scheduled_at', staleUploadingCutoffIso)
+      .limit(10)
+
+    if (staleErr) {
+      console.warn('[scheduled/run] stale uploading lookup failed:', staleErr.message)
+    } else if (Array.isArray(staleUploadingItems) && staleUploadingItems.length) {
+      const staleIds = staleUploadingItems.map((item) => item.id).filter(Boolean)
+      const { error: resetErr } = await supabaseAdmin
+        .from('scheduled_uploads')
+        .update({
+          status: 'pending',
+          error: '이전 예약 실행이 중단되어 자동 재시도합니다.',
+        })
+        .in('id', staleIds)
+      if (resetErr) {
+        console.warn('[scheduled/run] stale uploading reset failed:', resetErr.message)
+      } else {
+        console.info('[scheduled/run] reset stale uploading rows', { count: staleIds.length, ids: staleIds })
+      }
+    }
+
     const { data: dueItems, error: fetchErr } = await supabaseAdmin
       .from('scheduled_uploads')
       .select('*')
@@ -4072,6 +4139,11 @@ app.post('/api/scheduled/run', async (req, res) => {
       .limit(10)
 
     if (fetchErr) throw fetchErr
+    console.info('[scheduled/run] due lookup', {
+      now: nowIso,
+      dueCount: dueItems?.length || 0,
+      ids: (dueItems || []).map((item) => item.id),
+    })
 
     const results = []
     for (const item of (dueItems || [])) {
@@ -4086,6 +4158,13 @@ app.post('/api/scheduled/run', async (req, res) => {
         const scheduledAccountIds = Array.isArray(item.account_ids) && item.account_ids.length
           ? item.account_ids
           : (item.account_id ? [item.account_id] : [null])
+        console.info('[scheduled/run] processing row', {
+          id: item.id,
+          platform: item.platform,
+          extractionId: item.extraction_id,
+          scheduledAt: item.scheduled_at,
+          accountIds: scheduledAccountIds.map((id) => id || 'default'),
+        })
 
         // 예약 실행 경로는 인스타그램만 유지한다.
         // 레거시 YouTube/블로그 예약 실행 경로는 제거됨
@@ -4259,6 +4338,12 @@ app.post('/api/scheduled/run', async (req, res) => {
         results.push({ id: item.id, ok: true, url: uploadResult?.url })
 
       } catch (uploadErr) {
+        console.error('[scheduled/run] upload failed', {
+          id: item.id,
+          platform: item.platform,
+          extractionId: item.extraction_id,
+          error: uploadErr.message,
+        })
         await supabaseAdmin
           .from('scheduled_uploads')
           .update({
@@ -4270,8 +4355,10 @@ app.post('/api/scheduled/run', async (req, res) => {
       }
     }
 
+    console.info('[scheduled/run] completed', { processed: results.length, results })
     res.json({ processed: results.length, results })
   } catch (err) {
+    console.error('[scheduled/run] failed:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
