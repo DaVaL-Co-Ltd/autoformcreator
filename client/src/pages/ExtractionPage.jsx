@@ -4063,7 +4063,7 @@ ${parsedText}
                               </button>
                             ))}
                           </div>
-                          {shortsAvatarMode === 'select' ? (
+                          {shortsAvatarMode === 'select' && (
                           <>
                           <div className="flex flex-wrap gap-2">
                             {[
@@ -4165,7 +4165,8 @@ ${parsedText}
                             ))}
                           </div>
                           </>
-                          ) : (
+                          )}
+                          {shortsAvatarMode === 'generate' && (
                           <div className="rounded-xl border border-border bg-surface-light/40 p-3 space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <div>
