@@ -2769,10 +2769,14 @@ export default function ExtractionResultPage() {
                 content: {
                   title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
                   uploadTargets: selectedTargets,
+                  accountIdsByPlatform: {
+                    instagram: selectedTargets.instagram ? (accountIds || []) : [],
+                  },
                 },
                 scheduledAt,
                 extractionId: id,
                 scheduledId,
+                accountIds: selectedTargets.instagram ? accountIds : null,
               })
               setScheduleInfo(p => ({
                 ...p,
@@ -2780,6 +2784,7 @@ export default function ExtractionResultPage() {
                   scheduledAt: savedSchedule.scheduledAt,
                   scheduledId: savedSchedule.id,
                   uploadTargets: selectedTargets,
+                  accountIds: savedSchedule.accountIds || accountIds || [],
                 },
               }))
             } catch (err) {
@@ -2792,6 +2797,7 @@ export default function ExtractionResultPage() {
               scheduledAt,
               nativeSchedule: false,
               uploadTargets: selectedTargets,
+              accountIds: selectedTargets.instagram ? (accountIds || []) : [],
             })
             setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
             return

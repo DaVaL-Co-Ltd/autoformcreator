@@ -133,7 +133,7 @@ function ScheduleDialogBody({
 
   const showsNativeScheduleNotice = platform === 'blog'
   const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
-  const needsInstagramAccountSelection = platform === 'instagram' || platform === 'shorts_instagram'
+  const needsInstagramAccountSelection = platform === 'instagram' || platform === 'shorts_instagram' || (platform === 'shorts' && shortsTargets.instagram)
 
   useEffect(() => {
     if (!needsInstagramAccountSelection) return undefined
@@ -162,7 +162,7 @@ function ScheduleDialogBody({
     return () => {
       active = false
     }
-  }, [content?.accountIds, needsInstagramAccountSelection])
+  }, [content?.accountIds, needsInstagramAccountSelection, shortsTargets.instagram])
 
   const toggleInstagramAccount = (accountId) => {
     setSelectedInstagramAccountIds((prev) => (

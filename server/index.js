@@ -1932,6 +1932,12 @@ function firstSupabaseRow(data) {
   return Array.isArray(data) ? data[0] : data
 }
 
+function normalizeAccountIdList(value) {
+  return Array.isArray(value)
+    ? value.map((id) => sanitizeAccountId(id)).filter(Boolean)
+    : []
+}
+
 async function listTokenBackedPlatformAccounts(platform) {
   const accounts = []
 
@@ -3871,10 +3877,13 @@ app.post('/api/scheduled/create', async (req, res) => {
     }
 
     const normalizedContent = await normalizeScheduledContent(platform, content)
-    const normalizedAccountIds = Array.isArray(accountIds)
-      ? accountIds.map((id) => sanitizeAccountId(id)).filter(Boolean)
-      : []
-    const normalizedAccountId = accountId ? sanitizeAccountId(accountId) : (normalizedAccountIds[0] || null)
+    const contentAccountIds = normalizeAccountIdList(normalizedContent?.accountIds)
+    const contentInstagramAccountIds = normalizeAccountIdList(normalizedContent?.accountIdsByPlatform?.instagram)
+    const normalizedAccountIds = normalizeAccountIdList(accountIds)
+    const effectiveAccountIds = normalizedAccountIds.length
+      ? normalizedAccountIds
+      : (contentAccountIds.length ? contentAccountIds : contentInstagramAccountIds)
+    const normalizedAccountId = accountId ? sanitizeAccountId(accountId) : (effectiveAccountIds[0] || null)
 
     if (scheduledId) {
       const { data, error } = await supabaseAdmin
@@ -3887,7 +3896,7 @@ app.post('/api/scheduled/create', async (req, res) => {
           uploaded_at: null,
           error: null,
           account_id: normalizedAccountId,
-          account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
+          account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
         })
         .eq('id', scheduledId)
         .eq('extraction_id', extractionId)
@@ -3922,7 +3931,7 @@ app.post('/api/scheduled/create', async (req, res) => {
           scheduled_at: scheduledAt,
           content: normalizedContent || first.content || {},
           account_id: normalizedAccountId,
-          account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
+          account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
         })
         .eq('id', first.id)
         .select()
@@ -3939,7 +3948,7 @@ app.post('/api/scheduled/create', async (req, res) => {
         scheduled_at: scheduledAt,
         status: 'pending',
         account_id: normalizedAccountId,
-        account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
+        account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
       })
       .select()
     if (error) throw error
@@ -4167,12 +4176,28 @@ app.post('/api/scheduled/run', async (req, res) => {
         const scheduledAccountIds = Array.isArray(item.account_ids) && item.account_ids.length
           ? item.account_ids
           : (item.account_id ? [item.account_id] : [null])
+        const scheduledAccountIdsByPlatform = item.content?.accountIdsByPlatform && typeof item.content.accountIdsByPlatform === 'object'
+          ? item.content.accountIdsByPlatform
+          : {}
+        const getScheduledAccountIdsFor = (platformKey) => {
+          const platformIds = normalizeAccountIdList(scheduledAccountIdsByPlatform[platformKey])
+          if (platformIds.length) return platformIds
+          if (platformKey === 'instagram') {
+            const contentInstagramIds = normalizeAccountIdList(item.content?.accountIds)
+            if (contentInstagramIds.length) return contentInstagramIds
+          }
+          if (item.platform === 'shorts' && platformKey === 'youtube') {
+            return [null]
+          }
+          return scheduledAccountIds
+        }
         console.info('[scheduled/run] processing row', {
           id: item.id,
           platform: item.platform,
           extractionId: item.extraction_id,
           scheduledAt: item.scheduled_at,
           accountIds: scheduledAccountIds.map((id) => id || 'default'),
+          accountIdsByPlatform: scheduledAccountIdsByPlatform,
         })
 
         // 예약 실행 경로는 인스타그램만 유지한다.
@@ -4213,7 +4238,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
           const accountResults = {}
           const failures = []
-          for (const accountId of scheduledAccountIds) {
+          for (const accountId of getScheduledAccountIdsFor('instagram')) {
             try {
               const result = await publishInstagramPostV2({ imageUrls: publicImageUrls, caption, accountId })
               accountResults[accountId || 'default'] = result
@@ -4253,7 +4278,7 @@ app.post('/api/scheduled/run', async (req, res) => {
           if (targets.instagram) {
             const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
             const accountResults = {}
-            for (const accountId of scheduledAccountIds) {
+            for (const accountId of getScheduledAccountIdsFor('instagram')) {
               const result = await publishInstagramReelV2({
                 videoUrl: publicVideoUrl,
                 caption: buildReelsCaption(script),
@@ -4269,7 +4294,7 @@ app.post('/api/scheduled/run', async (req, res) => {
 
           if (targets.youtube) {
             const accountResults = {}
-            for (const accountId of scheduledAccountIds) {
+            for (const accountId of getScheduledAccountIdsFor('youtube')) {
               const result = await publishYouTubeVideoUpload({
                 ...buildShortsUploadPayload({ script, videoUrl }),
                 accountId,

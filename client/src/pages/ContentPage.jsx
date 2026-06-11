@@ -662,16 +662,21 @@ export default function ContentPage() {
         content: {
           title: target?.title || '',
           uploadTargets: selectedTargets,
+          accountIdsByPlatform: {
+            instagram: selectedTargets.instagram ? (info.accountIds || []) : [],
+          },
         },
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
+        accountIds: selectedTargets.instagram ? info.accountIds : null,
       })
       await updateUploadStatus(extractionId, channel, {
         ...info,
         status: 'scheduled',
         nativeSchedule: false,
         uploadTargets: selectedTargets,
+        accountIds: selectedTargets.instagram ? (info.accountIds || []) : [],
       })
       await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
       return
