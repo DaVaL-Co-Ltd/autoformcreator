@@ -822,6 +822,63 @@ export default function ExtractionPage() {
     ]
   }, [groupLooks, presetAvatarPreviews])
 
+  const buildSlotAvatarOptions = (category, presets = []) => {
+    const categoryItems = category === 'teachers'
+      ? avatarCategories
+          .filter((avatarCategory) => avatarCategory.id === 'dongwan_ssaem' || avatarCategory.id === 'fry_ssaem')
+          .flatMap((avatarCategory) => avatarCategory.items)
+      : (avatarCategories.find((avatarCategory) => avatarCategory.id === 'students')?.items || [])
+
+    if (categoryItems.length > 0) {
+      const countsByPresetId = categoryItems.reduce((acc, item) => {
+        acc[item.preset.id] = (acc[item.preset.id] || 0) + 1
+        return acc
+      }, {})
+      const seenByPresetId = {}
+
+      return categoryItems.map((item) => {
+        seenByPresetId[item.preset.id] = (seenByPresetId[item.preset.id] || 0) + 1
+        const hasVariants = countsByPresetId[item.preset.id] > 1
+        return {
+          key: item.key,
+          preset: item.preset,
+          avatarId: item.lookId,
+          avatarKind: item.lookKind,
+          preview: item.preview,
+          label: hasVariants ? `${item.preset.name} ${seenByPresetId[item.preset.id]}` : item.preset.name,
+          isPrimary: seenByPresetId[item.preset.id] === 1,
+        }
+      })
+    }
+
+    return presets.flatMap((preset) => {
+      if (preset.avatarGroupId) {
+        const looks = pickAvatarGroupDisplayLooks(groupLooks[preset.avatarGroupId] || [])
+        if (looks.length > 0) {
+          return looks.map((look, index) => ({
+            key: `${preset.id}:${look.id}`,
+            preset,
+            avatarId: look.id,
+            avatarKind: normalizeHeygenAvatarKind(look.kind),
+            preview: look.preview || null,
+            label: looks.length > 1 ? `${preset.name} ${index + 1}` : preset.name,
+            isPrimary: index === 0,
+          }))
+        }
+      }
+
+      return [{
+        key: preset.id,
+        preset,
+        avatarId: preset.avatarId,
+        avatarKind: 'talking_photo',
+        preview: presetAvatarPreviews[preset.avatarId] || null,
+        label: preset.name,
+        isPrimary: true,
+      }]
+    })
+  }
+
   // 단일 컨셉이 그룹형 아바타(동완쌤·후라이쌤)를 자동 선택하면 heygenAvatarId 에 그룹 ID 가 들어간다.
   // 그리드 카드는 그룹을 펼친 개별 룩(look.id)이라 그룹 ID 로는 어떤 카드도 선택 표시되지 않으므로,
   // 그룹 룩이 로드되면 첫 룩으로 치환해 실제 카드가 선택돼 보이게 한다.
@@ -1050,8 +1107,11 @@ export default function ExtractionPage() {
       }
       if (!sel?.voiceId) return `'${slotDef.role}'의 목소리를 선택해주세요.`
     }
-    const presetIds = slots.slice(0, concept.avatarSlots.length).map((s) => s.presetId)
-    if (new Set(presetIds).size !== presetIds.length) return '서로 다른 아바타 2명을 선택해주세요.'
+    const avatarIds = slots.slice(0, concept.avatarSlots.length).map((s) => {
+      const preset = findPresetById(s?.presetId)
+      return s?.avatarId || preset?.avatarId || s?.presetId
+    })
+    if (new Set(avatarIds).size !== avatarIds.length) return '서로 다른 아바타 2명을 선택해주세요.'
     return null
   }
 
@@ -2142,7 +2202,9 @@ DO NOT:
           selectedConcept.avatarSlots.map(async (slotDef, i) => {
             const sel = conceptAvatarSlots[i] || {}
             const preset = findPresetById(sel.presetId)
-            const avatarCharacter = await resolveAvatarGroupCharacter(preset?.avatarId)
+            const selectedSlotAvatarId = sel.avatarId || preset?.avatarId
+            const selectedSlotAvatarKind = sel.avatarKind || (sel.avatarId ? 'talking_photo' : undefined)
+            const avatarCharacter = await resolveAvatarGroupCharacter(selectedSlotAvatarId, selectedSlotAvatarKind)
             return { defaultId: selectedConcept.preferredAvatarIds?.[i], avatarId: avatarCharacter.id, avatarKind: avatarCharacter.kind, voiceId: sel.voiceId || preset?.defaultVoiceId }
           })
         )
@@ -3957,6 +4019,7 @@ ${parsedText}
                             {activeSlotConcept.avatarSlots.map((slotDef, slotIndex) => {
                               const sel = conceptAvatarSlots[slotIndex] || {}
                               const slotPresets = getPresetsByCategory(slotDef.category)
+                              const slotAvatarOptions = buildSlotAvatarOptions(slotDef.category, slotPresets)
                               const catLabel = slotDef.category === 'teachers' ? '동완쌤·후라이쌤' : '제자 카테고리'
                               const selVoice = myVoices.find((mv) => mv.voice_id === sel.voiceId)
                               return (
@@ -3967,29 +4030,33 @@ ${parsedText}
                                     {sel.presetId && sel.voiceId && <CheckCircle size={13} className="text-success" />}
                                   </div>
                                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-                                    {slotPresets.map((preset) => {
-                                      const isSel = sel.presetId === preset.id
-                                      const preview = presetAvatarPreviews[preset.avatarId]
-                                        || (preset.avatarGroupId ? pickPortraitLooks(groupLooks[preset.avatarGroupId])?.[0]?.preview : null)
-                                        || null
+                                    {slotAvatarOptions.map((option) => {
+                                      const isSel = sel.avatarId
+                                        ? sel.avatarId === option.avatarId
+                                        : sel.presetId === option.preset.id && option.isPrimary
                                       return (
                                         <button
                                           type="button"
-                                          key={preset.id}
-                                          onClick={() => updateSlot(slotIndex, { presetId: preset.id })}
+                                          key={option.key}
+                                          onClick={() => updateSlot(slotIndex, {
+                                            presetId: option.preset.id,
+                                            avatarId: option.avatarId,
+                                            avatarKind: option.avatarKind,
+                                            preview: option.preview,
+                                          })}
                                           className={`relative rounded-lg border overflow-hidden bg-surface text-left transition-all ${isSel ? 'border-primary/60 ring-2 ring-primary/30' : 'border-border hover:border-primary/30'}`}
-                                          aria-label={`${slotDef.role} - ${preset.name} 선택`}
+                                          aria-label={`${slotDef.role} - ${option.label} 선택`}
                                         >
                                           <div className="relative bg-surface" style={{ aspectRatio: '9/16' }}>
-                                            {preview ? (
-                                              <img src={preview} alt="" className="h-full w-full object-cover" />
+                                            {option.preview ? (
+                                              <img src={option.preview} alt="" className="h-full w-full object-cover" />
                                             ) : (
                                               <div className="h-full w-full flex items-center justify-center text-[10px] text-text-muted">
                                                 <Loader2 size={12} className="animate-spin" />
                                               </div>
                                             )}
                                           </div>
-                                          <span className="block px-1.5 py-1 text-[11px] font-medium text-text truncate">{preset.name}</span>
+                                          <span className="block px-1.5 py-1 text-[11px] font-medium text-text truncate">{option.label}</span>
                                           {isSel && (
                                             <span className="absolute top-1 right-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-white">
                                               <CheckCircle size={10} />

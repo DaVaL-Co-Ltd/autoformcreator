@@ -3237,10 +3237,50 @@ loadInstagramTokens().then((tokens) => {
   }
 })
 
+async function validateInstagramAuthMaterial(auth) {
+  if (!auth?.accessToken || !auth?.businessId) {
+    return null
+  }
+
+  const data = await instagramGraphGet(auth.businessId, auth.accessToken, {
+    fields: 'id,username',
+  })
+
+  return {
+    auth,
+    username: data.username || auth.username || null,
+  }
+}
+
 async function validateInstagramSession() {
   const fallback = getInstagramFallbackAuth()
   const auth = getInstagramAuthMaterial()
   const accounts = await listPlatformAccounts('instagram')
+  let accountValidationError = null
+
+  for (const account of accounts) {
+    if (!account?.id || account.id === 'default') continue
+
+    try {
+      const accountAuth = await getInstagramAuthMaterialForAccount(account.id)
+      const validated = await validateInstagramAuthMaterial(accountAuth)
+      if (!validated) continue
+
+      return {
+        connected: true,
+        hasAccessToken: true,
+        hasBusinessId: true,
+        mode: validated.auth.mode,
+        state: 'connected',
+        username: validated.username || String(account.username || account.displayName || '').replace(/^@/, '') || null,
+        canReconnect: isInstagramOAuthConfigured(),
+        canDisconnect: validated.auth.mode === 'oauth',
+        accounts,
+      }
+    } catch (error) {
+      accountValidationError ||= error.message
+    }
+  }
 
   if (!auth?.accessToken || !auth?.businessId) {
     return {
@@ -3249,6 +3289,7 @@ async function validateInstagramSession() {
       hasBusinessId: false,
       mode: isInstagramOAuthConfigured() ? 'oauth' : 'server-token',
       state: accounts.length > 0 ? 'connected' : (isInstagramOAuthConfigured() ? 'expired' : 'unconfigured'),
+      validationError: accounts.length > 0 ? accountValidationError : null,
       canReconnect: isInstagramOAuthConfigured(),
       canDisconnect: false,
       accounts,
@@ -3256,9 +3297,7 @@ async function validateInstagramSession() {
   }
 
   try {
-    const data = await instagramGraphGet(auth.businessId, auth.accessToken, {
-      fields: 'id,username',
-    })
+    const validated = await validateInstagramAuthMaterial(auth)
 
     return {
       connected: true,
@@ -3266,7 +3305,7 @@ async function validateInstagramSession() {
       hasBusinessId: true,
       mode: auth.mode,
       state: 'connected',
-      username: data.username || auth.username || null,
+      username: validated?.username || auth.username || null,
       canReconnect: isInstagramOAuthConfigured(),
       canDisconnect: auth.mode === 'oauth',
       accounts,
