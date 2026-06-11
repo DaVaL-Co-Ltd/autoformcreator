@@ -360,6 +360,7 @@ function toContentItems(extractions, scheduledMap = new Map()) {
         uploadedAt: uploadInfo.uploadedAt || null,
         scheduledId: scheduledMeta?.id || null,
         scheduledContent: scheduledMeta?.content || null,
+        scheduledAccountIds: scheduledMeta?.accountIds || [],
         uploadTargets: uploadInfo.uploadTargets || scheduledMeta?.content?.uploadTargets || null,
       }
     })
@@ -628,9 +629,10 @@ export default function ContentPage() {
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
+        accountIds: channel === 'shorts_instagram' ? info.accountIds : null,
       })
       const merged = buildShortsUploadStatus(target?.uploadStatusMap?.shorts, {
-        [shortsPlatformKey]: { status: 'scheduled', scheduledAt: info.scheduledAt },
+        [shortsPlatformKey]: { status: 'scheduled', scheduledAt: info.scheduledAt, accountIds: info.accountIds || [] },
       })
       await updateUploadStatus(extractionId, 'shorts', merged)
       await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
@@ -688,6 +690,7 @@ export default function ContentPage() {
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
+        accountIds: channel === 'instagram' ? info.accountIds : null,
       })
     }
 
@@ -1196,20 +1199,26 @@ export default function ContentPage() {
           : scheduleTarget?.channel}
         lockPlatform={true}
         content={scheduleTarget?.shortsPlatform
-          ? { title: scheduleTarget?.title }
+          ? {
+            title: scheduleTarget?.title,
+            accountIds: scheduleTarget.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.accountIds || [],
+          }
           : scheduleTarget?.channel === 'instagram'
-            ? buildInstagramScheduledContent(scheduleTarget?.data)
+            ? {
+              ...buildInstagramScheduledContent(scheduleTarget?.data),
+              accountIds: scheduleTarget?.scheduledAccountIds || [],
+            }
             : {
               title: scheduleTarget?.title,
               uploadTargets: scheduleTarget?.channel === 'shorts' ? scheduleTarget?.uploadTargets : undefined,
             }}
-        onSave={async ({ scheduledAt, uploadTargets }) => {
+        onSave={async ({ scheduledAt, uploadTargets, accountIds }) => {
           if (!scheduleTarget) return
           if (scheduleTarget.shortsPlatform) {
             await handleScheduleSave(
               scheduleTarget.extractionId,
               shortsSchedulePlatform(scheduleTarget.shortsPlatform),
-              { scheduledAt },
+              { scheduledAt, accountIds },
               null,
               scheduleTarget.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.id || null,
             )
@@ -1219,7 +1228,7 @@ export default function ContentPage() {
             ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : scheduleTarget.channel === 'shorts'
               ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
-              : { status: 'scheduled', scheduledAt }
+              : { status: 'scheduled', scheduledAt, accountIds }
           await handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
             ...nextInfo,
           }, scheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(scheduleTarget.data) : null, scheduleTarget.scheduledId)
@@ -1235,21 +1244,27 @@ export default function ContentPage() {
           : editScheduleTarget?.channel}
         lockPlatform={true}
         content={editScheduleTarget?.shortsPlatform
-          ? { title: editScheduleTarget?.title }
+          ? {
+            title: editScheduleTarget?.title,
+            accountIds: editScheduleTarget.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.accountIds || [],
+          }
           : editScheduleTarget?.channel === 'instagram'
-            ? buildInstagramScheduledContent(editScheduleTarget?.data)
+            ? {
+              ...buildInstagramScheduledContent(editScheduleTarget?.data),
+              accountIds: editScheduleTarget?.scheduledAccountIds || [],
+            }
             : {
               title: editScheduleTarget?.title,
               uploadTargets: editScheduleTarget?.channel === 'shorts' ? editScheduleTarget?.uploadTargets : undefined,
             }}
         initialDatetime={editScheduleTarget?.scheduledAt}
-        onSave={async ({ scheduledAt, uploadTargets }) => {
+        onSave={async ({ scheduledAt, uploadTargets, accountIds }) => {
           if (!editScheduleTarget) return
           if (editScheduleTarget.shortsPlatform) {
             await handleScheduleSave(
               editScheduleTarget.extractionId,
               shortsSchedulePlatform(editScheduleTarget.shortsPlatform),
-              { scheduledAt },
+              { scheduledAt, accountIds },
               null,
               editScheduleTarget.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.id || null,
             )
@@ -1259,7 +1274,7 @@ export default function ContentPage() {
             ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : editScheduleTarget.channel === 'shorts'
               ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
-              : { status: 'scheduled', scheduledAt }
+              : { status: 'scheduled', scheduledAt, accountIds }
           await handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
             ...nextInfo,
           }, editScheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(editScheduleTarget.data) : null, editScheduleTarget.scheduledId)

@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { Calendar, Clock, X, Upload, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Calendar, CheckCircle, Clock, Loader2, X, Upload, Trash2 } from 'lucide-react'
 import { create } from '../utils/scheduledUploads'
 import { CHANNELS } from '../constants/channels'
+import { fetchPlatformAccounts } from '../services/platformSessions'
 
 const MINUTE_STEP = 10
 const BLOG_MIN_LEAD_MINUTES = 10
@@ -125,14 +126,60 @@ function ScheduleDialogBody({
   const [datetime, setDatetime] = useState(() => toLocalDatetimeValue(getDefaultScheduleDate(initialDatetime, defaultPlatform)))
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [instagramAccounts, setInstagramAccounts] = useState([])
+  const [selectedInstagramAccountIds, setSelectedInstagramAccountIds] = useState([])
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [accountError, setAccountError] = useState('')
 
   const showsNativeScheduleNotice = platform === 'blog'
   const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
+  const needsInstagramAccountSelection = platform === 'instagram' || platform === 'shorts_instagram'
+
+  useEffect(() => {
+    if (!needsInstagramAccountSelection) return undefined
+    let active = true
+    ;(async () => {
+      setAccountLoading(true)
+      setAccountError('')
+      try {
+        const accounts = await fetchPlatformAccounts('instagram')
+        if (!active) return
+        const accountIds = accounts.map((account) => account.id).filter(Boolean)
+        const initialIds = Array.isArray(content?.accountIds)
+          ? content.accountIds.map((id) => String(id || '').trim()).filter(Boolean)
+          : []
+        setInstagramAccounts(accounts)
+        setSelectedInstagramAccountIds(initialIds.length > 0 ? initialIds.filter((id) => accountIds.includes(id)) : accountIds)
+      } catch (error) {
+        if (!active) return
+        setInstagramAccounts([])
+        setSelectedInstagramAccountIds([])
+        setAccountError(error.message)
+      } finally {
+        if (active) setAccountLoading(false)
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [content?.accountIds, needsInstagramAccountSelection])
+
+  const toggleInstagramAccount = (accountId) => {
+    setSelectedInstagramAccountIds((prev) => (
+      prev.includes(accountId)
+        ? prev.filter((id) => id !== accountId)
+        : [...prev, accountId]
+    ))
+  }
 
   const handleSubmit = async () => {
     const scheduledAt = normalizeScheduledAtForPlatform(platform, datetime)
     if (platform === 'shorts' && !shortsTargets.instagram && !shortsTargets.youtube) {
       alert('예약 업로드할 플랫폼을 하나 이상 선택해주세요.')
+      return
+    }
+    if (needsInstagramAccountSelection && !selectedInstagramAccountIds.length) {
+      alert('예약 업로드할 인스타그램 계정을 하나 이상 선택해주세요.')
       return
     }
     try {
@@ -143,9 +190,18 @@ function ScheduleDialogBody({
           scheduledAt,
           content,
           uploadTargets: platform === 'shorts' ? shortsTargets : null,
+          accountIds: needsInstagramAccountSelection ? selectedInstagramAccountIds : null,
+          accounts: needsInstagramAccountSelection
+            ? instagramAccounts.filter((account) => selectedInstagramAccountIds.includes(account.id))
+            : [],
         }))
       } else {
-        await create({ platform, content, scheduledAt })
+        await create({
+          platform,
+          content,
+          scheduledAt,
+          accountIds: needsInstagramAccountSelection ? selectedInstagramAccountIds : null,
+        })
       }
     } catch (error) {
       alert(error?.message || '예약 저장에 실패했습니다.')
@@ -264,6 +320,47 @@ function ScheduleDialogBody({
                 )
               })}
             </div>
+          </div>
+        )}
+
+        {needsInstagramAccountSelection && (
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-text-muted mb-2">인스타그램 계정</label>
+            {accountLoading ? (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-light px-3 py-3 text-sm text-text-muted">
+                <Loader2 size={14} className="animate-spin" /> 계정 목록을 불러오는 중...
+              </div>
+            ) : accountError ? (
+              <div className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-3 text-sm text-danger">{accountError}</div>
+            ) : instagramAccounts.length === 0 ? (
+              <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-3 text-sm text-text-muted">
+                연결된 인스타그램 계정이 없습니다. 설정에서 계정을 먼저 추가해주세요.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {instagramAccounts.map((account) => {
+                  const selected = selectedInstagramAccountIds.includes(account.id)
+                  return (
+                    <button
+                      key={account.id}
+                      type="button"
+                      onClick={() => toggleInstagramAccount(account.id)}
+                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                        selected ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface-light hover:border-primary/30'
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold text-text">{account.displayName || account.username || account.id}</span>
+                        <span className="block truncate text-xs text-text-muted">{account.providerAccountId || account.id}</span>
+                      </span>
+                      <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-white'}`}>
+                        {selected ? <CheckCircle size={15} /> : null}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

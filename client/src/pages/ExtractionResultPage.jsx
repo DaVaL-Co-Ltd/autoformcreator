@@ -1255,7 +1255,7 @@ export default function ExtractionResultPage() {
           statusMap[ch] = s === 'uploaded' ? 'done' : s
         } else if (typeof s === 'object') {
           if (s.status) statusMap[ch] = s.status === 'uploaded' ? 'done' : s.status
-          if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt, uploadTargets: s.uploadTargets }
+          if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt, uploadTargets: s.uploadTargets, accountIds: s.accountIds || [] }
         }
       })
       if (Object.keys(statusMap).length) setUploadStatus(prev => ({ ...prev, ...statusMap }))
@@ -1278,6 +1278,7 @@ export default function ExtractionResultPage() {
               scheduledAt: item.scheduledAt,
               scheduledId: item.id,
               uploadTargets: item.content?.uploadTargets,
+              accountIds: item.accountIds || [],
             }
           })
           return next
@@ -2222,7 +2223,10 @@ export default function ExtractionResultPage() {
       setScheduleDialog({
         open: true,
         platform: schedulePlatform,
-        content: { title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스' },
+        content: {
+          title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
+          accountIds: scheduleInfo[schedulePlatform]?.accountIds || shortsPlatforms[platformKey]?.accountIds || [],
+        },
         mode,
         initialDatetime: scheduleInfo[schedulePlatform]?.scheduledAt || shortsPlatforms[platformKey]?.scheduledAt || null,
       })
@@ -2495,7 +2499,10 @@ export default function ExtractionResultPage() {
                 const contentMap = {
                   blog: blogContent,
                   newsletter: newsletterContent,
-                  instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
+                  instagram: {
+                    ...buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
+                    accountIds: sched?.accountIds || activeUploadMeta?.accountIds || [],
+                  },
                   shorts: {
                     ...(shortsScript || {}),
                     uploadTargets: sched?.uploadTargets || activeUploadMeta?.uploadTargets || shortsUploadTargets,
@@ -2684,7 +2691,7 @@ export default function ExtractionResultPage() {
         defaultPlatform={scheduleDialog.platform}
         content={scheduleDialog.content}
         lockPlatform={true}
-        onSave={async ({ platform, scheduledAt, content, uploadTargets }) => {
+        onSave={async ({ platform, scheduledAt, content, uploadTargets, accountIds }) => {
           let id = extractionId
           if (!id) {
             try {
@@ -2732,10 +2739,15 @@ export default function ExtractionResultPage() {
                 scheduledAt,
                 extractionId: id,
                 scheduledId,
+                accountIds,
               })
               setScheduleInfo(p => ({
                 ...p,
-                [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
+                [platform]: {
+                  scheduledAt: savedSchedule.scheduledAt,
+                  scheduledId: savedSchedule.id,
+                  accountIds: savedSchedule.accountIds || accountIds || [],
+                },
               }))
             } catch (err) {
               console.error('[릴스 예약 생성 실패]', err)
@@ -2743,7 +2755,7 @@ export default function ExtractionResultPage() {
               return
             }
             const merged = buildShortsUploadStatus(state.uploadStatus?.shorts, {
-              instagram: { status: 'scheduled', scheduledAt },
+              instagram: { status: 'scheduled', scheduledAt, accountIds: accountIds || [] },
             })
             await updateUploadStatus(id, 'shorts', merged)
             mergeStoredUploadMeta('shorts', merged)
@@ -2789,10 +2801,21 @@ export default function ExtractionResultPage() {
               const scheduledContent = platform === 'instagram'
                 ? await buildInstagramScheduledUploadContent({ instagramContent, instagramImages, instaPngUrls })
                 : content
-              const savedSchedule = await createScheduledUpload({ platform, content: scheduledContent, scheduledAt, extractionId: id, scheduledId })
+              const savedSchedule = await createScheduledUpload({
+                platform,
+                content: scheduledContent,
+                scheduledAt,
+                extractionId: id,
+                scheduledId,
+                accountIds: platform === 'instagram' ? accountIds : null,
+              })
               setScheduleInfo(p => ({
                 ...p,
-                [platform]: { scheduledAt: savedSchedule.scheduledAt, scheduledId: savedSchedule.id },
+                [platform]: {
+                  scheduledAt: savedSchedule.scheduledAt,
+                  scheduledId: savedSchedule.id,
+                  accountIds: savedSchedule.accountIds || accountIds || [],
+                },
               }))
             } catch (err) {
               console.error('[예약 생성 실패]', err)
@@ -2808,6 +2831,7 @@ export default function ExtractionResultPage() {
             [platform]: {
               scheduledAt,
               scheduledId: p[platform]?.scheduledId || null,
+              accountIds: p[platform]?.accountIds || accountIds || [],
             },
           }))
         }}
