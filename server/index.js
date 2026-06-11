@@ -376,8 +376,7 @@ app.get('/api/heygen/voices', async (req, res) => {
 
 // ===== HeyGen "My Voices" — 한국어 voice 20개를 단순 노출 =====
 // HeyGen 공식 API 응답에 본인/공용 식별 필드가 없어 자동 분리가 불가능. /v2/voices 응답에서
-// 한국어 voice 만 추려 앞 20개를 리스트로 보여준다. 사용자가 만든 voice 는 응답 앞쪽에 정렬되는
-// 경향이 있어 자연스럽게 포함된다.
+// 한국어 voice를 추려 앞 20개를 리스트로 보여준다.
 const mapVoice = (v) => ({
   voice_id: v?.voice_id || '',
   name: v?.name || '',
@@ -385,6 +384,17 @@ const mapVoice = (v) => ({
   language: v?.language || '',
   preview_audio: v?.preview_audio || v?.preview_audio_url || null,
 })
+
+function isKoreanHeyGenVoice(voice) {
+  const language = String(voice?.language || voice?.locale || voice?.language_code || '').trim().toLowerCase()
+  if (!language) return false
+  return language === 'korean' ||
+    language === 'ko' ||
+    language.startsWith('ko-') ||
+    language.includes('korean') ||
+    language.includes('한국') ||
+    language.includes('ko_')
+}
 
 app.get('/api/heygen/my-voices', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
@@ -397,11 +407,12 @@ app.get('/api/heygen/my-voices', async (req, res) => {
     if (!response.ok) return res.status(response.status).json({ error: 'voices fetch failed', detail: data })
 
     const rawVoices = data?.data?.voices || data?.voices || []
-    const koreanVoices = rawVoices.filter((v) => v?.language === 'Korean').slice(0, 20)
+    const koreanVoices = rawVoices.filter(isKoreanHeyGenVoice).slice(0, 20)
 
     res.json({
       voices: koreanVoices.map(mapVoice).filter((v) => v.voice_id),
       total: rawVoices.length,
+      filteredTotal: koreanVoices.length,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
