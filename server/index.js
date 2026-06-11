@@ -1188,9 +1188,16 @@ async function alignCaptionsToAudio(audioPath, captions, totalDuration) {
   if (!apiKeySelection || !Array.isArray(captions) || captions.length === 0) return null
   let audioB64
   try { audioB64 = fs.readFileSync(audioPath).toString('base64') } catch { return null }
-  const lines = captions.map((c, i) => `${i}: ${c}`).join('\n')
+  const lines = captions.map((c, i) => {
+    const displayText = typeof c === 'string' ? c : String(c?.displayText || c?.caption || '')
+    const spokenText = typeof c === 'string' ? c : String(c?.spokenText || displayText)
+    return spokenText === displayText
+      ? `${i}: ${displayText}`
+      : `${i}: 자막 "${displayText}" / 실제 발화 "${spokenText}"`
+  }).join('\n')
   const prompt = `다음 오디오는 한국어 나레이션입니다. 아래 자막 문장들이 오디오에서 각각 언제 시작하고 끝나는지(초) 찾아주세요.
 - 자막은 숫자·기호를 원본 표기("12.4%", "AI")로 적었지만 음성은 한국어 발음("십이 점 사 퍼센트", "에이아이")으로 읽히니 의미로 매칭하세요.
+- "실제 발화"가 함께 있으면 오디오 매칭은 실제 발화 문구를 우선하고, index 는 그대로 유지하세요.
 - 문장 순서는 음성 순서와 같습니다. 모든 문장에 대해 반드시 결과를 주세요(음성에서 못 찾으면 앞뒤 사이로 추정).
 - 전체 길이 약 ${Number(totalDuration || 0).toFixed(1)}초.
 JSON 배열만 반환: [{"index":0,"start":0.0,"end":2.3}, ...]
@@ -1322,9 +1329,10 @@ app.post('/api/subtitle/burn', async (req, res) => {
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')},${String(ms).padStart(3, '0')}`
     }
     // 한 씬 caption 을 블록(줄)으로 나눠 [start,end] 구간에 음절 가중으로 배치해 SRT 에 추가.
-    const emitSceneBlocks = (captionText, start, end) => {
+    const emitSceneBlocks = (captionText, start, end, spokenText = captionText) => {
       const blocks = buildSubtitleBlocks(captionText, maxCharsPerLine)
-      const w = blocks.map((b) => estimateSpokenLen(b.replace(/\n/g, '')))
+      const spokenBlocks = buildSubtitleBlocks(spokenText, maxCharsPerLine)
+      const w = blocks.map((b, idx) => estimateSpokenLen((spokenBlocks[idx] || b).replace(/\n/g, '')))
       const wTotal = w.reduce((a, c) => a + c, 0) || 1
       let t = start
       for (let b = 0; b < blocks.length; b++) {
@@ -1345,7 +1353,10 @@ app.post('/api/subtitle/burn', async (req, res) => {
         await new Promise((resolve) => {
           execFile(ffmpegPath, ['-i', inputPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-y', audioPath], { timeout: 60000 }, () => resolve())
         })
-        const map = await alignCaptionsToAudio(audioPath, subtitleScenes.map((s) => sceneAudioText(s).trim()), duration)
+        const map = await alignCaptionsToAudio(audioPath, subtitleScenes.map((s) => ({
+          displayText: sceneCaptionText(s).trim(),
+          spokenText: sceneAudioText(s).trim(),
+        })), duration)
         if (map) {
           const t = []
           let prev = 0
@@ -1371,7 +1382,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
     if (alignedTimes) {
       // 실제 음성 타임스탬프 기준으로 자막 배치.
       subtitleScenes.forEach((scene, i) => {
-        emitSceneBlocks(sceneCaptionText(scene).trim(), alignedTimes[i].start, alignedTimes[i].end)
+        emitSceneBlocks(sceneCaptionText(scene).trim(), alignedTimes[i].start, alignedTimes[i].end, sceneAudioText(scene).trim())
       })
     } else {
       // 폴백: 음절 추정 + 무음/인포그래픽 씬은 시간만 진행.
@@ -1380,7 +1391,7 @@ app.post('/api/subtitle/burn', async (req, res) => {
         const sceneDur = sceneDurOf(scene)
         if (isSilentScene(scene)) { currentTime += sceneDur; continue }
         if (noSubtitleSet.has(Number(scene?.sceneNumber))) { currentTime += sceneDur; continue }
-        emitSceneBlocks(sceneCaptionText(scene).trim(), currentTime, currentTime + sceneDur)
+        emitSceneBlocks(sceneCaptionText(scene).trim(), currentTime, currentTime + sceneDur, sceneAudioText(scene).trim())
         currentTime += sceneDur
       }
     }
