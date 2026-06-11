@@ -3869,12 +3869,29 @@ const SHORTS_PLATFORM_KEYS = ['instagram', 'youtube']
 function normalizeShortsPlatformMeta(meta) {
   const src = meta && typeof meta === 'object' ? meta : {}
   const status = ['not_uploaded', 'scheduled', 'uploaded'].includes(src.status) ? src.status : 'not_uploaded'
+  const accounts = Array.isArray(src.accounts)
+    ? src.accounts
+        .map((account) => ({
+          id: account?.id ? String(account.id) : '',
+          name: String(account?.name || account?.displayName || account?.username || '').trim(),
+        }))
+        .filter((account) => account.id || account.name)
+    : []
+  const accountNames = Array.isArray(src.accountNames)
+    ? src.accountNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : accounts.map((account) => account.name).filter(Boolean)
+  const accountIds = Array.isArray(src.accountIds)
+    ? src.accountIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : accounts.map((account) => account.id).filter(Boolean)
   return {
     status,
     uploadedAt: src.uploadedAt || null,
     uploadedUrl: src.uploadedUrl || null,
     scheduledAt: src.scheduledAt || null,
     scheduledId: src.scheduledId || null,
+    accounts,
+    accountNames,
+    accountIds,
   }
 }
 

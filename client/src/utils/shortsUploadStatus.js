@@ -4,8 +4,8 @@
 //   {
 //     status: 'not_uploaded' | 'scheduled' | 'uploaded',   // 목록 필터/집계용 집계값
 //     platforms: {
-//       instagram: { status, uploadedAt, uploadedUrl, scheduledAt, scheduledId },
-//       youtube:   { status, uploadedAt, uploadedUrl, scheduledAt, scheduledId },
+//       instagram: { status, uploadedAt, uploadedUrl, scheduledAt, scheduledId, accounts, accountNames, accountIds },
+//       youtube:   { status, uploadedAt, uploadedUrl, scheduledAt, scheduledId, accounts, accountNames, accountIds },
 //     },
 //     uploadedUrls: { instagram, youtube },
 //     uploadedUrl, uploadedAt,
@@ -37,12 +37,29 @@ export function shortsSchedulePlatform(platformKey) {
 export function normalizeShortsPlatformMeta(meta) {
   const source = meta && typeof meta === 'object' ? meta : {}
   const status = VALID_STATUSES.includes(source.status) ? source.status : 'not_uploaded'
+  const accounts = Array.isArray(source.accounts)
+    ? source.accounts
+        .map((account) => ({
+          id: account?.id ? String(account.id) : '',
+          name: String(account?.name || account?.displayName || account?.username || '').trim(),
+        }))
+        .filter((account) => account.id || account.name)
+    : []
+  const accountNames = Array.isArray(source.accountNames)
+    ? source.accountNames.map((name) => String(name || '').trim()).filter(Boolean)
+    : accounts.map((account) => account.name).filter(Boolean)
+  const accountIds = Array.isArray(source.accountIds)
+    ? source.accountIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : accounts.map((account) => account.id).filter(Boolean)
   return {
     status,
     uploadedAt: source.uploadedAt || null,
     uploadedUrl: source.uploadedUrl || null,
     scheduledAt: source.scheduledAt || null,
     scheduledId: source.scheduledId || null,
+    accounts,
+    accountNames,
+    accountIds,
   }
 }
 

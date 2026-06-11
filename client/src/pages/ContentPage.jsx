@@ -45,11 +45,12 @@ const _uploadStatusConfig = {
   uploaded: { label: '업로드 완료', icon: CheckCircle },
 }
 
-function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
+function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], onClose, onConfirm }) {
   const [accounts, setAccounts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const uploadedAccountIdsKey = uploadedAccountIds.join('|')
 
   useEffect(() => {
     if (!open || !platform) return undefined
@@ -63,7 +64,9 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
         const items = await fetchPlatformAccounts(platform)
         if (!active) return
         setAccounts(items)
-        setSelectedIds(items.map((account) => account.id))
+        const uploadedSet = new Set(uploadedAccountIds)
+        const pendingIds = items.map((account) => account.id).filter((id) => !uploadedSet.has(id))
+        setSelectedIds(pendingIds.length ? pendingIds : items.map((account) => account.id))
       } catch (err) {
         if (!active) return
         setError(err.message)
@@ -76,7 +79,7 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
     return () => {
       active = false
     }
-  }, [open, platform])
+  }, [open, platform, uploadedAccountIdsKey])
 
   if (!open) return null
 
@@ -100,7 +103,13 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
       alert('업로드할 계정을 하나 이상 선택해주세요.')
       return
     }
-    onConfirm(selectedIds)
+    const selectedAccounts = accounts
+      .filter((account) => selectedIds.includes(account.id))
+      .map((account) => ({
+        id: account.id,
+        name: account.displayName || account.username || account.providerAccountId || account.id,
+      }))
+    onConfirm(selectedIds, selectedAccounts)
   }
 
   return (
@@ -143,6 +152,7 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
             </button>
             {accounts.map((account) => {
               const selected = selectedIds.includes(account.id)
+              const alreadyUploaded = uploadedAccountIds.includes(account.id)
               return (
                 <button
                   key={account.id}
@@ -153,7 +163,14 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
                   }`}
                 >
                   <div>
-                    <div className="text-sm font-semibold text-text">{account.displayName || account.username || account.id}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-text">{account.displayName || account.username || account.id}</span>
+                      {alreadyUploaded ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+                          <CheckCircle size={10} /> 업로드 완료
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="mt-0.5 text-xs text-text-muted">{account.providerAccountId || account.id}</div>
                   </div>
                   <span className={`h-5 w-5 rounded-md border ${selected ? 'border-primary bg-primary' : 'border-border bg-white'}`}>
@@ -187,6 +204,104 @@ function AccountUploadDialog({ open, platform, title, onClose, onConfirm }) {
   )
 }
 
+function normalizeUploadAccount(account) {
+  if (!account || typeof account !== 'object') return null
+  const id = account.id ? String(account.id) : ''
+  const name = String(account.name || account.displayName || account.username || '').trim()
+  if (!id && !name) return null
+  return { id, name }
+}
+
+function successfulUploadAccounts(selectedAccounts = [], result = null) {
+  const normalized = selectedAccounts.map(normalizeUploadAccount).filter(Boolean)
+  const resultIds = result?.accountResults && typeof result.accountResults === 'object'
+    ? Object.keys(result.accountResults)
+    : []
+  const successIds = resultIds.length ? new Set(resultIds) : null
+  const successful = successIds
+    ? normalized.filter((account) => successIds.has(account.id) || (!account.id && successIds.has('default')))
+    : normalized
+
+  if (successful.length > 0) return successful
+  return resultIds.map((id) => normalizeUploadAccount({ id, name: id === 'default' ? '기본 계정' : id })).filter(Boolean)
+}
+
+function uploadAccountMeta(selectedAccounts = [], result = null) {
+  const accounts = successfulUploadAccounts(selectedAccounts, result)
+  return {
+    accounts,
+    accountIds: accounts.map((account) => account.id).filter(Boolean),
+    accountNames: accounts.map((account) => account.name).filter(Boolean),
+  }
+}
+
+function mergeUploadAccountMeta(previousMeta, selectedAccounts = [], result = null) {
+  const previous = uploadedAccountIds(previousMeta).map((id, index) => (
+    normalizeUploadAccount({
+      id,
+      name: previousMeta?.accountNames?.[index]
+        || previousMeta?.accounts?.find((account) => account?.id === id)?.name
+        || previousMeta?.accounts?.find((account) => account?.id === id)?.displayName
+        || id,
+    })
+  )).filter(Boolean)
+  const incoming = uploadAccountMeta(selectedAccounts, result).accounts
+  const map = new Map()
+  for (const account of [...previous, ...incoming]) {
+    if (!account) continue
+    const key = account.id || account.name
+    map.set(key, account)
+  }
+  const accounts = [...map.values()]
+  return {
+    accounts,
+    accountIds: accounts.map((account) => account.id).filter(Boolean),
+    accountNames: accounts.map((account) => account.name).filter(Boolean),
+  }
+}
+
+function uploadAccountLabel(meta) {
+  const source = meta && typeof meta === 'object' ? meta : {}
+  const names = Array.isArray(source.accountNames)
+    ? source.accountNames
+    : Array.isArray(source.accounts)
+      ? source.accounts.map((account) => account?.name || account?.displayName || account?.username)
+      : []
+  const cleanNames = names.map((name) => String(name || '').trim()).filter(Boolean)
+  if (cleanNames.length === 0) return ''
+  if (cleanNames.length === 1) return cleanNames[0]
+  return `${cleanNames[0]} 외 ${cleanNames.length - 1}개`
+}
+
+function uploadCompleteLabel(meta) {
+  const accountLabel = uploadAccountLabel(meta)
+  return accountLabel ? `${accountLabel} 업로드 완료` : '업로드 완료'
+}
+
+function uploadedAccountIds(meta) {
+  const source = meta && typeof meta === 'object' ? meta : {}
+  if (Array.isArray(source.accountIds)) {
+    return source.accountIds.map((id) => String(id || '').trim()).filter(Boolean)
+  }
+  if (Array.isArray(source.accounts)) {
+    return source.accounts.map((account) => String(account?.id || '').trim()).filter(Boolean)
+  }
+  return []
+}
+
+function isUploadCompleteLike(status) {
+  return status === 'uploaded' || status === 'partial_failed'
+}
+
+function getAccountUploadCompletedIds(target) {
+  const item = target?.item
+  if (!item) return []
+  if (item.channel === 'shorts' && target?.options?.platform) {
+    return uploadedAccountIds(item.shortsPlatforms?.[target.options.platform])
+  }
+  return uploadedAccountIds(item.uploadMeta)
+}
+
 function toContentItems(extractions, scheduledMap = new Map()) {
   return extractions.flatMap(ext =>
     ext.channels.map(ch => {
@@ -215,6 +330,7 @@ function toContentItems(extractions, scheduledMap = new Map()) {
         data: ext.data,
         nativeSchedule,
         uploadStatus: isShorts ? aggregateShortsStatus(shortsPlatforms) : uploadInfo.status,
+        uploadMeta: uploadInfo,
         uploadStatusMap: ext.uploadStatus || {},
         shortsPlatforms,
         shortsScheduledRows,
@@ -391,6 +507,7 @@ export default function ContentPage() {
         const result = await uploadToPlatform('shorts', item.extractionId, {
           targets,
           uploadOrder: [shortsPlatform],
+          accountIds: options.accountIds,
         })
         const platformResult = result?.results?.[shortsPlatform]
         if (!platformResult) {
@@ -400,11 +517,14 @@ export default function ContentPage() {
         // 다른 플랫폼 업로드와 동시에 진행될 수 있으므로 최신 상태를 다시 읽어 병합한다.
         const fresh = await getExtractionById(item.extractionId).catch(() => null)
         const currentShorts = fresh?.uploadStatus?.shorts || item.uploadStatusMap?.shorts
+        const currentPlatformMeta = deriveShortsPlatforms(currentShorts)?.[shortsPlatform]
+        const accountMeta = mergeUploadAccountMeta(currentPlatformMeta, options.accounts, platformResult)
         const merged = buildShortsUploadStatus(currentShorts, {
           [shortsPlatform]: {
             status: 'uploaded',
             uploadedAt: new Date().toISOString(),
             uploadedUrl: platformResult.url || null,
+            ...accountMeta,
           },
         })
         await updateUploadStatus(item.extractionId, 'shorts', merged)
@@ -413,12 +533,18 @@ export default function ContentPage() {
         const result = await uploadToPlatform(item.channel, item.extractionId, options)
 
         const nextUploadInfo = {
-          status: result?.failures?.length ? 'partial_failed' : 'uploaded',
+          status: 'uploaded',
           uploadedAt: new Date().toISOString(),
           uploadedUrl: result?.url || null,
         }
+        if (result?.failures?.length) {
+          nextUploadInfo.failures = result.failures
+        }
         if (result?.uploadedUrls) {
           nextUploadInfo.uploadedUrls = result.uploadedUrls
+        }
+        if (options.accounts?.length || result?.accountResults) {
+          Object.assign(nextUploadInfo, mergeUploadAccountMeta(item.uploadMeta, options.accounts, result))
         }
 
         if (item.channel === 'blog') {
@@ -458,13 +584,14 @@ export default function ContentPage() {
     setAccountUploadTarget({ item, options, platform: targetPlatform })
   }
 
-  const confirmAccountUpload = async (accountIds) => {
+  const confirmAccountUpload = async (accountIds, accounts = []) => {
     if (!accountUploadTarget) return
     const { item, options } = accountUploadTarget
     setAccountUploadTarget(null)
     await handleUpload(item, {
       ...options,
       accountIds,
+      accounts,
     })
   }
 
@@ -835,16 +962,41 @@ export default function ContentPage() {
                       </button>
                     )}
 
-                    {item.channel !== 'newsletter' && item.channel !== 'shorts' && item.uploadStatus === 'uploaded' && (
-                      <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
-                        <CheckCircle size={13} />
-                        {isNativeSchedule ? '예약 등록 완료' : '업로드 완료'}
-                        {isNativeSchedule ? (
-                          <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
-                        ) : item.uploadedAt ? (
-                          <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>
-                        ) : null}
-                      </div>
+                    {item.channel !== 'newsletter' && item.channel !== 'shorts' && isUploadCompleteLike(item.uploadStatus) && (
+                      <>
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
+                          <CheckCircle size={13} />
+                          {isNativeSchedule ? '예약 등록 완료' : uploadCompleteLabel(item.uploadMeta)}
+                          {isNativeSchedule ? (
+                            <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
+                          ) : item.uploadedAt ? (
+                            <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.uploadedAt)}</span>
+                          ) : null}
+                        </div>
+                        {item.channel === 'instagram' && (
+                          <button
+                            onClick={() => requestAccountUpload(item)}
+                            disabled={isUploading}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                              isUploading
+                                ? 'bg-primary/50 text-white cursor-wait'
+                                : 'border border-border text-text-muted hover:text-primary hover:border-primary/40'
+                            }`}
+                          >
+                            {isUploading ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                업로드 중...
+                              </>
+                            ) : (
+                              <>
+                                <Upload size={13} />
+                                다시 업로드
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </>
                     )}
 
                     <button
@@ -866,11 +1018,11 @@ export default function ContentPage() {
                         <div key={p.key} className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium text-text-muted shrink-0">{p.label}</span>
                           <div className="flex items-center gap-2">
-                            {pmeta.status === 'uploaded' && (
+                            {isUploadCompleteLike(pmeta.status) && (
                               <>
                                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
                                   <CheckCircle size={13} />
-                                  업로드 완료
+                                  {uploadCompleteLabel(pmeta)}
                                   {pmeta.uploadedAt ? (
                                     <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
                                   ) : null}
@@ -1009,6 +1161,7 @@ export default function ContentPage() {
         open={!!accountUploadTarget}
         platform={accountUploadTarget?.platform}
         title={accountUploadTarget?.item?.title || ''}
+        uploadedAccountIds={getAccountUploadCompletedIds(accountUploadTarget)}
         onClose={() => setAccountUploadTarget(null)}
         onConfirm={confirmAccountUpload}
       />
