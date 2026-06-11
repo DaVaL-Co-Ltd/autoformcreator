@@ -113,9 +113,27 @@ const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_R
 
 const app = express()
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || null
+function normalizeOrigin(rawValue) {
+  if (!rawValue) return null
+
+  try {
+    return new URL(String(rawValue).trim()).origin
+  } catch {
+    return null
+  }
+}
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ?.split(',')
+  .map((origin) => normalizeOrigin(origin))
+  .filter(Boolean) || null
 app.use(cors({
-  origin: allowedOrigins || true,
+  origin(origin, callback) {
+    if (!origin || !Array.isArray(allowedOrigins)) return callback(null, true)
+
+    const normalizedOrigin = normalizeOrigin(origin)
+    return callback(null, Boolean(normalizedOrigin && allowedOrigins.includes(normalizedOrigin)))
+  },
   credentials: true,
   exposedHeaders: ['Retry-After'],
 }))
@@ -130,10 +148,10 @@ function getExpectedRequestOrigin(req) {
 function getRequestOrigin(req) {
   try {
     if (req.headers.origin) {
-      return new URL(String(req.headers.origin)).origin
+      return normalizeOrigin(req.headers.origin)
     }
     if (req.headers.referer) {
-      return new URL(String(req.headers.referer)).origin
+      return normalizeOrigin(req.headers.referer)
     }
   } catch {
     return null

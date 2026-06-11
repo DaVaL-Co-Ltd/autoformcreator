@@ -1,7 +1,7 @@
 function parseAllowedOrigins(rawValue) {
   return String(rawValue || '')
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => normalizeOrigin(value))
     .filter(Boolean)
 }
 
