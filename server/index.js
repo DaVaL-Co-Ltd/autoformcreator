@@ -1831,7 +1831,17 @@ function accountFromInstagramTokens(id, tokens, isDefault = false) {
 
 function pushUniquePlatformAccount(accounts, account) {
   if (!account?.id) return
-  if (accounts.some((item) => item.id === account.id)) return
+  const existing = accounts.find((item) => item.id === account.id)
+  if (existing) {
+    existing.providerAccountId = existing.providerAccountId || account.providerAccountId || null
+    existing.username = existing.username || account.username || null
+    existing.displayName = existing.displayName || account.displayName || account.username || null
+    existing.status = existing.status || account.status || 'connected'
+    existing.isDefault = Boolean(existing.isDefault || account.isDefault)
+    existing.createdAt = existing.createdAt || account.createdAt || null
+    existing.updatedAt = existing.updatedAt || account.updatedAt || null
+    return
+  }
   accounts.push(account)
 }
 

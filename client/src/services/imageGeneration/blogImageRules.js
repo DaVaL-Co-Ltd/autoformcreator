@@ -41,7 +41,7 @@ const KNOWLEDGE_INSIGHT_CATEGORY_ID = 'knowledge_insight'
 const INTERVIEW_PREP_CATEGORY_ID = 'interview_prep'
 const CARD_NEWS_CATEGORY_IDS = new Set([KNOWLEDGE_INSIGHT_CATEGORY_ID, INTERVIEW_PREP_CATEGORY_ID])
 const BOOK_PROMO_CATEGORY_ID = 'book_promo'
-const LATIN_NUMBER_ONLY_PROMPT = 'TEXT RULE: avoid readable text whenever possible. If text must appear on books, posters, notes, computer screens, whiteboards, signs, stationery, clothing, or props, it may contain only English alphabet letters A-Z or a-z and numeric digits 0-9. Absolutely no Hangul, no Korean words, no Japanese, no Chinese, no Arabic, no Cyrillic, and no other writing systems.'
+const HUMAN_SCENE_NO_TEXT_PROMPT = 'TOP PRIORITY TEXT BAN FOR HUMAN SCENES: do not render any visible writing anywhere. Every book cover, book page, notebook, worksheet, test paper, planner, sticky note, whiteboard, screen, poster, sign, badge, label, clothing print, and wall notice must be blank or have only abstract non-letter marks. Absolutely no Hangul, no Korean words, no English words, no numbers, no fake glyphs, no logos, no captions, no typography, and no watermark. If any readable or text-like mark appears on a prop or background, the image is wrong.'
 export const KNOWLEDGE_INSIGHT_CUTOUT_RULE = 'BACKGROUND RULE: create the subject as an isolated cutout on a pure white background, or transparent-looking background if supported. Do not draw a scene, room, sky, desk surface, paper sheet, color wash, pattern, gradient, shadow box, or decorative backdrop behind it. The white area should act like removable empty background around the object. CRITICAL CANVAS FRAME RULE: never draw any border line, outline frame, rectangle stroke, rounded-corner frame, dashed edge, colored boundary, vignette, drop-shadow rim, or any continuous line that follows the canvas edges. The four canvas edges and corners must look like pure empty white, not a framed picture. Only the subject itself may have its own thick illustration outlines. If any frame-like line appears along the canvas perimeter, the image is failed and must be redone without it.'
 
 export const KNOWLEDGE_INSIGHT_NO_TEXT_RULE = 'STRICT NO-KOREAN-TEXT RULE (TOP PRIORITY): never render any Korean characters or Hangul anywhere in the image — zero Korean text, not even a single Korean syllable. Every book cover, book page, notebook, sheet of paper, sticky note, whiteboard, screen, monitor, sign, badge, and label drawn in the illustration MUST be completely BLANK — no writing, no letters, no words, no scribbles, no squiggle marks that imitate text. Do not add titles, captions, watermarks, speech bubbles with text, or decorative typography. Japanese, Chinese, Arabic and other scripts are also forbidden. The only writing that is allowed is an English letter A-Z/a-z or a digit 0-9, and only when it is literally an inseparable part of the motif itself (for example a math formula or a scientific symbol) — never as a label, title, or caption. Whenever possible draw the whole illustration with no text at all. Any Korean character means the image is wrong.'
@@ -293,18 +293,37 @@ function isKnowledgeInsightCategory(options = {}) {
 }
 
 function buildAdmissionsStrategySectionContext(section = {}) {
-  const heading = String(section?.heading || '').trim()
-  const keyPhrase = String(section?.keyPhrase || '').trim()
-  const content = String(section?.content || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 280)
+  const haystack = [
+    section?.heading || '',
+    section?.keyPhrase || '',
+    section?.content || '',
+  ].join(' ')
 
-  return [
-    heading ? `Section heading: "${heading}".` : '',
-    keyPhrase ? `Key phrase: "${keyPhrase}".` : '',
-    content ? `Match this section content closely: "${content}".` : '',
-  ].filter(Boolean).join(' ')
+  const hints = []
+  if (/면접|구술|답변|발표|말하기/.test(haystack)) {
+    hints.push('an admissions interview preparation moment, with a counselor or teacher coaching a student across a desk')
+  }
+  if (/학생부|생기부|세특|활동|기록|학종|종합/.test(haystack)) {
+    hints.push('student record planning, with blank folders, blank worksheets, a laptop, and a mentor reviewing progress')
+  }
+  if (/내신|등급|시험|성적|기말|중간|수행평가/.test(haystack)) {
+    hints.push('school exam strategy, with a student organizing blank study materials and a planner at a desk')
+  }
+  if (/수능|모의고사|모평|정시|국어|수학|영어|탐구/.test(haystack)) {
+    hints.push('mock-exam study planning, with a focused student, blank practice sheets, a timer, and calm desk lighting')
+  }
+  if (/진로|학과|전공|대학|입시|지원|전략|컨설팅/.test(haystack)) {
+    hints.push('college admissions strategy counseling, with a student and parent or mentor discussing a blank roadmap')
+  }
+  if (/시간|계획|루틴|습관|공부법|복습|예습/.test(haystack)) {
+    hints.push('study routine coaching, with a blank weekly planner, notebooks without writing, and a calm home-study setup')
+  }
+
+  if (!hints.length) {
+    hints.push('a Korean admissions and study-strategy counseling scene with a student, mentor, blank study materials, and a focused academic mood')
+  }
+
+  return `Visual semantic guide: ${hints.slice(0, 2).join('; ')}. Use this as meaning only; never render any words from the source article.`
 }
 
 function buildBlogImagePrompt(section, options = {}, index = 0) {
@@ -323,7 +342,11 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
   const isPhotoStyle = options.imageStyle === 'photo'
   const variation = BLOG_VISUAL_VARIATIONS[index % BLOG_VISUAL_VARIATIONS.length]
   const paletteDesc = getBlogPalette(section, options)
-  const extraHint = options.extra ? ` Highest-priority user override: ${options.extra}.` : ''
+  const extraHint = options.extra
+    ? isHumanSceneCategory
+      ? ' Highest-priority user override: follow only the non-text visual intent from the user notes; do not render or copy any user-provided words into the image.'
+      : ` Highest-priority user override: ${options.extra}.`
+    : ''
   const topicPrompt = (versionConfig.version === 'image_keyword' || isDefaultKeyword)
     ? describeConceptDigestTopic(section)
     : ''
@@ -361,15 +384,23 @@ function buildBlogImagePrompt(section, options = {}, index = 0) {
     : versionConfig.version === 'image_keyword'
       ? 'No realistic photos, no people. Keep the illustration flat, simple, and poster-like. Prefer one clear object, broad empty space, and a smooth solid-color background that supports the main object. Do not use notebook lines, paper textures, check patterns, chalkboard grain, or many mini icons.'
       : 'No realistic photos, no people. Cute Korean educational style with a clean full-bleed composition.'
-  const textRulePrompt = isHumanSceneCategory ? LATIN_NUMBER_ONLY_PROMPT : NO_LETTER_PROMPT
-  // 카드뉴스 코너 일러스트는 한글 누락이 잦아 프롬프트 맨 앞에도 금지 규칙을 한 번 더 둔다.
-  const leadingTextRule = isKnowledgeInsight ? `${KNOWLEDGE_INSIGHT_NO_TEXT_RULE} ` : ''
+  const textRulePrompt = isHumanSceneCategory ? HUMAN_SCENE_NO_TEXT_PROMPT : NO_LETTER_PROMPT
+  // 텍스트가 소품에 섞여 들어가는 카테고리는 프롬프트 맨 앞에도 금지 규칙을 한 번 더 둔다.
+  const leadingTextRule = isKnowledgeInsight
+    ? `${KNOWLEDGE_INSIGHT_NO_TEXT_RULE} `
+    : isHumanSceneCategory
+    ? `${HUMAN_SCENE_NO_TEXT_PROMPT} `
+    : ''
   // 그래도 한글이 그려질 경우 깨진 글자 대신 실제 텍스트가 정확히 들어가도록 하는 폴백.
   const textFallbackClause = isKnowledgeInsight
     ? buildKnowledgeTextFallbackClause(section?.keyPhrase || section?.heading)
     : ''
 
-  return `${leadingTextRule}${mediumHint} about "${section.heading}". ${styleHint} Color palette: ${paletteDesc}. ${sceneHint} ${versionConfig.layoutPrompt} ${DOM_TEXT_OVERLAY_PROMPT} ${textRulePrompt} ${styleConstraint} If the selected style suggests a solid color or subtle pattern background, keep it visually simple and readable under DOM text overlays.${textFallbackClause}${extraHint}`
+  const topicIntro = isHumanSceneCategory
+    ? 'about an admissions and study-strategy article section'
+    : `about "${section.heading}"`
+
+  return `${leadingTextRule}${mediumHint} ${topicIntro}. ${styleHint} Color palette: ${paletteDesc}. ${sceneHint} ${versionConfig.layoutPrompt} ${DOM_TEXT_OVERLAY_PROMPT} ${textRulePrompt} ${styleConstraint} If the selected style suggests a solid color or subtle pattern background, keep it visually simple and readable under DOM text overlays.${textFallbackClause}${extraHint}`
 }
 
 export async function generateBlogImages(sections, options = {}) {

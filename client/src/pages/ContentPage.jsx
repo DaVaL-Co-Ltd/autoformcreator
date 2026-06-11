@@ -45,6 +45,16 @@ const _uploadStatusConfig = {
   uploaded: { label: '업로드 완료', icon: CheckCircle },
 }
 
+function fallbackPlatformAccountName(platform) {
+  return platform === 'youtube' ? 'YouTube 채널' : 'Instagram 계정'
+}
+
+function platformAccountDisplayName(account, platform) {
+  const displayName = String(account?.displayName || account?.username || '').trim()
+  if (displayName) return displayName
+  return fallbackPlatformAccountName(platform)
+}
+
 function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], onClose, onConfirm }) {
   const [accounts, setAccounts] = useState([])
   const [selectedIds, setSelectedIds] = useState([])
@@ -107,7 +117,8 @@ function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], o
       .filter((account) => selectedIds.includes(account.id))
       .map((account) => ({
         id: account.id,
-        name: account.displayName || account.username || account.providerAccountId || account.id,
+        providerAccountId: account.providerAccountId || null,
+        name: platformAccountDisplayName(account, platform),
       }))
     onConfirm(selectedIds, selectedAccounts)
   }
@@ -164,7 +175,7 @@ function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], o
                 >
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-text">{account.displayName || account.username || account.id}</span>
+                      <span className="text-sm font-semibold text-text">{platformAccountDisplayName(account, platform)}</span>
                       {alreadyUploaded ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
                           <CheckCircle size={10} /> 업로드 완료
@@ -207,9 +218,10 @@ function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], o
 function normalizeUploadAccount(account) {
   if (!account || typeof account !== 'object') return null
   const id = account.id ? String(account.id) : ''
+  const providerAccountId = account.providerAccountId ? String(account.providerAccountId) : ''
   const name = String(account.name || account.displayName || account.username || '').trim()
   if (!id && !name) return null
-  return { id, name }
+  return { id, providerAccountId, name }
 }
 
 function successfulUploadAccounts(selectedAccounts = [], result = null) {
@@ -219,11 +231,21 @@ function successfulUploadAccounts(selectedAccounts = [], result = null) {
     : []
   const successIds = resultIds.length ? new Set(resultIds) : null
   const successful = successIds
-    ? normalized.filter((account) => successIds.has(account.id) || (!account.id && successIds.has('default')))
+    ? normalized.filter((account) => (
+      successIds.has(account.id)
+      || (account.providerAccountId && successIds.has(account.providerAccountId))
+      || (!account.id && successIds.has('default'))
+    ))
     : normalized
 
   if (successful.length > 0) return successful
-  return resultIds.map((id) => normalizeUploadAccount({ id, name: id === 'default' ? '기본 계정' : id })).filter(Boolean)
+  return resultIds
+    .map((id) => {
+      const matched = normalized.find((account) => account.id === id || account.providerAccountId === id)
+      if (matched) return matched
+      return normalizeUploadAccount({ id, name: id === 'default' ? '기본 계정' : '' })
+    })
+    .filter(Boolean)
 }
 
 function uploadAccountMeta(selectedAccounts = [], result = null) {
