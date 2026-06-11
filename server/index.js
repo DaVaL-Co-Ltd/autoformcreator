@@ -1928,6 +1928,10 @@ function normalizeAccountsToTokenBackedIds(accounts, tokenBackedAccounts) {
   return normalized
 }
 
+function firstSupabaseRow(data) {
+  return Array.isArray(data) ? data[0] : data
+}
+
 async function listTokenBackedPlatformAccounts(platform) {
   const accounts = []
 
@@ -1997,9 +2001,9 @@ async function upsertPlatformAccount({ id, platform, providerAccountId, username
       .from('platform_accounts')
       .upsert(account, { onConflict: 'id' })
       .select()
-      .single()
+    const saved = firstSupabaseRow(data)
     if (error) throw error
-    return publicPlatformAccount(data)
+    return publicPlatformAccount(saved || account)
   } catch (error) {
     console.warn('[platform_accounts] upsert failed:', error.message)
     return publicPlatformAccount(account)
@@ -2106,9 +2110,11 @@ async function loadInstagramTokens(accountId = 'default') {
         .from('instagram_tokens')
         .select('tokens')
         .eq('id', id)
-        .maybeSingle()
-      if (!error && data?.tokens) {
-        return data.tokens
+        .order('updated_at', { ascending: false })
+        .limit(1)
+      const row = firstSupabaseRow(data)
+      if (!error && row?.tokens) {
+        return row.tokens
       }
     } catch (err) {
       console.warn('[Instagram] Supabase token load failed:', err.message)
@@ -2929,8 +2935,14 @@ async function loadYtTokens(accountId = 'default') {
   const id = sanitizeAccountId(accountId)
   if (supabaseAdmin) {
     try {
-      const { data, error } = await supabaseAdmin.from('youtube_tokens').select('tokens').eq('id', id).maybeSingle()
-      if (!error && data?.tokens) return data.tokens
+      const { data, error } = await supabaseAdmin
+        .from('youtube_tokens')
+        .select('tokens')
+        .eq('id', id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+      const row = firstSupabaseRow(data)
+      if (!error && row?.tokens) return row.tokens
     } catch (err) { console.warn('[YouTube] Supabase 토큰 로드 실패:', err.message) }
   }
   try {
@@ -3882,10 +3894,10 @@ app.post('/api/scheduled/create', async (req, res) => {
         .eq('platform', platform)
         .in('status', ['pending', 'failed'])
         .select()
-        .maybeSingle()
+      const updated = firstSupabaseRow(data)
 
       if (error) throw error
-      if (data) return res.json(data)
+      if (updated) return res.json(updated)
     }
 
     // If the same extraction/platform already has a pending reservation, update it instead.
@@ -3914,9 +3926,8 @@ app.post('/api/scheduled/create', async (req, res) => {
         })
         .eq('id', first.id)
         .select()
-        .single()
       if (error) throw error
-      return res.json(data)
+      return res.json(firstSupabaseRow(data) || first)
     }
 
     const { data, error } = await supabaseAdmin
@@ -3931,9 +3942,8 @@ app.post('/api/scheduled/create', async (req, res) => {
         account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
       })
       .select()
-      .single()
     if (error) throw error
-    res.json(data)
+    res.json(firstSupabaseRow(data))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -3986,17 +3996,16 @@ app.patch('/api/scheduled/:id', async (req, res) => {
         .from('scheduled_uploads')
         .select('platform')
         .eq('id', req.params.id)
-        .maybeSingle()
-      patch.content = await normalizeScheduledContent(existing?.platform, content)
+        .limit(1)
+      patch.content = await normalizeScheduledContent(firstSupabaseRow(existing)?.platform, content)
     }
     const { data, error } = await supabaseAdmin
       .from('scheduled_uploads')
       .update(patch)
       .eq('id', req.params.id)
       .select()
-      .single()
     if (error) throw error
-    res.json(data)
+    res.json(firstSupabaseRow(data))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -4179,12 +4188,13 @@ app.post('/api/scheduled/run', async (req, res) => {
               .from('extractions')
               .select('instagram_images, instagram_content')
               .eq('id', item.extraction_id)
-              .maybeSingle()
-            const igImgs = ext?.instagram_images || []
+              .limit(1)
+            const extraction = firstSupabaseRow(ext)
+            const igImgs = extraction?.instagram_images || []
             imageUrls = igImgs
               .map(img => img?.renderedImageUrl || img?.pngUrl || img?.url || img?.imageUrl)
               .filter(Boolean)
-            const igContent = ext?.instagram_content
+            const igContent = extraction?.instagram_content
             if (!caption && igContent) {
               const hashtags = (igContent.hashtags || []).map(t => String(t).startsWith('#') ? t : `#${t}`).join(' ')
               caption = `${igContent.caption || ''}\n\n${hashtags}`.trim()
@@ -4222,10 +4232,11 @@ app.post('/api/scheduled/run', async (req, res) => {
             .from('extractions')
             .select('shorts_video, shorts_script')
             .eq('id', item.extraction_id)
-            .maybeSingle()
+            .limit(1)
 
-          const video = ext?.shorts_video || {}
-          const script = ext?.shorts_script || {}
+          const extraction = firstSupabaseRow(ext)
+          const video = extraction?.shorts_video || {}
+          const script = extraction?.shorts_script || {}
           const videoUrl = video.combinedVideoUrl || video.url || video.videoUrl
           if (!videoUrl) throw new Error('쇼츠/릴스 영상 URL이 없습니다.')
 
@@ -4300,8 +4311,8 @@ app.post('/api/scheduled/run', async (req, res) => {
               .from('extractions')
               .select('upload_status')
               .eq('id', item.extraction_id)
-              .maybeSingle()
-            const prevStatus = extRow?.upload_status || {}
+              .limit(1)
+            const prevStatus = firstSupabaseRow(extRow)?.upload_status || {}
             let newStatus
             if (uploadResult?.isShorts) {
               // 숏폼: 실제 업로드된 플랫폼만 표시하고 나머지는 기존 상태를 유지한다.
