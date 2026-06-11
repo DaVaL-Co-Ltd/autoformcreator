@@ -1173,8 +1173,8 @@ const subtitleBurnJobs = new Map()
 // 완성 영상의 음성을 Gemini 로 분석해, 주어진 자막 문장들이 각각 몇 초~몇 초에 나오는지 정렬한다.
 // (forced alignment) 성공 시 { [index]: {start,end} } 반환, 실패 시 null → 호출측은 음절 추정으로 폴백.
 async function alignCaptionsToAudio(audioPath, captions, totalDuration) {
-  const apiKey = getServerGeminiApiKey()
-  if (!apiKey || !Array.isArray(captions) || captions.length === 0) return null
+  const apiKeySelection = getServerGeminiApiKey()
+  if (!apiKeySelection || !Array.isArray(captions) || captions.length === 0) return null
   let audioB64
   try { audioB64 = fs.readFileSync(audioPath).toString('base64') } catch { return null }
   const lines = captions.map((c, i) => `${i}: ${c}`).join('\n')
@@ -1196,7 +1196,7 @@ ${lines}`
   try {
     const r = await fetch(`${GEMINI_ENDPOINT_BASE}/gemini-2.5-flash:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKeySelection.key },
       body: JSON.stringify(payload),
     })
     if (!r.ok) return null
