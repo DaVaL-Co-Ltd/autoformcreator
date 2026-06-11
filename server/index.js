@@ -1764,7 +1764,6 @@ const INSTAGRAM_OAUTH_SCOPES = [
   'instagram_content_publish',
   'pages_show_list',
   'pages_read_engagement',
-  'business_management',
 ]
 const instagramTokenPath = path.join(__dirname, '.instagram_tokens.json')
 let instagramTokens = null
