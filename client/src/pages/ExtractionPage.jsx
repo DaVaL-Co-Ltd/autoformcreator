@@ -58,6 +58,10 @@ function pickPortraitLooks(looks = []) {
   return portraitLooks.length > 0 ? portraitLooks : validLooks
 }
 
+function pickAvatarGroupDisplayLooks(looks = []) {
+  return Array.isArray(looks) ? looks.filter((look) => look?.id) : []
+}
+
 function normalizeHeygenAvatarKind(kind) {
   return kind === 'avatar' ? 'avatar' : 'talking_photo'
 }
@@ -768,11 +772,11 @@ export default function ExtractionPage() {
   }, [selectedChannels.shorts, groupLooks])
 
   // 아바타 카드 그리드용 — 동완쌤·후라이쌤·제자들 3개 카테고리로 분리해서 표시한다.
-  // 그룹 있는 preset 은 9:16 세로 룩을 우선 펼쳐 보여준다.
+  // 선택 화면에서는 16:9 룩도 9:16 카드 안에 object-cover 로 잘라 보여준다.
   const avatarCategories = useMemo(() => {
     const expandPreset = (preset) => {
       if (preset.avatarGroupId) {
-        return pickPortraitLooks(groupLooks[preset.avatarGroupId] || [])
+        return pickAvatarGroupDisplayLooks(groupLooks[preset.avatarGroupId] || [])
           .filter((look) => look?.preview)
           .map((look) => ({
             key: `${preset.id}:${look.id}`,
@@ -3976,7 +3980,7 @@ ${parsedText}
                                           className={`relative rounded-lg border overflow-hidden bg-surface text-left transition-all ${isSel ? 'border-primary/60 ring-2 ring-primary/30' : 'border-border hover:border-primary/30'}`}
                                           aria-label={`${slotDef.role} - ${preset.name} 선택`}
                                         >
-                                          <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
+                                          <div className="relative bg-surface" style={{ aspectRatio: '9/16' }}>
                                             {preview ? (
                                               <img src={preview} alt="" className="h-full w-full object-cover" />
                                             ) : (
@@ -4059,7 +4063,7 @@ ${parsedText}
                               </button>
                             ))}
                           </div>
-                          {shortsAvatarMode === 'select' && (
+                          {shortsAvatarMode === 'select' ? (
                           <>
                           <div className="flex flex-wrap gap-2">
                             {[
@@ -4123,7 +4127,7 @@ ${parsedText}
                                           }`}
                                           aria-label={`${preset.name} 아바타 선택`}
                                         >
-                                          <div className="relative bg-surface" style={{ aspectRatio: '3/4' }}>
+                                          <div className="relative bg-surface" style={{ aspectRatio: '9/16' }}>
                                             {preview ? (
                                               <img src={preview} alt="" className="h-full w-full object-cover" />
                                             ) : (
@@ -4161,8 +4165,7 @@ ${parsedText}
                             ))}
                           </div>
                           </>
-                          )}
-                          {shortsAvatarMode === 'generate' && (
+                          ) : (
                           <div className="rounded-xl border border-border bg-surface-light/40 p-3 space-y-3">
                             <div className="flex items-center justify-between gap-2">
                               <div>
