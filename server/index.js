@@ -3756,18 +3756,22 @@ app.post('/api/scheduled/create', async (req, res) => {
         .update({
           scheduled_at: scheduledAt,
           content: normalizedContent || {},
+          status: 'pending',
+          uploaded_url: null,
+          uploaded_at: null,
+          error: null,
           account_id: normalizedAccountId,
           account_ids: normalizedAccountIds.length ? normalizedAccountIds : null,
         })
         .eq('id', scheduledId)
         .eq('extraction_id', extractionId)
         .eq('platform', platform)
-        .eq('status', 'pending')
+        .in('status', ['pending', 'failed'])
         .select()
-        .single()
+        .maybeSingle()
 
       if (error) throw error
-      return res.json(data)
+      if (data) return res.json(data)
     }
 
     // If the same extraction/platform already has a pending reservation, update it instead.
