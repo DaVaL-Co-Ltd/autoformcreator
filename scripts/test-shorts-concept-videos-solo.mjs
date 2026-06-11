@@ -61,14 +61,17 @@ async function importConceptsModule() {
     /from\s+(['"])\.\/heygenAvatars\1/g,
     "from './heygenAvatars.js'",
   )
+  const ttsTextSource = await fs.readFile(path.join(srcDir, 'shortsTtsText.js'), 'utf8')
   await fs.writeFile(path.join(tmpDir, 'heygenAvatars.js'), heygenSource, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoConcepts.js'), conceptsSource, 'utf8')
+  await fs.writeFile(path.join(tmpDir, 'shortsTtsText.js'), ttsTextSource, 'utf8')
   const conceptsMod = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoConcepts.js')).href)
   const avatarsMod = await import(pathToFileURL(path.join(tmpDir, 'heygenAvatars.js')).href)
-  return { ...conceptsMod, ...avatarsMod }
+  const ttsTextMod = await import(pathToFileURL(path.join(tmpDir, 'shortsTtsText.js')).href)
+  return { ...conceptsMod, ...avatarsMod, ...ttsTextMod }
 }
 
-const { SHORTS_VIDEO_CONCEPTS, findShortsVideoConcept, HEYGEN_AVATAR_LIST } = await importConceptsModule()
+const { SHORTS_VIDEO_CONCEPTS, findShortsVideoConcept, HEYGEN_AVATAR_LIST, buildHeygenTextVoice } = await importConceptsModule()
 
 function avatarMetaByAvatarId(avatarId) {
   return HEYGEN_AVATAR_LIST.find((a) => a.avatarId === avatarId) || null
@@ -99,11 +102,7 @@ function buildVideoInputs(script, avatarId, voiceId) {
         avatar_id: avatarId,
         avatar_style: 'normal',
       },
-      voice: {
-        type: 'text',
-        input_text: narration,
-        voice_id: voiceId,
-      },
+      voice: buildHeygenTextVoice(narration, voiceId),
     })
   }
   return inputs

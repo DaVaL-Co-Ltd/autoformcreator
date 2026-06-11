@@ -56,19 +56,23 @@ async function importModules() {
     "from './heygenAvatars.js'",
   )
   const agentSource = await fs.readFile(path.join(srcDir, 'shortsVideoAgent.js'), 'utf8')
+  const ttsTextSource = await fs.readFile(path.join(srcDir, 'shortsTtsText.js'), 'utf8')
   await fs.writeFile(path.join(tmpDir, 'heygenAvatars.js'), heygenSource, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoConcepts.js'), conceptsSource, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoAgent.js'), agentSource, 'utf8')
+  await fs.writeFile(path.join(tmpDir, 'shortsTtsText.js'), ttsTextSource, 'utf8')
   const concepts = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoConcepts.js')).href)
   const avatars = await import(pathToFileURL(path.join(tmpDir, 'heygenAvatars.js')).href)
   const agent = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoAgent.js')).href)
-  return { concepts, avatars, agent }
+  const ttsText = await import(pathToFileURL(path.join(tmpDir, 'shortsTtsText.js')).href)
+  return { concepts, avatars, agent, ttsText }
 }
 
-const { concepts: conceptsMod, avatars: avatarsMod, agent: agentMod } = await importModules()
+const { concepts: conceptsMod, avatars: avatarsMod, agent: agentMod, ttsText: ttsTextMod } = await importModules()
 const { findShortsVideoConcept, buildShortsConceptExtra } = conceptsMod
 const { HEYGEN_AVATAR_LIST } = avatarsMod
 const { buildShortsVideoAgentPrompt } = agentMod
+const { buildHeygenTextVoice } = ttsTextMod
 
 function avatarMeta(avatarId) {
   return HEYGEN_AVATAR_LIST.find((a) => a.avatarId === avatarId) || null
@@ -124,7 +128,7 @@ async function buildStandardInputs(concept, script) {
       .join(' ')
     const input = {
       character: { type: 'talking_photo', talking_photo_id: avatarId },
-      voice: { type: 'text', input_text: mergedText, voice_id: voiceId },
+      voice: buildHeygenTextVoice(mergedText, voiceId),
     }
     if (concept.backgroundColor) input.background = { type: 'color', value: concept.backgroundColor }
     console.log(`  솔로 연속 테이크 — 씬 ${script.scenes.length}개 → video_input 1개 병합`)
@@ -143,7 +147,7 @@ async function buildStandardInputs(concept, script) {
       character: { type: 'talking_photo', talking_photo_id: avatarId },
       voice: isCountdown
         ? { type: 'silence', duration: Number(scene?.duration) || 3 }
-        : { type: 'text', input_text: narration, voice_id: voiceId },
+        : buildHeygenTextVoice(narration, voiceId),
     }
     // 컨셉 backgroundColor 지정 시 단색 배경 적용 (프레이밍 통일). 그 외엔 아바타 자체 배경.
     if (!input.background && concept.backgroundColor) {

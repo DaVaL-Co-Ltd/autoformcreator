@@ -77,19 +77,23 @@ async function importModules() {
   let conceptsSrc = await fs.readFile(path.join(srcDir, 'shortsVideoConcepts.js'), 'utf8')
   conceptsSrc = conceptsSrc.replace(/from\s+(['"])\.\/heygenAvatars\1/g, "from './heygenAvatars.js'")
   const agent = await fs.readFile(path.join(srcDir, 'shortsVideoAgent.js'), 'utf8')
+  const ttsText = await fs.readFile(path.join(srcDir, 'shortsTtsText.js'), 'utf8')
   await fs.writeFile(path.join(tmpDir, 'heygenAvatars.js'), heygen, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoConcepts.js'), conceptsSrc, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoAgent.js'), agent, 'utf8')
+  await fs.writeFile(path.join(tmpDir, 'shortsTtsText.js'), ttsText, 'utf8')
   const concepts = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoConcepts.js')).href)
   const avatars = await import(pathToFileURL(path.join(tmpDir, 'heygenAvatars.js')).href)
   const agentMod = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoAgent.js')).href)
-  return { concepts, avatars, agentMod }
+  const ttsTextMod = await import(pathToFileURL(path.join(tmpDir, 'shortsTtsText.js')).href)
+  return { concepts, avatars, agentMod, ttsTextMod }
 }
 
-const { concepts: conceptsMod, avatars: avatarsMod, agentMod } = await importModules()
+const { concepts: conceptsMod, avatars: avatarsMod, agentMod, ttsTextMod } = await importModules()
 const { findShortsVideoConcept, buildShortsConceptExtra } = conceptsMod
 const { HEYGEN_AVATAR_LIST } = avatarsMod
 const { buildShortsVideoAgentPrompt } = agentMod
+const { buildHeygenTextVoice } = ttsTextMod
 const avatarMeta = (id) => HEYGEN_AVATAR_LIST.find((a) => a.avatarId === id) || null
 
 // 등록 아바타에 avatarGroupId 가 있으면 그룹 안 룩 중 랜덤 1개를 반환. 그 외엔 그대로.
@@ -158,7 +162,7 @@ function buildStandardInputs(concept, script) {
       .join(' ')
     const input = {
       character: { type: 'talking_photo', talking_photo_id: avatarId },
-      voice: { type: 'text', input_text: mergedText, voice_id: voiceId },
+      voice: buildHeygenTextVoice(mergedText, voiceId),
     }
     if (concept.backgroundColor) input.background = { type: 'color', value: concept.backgroundColor }
     console.log(`  솔로 연속 테이크 — 씬 ${script.scenes.length}개 → video_input 1개 병합`)
@@ -177,7 +181,7 @@ function buildStandardInputs(concept, script) {
       character: { type: 'talking_photo', talking_photo_id: avatarId },
       voice: isCountdown
         ? { type: 'silence', duration: Number(scene?.duration) || 3 }
-        : { type: 'text', input_text: String(scene?.narration || '').trim(), voice_id: voiceId },
+        : buildHeygenTextVoice(String(scene?.narration || '').trim(), voiceId),
     }
     if (concept.backgroundColor) input.background = { type: 'color', value: concept.backgroundColor }
     Object.defineProperty(input, '_scene', { value: scene, enumerable: false })
@@ -838,4 +842,4 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
   main().catch((err) => { console.error('\n치명적 오류:', err.message); process.exit(1) })
 }
 
-export { heygenGenerateOne, heygenPoll, trimClip, crossfadeClips, burnSubtitles, uploadToStorage, OUT_DIR, XFADE_DUR }
+export { buildHeygenTextVoice, heygenGenerateOne, heygenPoll, trimClip, crossfadeClips, burnSubtitles, uploadToStorage, OUT_DIR, XFADE_DUR }

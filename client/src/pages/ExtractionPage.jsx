@@ -36,7 +36,7 @@ import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
 import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { absorbHookIntoFirstScene, appendCtaAsLastScene, buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
-import { toSpokenText } from '../utils/shortsTtsText.js'
+import { buildHeygenTextVoice, toSpokenText } from '../utils/shortsTtsText.js'
 import { callGeminiWithFallback, findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
 import {
   BLOG_CATEGORY_OPTIONS,
@@ -1964,19 +1964,18 @@ DO NOT:
         const video_inputs = mergeAvatarSegments
           ? [{
               character,
-              voice: {
-                type: 'text',
-                input_text: seg.scenes
-                  .map((scene) => toSpokenText(sceneText(scene).trim()))
+              voice: buildHeygenTextVoice(
+                seg.scenes
+                  .map((scene) => sceneText(scene).trim())
                   .filter(Boolean)
                   .join(' '),
-                voice_id: voiceId,
-              },
+                voiceId,
+              ),
             }].filter((v) => v.voice.input_text && v.voice.voice_id)
           : seg.scenes
               .map((scene) => ({
                 character,
-                voice: { type: 'text', input_text: toSpokenText(sceneText(scene).trim()), voice_id: voiceId },
+                voice: buildHeygenTextVoice(sceneText(scene).trim(), voiceId),
               }))
               .filter((v) => v.voice.input_text && v.voice.voice_id)
         if (video_inputs.length === 0) continue
@@ -2321,12 +2320,12 @@ DO NOT:
           // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration 만 있음)도 함께 지원.
           // toSpokenText 는 분수·영문 약어처럼 HeyGen 이 잘못 읽는 표기만 한글로 변환한다.
           const mergedText = scenesForStandard
-            .map((s) => toSpokenText(String(s?.caption || s?.narration || '').trim()))
+            .map((s) => String(s?.caption || s?.narration || '').trim())
             .filter(Boolean)
             .join(' ')
           const mergedInput = {
             character: buildHeygenCharacter(soloAvatarId, conceptAvatarKindsById[soloAvatarId]),
-            voice: { type: 'text', input_text: mergedText, voice_id: overrideVoiceId || soloPreset?.defaultVoiceId },
+            voice: buildHeygenTextVoice(mergedText, overrideVoiceId || soloPreset?.defaultVoiceId),
           }
           if (selectedConcept?.backgroundColor) {
             mergedInput.background = { type: 'color', value: selectedConcept.backgroundColor }
@@ -2349,13 +2348,12 @@ DO NOT:
               character: buildHeygenCharacter(avatarId, conceptAvatarKindsById[avatarId]),
               voice: isCountdownScene
                 ? { type: 'silence', duration: Number(scene?.duration) || 3 }
-                : {
-                    type: 'text',
+                : buildHeygenTextVoice(
                     // caption 이 자막+TTS 공용 텍스트. 옛 스크립트(narration) 도 함께 지원.
-                    // toSpokenText 가 분수·영문 약어만 한글로 변환해 HeyGen TTS 가 자연스럽게 읽도록 한다.
-                    input_text: toSpokenText(String(scene?.caption || scene?.narration || '').trim()),
-                    voice_id: (slotVoiceByAvatarId && slotVoiceByAvatarId[avatarId]) || overrideVoiceId || preset?.defaultVoiceId,
-                  },
+                    // toSpokenText 가 분수·영문 약어와 호흡을 보정해 HeyGen TTS 가 자연스럽게 읽도록 한다.
+                    String(scene?.caption || scene?.narration || '').trim(),
+                    (slotVoiceByAvatarId && slotVoiceByAvatarId[avatarId]) || overrideVoiceId || preset?.defaultVoiceId,
+                  ),
             }
             if (scene?.layout === 'quiz-countdown' && quizCountdownAssetId) {
               // 3초 대기 씬 — 카운트다운 영상을 배경으로 깖. 아바타는 중앙 풀샷 idle.

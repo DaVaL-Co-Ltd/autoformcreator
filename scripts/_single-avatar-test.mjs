@@ -6,7 +6,7 @@ import fs from 'node:fs/promises'
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import {
-  heygenGenerateOne, heygenPoll, burnSubtitles, uploadToStorage, OUT_DIR,
+  buildHeygenTextVoice, heygenGenerateOne, heygenPoll, burnSubtitles, uploadToStorage, OUT_DIR,
 } from './generate-concept-videos-batch.mjs'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -32,7 +32,7 @@ async function main() {
   const mergedText = SCENES.map((s) => s.narration).join(' ')
   const videoId = await heygenGenerateOne([{
     character: { type: 'talking_photo', talking_photo_id: AVATAR_ID },
-    voice: { type: 'text', input_text: mergedText, voice_id: VOICE_ID },
+    voice: buildHeygenTextVoice(mergedText, VOICE_ID),
   }])
   console.log(`  video_id: ${videoId}`)
 

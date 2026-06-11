@@ -5,11 +5,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..')
+const { buildHeygenTextVoice } = await import(pathToFileURL(path.join(ROOT, 'client', 'src', 'utils', 'shortsTtsText.js')).href)
 
 const ENV_PATH = path.join(ROOT, '.env.local')
 const envText = fs.readFileSync(ENV_PATH, 'utf8')
@@ -61,11 +62,7 @@ async function startVideo(preset) {
           type: 'talking_photo',
           talking_photo_id: preset.avatarId,
         },
-        voice: {
-          type: 'text',
-          input_text: preset.text,
-          voice_id: preset.voiceId,
-        },
+        voice: buildHeygenTextVoice(preset.text, preset.voiceId),
       },
     ],
     dimension: { width: 720, height: 1280 },

@@ -52,16 +52,20 @@ async function importModules() {
   const heygenSource = await fs.readFile(path.join(srcDir, 'heygenAvatars.js'), 'utf8')
   let conceptsSource = await fs.readFile(path.join(srcDir, 'shortsVideoConcepts.js'), 'utf8')
   conceptsSource = conceptsSource.replace(/from\s+(['"])\.\/heygenAvatars\1/g, "from './heygenAvatars.js'")
+  const ttsTextSource = await fs.readFile(path.join(srcDir, 'shortsTtsText.js'), 'utf8')
   await fs.writeFile(path.join(tmpDir, 'heygenAvatars.js'), heygenSource, 'utf8')
   await fs.writeFile(path.join(tmpDir, 'shortsVideoConcepts.js'), conceptsSource, 'utf8')
+  await fs.writeFile(path.join(tmpDir, 'shortsTtsText.js'), ttsTextSource, 'utf8')
   const concepts = await import(pathToFileURL(path.join(tmpDir, 'shortsVideoConcepts.js')).href)
   const avatars = await import(pathToFileURL(path.join(tmpDir, 'heygenAvatars.js')).href)
-  return { concepts, avatars }
+  const ttsText = await import(pathToFileURL(path.join(tmpDir, 'shortsTtsText.js')).href)
+  return { concepts, avatars, ttsText }
 }
 
-const { concepts: conceptsMod, avatars: avatarsMod } = await importModules()
+const { concepts: conceptsMod, avatars: avatarsMod, ttsText: ttsTextMod } = await importModules()
 const { findShortsVideoConcept } = conceptsMod
 const { HEYGEN_AVATAR_LIST } = avatarsMod
+const { buildHeygenTextVoice } = ttsTextMod
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const avatarMeta = (id) => HEYGEN_AVATAR_LIST.find((a) => a.avatarId === id) || null
@@ -97,7 +101,7 @@ function buildStandardInputs(concept, script) {
       character: { type: 'talking_photo', talking_photo_id: avatarId },
       voice: isCountdown
         ? { type: 'silence', duration: Number(scene?.duration) || 3 }
-        : { type: 'text', input_text: String(scene?.narration || '').trim(), voice_id: voiceId },
+        : buildHeygenTextVoice(String(scene?.narration || '').trim(), voiceId),
     }
     // 배경: 컨셉이 backgroundColor 를 지정한 경우에만 단색. 그 외엔 아바타 자체 배경.
     if (concept.backgroundColor) {

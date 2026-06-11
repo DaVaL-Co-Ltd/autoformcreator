@@ -25,6 +25,14 @@ const NATIVE_COUNTER_DIGITS = {
   10: '열',
 }
 const PUNCTUATION_RE = /[.!?。！？]$/
+const DEFAULT_NATURAL_VOICE_SPEED = 1.1
+
+const STUDENT_VOICE_PERSONA_BY_ID = {
+  // 남자 제자 voice: 친근하고 또래가 설명하듯 가볍게.
+  '3097f9a8fd3b4340b6bbe913177b378f': 'male_student',
+  // 여자 제자/면접 제자 voice: 부드럽고 다정한 친구 톤.
+  '86956bc34b7248d7be34eb3a6f69d03b': 'female_student',
+}
 
 // 1~99 범위의 정수를 한자어 한글 발음으로 변환. 그 외는 null.
 function numberToHanjaKorean(n) {
@@ -171,9 +179,65 @@ function normalizeSpeechPacing(text) {
   next = next.replace(/\s*,\s*/g, ', ')
   next = next.replace(/([가-힣]{6,}),\s*([가-힣]{6,})/g, '$1. $2')
 
+  // 한국어 TTS가 긴 구어체를 한 호흡으로 밀어붙이지 않도록 자연스러운 숨표를 보강한다.
+  next = next
+    .replace(/([가-힣]{2,}(?:는데|지만|니까|라서|라면|면|고))\s+([가-힣]{2,})/g, '$1, $2')
+    .replace(/([가-힣]{2,}(?:거든|잖아|맞지|그치))\s+/g, '$1. ')
+    .replace(/\s*([.!?])\s*/g, '$1 ')
+
   // 문장 끝 부호가 없으면 TTS가 다음 문장과 붙여 읽기 쉬워 마침표를 보강한다.
+  next = next
+    .replace(/\s+([,.!?])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/([.!?])\s*[.!?]+/g, '$1')
+    .trim()
   if (next && !PUNCTUATION_RE.test(next)) next += '.'
   return next.replace(/\s+/g, ' ').trim()
+}
+
+function inferVoicePersona(voiceId, persona) {
+  if (persona) return persona
+  return STUDENT_VOICE_PERSONA_BY_ID[String(voiceId || '')] || 'default'
+}
+
+function softenStudentSpeech(text, persona) {
+  let next = String(text || '')
+
+  // 제자 캐릭터는 너무 격식 있는 종결어미를 피해서, 친구에게 말하듯 부드럽게 바꾼다.
+  next = next
+    .replace(/해야\s*합니다/g, '해야 해요')
+    .replace(/하면\s*됩니다/g, '하면 돼요')
+    .replace(/할\s*수\s*있습니다/g, '할 수 있어요')
+    .replace(/할\s*수\s*없습니다/g, '할 수 없어요')
+    .replace(/되었습니다/g, '됐어요')
+    .replace(/했습니다/g, '했어요')
+    .replace(/됩니다/g, '돼요')
+    .replace(/합니다/g, '해요')
+    .replace(/입니다/g, '예요')
+    .replace(/있습니다/g, '있어요')
+    .replace(/없습니다/g, '없어요')
+
+  if (persona === 'male_student') {
+    // 남자 제자는 또래가 옆에서 알려주는 듯한 편한 시작어를 아주 조금만 더한다.
+    next = next
+      .replace(/(^|[.!?]\s+)(첫 번째|두 번째|세 번째|마지막으로)/g, '$1자, $2')
+      .replace(/(^|[.!?]\s+)(이건|이거는|여기서)/g, '$1근데, $2')
+  } else if (persona === 'female_student') {
+    // 여자 제자는 설명이 딱딱하게 끊기지 않도록 부드러운 진행감을 만든다.
+    next = next
+      .replace(/(^|[.!?]\s+)(첫 번째|두 번째|세 번째)\s*,?/g, '$1$2는요,')
+      .replace(/(^|[.!?]\s+)마지막으로\s*,?/g, '$1마지막으로는요,')
+      .replace(/(^|[.!?]\s+)(이건|이거는|여기서)\s*,?/g, '$1여기서,')
+  }
+
+  return next
+}
+
+function applyVoicePersona(text, persona) {
+  if (persona === 'male_student' || persona === 'female_student') {
+    return softenStudentSpeech(text, persona)
+  }
+  return text
 }
 
 // 자막용 텍스트(원본 표기)를 HeyGen TTS 가 자연스럽게 읽도록 변환한다.
@@ -186,4 +250,19 @@ export function toSpokenText(text) {
   next = convertSpeechNumbers(next)
   next = normalizeSpeechPacing(next)
   return next
+}
+
+export function buildHeygenTextVoice(text, voiceId, options = {}) {
+  const persona = inferVoicePersona(voiceId, options.persona)
+  const spokenText = toSpokenText(applyVoicePersona(text, persona))
+  const speed = Number.isFinite(Number(options.speed))
+    ? Number(options.speed)
+    : DEFAULT_NATURAL_VOICE_SPEED
+
+  return {
+    type: 'text',
+    input_text: spokenText,
+    voice_id: voiceId,
+    speed,
+  }
 }

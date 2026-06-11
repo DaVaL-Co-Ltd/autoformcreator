@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { Loader2, Play, Pause, CheckCircle, Sparkles, ZoomIn, X } from 'lucide-react'
 import { HEYGEN_AVATARS } from '../utils/heygenAvatars'
 import { readApiResponse } from '../utils/apiResponse.js'
+import { buildHeygenTextVoice } from '../utils/shortsTtsText.js'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 function apiFetch(path, options = {}) {
@@ -158,7 +159,7 @@ export default function HeygenTestPage() {
       const body = {
         video_inputs: [{
           character: buildHeygenCharacter(selectedAvatar.lookId, selectedAvatar.lookKind),
-          voice: { type: 'text', input_text: script.trim(), voice_id: voiceId },
+          voice: buildHeygenTextVoice(script.trim(), voiceId),
         }],
         dimension: { width: 720, height: 1280 },
       }

@@ -5,7 +5,7 @@ import fs from 'node:fs/promises'
 import { writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import path from 'node:path'
 import {
-  heygenGenerateOne, heygenPoll, trimClip, crossfadeClips,
+  buildHeygenTextVoice, heygenGenerateOne, heygenPoll, trimClip, crossfadeClips,
   burnSubtitles, uploadToStorage, OUT_DIR, XFADE_DUR,
 } from './generate-concept-videos-batch.mjs'
 
@@ -33,7 +33,7 @@ async function main() {
     const s = SCENES[i]
     const input = {
       character: { type: 'talking_photo', talking_photo_id: s.who.avatarId },
-      voice: { type: 'text', input_text: s.narration, voice_id: s.who.voiceId },
+      voice: buildHeygenTextVoice(s.narration, s.who.voiceId),
       background: { type: 'color', value: '#FFFFFF' },
     }
     const id = await heygenGenerateOne([input])
