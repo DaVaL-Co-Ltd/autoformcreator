@@ -2506,13 +2506,30 @@ export default function ExtractionResultPage() {
 
               if (isUploaded) {
                 return (
-                  <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 shrink-0">
-                    <CheckCircle size={14} />
-                    업로드 완료
-                    {uploadedAt && (
-                      <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(uploadedAt)}</span>
-                    )}
-                  </div>
+                  <>
+                    <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 shrink-0">
+                      <CheckCircle size={14} />
+                      업로드 완료
+                      {uploadedAt && (
+                        <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(uploadedAt)}</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => requestAccountUpload(ch)}
+                      disabled={status === 'loading'}
+                      className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
+                        ${status === 'loading'
+                          ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                          : 'bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40 disabled:opacity-60'
+                        }`}
+                    >
+                      {status === 'loading' ? (
+                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                      ) : (
+                        <><Upload size={14} /> 다시 업로드</>
+                      )}
+                    </button>
+                  </>
                 )
               }
 
