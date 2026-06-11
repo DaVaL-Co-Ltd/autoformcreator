@@ -31,7 +31,6 @@ import {
   waitForInstagramReconnect,
   waitForYoutubeReconnect,
 } from '../services/platformSessions'
-import { validateGeminiEnvironment } from '../services/geminiValidation.js'
 import { getAll, loadAll as loadPlatformConnections, updateDisplay } from '../utils/platformConnections'
 import { getBlogUploadShowBrowser, setBlogUploadShowBrowser } from '../utils/blogUploadBrowserPreference.js'
 import { buildBlogFooterDraft, createEmptyBlogFooterLink } from '../utils/blogFooterLinks.js'
@@ -248,9 +247,6 @@ export default function SettingsPage() {
   const [statusLoading, setStatusLoading] = useState(false)
   const [statusError, setStatusError] = useState('')
   const [busyAction, setBusyAction] = useState('')
-  const [geminiValidationLoading, setGeminiValidationLoading] = useState(false)
-  const [geminiValidationError, setGeminiValidationError] = useState('')
-  const [geminiValidationResult, setGeminiValidationResult] = useState(null)
   const [infoModal, setInfoModal] = useState(null)
 
   const [currentPw, setCurrentPw] = useState('')
@@ -353,20 +349,6 @@ export default function SettingsPage() {
       document.removeEventListener('visibilitychange', handleVisibilityRefresh)
     }
   }, [activeSection, refreshPlatformStatuses])
-
-  const handleGeminiValidation = async () => {
-    setGeminiValidationLoading(true)
-    setGeminiValidationError('')
-
-    try {
-      const result = await validateGeminiEnvironment()
-      setGeminiValidationResult(result)
-    } catch (error) {
-      setGeminiValidationError(error.message)
-    } finally {
-      setGeminiValidationLoading(false)
-    }
-  }
 
   const selectSection = (sectionId) => {
     setActiveSection(sectionId)
@@ -1082,91 +1064,6 @@ export default function SettingsPage() {
                   저장
                 </button>
               </div>
-            </div>
-
-            <div className="mt-8 rounded-2xl border border-border bg-surface-light p-5">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="max-w-2xl">
-                  <h4 className="text-sm font-semibold text-text">Gemini API 키 점검</h4>
-                  <p className="mt-1 text-sm leading-6 text-text-muted">
-                    배포 환경에 저장된 Gemini 관련 환경변수를 서버에서 직접 검사합니다. 키 원문은 반환하지 않고
-                    지문만 표시합니다.
-                  </p>
-                </div>
-                <button
-                  onClick={() => void handleGeminiValidation()}
-                  disabled={geminiValidationLoading}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
-                >
-                  <RefreshCw size={15} className={geminiValidationLoading ? 'animate-spin' : ''} />
-                  {geminiValidationLoading ? '검사 중...' : '유효성 검사'}
-                </button>
-              </div>
-
-              {geminiValidationError && (
-                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                  <span>{geminiValidationError}</span>
-                </div>
-              )}
-
-              {geminiValidationResult && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-border bg-white px-4 py-3 text-sm text-text">
-                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                      <div className="font-medium">
-                        테스트 모델: <span className="font-mono text-xs">{geminiValidationResult.model}</span>
-                      </div>
-                      <StatusBadge
-                        tone={geminiValidationResult.summary?.anyValid ? 'success' : 'danger'}
-                        text={geminiValidationResult.summary?.anyValid ? '유효한 키 발견' : '유효한 키 없음'}
-                      />
-                    </div>
-                    <div className="mt-2 text-xs leading-5 text-text-muted">
-                      검사 시각: {new Date(geminiValidationResult.checkedAt).toLocaleString()}
-                    </div>
-                    {geminiValidationResult.summary?.serverSelectedSource && (
-                      <div className="mt-1 text-xs leading-5 text-text-muted">
-                        서버 키 선택 소스: {geminiValidationResult.summary.serverSelectedSource}
-                      </div>
-                    )}
-                    {geminiValidationResult.summary?.precedenceNote && (
-                      <div className="mt-1 text-xs leading-5 text-amber-700">
-                        {geminiValidationResult.summary.precedenceNote}
-                      </div>
-                    )}
-                    {geminiValidationResult.summary?.buildNote && (
-                      <div className="mt-1 text-xs leading-5 text-amber-700">
-                        {geminiValidationResult.summary.buildNote}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {geminiValidationResult.sources?.map((source) => (
-                      <div key={source.name} className="rounded-xl border border-border bg-white px-4 py-3">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                          <div className="text-sm font-semibold text-text">{source.name}</div>
-                          <StatusBadge
-                            tone={source.valid ? 'success' : source.present ? 'danger' : 'muted'}
-                            text={source.valid ? '유효' : source.present ? '실패' : '미설정'}
-                          />
-                        </div>
-                        <div className="mt-2 space-y-1 text-xs leading-5 text-text-muted">
-                          <div>Fingerprint: {source.fingerprint || 'not set'}</div>
-                          <div>HTTP status: {source.responseStatus ?? '-'}</div>
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-text-muted">{source.diagnosis}</p>
-                        {source.message && source.message !== source.diagnosis && (
-                          <p className="mt-1 text-xs leading-5 text-text-muted">
-                            Raw message: {source.message}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

@@ -1861,15 +1861,26 @@ function accountFromInstagramTokens(id, tokens, isDefault = false) {
 
 function pushUniquePlatformAccount(accounts, account) {
   if (!account?.id) return
-  const existing = accounts.find((item) => item.id === account.id)
+  const providerAccountId = String(account.providerAccountId || '').trim()
+  const existing = accounts.find((item) => (
+    item.id === account.id ||
+    (
+      providerAccountId &&
+      item.platform === account.platform &&
+      String(item.providerAccountId || '').trim() === providerAccountId
+    )
+  ))
   if (existing) {
+    const existingIsDefault = existing.id === 'default'
+    const incomingIsNamed = account.id !== 'default'
+    if (existingIsDefault && incomingIsNamed) existing.id = account.id
     existing.providerAccountId = existing.providerAccountId || account.providerAccountId || null
     existing.username = existing.username || account.username || null
-    existing.displayName = existing.displayName || account.displayName || account.username || null
+    existing.displayName = account.displayName || existing.displayName || account.username || null
     existing.status = existing.status || account.status || 'connected'
     existing.isDefault = Boolean(existing.isDefault || account.isDefault)
     existing.createdAt = existing.createdAt || account.createdAt || null
-    existing.updatedAt = existing.updatedAt || account.updatedAt || null
+    existing.updatedAt = account.updatedAt || existing.updatedAt || null
     return
   }
   accounts.push(account)
