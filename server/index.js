@@ -405,8 +405,14 @@ app.get('/api/heygen/avatar-group/:groupId/looks', async (req, res) => {
       || (Array.isArray(data?.data) ? data.data : [])
     const looks = []
     for (const look of (Array.isArray(rawLooks) ? rawLooks : [])) {
-      const id = look.id || look.avatar_id || look.talking_photo_id || look.image_key
+      const rawType = String(look.type || look.kind || look.avatar_type || '').toLowerCase()
+      const avatarId = look.avatar_id || look.avatarId || (rawType === 'avatar' ? look.id : null)
+      const talkingPhotoId = look.talking_photo_id || look.talkingPhotoId
+        || look.talking_photo?.id || look.talkingPhoto?.id
+        || (rawType === 'talking_photo' || rawType === 'talking-photo' || rawType === 'photo_avatar' ? look.id : null)
+      const id = avatarId || talkingPhotoId || look.id || look.image_key
       if (!id) continue
+      const kind = avatarId ? 'avatar' : 'talking_photo'
       const name = look.name || look.avatar_name || look.talking_photo_name || ''
       const preview = look.image_url || look.preview_image_url || look.preview_image || look.motion_preview_url
       let width = 0
@@ -424,7 +430,7 @@ app.get('/api/heygen/avatar-group/:groupId/looks', async (req, res) => {
         }
       }
       const portrait = width > 0 && height > 0 ? (width / height) <= 0.85 : true
-      looks.push({ id, name, width, height, portrait, preview: preview || null })
+      looks.push({ id, kind, avatarId: avatarId || null, talkingPhotoId: talkingPhotoId || null, name, width, height, portrait, preview: preview || null })
     }
 
     avatarGroupLooksCache.set(groupId, { looks, ts: Date.now() })

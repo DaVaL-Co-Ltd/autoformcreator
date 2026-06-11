@@ -7,26 +7,44 @@ import { findHeygenAvatarByAvatarId } from './heygenAvatars'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
+function normalizeAvatarKind(kind) {
+  return kind === 'avatar' ? 'avatar' : 'talking_photo'
+}
+
+function lookToCharacter(look, fallbackId, fallbackKind = 'talking_photo') {
+  const kind = normalizeAvatarKind(look?.kind || fallbackKind)
+  const id = kind === 'avatar'
+    ? (look?.avatarId || look?.avatar_id || look?.id || fallbackId)
+    : (look?.talkingPhotoId || look?.talking_photo_id || look?.id || fallbackId)
+  return { id, kind }
+}
+
 // avatarId 가 avatar group 을 가진 등록 아바타면 그룹 안 룩 중 랜덤 1개(9:16 우선)를 반환.
 // 그 외(스톡 아바타·사용자 업로드 등)에는 입력 avatarId 를 그대로 돌려준다.
 // 실패 시에도 입력 avatarId 를 폴백으로 반환해 영상 생성이 끊기지 않게 한다.
-export async function resolveAvatarGroupLook(avatarId) {
-  if (!avatarId) return avatarId
+export async function resolveAvatarGroupCharacter(avatarId, fallbackKind = 'talking_photo') {
+  const fallback = { id: avatarId, kind: normalizeAvatarKind(fallbackKind) }
+  if (!avatarId) return fallback
   const entry = findHeygenAvatarByAvatarId(avatarId)
-  if (!entry?.avatarGroupId) return avatarId
+  if (!entry?.avatarGroupId) return fallback
 
   try {
     const res = await fetch(`${API_BASE}/api/heygen/avatar-group/${entry.avatarGroupId}/looks`)
-    if (!res.ok) return avatarId
+    if (!res.ok) return fallback
     const data = await res.json()
     const looks = Array.isArray(data?.looks) ? data.looks.filter((l) => l?.id) : []
-    if (!looks.length) return avatarId
+    if (!looks.length) return fallback
     // 9:16 세로 룩만 추림. 세로 룩이 하나도 없으면 전체에서 고른다.
     const portrait = looks.filter((l) => l.portrait)
     const pool = portrait.length ? portrait : looks
     const picked = pool[Math.floor(Math.random() * pool.length)]
-    return picked?.id || avatarId
+    return lookToCharacter(picked, avatarId, fallbackKind)
   } catch {
-    return avatarId
+    return fallback
   }
+}
+
+export async function resolveAvatarGroupLook(avatarId) {
+  const character = await resolveAvatarGroupCharacter(avatarId)
+  return character.id
 }

@@ -14,6 +14,16 @@ function apiFetch(path, options = {}) {
 }
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
+function normalizeHeygenAvatarKind(kind) {
+  return kind === 'avatar' ? 'avatar' : 'talking_photo'
+}
+
+function buildHeygenCharacter(id, kind = 'talking_photo') {
+  return normalizeHeygenAvatarKind(kind) === 'avatar'
+    ? { type: 'avatar', avatar_id: id, avatar_style: 'normal' }
+    : { type: 'talking_photo', talking_photo_id: id }
+}
+
 // 표시할 그룹: avatarGroupId 가 있는 preset 들. 라벨은 HEYGEN_AVATARS 의 name 을 그대로 따라가
 // 이름이 바뀌면 자동 반영된다.
 const TEST_GROUPS = [
@@ -27,7 +37,7 @@ const DEFAULT_TEST_SCRIPT = '안녕하세요, HeyGen 테스트 영상입니다. 
 export default function HeygenTestPage() {
   const [groupLooks, setGroupLooks] = useState({}) // groupId → looks[]
   const [myVoices, setMyVoices] = useState([])
-  const [selectedAvatar, setSelectedAvatar] = useState(null) // { lookId, groupLabel, preview, defaultVoiceId }
+  const [selectedAvatar, setSelectedAvatar] = useState(null) // { lookId, lookKind, groupLabel, preview, defaultVoiceId }
   const [selectedVoiceId, setSelectedVoiceId] = useState(null)
   // 아바타 그리드 카테고리 필터 — 동완쌤·후라이쌤·제자 중 하나만 표시.
   const [selectedCategory, setSelectedCategory] = useState('dongwan_ssaem')
@@ -88,6 +98,7 @@ export default function HeygenTestPage() {
       const items = (groupLooks[group.groupId] || []).map((look) => ({
         key: `${group.groupId}:${look.id}`,
         lookId: look.id,
+        lookKind: normalizeHeygenAvatarKind(look.kind),
         groupLabel: group.label,
         preview: look.preview || null,
         defaultVoiceId: group.defaultVoiceId,
@@ -146,7 +157,7 @@ export default function HeygenTestPage() {
       const voiceId = selectedVoiceId || selectedAvatar.defaultVoiceId
       const body = {
         video_inputs: [{
-          character: { type: 'talking_photo', talking_photo_id: selectedAvatar.lookId },
+          character: buildHeygenCharacter(selectedAvatar.lookId, selectedAvatar.lookKind),
           voice: { type: 'text', input_text: script.trim(), voice_id: voiceId },
         }],
         dimension: { width: 720, height: 1280 },
@@ -235,13 +246,13 @@ export default function HeygenTestPage() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                    {category.items.map(({ key, lookId, groupLabel, preview, defaultVoiceId }) => {
+                    {category.items.map(({ key, lookId, lookKind, groupLabel, preview, defaultVoiceId }) => {
                       const isSelected = selectedAvatar?.lookId === lookId
                       return (
                         <button
                           type="button"
                           key={key}
-                          onClick={() => setSelectedAvatar({ lookId, groupLabel, preview, defaultVoiceId })}
+                          onClick={() => setSelectedAvatar({ lookId, lookKind, groupLabel, preview, defaultVoiceId })}
                           className={`relative rounded-xl border bg-surface-light overflow-hidden transition-all text-left ${
                             isSelected ? 'border-primary/60 ring-2 ring-primary/30 shadow-md' : 'border-border hover:border-primary/30'
                           }`}

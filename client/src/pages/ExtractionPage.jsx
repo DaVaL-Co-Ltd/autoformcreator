@@ -19,7 +19,7 @@ import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar, findPresetById, getPresetCategory, getPresetsByCategory } from '../utils/presetShortsAvatars'
 import { SHORTS_VIDEO_CONCEPT_OPTIONS, findShortsVideoConcept, buildShortsConceptExtra } from '../utils/shortsVideoConcepts'
-import { resolveAvatarGroupLook } from '../utils/avatarGroupLook'
+import { resolveAvatarGroupCharacter } from '../utils/avatarGroupLook'
 import {
   cleanCardText,
   deriveBlogHeadline,
@@ -56,6 +56,16 @@ function pickPortraitLooks(looks = []) {
   const validLooks = Array.isArray(looks) ? looks.filter((look) => look?.id) : []
   const portraitLooks = validLooks.filter((look) => look.portrait !== false)
   return portraitLooks.length > 0 ? portraitLooks : validLooks
+}
+
+function normalizeHeygenAvatarKind(kind) {
+  return kind === 'avatar' ? 'avatar' : 'talking_photo'
+}
+
+function buildHeygenCharacter(id, kind = 'talking_photo') {
+  return normalizeHeygenAvatarKind(kind) === 'avatar'
+    ? { type: 'avatar', avatar_id: id, avatar_style: 'normal' }
+    : { type: 'talking_photo', talking_photo_id: id }
 }
 
 function loadImageElement(src) {
@@ -651,6 +661,7 @@ export default function ExtractionPage() {
   const [avatarImage, setAvatarImage] = useState(null) // data:image URL 또는 HeyGen preview URL
   const [avatarConfirmed, setAvatarConfirmed] = useState(false)
   const [heygenAvatarId, setHeygenAvatarId] = useState(null) // talking_photo_id 또는 프리셋 avatar_id
+  const [heygenAvatarKind, setHeygenAvatarKind] = useState('talking_photo')
   const [heygenReady, setHeygenReady] = useState(false)
   // 컨셉 선택 상태에서 그 컨셉에 없는 아바타를 직접 고르면 컨셉이 초기화되며 이 안내를 띄운다.
   const [conceptResetNotice, setConceptResetNotice] = useState(false)
@@ -767,6 +778,7 @@ export default function ExtractionPage() {
             key: `${preset.id}:${look.id}`,
             preset,
             lookId: look.id,
+            lookKind: normalizeHeygenAvatarKind(look.kind),
             preview: look.preview,
           }))
       }
@@ -777,6 +789,7 @@ export default function ExtractionPage() {
         key: preset.id,
         preset,
         lookId: preset.avatarId,
+        lookKind: 'talking_photo',
         preview,
       }]
     }
@@ -815,6 +828,7 @@ export default function ExtractionPage() {
       const looks = pickPortraitLooks(groupLooks[preset.avatarGroupId])
       if (Array.isArray(looks) && looks.length > 0 && looks[0]?.id) {
         setHeygenAvatarId(looks[0].id)
+        setHeygenAvatarKind(normalizeHeygenAvatarKind(looks[0].kind))
         if (looks[0].preview) setAvatarImage(looks[0].preview)
       }
     }
@@ -1043,6 +1057,7 @@ export default function ExtractionPage() {
     if (!avatarImage) return
     setAvatarConfirmed(true)
     setHeygenAvatarId(null)
+    setHeygenAvatarKind('talking_photo')
     setHeygenReady(false)
     setHeygenUploading(false)
     setConceptResetNotice(false)
@@ -1051,6 +1066,7 @@ export default function ExtractionPage() {
   const resetGeneratedAvatarSelection = () => {
     setAvatarConfirmed(false)
     setHeygenAvatarId(null)
+    setHeygenAvatarKind('talking_photo')
     setHeygenReady(false)
     setHeygenUploading(false)
   }
@@ -1242,6 +1258,7 @@ export default function ExtractionPage() {
       setAvatarPrompt('')
       setAvatarConfirmed(false)
       setHeygenAvatarId(null)
+      setHeygenAvatarKind('talking_photo')
       setHeygenReady(false)
       setHeygenUploading(false)
       setConceptAvatarSlots([])
@@ -1679,6 +1696,7 @@ export default function ExtractionPage() {
     setAvatarConfirmed(false)
     setAvatarImage(null)
     setHeygenAvatarId(null)
+    setHeygenAvatarKind('talking_photo')
     setHeygenReady(false)
     setHeygenUploading(false)
     setShortsVideo(null)
@@ -1799,6 +1817,7 @@ DO NOT:
       const talkingPhotoId = firstLook?.id || groupId
 
       setHeygenAvatarId(talkingPhotoId)
+      setHeygenAvatarKind(normalizeHeygenAvatarKind(firstLook?.kind))
       setHeygenReady(Boolean(firstLook?.id))
       if (firstLook?.preview) setAvatarImage(firstLook.preview)
       return talkingPhotoId
@@ -1840,7 +1859,7 @@ DO NOT:
   // 인포그래픽 씬은 Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다.
   // infographic-full 이지만 보여줄 데이터(숫자)가 없는 씬은 아바타 씬으로 폴백한다.
   // 자막은 아바타 씬에만 (server 가 infographic-full 씬은 skip).
-  const runHybridSegmentedShorts = async ({ targetScript, avatarId, voiceId, mergeAvatarSegments = false }) => {
+  const runHybridSegmentedShorts = async ({ targetScript, avatarId, avatarKind = 'talking_photo', voiceId, mergeAvatarSegments = false }) => {
     const scenes = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
     if (scenes.length === 0) throw new Error('쇼츠 대본에 씬이 없습니다.')
     const sceneText = (s) => String(s?.caption || s?.narration || '')
@@ -1877,9 +1896,10 @@ DO NOT:
       const seg = segments[si]
       setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `세그먼트 ${si + 1}/${segments.length} 생성 중 (${seg.type === 'info' ? '인포그래픽' : '아바타'})...` }))
       if (seg.type === 'avatar') {
+        const character = buildHeygenCharacter(avatarId, avatarKind)
         const video_inputs = mergeAvatarSegments
           ? [{
-              character: { type: 'talking_photo', talking_photo_id: avatarId },
+              character,
               voice: {
                 type: 'text',
                 input_text: seg.scenes
@@ -1891,7 +1911,7 @@ DO NOT:
             }].filter((v) => v.voice.input_text && v.voice.voice_id)
           : seg.scenes
               .map((scene) => ({
-                character: { type: 'talking_photo', talking_photo_id: avatarId },
+                character,
                 voice: { type: 'text', input_text: toSpokenText(sceneText(scene).trim()), voice_id: voiceId },
               }))
               .filter((v) => v.voice.input_text && v.voice.voice_id)
@@ -1909,7 +1929,7 @@ DO NOT:
       } else {
         const prompt = buildShortsVideoAgentPrompt({
           script: { ...targetScript, scenes: seg.scenes },
-          avatar: { id: avatarId, kind: 'talking_photo', name: '', subjectPrompt: '' },
+          avatar: { id: avatarId, kind: avatarKind, name: '', subjectPrompt: '' },
           subtitleStyle,
           subtitleFont,
           extraPrompt: '이 클립은 인포그래픽(차트) 씬만 포함합니다. 인트로/아웃트로 아바타 화면을 추가하지 말고, 각 씬은 아바타 없이 풀화면 인포그래픽으로만 구성하세요.',
@@ -2038,10 +2058,11 @@ DO NOT:
     setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': true }))
 
     try {
-      const talkingPhotoId = slotConcept
+      const selectedAvatarId = slotConcept
         ? (findPresetById(conceptAvatarSlots[0]?.presetId)?.avatarId || null)
         : (heygenAvatarId || await uploadAvatarToHeyGen())
-      const avatarReady = slotConcept ? true : (heygenReady || await waitForHeygenAvatarReady(talkingPhotoId, {
+      const selectedAvatarKind = slotConcept ? 'talking_photo' : heygenAvatarKind
+      const avatarReady = slotConcept ? true : (heygenReady || await waitForHeygenAvatarReady(selectedAvatarId, {
         attempts: 24,
         intervalMs: 5000,
         progressLabel: '아바타 준비 확인 중...',
@@ -2052,10 +2073,12 @@ DO NOT:
       }
 
       // 등록 아바타에 avatar group 이 있으면 그룹 안 9:16 룩 중 하나를 랜덤 선택해 쓴다.
-      // 그룹이 없는 아바타(스톡·사용자 업로드)는 talkingPhotoId 가 그대로 반환된다.
-      const resolvedAvatarId = await resolveAvatarGroupLook(talkingPhotoId)
-      if (resolvedAvatarId !== talkingPhotoId) {
-        console.log(`[shorts] avatar group 랜덤 룩 선택: ${talkingPhotoId} → ${resolvedAvatarId}`)
+      // 그룹이 없는 아바타(스톡·사용자 업로드)는 selectedAvatarId 가 그대로 반환된다.
+      const resolvedAvatarCharacter = await resolveAvatarGroupCharacter(selectedAvatarId, selectedAvatarKind)
+      const resolvedAvatarId = resolvedAvatarCharacter.id
+      const resolvedAvatarKind = resolvedAvatarCharacter.kind
+      if (resolvedAvatarId !== selectedAvatarId) {
+        console.log(`[shorts] avatar group 랜덤 룩 선택: ${selectedAvatarId} → ${resolvedAvatarId} (${resolvedAvatarKind})`)
       }
 
       const noConceptHasInfographicScenes = !conceptForRun
@@ -2065,6 +2088,7 @@ DO NOT:
         const finalVideo = await runHybridSegmentedShorts({
           targetScript,
           avatarId: resolvedAvatarId,
+          avatarKind: resolvedAvatarKind,
           voiceId: selectedVoiceId,
           mergeAvatarSegments: true,
         })
@@ -2081,6 +2105,7 @@ DO NOT:
         const finalVideo = await runHybridSegmentedShorts({
           targetScript,
           avatarId: resolvedAvatarId,
+          avatarKind: resolvedAvatarKind,
           voiceId: selectedVoiceId || fbPreset?.defaultVoiceId,
         })
         if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
@@ -2105,6 +2130,7 @@ DO NOT:
       // slotVoiceByAvatarId: 사용자가 고른 아바타 ID → 그 인물에 고른 목소리 ID.
       const isSlotConcept = Array.isArray(selectedConcept?.avatarSlots) && selectedConcept.avatarSlots.length > 0
       let slotAvatarIds = null
+      let slotAvatarKindsById = null
       let slotRoleRemap = null
       let slotVoiceByAvatarId = null
       if (isSlotConcept) {
@@ -2112,15 +2138,17 @@ DO NOT:
           selectedConcept.avatarSlots.map(async (slotDef, i) => {
             const sel = conceptAvatarSlots[i] || {}
             const preset = findPresetById(sel.presetId)
-            const avatarId = await resolveAvatarGroupLook(preset?.avatarId)
-            return { defaultId: selectedConcept.preferredAvatarIds?.[i], avatarId, voiceId: sel.voiceId || preset?.defaultVoiceId }
+            const avatarCharacter = await resolveAvatarGroupCharacter(preset?.avatarId)
+            return { defaultId: selectedConcept.preferredAvatarIds?.[i], avatarId: avatarCharacter.id, avatarKind: avatarCharacter.kind, voiceId: sel.voiceId || preset?.defaultVoiceId }
           })
         )
         slotAvatarIds = resolvedSlots.map((r) => r.avatarId)
         slotRoleRemap = {}
+        slotAvatarKindsById = {}
         slotVoiceByAvatarId = {}
         resolvedSlots.forEach((r) => {
           if (r.defaultId) slotRoleRemap[r.defaultId] = r.avatarId
+          if (r.avatarId) slotAvatarKindsById[r.avatarId] = r.avatarKind
           if (r.avatarId) slotVoiceByAvatarId[r.avatarId] = r.voiceId
         })
         console.log(`[shorts] ${selectedConcept.id}: 슬롯 선택 → ${slotAvatarIds.join(', ')}`)
@@ -2161,15 +2189,26 @@ DO NOT:
         if (shuffledSceneAvatarIds) {
           console.log(`[shorts] ${selectedConcept.id}: variant 셔플 — 앞 ${Math.min(scenesForStandard.length, shuffledSceneAvatarIds.length)}개: ${shuffledSceneAvatarIds.slice(0, scenesForStandard.length).join(', ')}`)
         }
-        const conceptAvatarIds = isSlotConcept
-          ? slotAvatarIds
-          : (useMultiAvatar
-            ? await Promise.all(selectedConcept.preferredAvatarIds.map(resolveAvatarGroupLook))
-            : (pickedVariantId
-                ? [pickedVariantId]
-                : (shuffledSceneAvatarIds
-                    ? shuffledSceneAvatarIds
-                    : (hasSceneAvatars ? selectedConcept.sceneAvatarIds : [resolvedAvatarId]))))
+        const conceptAvatarKindsById = { [resolvedAvatarId]: resolvedAvatarKind, ...(slotAvatarKindsById || {}) }
+        let conceptAvatarIds
+        if (isSlotConcept) {
+          conceptAvatarIds = slotAvatarIds
+        } else if (useMultiAvatar) {
+          const avatarCharacters = await Promise.all(selectedConcept.preferredAvatarIds.map((id) => resolveAvatarGroupCharacter(id)))
+          conceptAvatarIds = avatarCharacters.map((character) => character.id)
+          avatarCharacters.forEach((character) => {
+            if (character.id) conceptAvatarKindsById[character.id] = character.kind
+          })
+        } else if (pickedVariantId) {
+          conceptAvatarIds = [pickedVariantId]
+          conceptAvatarKindsById[pickedVariantId] = 'talking_photo'
+        } else if (shuffledSceneAvatarIds) {
+          conceptAvatarIds = shuffledSceneAvatarIds
+          shuffledSceneAvatarIds.forEach((id) => { conceptAvatarKindsById[id] = 'talking_photo' })
+        } else {
+          conceptAvatarIds = hasSceneAvatars ? selectedConcept.sceneAvatarIds : [resolvedAvatarId]
+          if (hasSceneAvatars) conceptAvatarIds.forEach((id) => { conceptAvatarKindsById[id] = 'talking_photo' })
+        }
 
         // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
         let quizCountdownAssetId = null
@@ -2220,7 +2259,7 @@ DO NOT:
             .filter(Boolean)
             .join(' ')
           const mergedInput = {
-            character: { type: 'talking_photo', talking_photo_id: soloAvatarId },
+            character: buildHeygenCharacter(soloAvatarId, conceptAvatarKindsById[soloAvatarId]),
             voice: { type: 'text', input_text: mergedText, voice_id: overrideVoiceId || soloPreset?.defaultVoiceId },
           }
           if (selectedConcept?.backgroundColor) {
@@ -2241,10 +2280,7 @@ DO NOT:
             // quiz-countdown: 아바타가 3초간 말 없이 대기하는 씬 → voice 를 silence 로.
             const isCountdownScene = scene?.layout === 'quiz-countdown'
             const baseInput = {
-              character: {
-                type: 'talking_photo',
-                talking_photo_id: avatarId,
-              },
+              character: buildHeygenCharacter(avatarId, conceptAvatarKindsById[avatarId]),
               voice: isCountdownScene
                 ? { type: 'silence', duration: Number(scene?.duration) || 3 }
                 : {
@@ -2296,7 +2332,7 @@ DO NOT:
           script: targetScript,
           avatar: {
             id: resolvedAvatarId,
-            kind: 'talking_photo',
+            kind: resolvedAvatarKind,
             name: avatarPrompt?.trim() || 'custom avatar',
             subjectPrompt: avatarPrompt?.trim() || '',
           },
@@ -3718,6 +3754,7 @@ ${parsedText}
                           setAvatarPrompt('')
                           setAvatarImage(null)
                           setHeygenAvatarId(null)
+                          setHeygenAvatarKind('talking_photo')
                           setAvatarConfirmed(false)
                           setSelectedVoiceId(null)
                           setHeygenReady(true)
@@ -3732,6 +3769,7 @@ ${parsedText}
                               setAvatarPrompt('')
                               setAvatarImage(presetAvatarPreviews[firstAvatarId] || null)
                               setHeygenAvatarId(firstAvatarId)
+                              setHeygenAvatarKind('talking_photo')
                               setAvatarConfirmed(true)
                               setHeygenReady(true)
                               setHeygenUploading(false)
@@ -4054,7 +4092,7 @@ ${parsedText}
                                   </p>
                                 ) : (
                                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                                    {category.items.map(({ key, preset, lookId, preview }) => {
+                                    {category.items.map(({ key, preset, lookId, lookKind, preview }) => {
                                       // 그룹 안 룩들도 1개만 선택 표시 — 컨셉 매칭은 원본 preset.avatarId(=group ID) 기준.
                                       const isSelected = heygenAvatarId === lookId
                                       return (
@@ -4075,6 +4113,7 @@ ${parsedText}
                                             setAvatarPrompt('')
                                             setAvatarImage(preview)
                                             setHeygenAvatarId(lookId)
+                                            setHeygenAvatarKind(normalizeHeygenAvatarKind(lookKind))
                                             setAvatarConfirmed(true)
                                             setHeygenReady(true)
                                             setHeygenUploading(false)

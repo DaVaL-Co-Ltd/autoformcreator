@@ -5,11 +5,26 @@
 //  - 분수: 1/2 → "이분의 일", 2/3 → "삼분의 이"
 //  - 종이 규격·세대 표기: A4 → "에이포", 5G → "오지"
 //  - 흔히 쓰이는 영문 약어: AI, IT, IoT, AR, VR 등
+//  - 연도/학년도·퍼센트·간단한 정수: 2028학년도 → "이천이십팔학년도", 0.1% → "영점 일 퍼센트"
+//  - 화면용 기호/목록 구분: "1."·"·"·":" 등은 말하기용 쉼으로 정리
 //
-// HeyGen 이 알아서 잘 읽는 것은 일부러 안 건드림: 일반 숫자, 백분율(30%),
-// 시각(오후 3시 30분), 통화($100), 소수점(12.3) 등.
+// HeyGen 이 알아서 잘 읽거나 문맥 오해 위험이 큰 것은 일부러 안 건드림:
+// 시각(오후 3시 30분), 통화($100), 전화번호/ID 같은 긴 숫자열 등.
 
 const HANJA_DIGITS = ['영', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구']
+const NATIVE_COUNTER_DIGITS = {
+  1: '한',
+  2: '두',
+  3: '세',
+  4: '네',
+  5: '다섯',
+  6: '여섯',
+  7: '일곱',
+  8: '여덟',
+  9: '아홉',
+  10: '열',
+}
+const PUNCTUATION_RE = /[.!?。！？]$/
 
 // 1~99 범위의 정수를 한자어 한글 발음으로 변환. 그 외는 null.
 function numberToHanjaKorean(n) {
@@ -20,6 +35,37 @@ function numberToHanjaKorean(n) {
   const tensWord = tens === 1 ? '십' : `${HANJA_DIGITS[tens]}십`
   const onesWord = ones === 0 ? '' : HANJA_DIGITS[ones]
   return tensWord + onesWord
+}
+
+// 0~9999 범위의 정수를 한자어 한글 발음으로 변환. TTS가 숫자 뭉치를 끊어 읽는 경우를 줄인다.
+function integerToHanjaKorean(n) {
+  if (!Number.isInteger(n) || n < 0 || n > 9999) return null
+  if (n <= 99) return numberToHanjaKorean(n)
+  const units = [
+    { value: 1000, word: '천' },
+    { value: 100, word: '백' },
+    { value: 10, word: '십' },
+  ]
+  let rest = n
+  let out = ''
+  for (const unit of units) {
+    const digit = Math.floor(rest / unit.value)
+    if (digit > 0) {
+      out += digit === 1 ? unit.word : `${HANJA_DIGITS[digit]}${unit.word}`
+      rest %= unit.value
+    }
+  }
+  if (rest > 0) out += HANJA_DIGITS[rest]
+  return out || HANJA_DIGITS[0]
+}
+
+function decimalToHanjaKorean(value) {
+  const raw = String(value)
+  if (!raw.includes('.')) return integerToHanjaKorean(Number(raw))
+  const [integerPart, decimalPart] = raw.split('.')
+  const integerWord = integerToHanjaKorean(Number(integerPart))
+  if (!integerWord || !decimalPart) return null
+  return `${integerWord}점 ${decimalPart.split('').map((d) => HANJA_DIGITS[Number(d)] || d).join(' ')}`
 }
 
 // 종이 규격·세대 표기·영문 약어 등 HeyGen 이 글자 단위로 읽으면 어색해지는 고정 패턴.
@@ -68,6 +114,68 @@ function convertAbbreviations(text) {
   return next
 }
 
+function convertSpeechNumbers(text) {
+  let next = text
+
+  // 2028학년도, 2026년처럼 읽히는 단위가 명확한 4자리 숫자만 변환한다.
+  next = next.replace(/(?<![\d.])(\d{4})(학년도|년도|년)(?!\d)/g, (match, raw, suffix) => {
+    const spoken = integerToHanjaKorean(Number(raw))
+    return spoken ? `${spoken}${suffix}` : match
+  })
+
+  // 백분율은 HeyGen이 퍼센트 앞 숫자를 끊어 읽는 경우가 많아 발음으로 풀어준다.
+  next = next.replace(/(?<![\d.])(\d{1,4}(?:\.\d{1,2})?)\s*%/g, (match, raw) => {
+    const spoken = decimalToHanjaKorean(raw)
+    return spoken ? `${spoken} 퍼센트` : match
+  })
+
+  // "5등급제", "3학년"처럼 붙여 읽어야 자연스러운 교육 용어를 먼저 처리한다.
+  next = next.replace(/(?<![\d.])(\d{1,2})(등급제|등급|학년|학기|단계)(?!\d)/g, (match, raw, suffix) => {
+    const spoken = numberToHanjaKorean(Number(raw))
+    return spoken ? `${spoken}${suffix}` : match
+  })
+
+  // "상위 1등", "3가지"처럼 짧고 단위가 붙은 숫자만 보수적으로 변환한다.
+  next = next.replace(/(?<![\d.])(\d{1,2})(가지|개|명|등|위|초|분)(?![\d가-힣])/g, (match, raw, suffix) => {
+    const value = Number(raw)
+    const useNativeCounter = ['가지', '개', '명'].includes(suffix)
+    const spoken = useNativeCounter
+      ? NATIVE_COUNTER_DIGITS[value]
+      : numberToHanjaKorean(value)
+    return spoken ? `${spoken} ${suffix}` : match
+  })
+
+  return next
+}
+
+function normalizeSpeechPacing(text) {
+  let next = text
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  // 화면에서는 보기 좋은 구분 기호지만 TTS에는 단어 중간 끊김처럼 들릴 수 있어 쉼으로 바꾼다.
+  next = next
+    .replace(/\bScene\s*(\d{1,2})\b/gi, '씬 $1')
+    .replace(/\s*[•·]\s*/g, '. ')
+    .replace(/\s*[|]\s*/g, '. ')
+    .replace(/\s*[:：]\s*/g, '. ')
+    .replace(/^\s*\d{1,2}[.)]\s+/g, '')
+    .replace(/\s+-\s+/g, '. ')
+
+  // 한글 단어 사이의 슬래시는 말로 풀고, 숫자 분수/날짜 가능성이 있는 슬래시는 앞 단계에 맡긴다.
+  next = next.replace(/([가-힣])\s*\/\s*([가-힣])/g, '$1 또는 $2')
+
+  // 너무 촘촘한 쉼표는 짧은 호흡으로 바꾸되, 숫자 소수점/천 단위에는 관여하지 않는다.
+  next = next.replace(/\s*,\s*/g, ', ')
+  next = next.replace(/([가-힣]{6,}),\s*([가-힣]{6,})/g, '$1. $2')
+
+  // 문장 끝 부호가 없으면 TTS가 다음 문장과 붙여 읽기 쉬워 마침표를 보강한다.
+  if (next && !PUNCTUATION_RE.test(next)) next += '.'
+  return next.replace(/\s+/g, ' ').trim()
+}
+
 // 자막용 텍스트(원본 표기)를 HeyGen TTS 가 자연스럽게 읽도록 변환한다.
 // 의도적으로 변환 범위를 최소화한다 — HeyGen 이 잘 읽는 표기는 그대로 둔다.
 export function toSpokenText(text) {
@@ -75,5 +183,7 @@ export function toSpokenText(text) {
   let next = String(text)
   next = convertFractions(next)
   next = convertAbbreviations(next)
+  next = convertSpeechNumbers(next)
+  next = normalizeSpeechPacing(next)
   return next
 }
