@@ -4151,6 +4151,16 @@ ${parsedText}
                             ))}
                           </div>
                           <div className="space-y-5">
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold text-text-muted">아바타 선택</p>
+                                {heygenAvatarId && avatarConfirmed && (
+                                  <span className="text-[11px] text-success flex items-center gap-1">
+                                    <CheckCircle size={11} /> 선택됨
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                             {avatarCategories
                               .filter((category) => category.id === selectedAvatarCategory)
                               .map((category) => (

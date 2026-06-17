@@ -29,6 +29,7 @@ import {
   shortsPlatformFromSchedule,
   shortsSchedulePlatform,
 } from '../utils/shortsUploadStatus'
+import { hasUploadAccountFailures, normalizeUploadAccountResults } from '../utils/uploadAccountResults'
 
 const channelConfig = {
   all: { label: '전체', icon: FileText, color: 'text-text', bg: 'bg-surface-light' },
@@ -215,6 +216,51 @@ function AccountUploadDialog({ open, platform, title, uploadedAccountIds = [], o
   )
 }
 
+function AccountResultBadges({ meta, className = '' }) {
+  const rows = normalizeUploadAccountResults(meta)
+  if (!rows.length) return null
+  const accountNameById = new Map()
+  if (Array.isArray(meta?.accounts)) {
+    for (const account of meta.accounts) {
+      const id = String(account?.id || '').trim()
+      const name = String(account?.name || account?.displayName || account?.username || '').trim()
+      if (id && name) accountNameById.set(id, name)
+    }
+  }
+  if (Array.isArray(meta?.accountIds) && Array.isArray(meta?.accountNames)) {
+    meta.accountIds.forEach((id, index) => {
+      const cleanId = String(id || '').trim()
+      const name = String(meta.accountNames[index] || '').trim()
+      if (cleanId && name && !accountNameById.has(cleanId)) accountNameById.set(cleanId, name)
+    })
+  }
+
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {rows.map((row, index) => {
+        const accountLabel = accountNameById.get(row.accountId) || row.accountId || '계정'
+        return (
+          <div
+            key={`${row.accountId || 'unknown'}-${index}`}
+            className={`inline-flex max-w-full items-start gap-1.5 rounded-lg border px-2.5 py-1 text-xs ${
+              row.status === 'failed'
+                ? 'border-danger/20 bg-danger/5 text-danger'
+                : 'border-success/20 bg-success/5 text-success'
+            }`}
+          >
+            {row.status === 'failed' ? <AlertTriangle size={12} className="mt-0.5 shrink-0" /> : <CheckCircle size={12} className="mt-0.5 shrink-0" />}
+            <span className="min-w-0">
+              <span className="font-semibold">{accountLabel}</span>
+              <span className="ml-1">{row.status === 'failed' ? '실패' : '성공'}</span>
+              {row.error && <span className="ml-1 break-all opacity-80">{row.error}</span>}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function normalizeUploadAccount(account) {
   if (!account || typeof account !== 'object') return null
   const id = account.id ? String(account.id) : ''
@@ -360,8 +406,9 @@ function toContentItems(extractions, scheduledMap = new Map()) {
         uploadedAt: uploadInfo.uploadedAt || null,
         scheduledId: scheduledMeta?.id || null,
         scheduledContent: scheduledMeta?.content || null,
-        scheduledAccountIds: scheduledMeta?.accountIds || [],
         uploadTargets: uploadInfo.uploadTargets || scheduledMeta?.content?.uploadTargets || null,
+        accountIds: uploadInfo.accountIds || scheduledMeta?.accountIds || [],
+        accountIdsByPlatform: uploadInfo.accountIdsByPlatform || scheduledMeta?.accountIdsByPlatform || scheduledMeta?.content?.accountIdsByPlatform || {},
       }
     })
   )
@@ -547,6 +594,9 @@ export default function ContentPage() {
             status: 'uploaded',
             uploadedAt: new Date().toISOString(),
             uploadedUrl: platformResult.url || null,
+            accountIds: Array.isArray(options.accountIds) ? options.accountIds : [],
+            accountResults: platformResult.accountResults || null,
+            failures: platformResult.failures || [],
             ...accountMeta,
           },
         })
@@ -559,6 +609,9 @@ export default function ContentPage() {
           status: 'uploaded',
           uploadedAt: new Date().toISOString(),
           uploadedUrl: result?.url || null,
+          accountIds: Array.isArray(options.accountIds) ? options.accountIds : [],
+          accountResults: result?.accountResults || null,
+          failures: result?.failures || [],
         }
         if (result?.failures?.length) {
           nextUploadInfo.failures = result.failures
@@ -625,14 +678,19 @@ export default function ContentPage() {
       const target = scheduleTarget || editScheduleTarget
       await createScheduledUpload({
         platform: channel,
-        content: { title: target?.title || '' },
+        content: { title: target?.title || '', accountIdsByPlatform: info.accountIdsByPlatform || {} },
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
-        accountIds: channel === 'shorts_instagram' ? info.accountIds : null,
+        accountIds: info.accountIds || info.accountIdsByPlatform?.[shortsPlatformKey] || [],
+        accountIdsByPlatform: info.accountIdsByPlatform || {},
       })
       const merged = buildShortsUploadStatus(target?.uploadStatusMap?.shorts, {
-        [shortsPlatformKey]: { status: 'scheduled', scheduledAt: info.scheduledAt, accountIds: info.accountIds || [] },
+        [shortsPlatformKey]: {
+          status: 'scheduled',
+          scheduledAt: info.scheduledAt,
+          accountIds: info.accountIds || info.accountIdsByPlatform?.[shortsPlatformKey] || [],
+        },
       })
       await updateUploadStatus(extractionId, 'shorts', merged)
       await refreshContents(true, currentPage, pageSize, activeChannel, activeStatus, searchQuery)
@@ -662,14 +720,13 @@ export default function ContentPage() {
         content: {
           title: target?.title || '',
           uploadTargets: selectedTargets,
-          accountIdsByPlatform: {
-            instagram: selectedTargets.instagram ? (info.accountIds || []) : [],
-          },
+          accountIdsByPlatform: info.accountIdsByPlatform || {},
         },
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
-        accountIds: selectedTargets.instagram ? info.accountIds : null,
+        accountIds: info.accountIds || [],
+        accountIdsByPlatform: info.accountIdsByPlatform || {},
       })
       await updateUploadStatus(extractionId, channel, {
         ...info,
@@ -695,7 +752,8 @@ export default function ContentPage() {
         scheduledAt: new Date(info.scheduledAt).toISOString(),
         extractionId,
         scheduledId,
-        accountIds: channel === 'instagram' ? info.accountIds : null,
+        accountIds: info.accountIds || [],
+        accountIdsByPlatform: info.accountIdsByPlatform || {},
       })
     }
 
@@ -911,6 +969,10 @@ export default function ContentPage() {
             const ChannelIcon = channel.icon
             const isUploading = uploadingIds.has(`${item.extractionId}-${item.channel}`)
             const isNativeSchedule = item.nativeSchedule && Boolean(item.scheduledAt)
+            const itemUploadMeta = item.uploadStatusMap?.[item.channel] && typeof item.uploadStatusMap[item.channel] === 'object'
+              ? item.uploadStatusMap[item.channel]
+              : {}
+            const itemHasAccountFailures = hasUploadAccountFailures(itemUploadMeta)
 
             return (
               <div
@@ -994,9 +1056,13 @@ export default function ContentPage() {
 
                     {item.channel !== 'newsletter' && item.channel !== 'shorts' && isUploadCompleteLike(item.uploadStatus) && (
                       <>
-                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
-                          <CheckCircle size={13} />
-                          {isNativeSchedule ? '예약 등록 완료' : uploadCompleteLabel(item.uploadMeta)}
+                        <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border ${
+                          itemHasAccountFailures
+                            ? 'text-warning bg-warning/5 border-warning/20'
+                            : 'text-success bg-success/5 border-success/20'
+                        }`}>
+                          {itemHasAccountFailures ? <AlertTriangle size={13} /> : <CheckCircle size={13} />}
+                          {itemHasAccountFailures ? '일부 계정 실패' : (isNativeSchedule ? '예약 등록 완료' : uploadCompleteLabel(item.uploadMeta))}
                           {isNativeSchedule ? (
                             <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(item.scheduledAt)}</span>
                           ) : item.uploadedAt ? (
@@ -1039,92 +1105,104 @@ export default function ContentPage() {
                   </div>
                 </div>
 
+                {item.channel !== 'newsletter' && item.channel !== 'shorts' && (
+                  <AccountResultBadges meta={itemUploadMeta} className="border-t border-border px-3 py-2.5" />
+                )}
+
                 {item.channel === 'shorts' && item.shortsPlatforms && (
                   <div className="border-t border-border px-3 py-2.5 space-y-2">
                     {SHORTS_PLATFORMS.map((p) => {
                       const pmeta = item.shortsPlatforms[p.key]
                       const pUploading = uploadingIds.has(`${item.extractionId}-shorts-${p.key}`)
+                      const pHasAccountFailures = hasUploadAccountFailures(pmeta)
                       return (
-                        <div key={p.key} className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-text-muted shrink-0">{p.label}</span>
-                          <div className="flex items-center gap-2">
-                            {isUploadCompleteLike(pmeta.status) && (
-                              <>
-                                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-success bg-success/5 border border-success/20">
-                                  <CheckCircle size={13} />
-                                  {uploadCompleteLabel(pmeta)}
-                                  {pmeta.uploadedAt ? (
-                                    <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
-                                  ) : null}
-                                </div>
+                        <div key={p.key} className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-text-muted shrink-0">{p.label}</span>
+                            <div className="flex items-center gap-2">
+                              {isUploadCompleteLike(pmeta.status) && (
+                                <>
+                                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border ${
+                                    pHasAccountFailures
+                                      ? 'text-warning bg-warning/5 border-warning/20'
+                                      : 'text-success bg-success/5 border-success/20'
+                                  }`}>
+                                    {pHasAccountFailures ? <AlertTriangle size={13} /> : <CheckCircle size={13} />}
+                                    {pHasAccountFailures ? '일부 계정 실패' : uploadCompleteLabel(pmeta)}
+                                    {pmeta.uploadedAt ? (
+                                      <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.uploadedAt)}</span>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    onClick={() => requestAccountUpload(item, { platform: p.key })}
+                                    disabled={pUploading}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                      pUploading
+                                        ? 'bg-primary/50 text-white cursor-wait'
+                                        : 'border border-border text-text-muted hover:text-primary hover:border-primary/40'
+                                    }`}
+                                  >
+                                    {pUploading ? (
+                                      <>
+                                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        업로드 중...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload size={13} />
+                                        다시 업로드
+                                      </>
+                                    )}
+                                  </button>
+                                </>
+                              )}
+                              {pmeta.status === 'scheduled' && (
                                 <button
-                                  onClick={() => requestAccountUpload(item, { platform: p.key })}
-                                  disabled={pUploading}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    pUploading
-                                      ? 'bg-primary/50 text-white cursor-wait'
-                                      : 'border border-border text-text-muted hover:text-primary hover:border-primary/40'
-                                  }`}
-                                >
-                                  {pUploading ? (
-                                    <>
-                                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                      업로드 중...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload size={13} />
-                                      다시 업로드
-                                    </>
-                                  )}
-                                </button>
-                              </>
-                            )}
-                            {pmeta.status === 'scheduled' && (
-                              <button
-                                onClick={() => setEditScheduleTarget({ ...item, shortsPlatform: p.key, scheduledAt: pmeta.scheduledAt })}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
-                              >
-                                <Calendar size={13} />
-                                예약 완료
-                                {pmeta.scheduledAt ? (
-                                  <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.scheduledAt)}</span>
-                                ) : null}
-                              </button>
-                            )}
-                            {pmeta.status === 'not_uploaded' && (
-                              <>
-                                <button
-                                  onClick={() => setScheduleTarget({ ...item, shortsPlatform: p.key })}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info hover:bg-info/10 transition-colors border border-info/30"
+                                  onClick={() => setEditScheduleTarget({ ...item, shortsPlatform: p.key, scheduledAt: pmeta.scheduledAt })}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
                                 >
                                   <Calendar size={13} />
-                                  예약
+                                  예약 완료
+                                  {pmeta.scheduledAt ? (
+                                    <span className="text-[10px] opacity-60 ml-1">{formatScheduledDate(pmeta.scheduledAt)}</span>
+                                  ) : null}
                                 </button>
-                                <button
-                                  onClick={() => requestAccountUpload(item, { platform: p.key })}
-                                  disabled={pUploading}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                    pUploading
-                                      ? 'bg-primary/50 text-white cursor-wait'
-                                      : 'bg-primary text-white hover:bg-primary-dark'
-                                  }`}
-                                >
-                                  {pUploading ? (
-                                    <>
-                                      <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                      업로드 중...
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Upload size={13} />
-                                      즉시 업로드
-                                    </>
-                                  )}
-                                </button>
-                              </>
-                            )}
+                              )}
+                              {pmeta.status === 'not_uploaded' && (
+                                <>
+                                  <button
+                                    onClick={() => setScheduleTarget({ ...item, shortsPlatform: p.key })}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-info hover:bg-info/10 transition-colors border border-info/30"
+                                  >
+                                    <Calendar size={13} />
+                                    예약
+                                  </button>
+                                  <button
+                                    onClick={() => requestAccountUpload(item, { platform: p.key })}
+                                    disabled={pUploading}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                      pUploading
+                                        ? 'bg-primary/50 text-white cursor-wait'
+                                        : 'bg-primary text-white hover:bg-primary-dark'
+                                    }`}
+                                  >
+                                    {pUploading ? (
+                                      <>
+                                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        업로드 중...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Upload size={13} />
+                                        즉시 업로드
+                                      </>
+                                    )}
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
+                          <AccountResultBadges meta={pmeta} className="pl-0 sm:pl-24" />
                         </div>
                       )
                     })}
@@ -1206,24 +1284,28 @@ export default function ContentPage() {
         content={scheduleTarget?.shortsPlatform
           ? {
             title: scheduleTarget?.title,
-            accountIds: scheduleTarget.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.accountIds || [],
+            accountIds: scheduleTarget?.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.accountIds || [],
+            accountIdsByPlatform: scheduleTarget?.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.accountIdsByPlatform || {},
           }
           : scheduleTarget?.channel === 'instagram'
             ? {
               ...buildInstagramScheduledContent(scheduleTarget?.data),
-              accountIds: scheduleTarget?.scheduledAccountIds || [],
+              accountIds: scheduleTarget?.accountIds || [],
+              accountIdsByPlatform: scheduleTarget?.accountIdsByPlatform || {},
             }
             : {
               title: scheduleTarget?.title,
               uploadTargets: scheduleTarget?.channel === 'shorts' ? scheduleTarget?.uploadTargets : undefined,
+              accountIds: scheduleTarget?.accountIds || [],
+              accountIdsByPlatform: scheduleTarget?.accountIdsByPlatform || {},
             }}
-        onSave={async ({ scheduledAt, uploadTargets, accountIds }) => {
+        onSave={async ({ scheduledAt, uploadTargets, accountIds, accountIdsByPlatform }) => {
           if (!scheduleTarget) return
           if (scheduleTarget.shortsPlatform) {
             await handleScheduleSave(
               scheduleTarget.extractionId,
               shortsSchedulePlatform(scheduleTarget.shortsPlatform),
-              { scheduledAt, accountIds },
+              { scheduledAt, accountIds, accountIdsByPlatform },
               null,
               scheduleTarget.shortsScheduledRows?.[scheduleTarget.shortsPlatform]?.id || null,
             )
@@ -1232,8 +1314,8 @@ export default function ContentPage() {
           const nextInfo = scheduleTarget.channel === 'blog'
             ? { status: scheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : scheduleTarget.channel === 'shorts'
-              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
-              : { status: 'scheduled', scheduledAt, accountIds }
+              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets, accountIdsByPlatform }
+              : { status: 'scheduled', scheduledAt, accountIds, accountIdsByPlatform }
           await handleScheduleSave(scheduleTarget.extractionId, scheduleTarget.channel, {
             ...nextInfo,
           }, scheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(scheduleTarget.data) : null, scheduleTarget.scheduledId)
@@ -1251,25 +1333,29 @@ export default function ContentPage() {
         content={editScheduleTarget?.shortsPlatform
           ? {
             title: editScheduleTarget?.title,
-            accountIds: editScheduleTarget.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.accountIds || [],
+            accountIds: editScheduleTarget?.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.accountIds || [],
+            accountIdsByPlatform: editScheduleTarget?.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.accountIdsByPlatform || {},
           }
           : editScheduleTarget?.channel === 'instagram'
             ? {
               ...buildInstagramScheduledContent(editScheduleTarget?.data),
-              accountIds: editScheduleTarget?.scheduledAccountIds || [],
+              accountIds: editScheduleTarget?.accountIds || [],
+              accountIdsByPlatform: editScheduleTarget?.accountIdsByPlatform || {},
             }
             : {
               title: editScheduleTarget?.title,
               uploadTargets: editScheduleTarget?.channel === 'shorts' ? editScheduleTarget?.uploadTargets : undefined,
+              accountIds: editScheduleTarget?.accountIds || [],
+              accountIdsByPlatform: editScheduleTarget?.accountIdsByPlatform || {},
             }}
         initialDatetime={editScheduleTarget?.scheduledAt}
-        onSave={async ({ scheduledAt, uploadTargets, accountIds }) => {
+        onSave={async ({ scheduledAt, uploadTargets, accountIds, accountIdsByPlatform }) => {
           if (!editScheduleTarget) return
           if (editScheduleTarget.shortsPlatform) {
             await handleScheduleSave(
               editScheduleTarget.extractionId,
               shortsSchedulePlatform(editScheduleTarget.shortsPlatform),
-              { scheduledAt, accountIds },
+              { scheduledAt, accountIds, accountIdsByPlatform },
               null,
               editScheduleTarget.shortsScheduledRows?.[editScheduleTarget.shortsPlatform]?.id || null,
             )
@@ -1278,8 +1364,8 @@ export default function ContentPage() {
           const nextInfo = editScheduleTarget.channel === 'blog'
             ? { status: editScheduleTarget.uploadStatus === 'uploaded' ? 'uploaded' : 'not_uploaded', scheduledAt, nativeSchedule: true }
             : editScheduleTarget.channel === 'shorts'
-              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets }
-              : { status: 'scheduled', scheduledAt, accountIds }
+              ? { status: 'scheduled', scheduledAt, nativeSchedule: false, uploadTargets, accountIdsByPlatform }
+              : { status: 'scheduled', scheduledAt, accountIds, accountIdsByPlatform }
           await handleScheduleSave(editScheduleTarget.extractionId, editScheduleTarget.channel, {
             ...nextInfo,
           }, editScheduleTarget.channel === 'instagram' ? buildInstagramScheduledContent(editScheduleTarget.data) : null, editScheduleTarget.scheduledId)

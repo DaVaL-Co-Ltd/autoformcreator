@@ -66,6 +66,7 @@ import {
   getInstagramOverlayTitle,
 } from '../utils/instagramCarousel'
 import { appendBlogFooterText, getBlogFooterConfig } from '../utils/blogFooterLinks'
+import { hasUploadAccountFailures, normalizeUploadAccountResults } from '../utils/uploadAccountResults'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
@@ -84,6 +85,33 @@ const formatStatusDate = (iso) => {
     hour: '2-digit',
     minute: '2-digit',
   })}`
+}
+
+function AccountResultBadges({ meta, className = '' }) {
+  const rows = normalizeUploadAccountResults(meta)
+  if (!rows.length) return null
+
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`}>
+      {rows.map((row, index) => (
+        <div
+          key={`${row.accountId || 'unknown'}-${index}`}
+          className={`inline-flex max-w-full items-start gap-1.5 rounded-lg border px-2.5 py-1 text-xs ${
+            row.status === 'failed'
+              ? 'border-danger/20 bg-danger/5 text-danger'
+              : 'border-success/20 bg-success/5 text-success'
+          }`}
+        >
+          {row.status === 'failed' ? <AlertCircle size={12} className="mt-0.5 shrink-0" /> : <CheckCircle size={12} className="mt-0.5 shrink-0" />}
+          <span className="min-w-0">
+            <span className="font-semibold">{row.accountId || '계정'}</span>
+            <span className="ml-1">{row.status === 'failed' ? '실패' : '성공'}</span>
+            {row.error && <span className="ml-1 break-all opacity-80">{row.error}</span>}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 const buildInstagramKnowledgeBullets = (card = {}) => {
@@ -675,6 +703,9 @@ export default function ExtractionResultPage() {
             status: 'uploaded',
             uploadedAt: new Date().toISOString(),
             uploadedUrl: data.permalink || null,
+            accountIds: Array.isArray(options.accountIds) ? options.accountIds : [],
+            accountResults: data.accountResults || null,
+            failures: data.failures || [],
           }
           setUploadStatus(p => ({ ...p, instagram: 'done' }))
           mergeStoredUploadMeta('instagram', nextUploadMeta)
@@ -752,6 +783,9 @@ export default function ExtractionResultPage() {
               scheduledAt: data.scheduledAt || scheduledAt || null,
               url: data.url || (data.videoId ? `https://youtu.be/${data.videoId}` : null),
               videoId: data.videoId || null,
+              accountIds: Array.isArray(options.accountIds) ? options.accountIds : [],
+              accountResults: data.accountResults || null,
+              failures: data.failures || [],
             }
           } catch (err) {
             failures.push(`유튜브: ${err.message}`)
@@ -783,6 +817,9 @@ export default function ExtractionResultPage() {
             results.instagram = {
               mediaId: data.mediaId || data.id || null,
               url: data.permalink || data.url || null,
+              accountIds: Array.isArray(options.accountIds) ? options.accountIds : [],
+              accountResults: data.accountResults || null,
+              failures: data.failures || [],
             }
           } catch (err) {
             failures.push(`인스타그램: ${err.message}`)
@@ -809,13 +846,35 @@ export default function ExtractionResultPage() {
         const now = new Date().toISOString()
         const platformPatches = {}
         if (uploadedUrls.instagram) {
-          platformPatches.instagram = { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.instagram }
+          platformPatches.instagram = {
+            status: 'uploaded',
+            uploadedAt: now,
+            uploadedUrl: uploadedUrls.instagram,
+            accountIds: results.instagram?.accountIds || [],
+            accountResults: results.instagram?.accountResults || null,
+            failures: results.instagram?.failures || [],
+          }
         }
         if (uploadedUrls.youtube) {
           // YouTube 자체 예약(publishAt)이면 'scheduled', 즉시 업로드면 'uploaded'.
           platformPatches.youtube = scheduledAt
-            ? { status: 'scheduled', scheduledAt, nativeSchedule: true, uploadedUrl: uploadedUrls.youtube }
-            : { status: 'uploaded', uploadedAt: now, uploadedUrl: uploadedUrls.youtube }
+            ? {
+              status: 'scheduled',
+              scheduledAt,
+              nativeSchedule: true,
+              uploadedUrl: uploadedUrls.youtube,
+              accountIds: results.youtube?.accountIds || [],
+              accountResults: results.youtube?.accountResults || null,
+              failures: results.youtube?.failures || [],
+            }
+            : {
+              status: 'uploaded',
+              uploadedAt: now,
+              uploadedUrl: uploadedUrls.youtube,
+              accountIds: results.youtube?.accountIds || [],
+              accountResults: results.youtube?.accountResults || null,
+              failures: results.youtube?.failures || [],
+            }
         }
 
         if (Object.keys(platformPatches).length) {
@@ -1254,8 +1313,15 @@ export default function ExtractionResultPage() {
         if (typeof s === 'string') {
           statusMap[ch] = s === 'uploaded' ? 'done' : s
         } else if (typeof s === 'object') {
-          if (s.status) statusMap[ch] = s.status === 'uploaded' ? 'done' : s.status
-          if (s.scheduledAt) schedMap[ch] = { scheduledAt: s.scheduledAt, uploadTargets: s.uploadTargets, accountIds: s.accountIds || [] }
+          if (s.status) statusMap[ch] = (s.status === 'uploaded' || s.status === 'partial_failed') ? 'done' : s.status
+          if (s.scheduledAt) {
+            schedMap[ch] = {
+              scheduledAt: s.scheduledAt,
+              uploadTargets: s.uploadTargets,
+              accountIds: s.accountIds,
+              accountIdsByPlatform: s.accountIdsByPlatform,
+            }
+          }
         }
       })
       if (Object.keys(statusMap).length) setUploadStatus(prev => ({ ...prev, ...statusMap }))
@@ -1278,7 +1344,8 @@ export default function ExtractionResultPage() {
               scheduledAt: item.scheduledAt,
               scheduledId: item.id,
               uploadTargets: item.content?.uploadTargets,
-              accountIds: item.accountIds || [],
+              accountIds: item.accountIds,
+              accountIdsByPlatform: item.accountIdsByPlatform,
             }
           })
           return next
@@ -2225,7 +2292,8 @@ export default function ExtractionResultPage() {
         platform: schedulePlatform,
         content: {
           title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
-          accountIds: scheduleInfo[schedulePlatform]?.accountIds || shortsPlatforms[platformKey]?.accountIds || [],
+          accountIdsByPlatform: scheduleInfo[schedulePlatform]?.accountIdsByPlatform || {},
+          accountIds: scheduleInfo[schedulePlatform]?.accountIds || [],
         },
         mode,
         initialDatetime: scheduleInfo[schedulePlatform]?.scheduledAt || shortsPlatforms[platformKey]?.scheduledAt || null,
@@ -2245,81 +2313,95 @@ export default function ExtractionResultPage() {
             const pmeta = shortsPlatforms[p.key]
             const busy = shortsBusy[p.key]
             const scheduledAtIso = pmeta.scheduledAt || scheduleInfo[p.schedulePlatform]?.scheduledAt
+            const hasAccountFailures = hasUploadAccountFailures(pmeta)
             return (
               <div
                 key={p.key}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-light/40 px-3 py-2.5"
+                className="rounded-xl border border-border bg-surface-light/40 px-3 py-2.5"
               >
-                <span className="text-sm font-medium text-text">{p.label}</span>
-                <div className="flex items-center gap-2">
-                  {pmeta.status === 'uploaded' ? (
-                    <>
-                      {pmeta.uploadedUrl ? (
-                        <a
-                          href={pmeta.uploadedUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 hover:bg-success/10 transition-colors"
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-text">{p.label}</span>
+                  <div className="flex items-center gap-2">
+                    {pmeta.status === 'uploaded' ? (
+                      <>
+                        {pmeta.uploadedUrl ? (
+                          <a
+                            href={pmeta.uploadedUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                              hasAccountFailures
+                                ? 'text-warning bg-warning/5 border-warning/20 hover:bg-warning/10'
+                                : 'text-success bg-success/5 border-success/20 hover:bg-success/10'
+                            }`}
+                          >
+                            {hasAccountFailures ? <AlertCircle size={14} /> : <CheckCircle size={14} />}
+                            {hasAccountFailures ? '일부 계정 실패' : '업로드 완료'} <ExternalLink size={12} />
+                          </a>
+                        ) : (
+                          <div className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border ${
+                            hasAccountFailures
+                              ? 'text-warning bg-warning/5 border-warning/20'
+                              : 'text-success bg-success/5 border-success/20'
+                          }`}>
+                            {hasAccountFailures ? <AlertCircle size={14} /> : <CheckCircle size={14} />}
+                            {hasAccountFailures ? '일부 계정 실패' : '업로드 완료'}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
+                          disabled={busy}
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            busy
+                              ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                              : 'bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40'
+                          }`}
                         >
-                          <CheckCircle size={14} /> 업로드 완료 <ExternalLink size={12} />
-                        </a>
-                      ) : (
-                        <div className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20">
-                          <CheckCircle size={14} /> 업로드 완료
-                        </div>
-                      )}
+                          {busy ? (
+                            <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                          ) : (
+                            <><Upload size={14} /> 재업로드</>
+                          )}
+                        </button>
+                      </>
+                    ) : pmeta.status === 'scheduled' ? (
                       <button
-                        onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
-                        disabled={busy}
-                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                          busy
-                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                            : 'bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40'
-                        }`}
+                        onClick={() => openShortsSchedule(p.key, 'edit')}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
                       >
-                        {busy ? (
-                          <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                        ) : (
-                          <><Upload size={14} /> 다시 업로드</>
+                        <Calendar size={14} /> 예약 완료
+                        {scheduledAtIso && (
+                          <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(scheduledAtIso)}</span>
                         )}
                       </button>
-                    </>
-                  ) : pmeta.status === 'scheduled' ? (
-                    <button
-                      onClick={() => openShortsSchedule(p.key, 'edit')}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-info bg-info/5 border border-info/20 hover:bg-info/10 transition-colors"
-                    >
-                      <Calendar size={14} /> 예약 완료
-                      {scheduledAtIso && (
-                        <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(scheduledAtIso)}</span>
-                      )}
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => openShortsSchedule(p.key, 'create')}
-                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
-                      >
-                        <Calendar size={14} /> 예약 업로드
-                      </button>
-                      <button
-                        onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
-                        disabled={busy}
-                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                          busy
-                            ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                            : 'bg-primary text-white hover:bg-primary-dark'
-                        }`}
-                      >
-                        {busy ? (
-                          <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                        ) : (
-                          <><Upload size={14} /> 업로드</>
-                        )}
-                      </button>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => openShortsSchedule(p.key, 'create')}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+                        >
+                          <Calendar size={14} /> 예약 업로드
+                        </button>
+                        <button
+                          onClick={() => requestAccountUpload('shorts', { targets: { [p.key]: true }, uploadOrder: [p.key] })}
+                          disabled={busy}
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            busy
+                              ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
+                              : 'bg-primary text-white hover:bg-primary-dark'
+                          }`}
+                        >
+                          {busy ? (
+                            <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
+                          ) : (
+                            <><Upload size={14} /> 업로드</>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
+                <AccountResultBadges meta={pmeta} className="mt-2" />
               </div>
             )
           })}
@@ -2406,6 +2488,8 @@ export default function ExtractionResultPage() {
   const activeUploadedUrls = activeUploadMeta?.uploadedUrls && typeof activeUploadMeta.uploadedUrls === 'object'
     ? Object.entries(activeUploadMeta.uploadedUrls).filter(([, url]) => Boolean(url))
     : []
+  const activeAccountRows = normalizeUploadAccountResults(activeUploadMeta)
+  const activeHasPartialFailure = activeUploadMeta?.status === 'partial_failed' || hasUploadAccountFailures(activeUploadMeta)
   const activeMenuLabel = menuItems.find(item => item.id === activeMenu)?.label || '결과물'
 
   const CHANNEL_CONTENT_KEY = { blog: 'blogContent', newsletter: 'newsletterContent', instagram: 'instagramContent', shorts: 'shortsScript' }
@@ -2499,10 +2583,7 @@ export default function ExtractionResultPage() {
                 const contentMap = {
                   blog: blogContent,
                   newsletter: newsletterContent,
-                  instagram: {
-                    ...buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
-                    accountIds: sched?.accountIds || activeUploadMeta?.accountIds || [],
-                  },
+                  instagram: buildInstagramScheduledContent({ instagramContent, instagramImages, instaPngUrls: resolvedInstaPngUrls }),
                   shorts: {
                     ...(shortsScript || {}),
                     uploadTargets: sched?.uploadTargets || activeUploadMeta?.uploadTargets || shortsUploadTargets,
@@ -2513,30 +2594,17 @@ export default function ExtractionResultPage() {
 
               if (isUploaded) {
                 return (
-                  <>
-                    <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-success bg-success/5 border border-success/20 shrink-0">
-                      <CheckCircle size={14} />
-                      업로드 완료
-                      {uploadedAt && (
-                        <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(uploadedAt)}</span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => requestAccountUpload(ch)}
-                      disabled={status === 'loading'}
-                      className={`px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0
-                        ${status === 'loading'
-                          ? 'bg-primary/10 text-primary-light border border-primary/20 opacity-70'
-                          : 'bg-surface border border-border text-text-muted hover:text-primary hover:border-primary/40 disabled:opacity-60'
-                        }`}
-                    >
-                      {status === 'loading' ? (
-                        <><Loader2 size={14} className="animate-spin" /> 업로드 중...</>
-                      ) : (
-                        <><Upload size={14} /> 다시 업로드</>
-                      )}
-                    </button>
-                  </>
+                  <div className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium border shrink-0 ${
+                    activeHasPartialFailure
+                      ? 'text-warning bg-warning/5 border-warning/20'
+                      : 'text-success bg-success/5 border-success/20'
+                  }`}>
+                    {activeHasPartialFailure ? <AlertCircle size={14} /> : <CheckCircle size={14} />}
+                    {activeHasPartialFailure ? '일부 계정 실패' : '업로드 완료'}
+                    {uploadedAt && (
+                      <span className="text-[11px] opacity-70 ml-1">{formatStatusDate(uploadedAt)}</span>
+                    )}
+                  </div>
                 )
               }
 
@@ -2602,11 +2670,21 @@ export default function ExtractionResultPage() {
       </div>
 
       {activeUploadedUrl && dataMap[activeMenu] && activeMenu !== 'newsletter' && (
-        <div className="flex flex-wrap items-start justify-between gap-3 p-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+        <div className={`flex flex-wrap items-start justify-between gap-3 p-4 border rounded-xl ${
+          activeHasPartialFailure
+            ? 'bg-warning/5 border-warning/20'
+            : 'bg-emerald-500/5 border-emerald-500/20'
+        }`}>
           <div className="flex items-start gap-3 min-w-0 flex-1">
-            <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+            {activeHasPartialFailure ? (
+              <AlertCircle size={16} className="text-warning shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+            )}
             <div className="min-w-0">
-              <p className="text-sm font-medium text-text">{activeMenuLabel} 업로드 완료</p>
+              <p className="text-sm font-medium text-text">
+                {activeMenuLabel} {activeHasPartialFailure ? '일부 계정 업로드 실패' : '업로드 완료'}
+              </p>
               <a
                 href={activeUploadedUrl}
                 target="_blank"
@@ -2629,6 +2707,27 @@ export default function ExtractionResultPage() {
                       {platform === 'youtube' ? 'YouTube' : 'Instagram'}
                       <ExternalLink size={11} />
                     </a>
+                  ))}
+                </div>
+              )}
+              {activeAccountRows.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {activeAccountRows.map((row, index) => (
+                    <div
+                      key={`${row.accountId || 'unknown'}-${index}`}
+                      className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${
+                        row.status === 'failed'
+                          ? 'border-danger/20 bg-danger/5 text-danger'
+                          : 'border-success/20 bg-success/5 text-success'
+                      }`}
+                    >
+                      {row.status === 'failed' ? <AlertCircle size={12} className="mt-0.5 shrink-0" /> : <CheckCircle size={12} className="mt-0.5 shrink-0" />}
+                      <div className="min-w-0">
+                        <span className="font-semibold">{row.accountId || '계정'}</span>
+                        <span className="ml-1">{row.status === 'failed' ? '실패' : '성공'}</span>
+                        {row.error && <div className="mt-0.5 break-all">{row.error}</div>}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -2691,7 +2790,7 @@ export default function ExtractionResultPage() {
         defaultPlatform={scheduleDialog.platform}
         content={scheduleDialog.content}
         lockPlatform={true}
-        onSave={async ({ platform, scheduledAt, content, uploadTargets, accountIds }) => {
+        onSave={async ({ platform, scheduledAt, content, uploadTargets, accountIds, accountIdsByPlatform }) => {
           let id = extractionId
           if (!id) {
             try {
@@ -2727,6 +2826,7 @@ export default function ExtractionResultPage() {
               targets: { youtube: true },
               uploadOrder: ['youtube'],
               scheduledAtOverride: scheduledAt,
+              accountIds,
             })
             return
           } else if (platform === 'shorts_instagram') {
@@ -2735,18 +2835,23 @@ export default function ExtractionResultPage() {
               const scheduledId = scheduleInfo[platform]?.scheduledId || null
               const savedSchedule = await createScheduledUpload({
                 platform,
-                content: { title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스' },
+                content: {
+                  title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
+                  accountIdsByPlatform,
+                },
                 scheduledAt,
                 extractionId: id,
                 scheduledId,
                 accountIds,
+                accountIdsByPlatform,
               })
               setScheduleInfo(p => ({
                 ...p,
                 [platform]: {
                   scheduledAt: savedSchedule.scheduledAt,
                   scheduledId: savedSchedule.id,
-                  accountIds: savedSchedule.accountIds || accountIds || [],
+                  accountIds,
+                  accountIdsByPlatform,
                 },
               }))
             } catch (err) {
@@ -2755,7 +2860,7 @@ export default function ExtractionResultPage() {
               return
             }
             const merged = buildShortsUploadStatus(state.uploadStatus?.shorts, {
-              instagram: { status: 'scheduled', scheduledAt, accountIds: accountIds || [] },
+              instagram: { status: 'scheduled', scheduledAt, accountIds: accountIds || [], accountIdsByPlatform },
             })
             await updateUploadStatus(id, 'shorts', merged)
             mergeStoredUploadMeta('shorts', merged)
@@ -2769,14 +2874,13 @@ export default function ExtractionResultPage() {
                 content: {
                   title: shortsScript?.uploadTitle || shortsScript?.title || '유튜브 쇼츠/릴스',
                   uploadTargets: selectedTargets,
-                  accountIdsByPlatform: {
-                    instagram: selectedTargets.instagram ? (accountIds || []) : [],
-                  },
+                  accountIdsByPlatform,
                 },
                 scheduledAt,
                 extractionId: id,
                 scheduledId,
-                accountIds: selectedTargets.instagram ? accountIds : null,
+                accountIds,
+                accountIdsByPlatform,
               })
               setScheduleInfo(p => ({
                 ...p,
@@ -2784,7 +2888,8 @@ export default function ExtractionResultPage() {
                   scheduledAt: savedSchedule.scheduledAt,
                   scheduledId: savedSchedule.id,
                   uploadTargets: selectedTargets,
-                  accountIds: savedSchedule.accountIds || accountIds || [],
+                  accountIds,
+                  accountIdsByPlatform,
                 },
               }))
             } catch (err) {
@@ -2797,7 +2902,7 @@ export default function ExtractionResultPage() {
               scheduledAt,
               nativeSchedule: false,
               uploadTargets: selectedTargets,
-              accountIds: selectedTargets.instagram ? (accountIds || []) : [],
+              accountIdsByPlatform,
             })
             setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
             return
@@ -2809,18 +2914,23 @@ export default function ExtractionResultPage() {
                 : content
               const savedSchedule = await createScheduledUpload({
                 platform,
-                content: scheduledContent,
+                content: {
+                  ...(scheduledContent || {}),
+                  accountIdsByPlatform,
+                },
                 scheduledAt,
                 extractionId: id,
                 scheduledId,
-                accountIds: platform === 'instagram' ? accountIds : null,
+                accountIds,
+                accountIdsByPlatform,
               })
               setScheduleInfo(p => ({
                 ...p,
                 [platform]: {
                   scheduledAt: savedSchedule.scheduledAt,
                   scheduledId: savedSchedule.id,
-                  accountIds: savedSchedule.accountIds || accountIds || [],
+                  accountIds,
+                  accountIdsByPlatform,
                 },
               }))
             } catch (err) {
@@ -2828,7 +2938,7 @@ export default function ExtractionResultPage() {
               alert(`예약 생성 실패: ${err.message}`)
               return
             }
-            await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt })
+            await updateUploadStatus(id, platform, { status: 'scheduled', scheduledAt, accountIds, accountIdsByPlatform })
             setUploadStatus(p => ({ ...p, [platform]: 'scheduled' }))
           }
 
@@ -2837,7 +2947,8 @@ export default function ExtractionResultPage() {
             [platform]: {
               scheduledAt,
               scheduledId: p[platform]?.scheduledId || null,
-              accountIds: p[platform]?.accountIds || accountIds || [],
+              accountIds,
+              accountIdsByPlatform,
             },
           }))
         }}

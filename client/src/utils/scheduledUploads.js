@@ -32,7 +32,7 @@ export async function getById(id) {
   return items.find(item => item.id === id) || null
 }
 
-export async function create({ platform, extractionId, content, scheduledAt, scheduledId, accountId, accountIds }) {
+export async function create({ platform, extractionId, content, scheduledAt, scheduledId, accountId, accountIds, accountIdsByPlatform }) {
   const res = await fetch(`${API_BASE}/api/scheduled/create`, {
     method: 'POST',
     headers: apiHeaders(),
@@ -42,6 +42,7 @@ export async function create({ platform, extractionId, content, scheduledAt, sch
       scheduledId,
       accountId,
       accountIds,
+      accountIdsByPlatform,
       content: content || {},
       scheduledAt: scheduledAt instanceof Date ? scheduledAt.toISOString() : scheduledAt,
     }),
@@ -98,6 +99,7 @@ function normalize(row) {
     uploadedAt: row.uploaded_at,
     accountId: row.account_id,
     accountIds: row.account_ids || [],
+    accountIdsByPlatform: row.content?.accountIdsByPlatform || {},
     error: row.error,
     attempts: row.attempts,
     createdAt: row.created_at,

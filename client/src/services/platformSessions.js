@@ -8,6 +8,22 @@ const REQUEST_TIMEOUT_MS = 10000
 const LOGIN_TIMEOUT_MS = 6 * 60 * 1000
 const helperHeaders = { 'x-autoform-client': 'web-client' }
 
+function isSecurePageLocalHttpHelper() {
+  if (typeof window === 'undefined') return false
+  if (window.location.protocol !== 'https:') return false
+
+  try {
+    const url = new URL(BLOG_HELPER_BASE)
+    return url.protocol === 'http:' && (
+      url.hostname === '127.0.0.1' ||
+      url.hostname === 'localhost' ||
+      url.hostname === '::1'
+    )
+  } catch {
+    return false
+  }
+}
+
 async function readJsonOrThrow(response, fallbackMessage) {
   const data = await readApiResponse(response)
   if (!response.ok) {
@@ -17,6 +33,18 @@ async function readJsonOrThrow(response, fallbackMessage) {
 }
 
 export async function fetchNaverSessionStatus() {
+  if (isSecurePageLocalHttpHelper()) {
+    return {
+      appVersion: null,
+      chromiumReady: false,
+      connected: false,
+      helperReachable: false,
+      state: 'offline',
+      error: '브라우저 보안 정책 때문에 HTTPS 배포 페이지에서 로컬 HTTP helper 상태를 자동 확인할 수 없습니다.',
+      uploadRuntime: null,
+    }
+  }
+
   try {
     const response = await fetchWithTimeout(
       `${BLOG_HELPER_BASE}/api/health`,
@@ -48,6 +76,10 @@ export async function fetchNaverSessionStatus() {
 }
 
 export async function reconnectNaverSession() {
+  if (isSecurePageLocalHttpHelper()) {
+    throw new Error('HTTPS 배포 페이지에서는 브라우저 보안 정책 때문에 로컬 HTTP helper 로그인 요청을 직접 보낼 수 없습니다.')
+  }
+
   const response = await fetchWithTimeout(
     `${BLOG_HELPER_BASE}/api/session/naver/login`,
     {

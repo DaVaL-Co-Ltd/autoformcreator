@@ -2,46 +2,6 @@ import { supabase, BUCKETS } from './supabase'
 
 const API_BASE = import.meta.env.VITE_SERVER_URL || ''
 
-function extensionFromMimeType(mimeType = '') {
-  const ext = String(mimeType || '').split('/')[1] || 'png'
-  return ext.replace('jpeg', 'jpg').replace(/[^a-z0-9]/gi, '') || 'png'
-}
-
-function dataUrlToBlob(dataUrl) {
-  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) throw new Error('잘못된 data URL입니다.')
-  const [, mimeType, base64] = match
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index)
-  }
-  return {
-    blob: new Blob([bytes], { type: mimeType }),
-    mimeType,
-  }
-}
-
-export async function uploadDataImageUrlToStorage(dataUrl, prefix = 'instagram-scheduled') {
-  if (!String(dataUrl || '').startsWith('data:image/')) return dataUrl
-  if (!supabase) throw new Error('Supabase 클라이언트가 초기화되지 않았습니다.')
-
-  const { blob, mimeType } = dataUrlToBlob(dataUrl)
-  const ext = extensionFromMimeType(mimeType)
-  const objectPath = `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
-
-  const { error: uploadError } = await supabase.storage.from(BUCKETS.IMAGES).upload(objectPath, blob, {
-    contentType: mimeType || 'image/png',
-    upsert: false,
-  })
-  if (uploadError) throw new Error(uploadError.message)
-
-  const { data: pub } = supabase.storage.from(BUCKETS.IMAGES).getPublicUrl(objectPath)
-  const publicUrl = pub?.publicUrl
-  if (!publicUrl) throw new Error('Supabase Storage public URL을 가져오지 못했습니다.')
-  return publicUrl
-}
-
 function buildChannels(data) {
   const channels = []
   if (data.blogContent) channels.push({ channel: 'blog', title: data.blogContent.title })

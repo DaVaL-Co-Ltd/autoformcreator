@@ -57,6 +57,8 @@ export function normalizeShortsPlatformMeta(meta) {
     uploadedUrl: source.uploadedUrl || null,
     scheduledAt: source.scheduledAt || null,
     scheduledId: source.scheduledId || null,
+    accountResults: source.accountResults || null,
+    failures: Array.isArray(source.failures) ? source.failures : [],
     accounts,
     accountNames,
     accountIds,

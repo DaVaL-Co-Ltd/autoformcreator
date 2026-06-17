@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Calendar, CheckCircle, Clock, Loader2, X, Upload, Trash2 } from 'lucide-react'
 import { create } from '../utils/scheduledUploads'
 import { CHANNELS } from '../constants/channels'
@@ -37,6 +37,11 @@ const PLATFORM_SCHEDULE_RECOMMENDATIONS = {
 const SUB_PLATFORM_LABELS = {
   shorts_instagram: '인스타그램 릴스',
   shorts_youtube: '유튜브 쇼츠',
+}
+
+const ACCOUNT_PLATFORM_LABELS = {
+  instagram: 'Instagram',
+  youtube: 'YouTube',
 }
 
 function roundUpToMinuteStep(input, step = MINUTE_STEP) {
@@ -126,50 +131,94 @@ function ScheduleDialogBody({
   const [datetime, setDatetime] = useState(() => toLocalDatetimeValue(getDefaultScheduleDate(initialDatetime, defaultPlatform)))
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [instagramAccounts, setInstagramAccounts] = useState([])
-  const [selectedInstagramAccountIds, setSelectedInstagramAccountIds] = useState([])
+  const [accountOptions, setAccountOptions] = useState({})
+  const [selectedAccountIds, setSelectedAccountIds] = useState(() => ({
+    instagram: content?.accountIdsByPlatform?.instagram || [],
+    youtube: content?.accountIdsByPlatform?.youtube || [],
+  }))
   const [accountLoading, setAccountLoading] = useState(false)
   const [accountError, setAccountError] = useState('')
 
   const showsNativeScheduleNotice = platform === 'blog'
   const scheduleRecommendation = PLATFORM_SCHEDULE_RECOMMENDATIONS[platform]
-  const needsInstagramAccountSelection = platform === 'instagram' || platform === 'shorts_instagram' || (platform === 'shorts' && shortsTargets.instagram)
+  const accountPlatforms = useMemo(() => {
+    if (platform === 'instagram' || platform === 'shorts_instagram') return ['instagram']
+    if (platform === 'shorts_youtube') return ['youtube']
+    if (platform === 'shorts') {
+      return [
+        shortsTargets.instagram ? 'instagram' : null,
+        shortsTargets.youtube ? 'youtube' : null,
+      ].filter(Boolean)
+    }
+    return []
+  }, [platform, shortsTargets.instagram, shortsTargets.youtube])
 
   useEffect(() => {
-    if (!needsInstagramAccountSelection) return undefined
+    if (!accountPlatforms.length) return undefined
+
     let active = true
     ;(async () => {
       setAccountLoading(true)
       setAccountError('')
       try {
-        const accounts = await fetchPlatformAccounts('instagram')
+        const entries = await Promise.all(
+          accountPlatforms.map(async (accountPlatform) => [
+            accountPlatform,
+            await fetchPlatformAccounts(accountPlatform),
+          ]),
+        )
         if (!active) return
-        const accountIds = accounts.map((account) => account.id).filter(Boolean)
-        const initialIds = Array.isArray(content?.accountIds)
-          ? content.accountIds.map((id) => String(id || '').trim()).filter(Boolean)
-          : []
-        setInstagramAccounts(accounts)
-        setSelectedInstagramAccountIds(initialIds.length > 0 ? initialIds.filter((id) => accountIds.includes(id)) : accountIds)
+
+        const nextOptions = Object.fromEntries(entries)
+        setAccountOptions((previous) => ({ ...previous, ...nextOptions }))
+        setSelectedAccountIds((previous) => {
+          const next = { ...previous }
+          entries.forEach(([accountPlatform, accounts]) => {
+            const savedIds = content?.accountIdsByPlatform?.[accountPlatform]
+            const singlePlatformSavedIds = content?.accountIds && accountPlatforms.length === 1
+              ? content.accountIds
+              : null
+            const preferredIds = Array.isArray(savedIds)
+              ? savedIds
+              : Array.isArray(singlePlatformSavedIds)
+                ? singlePlatformSavedIds
+                : null
+            next[accountPlatform] = preferredIds || previous[accountPlatform] || accounts.map((account) => account.id)
+          })
+          return next
+        })
       } catch (error) {
-        if (!active) return
-        setInstagramAccounts([])
-        setSelectedInstagramAccountIds([])
-        setAccountError(error.message)
+        if (active) setAccountError(error.message)
       } finally {
         if (active) setAccountLoading(false)
       }
     })()
+
     return () => {
       active = false
     }
-  }, [content?.accountIds, needsInstagramAccountSelection, shortsTargets.instagram])
+  }, [accountPlatforms, content])
 
-  const toggleInstagramAccount = (accountId) => {
-    setSelectedInstagramAccountIds((prev) => (
-      prev.includes(accountId)
-        ? prev.filter((id) => id !== accountId)
-        : [...prev, accountId]
-    ))
+  const toggleAccount = (accountPlatform, accountId) => {
+    setSelectedAccountIds((previous) => {
+      const current = previous[accountPlatform] || []
+      return {
+        ...previous,
+        [accountPlatform]: current.includes(accountId)
+          ? current.filter((id) => id !== accountId)
+          : [...current, accountId],
+      }
+    })
+  }
+
+  const toggleAllAccounts = (accountPlatform) => {
+    const accounts = accountOptions[accountPlatform] || []
+    const current = selectedAccountIds[accountPlatform] || []
+    const allSelected = accounts.length > 0 && current.length === accounts.length
+    setSelectedAccountIds((previous) => ({
+      ...previous,
+      [accountPlatform]: allSelected ? [] : accounts.map((account) => account.id),
+    }))
   }
 
   const handleSubmit = async () => {
@@ -178,10 +227,25 @@ function ScheduleDialogBody({
       alert('예약 업로드할 플랫폼을 하나 이상 선택해주세요.')
       return
     }
-    if (needsInstagramAccountSelection && !selectedInstagramAccountIds.length) {
-      alert('예약 업로드할 인스타그램 계정을 하나 이상 선택해주세요.')
-      return
+    for (const accountPlatform of accountPlatforms) {
+      const accounts = accountOptions[accountPlatform] || []
+      const selected = selectedAccountIds[accountPlatform] || []
+      if (accounts.length === 0) {
+        alert(`${ACCOUNT_PLATFORM_LABELS[accountPlatform]} 연결 계정을 먼저 추가해주세요.`)
+        return
+      }
+      if (selected.length === 0) {
+        alert(`${ACCOUNT_PLATFORM_LABELS[accountPlatform]} 예약 업로드 계정을 하나 이상 선택해주세요.`)
+        return
+      }
     }
+
+    const accountIdsByPlatform = accountPlatforms.reduce((accumulator, accountPlatform) => {
+      accumulator[accountPlatform] = selectedAccountIds[accountPlatform] || []
+      return accumulator
+    }, {})
+    const accountIds = accountPlatforms.length === 1 ? accountIdsByPlatform[accountPlatforms[0]] : []
+
     try {
       setSaving(true)
       if (onSave) {
@@ -190,18 +254,11 @@ function ScheduleDialogBody({
           scheduledAt,
           content,
           uploadTargets: platform === 'shorts' ? shortsTargets : null,
-          accountIds: needsInstagramAccountSelection ? selectedInstagramAccountIds : null,
-          accounts: needsInstagramAccountSelection
-            ? instagramAccounts.filter((account) => selectedInstagramAccountIds.includes(account.id))
-            : [],
+          accountIds,
+          accountIdsByPlatform,
         }))
       } else {
-        await create({
-          platform,
-          content,
-          scheduledAt,
-          accountIds: needsInstagramAccountSelection ? selectedInstagramAccountIds : null,
-        })
+        await create({ platform, content, scheduledAt, accountIds, accountIdsByPlatform })
       }
     } catch (error) {
       alert(error?.message || '예약 저장에 실패했습니다.')
@@ -323,43 +380,74 @@ function ScheduleDialogBody({
           </div>
         )}
 
-        {needsInstagramAccountSelection && (
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-text-muted mb-2">인스타그램 계정</label>
+        {accountPlatforms.length > 0 && (
+          <div className="mb-5 space-y-3">
+            <label className="block text-sm font-medium text-text-muted">예약 업로드 계정</label>
             {accountLoading ? (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-light px-3 py-3 text-sm text-text-muted">
-                <Loader2 size={14} className="animate-spin" /> 계정 목록을 불러오는 중...
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-light py-4 text-sm text-text-muted">
+                <Loader2 size={15} className="animate-spin" />
+                계정 목록을 불러오는 중...
               </div>
             ) : accountError ? (
-              <div className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-3 text-sm text-danger">{accountError}</div>
-            ) : instagramAccounts.length === 0 ? (
-              <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-3 text-sm text-text-muted">
-                연결된 인스타그램 계정이 없습니다. 설정에서 계정을 먼저 추가해주세요.
+              <div className="rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {accountError}
               </div>
             ) : (
-              <div className="space-y-2">
-                {instagramAccounts.map((account) => {
-                  const selected = selectedInstagramAccountIds.includes(account.id)
-                  return (
-                    <button
-                      key={account.id}
-                      type="button"
-                      onClick={() => toggleInstagramAccount(account.id)}
-                      className={`flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                        selected ? 'border-primary/30 bg-primary/5' : 'border-border bg-surface-light hover:border-primary/30'
-                      }`}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold text-text">{account.displayName || account.username || account.id}</span>
-                        <span className="block truncate text-xs text-text-muted">{account.providerAccountId || account.id}</span>
-                      </span>
-                      <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${selected ? 'border-primary bg-primary text-white' : 'border-border bg-white'}`}>
-                        {selected ? <CheckCircle size={15} /> : null}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+              accountPlatforms.map((accountPlatform) => {
+                const accounts = accountOptions[accountPlatform] || []
+                const selectedIds = selectedAccountIds[accountPlatform] || []
+                const allSelected = accounts.length > 0 && selectedIds.length === accounts.length
+
+                return (
+                  <div key={accountPlatform} className="rounded-lg border border-border bg-surface-light p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-text">{ACCOUNT_PLATFORM_LABELS[accountPlatform]}</span>
+                      {accounts.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleAllAccounts(accountPlatform)}
+                          className="text-xs font-medium text-primary hover:text-primary-dark"
+                        >
+                          {allSelected ? '전체 해제' : '전체 선택'}
+                        </button>
+                      )}
+                    </div>
+                    {accounts.length === 0 ? (
+                      <p className="text-xs leading-5 text-text-muted">연결된 계정이 없습니다. 설정에서 계정을 먼저 추가해주세요.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {accounts.map((account) => {
+                          const selected = selectedIds.includes(account.id)
+                          return (
+                            <button
+                              key={account.id}
+                              type="button"
+                              onClick={() => toggleAccount(accountPlatform, account.id)}
+                              className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                                selected
+                                  ? 'border-primary/30 bg-primary/5'
+                                  : 'border-border bg-white hover:border-primary/30'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-semibold text-text">
+                                  {account.displayName || account.username || account.id}
+                                </div>
+                                <div className="truncate text-[11px] text-text-muted">
+                                  {account.providerAccountId || account.id}
+                                </div>
+                              </div>
+                              <span className={`h-5 w-5 rounded-md border ${selected ? 'border-primary bg-primary' : 'border-border bg-white'}`}>
+                                {selected ? <CheckCircle size={18} className="text-white" /> : null}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
           </div>
         )}
@@ -479,7 +567,7 @@ export default function ScheduleDialog({
 }) {
   if (!open) return null
 
-  const dialogKey = `${mode}:${defaultPlatform}:${initialDatetime || 'new'}:${content?.title || ''}:${JSON.stringify(content?.uploadTargets || {})}`
+  const dialogKey = `${mode}:${defaultPlatform}:${initialDatetime || 'new'}:${content?.title || ''}:${JSON.stringify(content?.uploadTargets || {})}:${JSON.stringify(content?.accountIdsByPlatform || {})}:${JSON.stringify(content?.accountIds || [])}`
 
   return (
     <ScheduleDialogBody

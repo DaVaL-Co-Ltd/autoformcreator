@@ -113,27 +113,9 @@ const supabaseAdmin = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_R
 
 const app = express()
 
-function normalizeOrigin(rawValue) {
-  if (!rawValue) return null
-
-  try {
-    return new URL(String(rawValue).trim()).origin
-  } catch {
-    return null
-  }
-}
-
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ?.split(',')
-  .map((origin) => normalizeOrigin(origin))
-  .filter(Boolean) || null
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) || null
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || !Array.isArray(allowedOrigins)) return callback(null, true)
-
-    const normalizedOrigin = normalizeOrigin(origin)
-    return callback(null, Boolean(normalizedOrigin && allowedOrigins.includes(normalizedOrigin)))
-  },
+  origin: allowedOrigins || true,
   credentials: true,
   exposedHeaders: ['Retry-After'],
 }))
@@ -148,10 +130,10 @@ function getExpectedRequestOrigin(req) {
 function getRequestOrigin(req) {
   try {
     if (req.headers.origin) {
-      return normalizeOrigin(req.headers.origin)
+      return new URL(String(req.headers.origin)).origin
     }
     if (req.headers.referer) {
-      return normalizeOrigin(req.headers.referer)
+      return new URL(String(req.headers.referer)).origin
     }
   } catch {
     return null
@@ -192,20 +174,7 @@ app.use((req, res, next) => {
   if (req.path === '/api/llamaparse/upload') return next()
   if (req.path === '/api/output/upload') return next()
   if (req.path === '/api/output/save') return next()
-  express.json({ limit: '150mb' })(req, res, (err) => {
-    if (!err) return next()
-    if (err.type === 'request.aborted' || err.code === 'ECONNABORTED') {
-      console.warn(`[Request] JSON body aborted: ${req.method} ${req.originalUrl || req.url}`)
-      if (!res.headersSent) {
-        return res.status(400).json({ error: '요청 본문 수신 중 연결이 중단되었습니다.' })
-      }
-      return undefined
-    }
-    if (err.type === 'entity.too.large') {
-      return res.status(413).json({ error: '요청 본문이 너무 큽니다.' })
-    }
-    return next(err)
-  })
+  express.json({ limit: '150mb' })(req, res, next)
 })
 
 // API secret middleware for protected /api routes.
@@ -1184,8 +1153,8 @@ const subtitleBurnJobs = new Map()
 // 완성 영상의 음성을 Gemini 로 분석해, 주어진 자막 문장들이 각각 몇 초~몇 초에 나오는지 정렬한다.
 // (forced alignment) 성공 시 { [index]: {start,end} } 반환, 실패 시 null → 호출측은 음절 추정으로 폴백.
 async function alignCaptionsToAudio(audioPath, captions, totalDuration) {
-  const apiKeySelection = getServerGeminiApiKey()
-  if (!apiKeySelection || !Array.isArray(captions) || captions.length === 0) return null
+  const apiKey = getServerGeminiApiKey()
+  if (!apiKey || !Array.isArray(captions) || captions.length === 0) return null
   let audioB64
   try { audioB64 = fs.readFileSync(audioPath).toString('base64') } catch { return null }
   const lines = captions.map((c, i) => {
@@ -1214,7 +1183,7 @@ ${lines}`
   try {
     const r = await fetch(`${GEMINI_ENDPOINT_BASE}/gemini-2.5-flash:generateContent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKeySelection.key },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify(payload),
     })
     if (!r.ok) return null
@@ -3882,19 +3851,44 @@ async function normalizeScheduledContent(platform, rawContent) {
 app.post('/api/scheduled/create', async (req, res) => {
   if (!supabaseAdmin) return res.status(500).json({ error: 'Supabase not configured' })
   try {
-    const { platform, extractionId, content, scheduledAt, scheduledId, accountId, accountIds } = req.body
+    const { platform, extractionId, content, scheduledAt, scheduledId, accountId, accountIds, accountIdsByPlatform } = req.body
     if (!platform || !extractionId || !scheduledAt) {
       return res.status(400).json({ error: 'platform, extractionId, scheduledAt 필수' })
     }
 
-    const normalizedContent = await normalizeScheduledContent(platform, content)
-    const contentAccountIds = normalizeAccountIdList(normalizedContent?.accountIds)
-    const contentInstagramAccountIds = normalizeAccountIdList(normalizedContent?.accountIdsByPlatform?.instagram)
+    const normalizedBaseContent = (await normalizeScheduledContent(platform, content)) || {}
+    const rawAccountIdsByPlatform = {
+      ...(normalizedBaseContent.accountIdsByPlatform && typeof normalizedBaseContent.accountIdsByPlatform === 'object'
+        ? normalizedBaseContent.accountIdsByPlatform
+        : {}),
+      ...(accountIdsByPlatform && typeof accountIdsByPlatform === 'object'
+        ? accountIdsByPlatform
+        : {}),
+    }
+    const normalizedAccountIdsByPlatform = Object.keys(rawAccountIdsByPlatform).length
+      ? Object.fromEntries(
+        Object.entries(rawAccountIdsByPlatform)
+          .filter(([key]) => ['instagram', 'youtube'].includes(key))
+          .map(([key, ids]) => [
+            key,
+            normalizeAccountIdList(ids),
+          ]),
+      )
+      : {}
+    const normalizedContent = {
+      ...normalizedBaseContent,
+      ...(Object.keys(normalizedAccountIdsByPlatform).length
+        ? { accountIdsByPlatform: normalizedAccountIdsByPlatform }
+        : {}),
+    }
+    const contentAccountIds = normalizeAccountIdList(normalizedContent.accountIds)
     const normalizedAccountIds = normalizeAccountIdList(accountIds)
     const effectiveAccountIds = normalizedAccountIds.length
       ? normalizedAccountIds
-      : (contentAccountIds.length ? contentAccountIds : contentInstagramAccountIds)
-    const normalizedAccountId = accountId ? sanitizeAccountId(accountId) : (effectiveAccountIds[0] || null)
+      : (contentAccountIds.length ? contentAccountIds : Object.values(normalizedAccountIdsByPlatform).flat())
+    const uniqueNormalizedAccountIds = [...new Set(effectiveAccountIds)]
+    const primaryAccountId = uniqueNormalizedAccountIds[0] || null
+    const normalizedAccountId = accountId ? sanitizeAccountId(accountId) : primaryAccountId
 
     if (scheduledId) {
       const { data, error } = await supabaseAdmin
@@ -3902,17 +3896,13 @@ app.post('/api/scheduled/create', async (req, res) => {
         .update({
           scheduled_at: scheduledAt,
           content: normalizedContent || {},
-          status: 'pending',
-          uploaded_url: null,
-          uploaded_at: null,
-          error: null,
           account_id: normalizedAccountId,
-          account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
+          account_ids: uniqueNormalizedAccountIds.length ? uniqueNormalizedAccountIds : null,
         })
         .eq('id', scheduledId)
         .eq('extraction_id', extractionId)
         .eq('platform', platform)
-        .in('status', ['pending', 'failed'])
+        .eq('status', 'pending')
         .select()
       const updated = firstSupabaseRow(data)
 
@@ -3942,7 +3932,7 @@ app.post('/api/scheduled/create', async (req, res) => {
           scheduled_at: scheduledAt,
           content: normalizedContent || first.content || {},
           account_id: normalizedAccountId,
-          account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
+          account_ids: uniqueNormalizedAccountIds.length ? uniqueNormalizedAccountIds : null,
         })
         .eq('id', first.id)
         .select()
@@ -3959,7 +3949,7 @@ app.post('/api/scheduled/create', async (req, res) => {
         scheduled_at: scheduledAt,
         status: 'pending',
         account_id: normalizedAccountId,
-        account_ids: effectiveAccountIds.length ? effectiveAccountIds : null,
+        account_ids: uniqueNormalizedAccountIds.length ? uniqueNormalizedAccountIds : null,
       })
       .select()
     if (error) throw error
@@ -4289,33 +4279,51 @@ app.post('/api/scheduled/run', async (req, res) => {
           if (targets.instagram) {
             const publicVideoUrl = await ensurePublicInstagramVideoUrl(videoUrl)
             const accountResults = {}
+            const failures = []
             for (const accountId of getScheduledAccountIdsFor('instagram')) {
-              const result = await publishInstagramReelV2({
-                videoUrl: publicVideoUrl,
-                caption: buildReelsCaption(script),
-                accountId,
-              })
-              accountResults[accountId || 'default'] = result
+              try {
+                const result = await publishInstagramReelV2({
+                  videoUrl: publicVideoUrl,
+                  caption: buildReelsCaption(script),
+                  accountId,
+                })
+                accountResults[accountId || 'default'] = result
+              } catch (error) {
+                failures.push({ accountId: accountId || 'default', error: error.message })
+              }
             }
             const firstResult = Object.values(accountResults)[0] || null
+            if (!firstResult) {
+              throw new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'Instagram Reels 예약 업로드 실패')
+            }
             uploadedUrls.instagram = firstResult?.permalink || firstResult?.url || null
             media.instagramMediaId = firstResult?.mediaId || firstResult?.id || null
             media.instagramAccountResults = accountResults
+            media.instagramFailures = failures
           }
 
           if (targets.youtube) {
             const accountResults = {}
+            const failures = []
             for (const accountId of getScheduledAccountIdsFor('youtube')) {
-              const result = await publishYouTubeVideoUpload({
-                ...buildShortsUploadPayload({ script, videoUrl }),
-                accountId,
-              })
-              accountResults[accountId || 'default'] = result
+              try {
+                const result = await publishYouTubeVideoUpload({
+                  ...buildShortsUploadPayload({ script, videoUrl }),
+                  accountId,
+                })
+                accountResults[accountId || 'default'] = result
+              } catch (error) {
+                failures.push({ accountId: accountId || 'default', error: error.response?.data?.error?.message || error.message })
+              }
             }
             const firstResult = Object.values(accountResults)[0] || null
+            if (!firstResult) {
+              throw new Error(failures.map((failure) => `${failure.accountId}: ${failure.error}`).join(' / ') || 'YouTube 예약 업로드 실패')
+            }
             uploadedUrls.youtube = firstResult?.url || null
             media.youtubeVideoId = firstResult?.videoId || null
             media.youtubeAccountResults = accountResults
+            media.youtubeFailures = failures
           }
 
           uploadResult = {
@@ -4354,10 +4362,24 @@ app.post('/api/scheduled/run', async (req, res) => {
               // 숏폼: 실제 업로드된 플랫폼만 표시하고 나머지는 기존 상태를 유지한다.
               const patches = {}
               if (uploadResult.uploadedUrls?.instagram) {
-                patches.instagram = { status: 'uploaded', uploadedAt: uploadedAtIso, uploadedUrl: uploadResult.uploadedUrls.instagram }
+                patches.instagram = {
+                  status: 'uploaded',
+                  uploadedAt: uploadedAtIso,
+                  uploadedUrl: uploadResult.uploadedUrls.instagram,
+                  accountResults: uploadResult.instagramAccountResults || null,
+                  failures: uploadResult.instagramFailures || [],
+                  accountIds: getScheduledAccountIdsFor('instagram').filter(Boolean),
+                }
               }
               if (uploadResult.uploadedUrls?.youtube) {
-                patches.youtube = { status: 'uploaded', uploadedAt: uploadedAtIso, uploadedUrl: uploadResult.uploadedUrls.youtube }
+                patches.youtube = {
+                  status: 'uploaded',
+                  uploadedAt: uploadedAtIso,
+                  uploadedUrl: uploadResult.uploadedUrls.youtube,
+                  accountResults: uploadResult.youtubeAccountResults || null,
+                  failures: uploadResult.youtubeFailures || [],
+                  accountIds: getScheduledAccountIdsFor('youtube').filter(Boolean),
+                }
               }
               newStatus = {
                 ...prevStatus,
@@ -4370,6 +4392,9 @@ app.post('/api/scheduled/run', async (req, res) => {
                   status: 'uploaded',
                   uploadedAt: uploadedAtIso,
                   uploadedUrl: uploadResult?.url || null,
+                  accountResults: uploadResult?.accountResults || null,
+                  failures: uploadResult?.failures || [],
+                  accountIds: getScheduledAccountIdsFor(item.platform).filter(Boolean),
                 },
               }
             }
