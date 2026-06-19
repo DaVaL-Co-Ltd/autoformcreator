@@ -333,7 +333,7 @@ function buildManualHeygenPrompt(script, options = {}) {
     hasMultipleRoles ? `Role setup:\n${roleLines}` : '',
     hasMultipleRoles ? 'One-avatar-per-scene rule: show only the avatar for the speaking role in each scene. Use clean cuts between scenes so the viewer understands the conversation or interview exchange.' : '',
     hasMultipleRoles ? 'Voice rule: use a distinct voice for each role. If HeyGen only allows one avatar in Video Agent, create each role scene manually in the editor or as separate generated clips and combine them in order.' : '',
-    'Do not add subtitles or captions inside HeyGen. Leave the bottom 30% of the frame visually clean for captions added later.',
+    'Enable HeyGen subtitles/captions for this manual Video Agent version. Use clean Korean captions that match the narration exactly, keep them short and readable, and place them in the lower safe area without covering the avatar face or mouth.',
     'Keep all text, labels, charts, and callouts away from the avatar face and mouth.',
     'Use fast but natural pacing, clean mobile composition, and a professional social-short style.',
     options.videoStyle && options.videoStyle !== 'auto' ? `Visual direction: ${options.videoStyle}.` : '',
