@@ -1035,12 +1035,16 @@ export default function ExtractionResultPage() {
     instagramImages: initialInstagramImages,
     shortsVideo: initialShortsVideo,
     shortsNarration: initialShortsNarration,
+    shortsCreationMode: initialShortsCreationMode,
   } = state
 
   const [blogImages, setBlogImages] = useState(initialBlogImages || null)
   const [instagramImages, setInstagramImages] = useState(initialInstagramImages || null)
   const [shortsVideo, setShortsVideo] = useState(initialShortsVideo || null)
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
+  const shortsPromptMode = initialShortsCreationMode
+    ? initialShortsCreationMode === 'prompt'
+    : (!!shortsScript?.heygenPrompt && !initialShortsVideo)
   // 카드뉴스 시각화는 카테고리 + 실제 이미지 생성 결과가 모두 있을 때만 적용한다.
   // 사용자가 이미지 생성 옵션을 끄고 본문만 만든 경우 일반 섹션 렌더로 폴백된다.
   const hasGeneratedBlogImages = Array.isArray(blogImages)
@@ -2270,6 +2274,7 @@ export default function ExtractionResultPage() {
   const renderShorts = () => {
     const shortsVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl
     const rawShortsVideoUrl = getDistinctRawShortsUrl(shortsVideo)
+    const heygenPrompt = shortsScript?.heygenPrompt || ''
     const shortsTitle = shortsScript?.uploadTitle || shortsScript?.title || ''
     const shortsHashtags = ensureArray(shortsScript?.hashtags)
     const sanitizedShortsDescription = stripResultCtaText(
@@ -2302,6 +2307,33 @@ export default function ExtractionResultPage() {
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
+        {shortsPromptMode ? (
+          <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
+            <div>
+              <h4 className="text-sm font-semibold text-text">HeyGen 수동 제작</h4>
+              <p className="text-xs text-text-muted mt-0.5">
+                아래 대본과 영상 프롬포트를 HeyGen 홈페이지에 붙여넣어 영상을 직접 제작하세요.
+              </p>
+            </div>
+            {heygenPrompt && (
+              <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
+                  <p className="text-xs font-semibold text-text-muted">영상 프롬포트</p>
+                  <button
+                    type="button"
+                    onClick={() => copy(heygenPrompt)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-xs font-medium text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+                  >
+                    <Copy size={12} /> 프롬포트 복사
+                  </button>
+                </div>
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words p-3 text-xs leading-5 text-text">
+                  {heygenPrompt}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="bg-surface rounded-2xl border border-border p-5 space-y-3">
           <div>
             <h4 className="text-sm font-semibold text-text">플랫폼별 업로드</h4>
@@ -2406,6 +2438,7 @@ export default function ExtractionResultPage() {
             )
           })}
         </div>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
@@ -2414,7 +2447,7 @@ export default function ExtractionResultPage() {
             >
               <Copy size={14} /> 상세정보 복사
             </button>
-            {shortsVideoUrl ? (
+            {!shortsPromptMode && shortsVideoUrl ? (
               <button
                 type="button"
                 onClick={() => downloadShortsVideo(shortsVideoUrl)}
@@ -2424,7 +2457,7 @@ export default function ExtractionResultPage() {
                 {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                 영상 저장
               </button>
-            ) : (
+            ) : !shortsPromptMode ? (
               <button
                 type="button"
                 disabled
@@ -2432,13 +2465,13 @@ export default function ExtractionResultPage() {
               >
                 <Download size={14} /> 영상 저장
               </button>
-            )}
+            ) : null}
         </div>
 
         <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap lg:items-start">
           {/* 자막 포함 영상만 노출. 자막 번인이 성공하면 combinedVideoUrl 이 자막본,
               실패하면 raw 로 fallback 돼 있으므로 단일 패널로 항상 올바른 영상이 뜬다. */}
-          {renderVideoPanel(shortsVideo, rawShortsVideoUrl ? '자막 포함 최종본' : '영상')}
+          {!shortsPromptMode && renderVideoPanel(shortsVideo, rawShortsVideoUrl ? '자막 포함 최종본' : '영상')}
 
           <div className="space-y-3 min-w-0 flex-1">
             <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">

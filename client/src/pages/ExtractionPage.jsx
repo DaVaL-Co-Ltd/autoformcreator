@@ -5,7 +5,7 @@ import {
   Upload, FileText, CheckCircle, Loader2, Sparkles, Brain, PenTool,
   ImageIcon, AlertCircle, ChevronRight, ChevronDown, ChevronUp, Eye, ArrowRight,
   XCircle, AlertTriangle, RefreshCw, Film, Settings2, Download,
-  Mail, Play, Pause, ZoomIn, X
+  Mail, Play, Pause, ZoomIn, X, Copy
 } from 'lucide-react'
 import { parsePDF } from '../services/llamaparse'
 import { verifyParsedContent, summarizeContent } from '../services/gemini'
@@ -282,6 +282,41 @@ function getDistinctRawShortsUrl(video) {
   const finalUrl = resolveMediaUrl(video?.url || video?.videoUrl || video?.combinedVideoUrl)
   if (!rawUrl || rawUrl === finalUrl) return null
   return rawUrl
+}
+
+function buildManualHeygenPrompt(script, options = {}) {
+  const sceneLines = (Array.isArray(script?.scenes) ? script.scenes : [])
+    .map((scene, index) => {
+      const caption = String(scene?.caption || scene?.narration || '').trim()
+      const overlay = String(scene?.textOverlay || '').trim()
+      const visual = String(scene?.visualDescription || '').trim()
+      return [
+        `Scene ${scene?.sceneNumber || index + 1}${scene?.duration ? ` (${scene.duration}s)` : ''}`,
+        caption ? `Narration: ${caption}` : '',
+        overlay ? `On-screen text: ${overlay}` : '',
+        visual ? `Visual direction: ${visual}` : '',
+        scene?.layout === 'infographic-full'
+          ? 'Layout: full-screen animated infographic, no avatar visible.'
+          : 'Layout: selected HeyGen avatar speaking to camera, compact text only in the top-safe area.',
+      ].filter(Boolean).join('\n')
+    })
+    .join('\n\n')
+
+  return [
+    'Create a polished vertical 9:16 Korean short-form video in HeyGen.',
+    `Target duration: about ${script?.duration || 60} seconds.`,
+    'Use the avatar and voice I select in HeyGen. Keep the same speaker identity, tone, and pacing across the full video.',
+    'Do not add subtitles or captions inside HeyGen. Leave the bottom 30% of the frame visually clean for captions added later.',
+    'Keep all text, labels, charts, and callouts away from the avatar face and mouth.',
+    'Use fast but natural pacing, clean mobile composition, and a professional social-short style.',
+    options.videoStyle && options.videoStyle !== 'auto' ? `Visual direction: ${options.videoStyle}.` : '',
+    options.narrationTone && options.narrationTone !== 'auto' ? `Narration tone: ${options.narrationTone}.` : '',
+    options.extraPrompt ? `Additional direction: ${options.extraPrompt}` : '',
+    script?.title ? `Title reference: ${script.title}` : '',
+    script?.hook ? `Opening hook: ${script.hook}` : '',
+    sceneLines ? `Scene plan:\n\n${sceneLines}` : '',
+    script?.cta ? `Closing CTA: ${script.cta}` : '',
+  ].filter(Boolean).join('\n\n')
 }
 
 const steps = [
@@ -592,6 +627,7 @@ export default function ExtractionPage() {
   const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
   const [imageLightbox, setImageLightbox] = useState(null) // { kind: 'image', src } | { kind: 'knowledge', headline, bullets, imageUrl, index }
   const [shortsTab, setShortsTab] = useState('script') // 'script' | 'upload'
+  const [shortsCreationMode, setShortsCreationMode] = useState('video') // 'video' | 'prompt'
 
   // 프롬프트 설정 (각 Step별)
   const [promptSettings, setPromptSettings] = useState({
@@ -1145,6 +1181,8 @@ export default function ExtractionPage() {
     !!shortsScript &&
     !loading.shorts &&
     !loading.media
+  const isShortsPromptMode = shortsCreationMode === 'prompt'
+  const isShortsVideoMode = shortsCreationMode === 'video'
 
   const getShortsSceneCaption = (scene) => (
     scene?.caption
@@ -1166,6 +1204,42 @@ export default function ExtractionPage() {
         })
       : []
   )
+
+  const attachManualHeygenPrompt = (script) => {
+    if (!script) return script
+    return {
+      ...script,
+      generationMode: 'prompt',
+      heygenPrompt: buildManualHeygenPrompt(script, {
+        extraPrompt: promptSettings.shorts.extra,
+        videoStyle: promptSettings.shorts.videoStyle,
+        narrationTone: promptSettings.shorts.narrationTone,
+      }),
+    }
+  }
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text || '')
+    } catch (err) {
+      console.warn('[clipboard] 복사 실패:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (!isShortsPromptMode || !shortsScript) return
+    const nextScript = attachManualHeygenPrompt(shortsScript)
+    if (nextScript.heygenPrompt !== shortsScript.heygenPrompt || shortsScript.generationMode !== 'prompt') {
+      setShortsScript(nextScript)
+    }
+  }, [
+    isShortsPromptMode,
+    promptSettings.shorts.extra,
+    promptSettings.shorts.videoStyle,
+    promptSettings.shorts.narrationTone,
+    shortsScript?.title,
+    shortsScript?.duration,
+  ])
 
   // 미디어 항목별 로딩 상태
   const [mediaItemLoading, setMediaItemLoading] = useState({})
@@ -1462,7 +1536,10 @@ export default function ExtractionPage() {
       tone: promptSettings.content[`${channelKey}Tone`] || 'auto',
       signal: options.signal,
     }
-    const result = await config.generate(summary, parsedText, emphasisText, contentOptions)
+    const rawResult = await config.generate(summary, parsedText, emphasisText, contentOptions)
+    const result = channelKey === 'shorts' && isShortsPromptMode
+      ? attachManualHeygenPrompt(rawResult)
+      : rawResult
     config.setter(result)
     if (options.clearError !== false) {
       removeStepError('content', 'gemini', config.label)
@@ -1543,7 +1620,7 @@ export default function ExtractionPage() {
     const config = contentChannelConfigs.find(channel => channel.key === channelKey)
     if (!config) return
     if (!ensureBlogCategoryReady(channelKey === 'blog')) return
-    if (channelKey === 'shorts') {
+    if (channelKey === 'shorts' && isShortsVideoMode) {
       if (activeSlotConcept) {
         // 2인 슬롯 컨셉: 역할별 아바타+목소리 규칙 위반 시 경고 팝업 후 중단.
         const violation = validateSlotConcept(activeSlotConcept, conceptAvatarSlots)
@@ -1578,8 +1655,13 @@ export default function ExtractionPage() {
         return
       }
       if (channelKey === 'shorts') {
-        setContentGenerationStage('video')
-        await runShortsGeneration({ scriptOverride: result })
+        if (isShortsVideoMode) {
+          setContentGenerationStage('video')
+          await runShortsGeneration({ scriptOverride: result })
+        } else {
+          setShortsScript(attachManualHeygenPrompt(result))
+          setShortsVideo(null)
+        }
       }
       setCurrentStep(getNextVisibleStep(CONTENT_CHANNEL_STEPS[channelKey]))
     } catch (err) {
@@ -1747,6 +1829,9 @@ export default function ExtractionPage() {
     }
     if (contentGenerationStage === 'video' && channelKey === 'shorts') {
       return '영상 생성 중...'
+    }
+    if (channelKey === 'shorts' && isShortsPromptMode) {
+      return '대본·프롬프트 생성 중...'
     }
     return '본문 생성 중...'
   }
@@ -2662,10 +2747,10 @@ ${parsedText}
       if (selectedChannels.instagram && !instagramContent) incomplete.push('인스타그램 콘텐츠')
       if (selectedChannels.shorts && !shortsScript) incomplete.push('숏폼 대본')
     }
-    // 숏폼 아바타·목소리 — 영상이 이미 생성됐으면(shortsVideo) 선택이 끝난 것이므로 미완료로 보지 않는다.
-    // 영상이 아직 없을 때만, 아바타+목소리(2인 슬롯은 슬롯 검증)가 안 됐으면 미완료로 안내한다.
-    if (selectedChannels.shorts && !shortsVideo && !isShortsAvatarVoiceReady) incomplete.push('숏폼 아바타·목소리')
-    if (selectedChannels.shorts && !shortsVideo) incomplete.push('숏폼 영상')
+    // 프롬프트 모드는 사용자가 HeyGen 홈페이지에서 직접 제작하므로 대본+프롬프트가 완료 조건이다.
+    if (selectedChannels.shorts && isShortsVideoMode && !shortsVideo && !isShortsAvatarVoiceReady) incomplete.push('숏폼 아바타·목소리')
+    if (selectedChannels.shorts && isShortsVideoMode && !shortsVideo) incomplete.push('숏폼 영상')
+    if (selectedChannels.shorts && isShortsPromptMode && shortsScript && !shortsScript.heygenPrompt) incomplete.push('HeyGen 영상 프롬프트')
     // 실패 항목
     const contentErrors = (stepErrors.content || []).filter(e => isSelectedErrorChannel(e.channel))
     const mediaErrors = (stepErrors.media || []).filter(e => !e.noRetry && isSelectedErrorChannel(e.channel))
@@ -2799,6 +2884,7 @@ ${parsedText}
       blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
       shortsScript,
       blogImages: blogImagesForResult, instagramImages, shortsVideo,
+      shortsCreationMode,
       blogFooterEnabled: promptSettings.content.includeBlogFooter !== false,
       fileName: file?.name,
       fileBase64,
@@ -3729,7 +3815,7 @@ ${parsedText}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-text">콘텐츠 일괄 생성</p>
             <p className="text-xs text-text-muted mt-0.5">
-              선택한 {selectedContentChannels().length}개 채널을 한 번에 병렬로 생성합니다. (쇼츠는 대본까지)
+              선택한 {selectedContentChannels().length}개 채널을 한 번에 병렬로 생성합니다. (쇼츠는 대본{isShortsPromptMode ? ' + 영상 프롬포트' : '까지'})
             </p>
           </div>
           <button
@@ -3802,6 +3888,22 @@ ${parsedText}
               {row.key === 'instagram' && PF('인스타그램 추가 지시', { optional: true, type: 'textarea', placeholder: '수치 강조 등', value: promptSettings.content.instaExtra, onChange: v => updatePrompt('content', 'instaExtra', v) })}
               {row.key === 'shorts' && (
                 <>
+                  {PF('생성 방식', {
+                    type: 'select',
+                    value: shortsCreationMode,
+                    onChange: (v) => {
+                      setShortsCreationMode(v)
+                      if (v === 'prompt') {
+                        setShortsVideo(null)
+                        if (shortsScript) setShortsScript(attachManualHeygenPrompt(shortsScript))
+                      }
+                    },
+                    options: [
+                      { value: 'video', label: '직접 영상까지 생성' },
+                      { value: 'prompt', label: '영상 프롬포트만 생성' },
+                    ],
+                    hint: '프롬포트만 생성하면 대본과 HeyGen 입력용 프롬포트만 만들고, 영상은 HeyGen 홈페이지에서 직접 제작합니다.',
+                  })}
                   {PF('영상 컨셉', {
                     type: 'select',
                     value: promptSettings.shorts.videoConcept,
@@ -3926,7 +4028,9 @@ ${parsedText}
                   {!row.data && !failed && (
                     <div className="rounded-lg border border-border bg-surface-light p-4 text-sm text-text-muted">
                       {row.key === 'shorts'
-                        ? '아바타를 먼저 선택하거나 확정한 뒤 생성하면, 숏폼 대본과 영상이 같은 단계에서 순차적으로 생성됩니다.'
+                        ? (isShortsPromptMode
+                            ? '생성 버튼을 누르면 숏폼 대본과 HeyGen 홈페이지 입력용 영상 프롬포트가 생성됩니다.'
+                            : '아바타를 먼저 선택하거나 확정한 뒤 생성하면, 숏폼 대본과 영상이 같은 단계에서 순차적으로 생성됩니다.')
                         : `${row.label} 콘텐츠를 생성하면 다음 단계로 이동합니다.`}
                     </div>
                   )}
@@ -4003,6 +4107,18 @@ ${parsedText}
                   {row.key === 'shorts' && (
                     <div className="space-y-3">
                       <div className="border-t border-border pt-5 space-y-5">
+                        <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+                          <p className="text-sm font-semibold text-text">
+                            {isShortsPromptMode ? '영상 프롬포트만 생성' : '직접 영상까지 생성'}
+                          </p>
+                          <p className="text-xs text-text-muted mt-1">
+                            {isShortsPromptMode
+                              ? '대본과 HeyGen 홈페이지 입력용 프롬포트를 생성합니다. 영상 렌더링과 크레딧 사용은 여기서 진행하지 않습니다.'
+                              : '대본 생성 후 선택한 아바타와 목소리로 HeyGen 영상을 이어서 생성합니다.'}
+                          </p>
+                        </div>
+                        {isShortsVideoMode && (
+                        <>
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.avatar}</span>
@@ -4470,6 +4586,8 @@ ${parsedText}
                             })}
                           </div>
                         </div>
+                        </>
+                        )}
 
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
@@ -4534,6 +4652,32 @@ ${parsedText}
                           )}
                         </div>
 
+                        {isShortsPromptMode && shortsScript?.heygenPrompt && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">4</span>
+                              <p className="text-base font-semibold text-text">HeyGen 영상 프롬포트</p>
+                              <CheckCircle size={14} className="text-success" />
+                            </div>
+                            <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
+                              <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
+                                <p className="text-xs text-text-muted">HeyGen 홈페이지에서 영상 생성 프롬포트에 붙여넣으세요.</p>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(shortsScript.heygenPrompt)}
+                                  className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:text-text hover:border-primary/40"
+                                >
+                                  <Copy size={12} /> 복사
+                                </button>
+                              </div>
+                              <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words p-3 text-xs leading-5 text-text">
+                                {shortsScript.heygenPrompt}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {isShortsVideoMode && (
                         <div className="space-y-3">
                           <div className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-sm font-bold">{shortsStepNumbers.video}</span>
@@ -4664,6 +4808,7 @@ ${parsedText}
                           </>
                           )}
                         </div>
+                        )}
                         <ErrorPanel errors={stepErrors.shorts} onRetry={(err) => {
                           if (err.channel === '아바타') { generateAvatar() }
                           else { runShortsGeneration() }
