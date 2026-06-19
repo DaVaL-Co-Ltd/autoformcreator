@@ -285,19 +285,41 @@ function getDistinctRawShortsUrl(video) {
 }
 
 function buildManualHeygenPrompt(script, options = {}) {
+  const roleSlots = Array.isArray(options.roleSlots) ? options.roleSlots : []
+  const roleByAvatarId = options.roleByAvatarId || {}
+  const hasMultipleRoles = roleSlots.length >= 2
+  const roleLines = roleSlots
+    .map((slot, index) => {
+      const label = slot?.role || `Role ${index + 1}`
+      const category = slot?.category === 'teachers'
+        ? 'teacher/coach avatar'
+        : slot?.category === 'students'
+          ? 'student avatar'
+          : 'HeyGen avatar'
+      return `- ${label}: assign a separate ${category} in HeyGen. Keep this role visually consistent every time it appears.`
+    })
+    .join('\n')
   const sceneLines = (Array.isArray(script?.scenes) ? script.scenes : [])
     .map((scene, index) => {
       const caption = String(scene?.caption || scene?.narration || '').trim()
       const overlay = String(scene?.textOverlay || '').trim()
       const visual = String(scene?.visualDescription || '').trim()
+      const role = scene?.avatarId ? roleByAvatarId[scene.avatarId] : ''
+      const fallbackRole = hasMultipleRoles && !role && scene?.layout !== 'infographic-full'
+        ? roleSlots[index % roleSlots.length]?.role
+        : ''
       return [
         `Scene ${scene?.sceneNumber || index + 1}${scene?.duration ? ` (${scene.duration}s)` : ''}`,
+        role ? `Speaking role: ${role}` : '',
+        fallbackRole ? `Suggested speaking role: ${fallbackRole}. Adjust only if the narration clearly belongs to another listed role.` : '',
         caption ? `Narration: ${caption}` : '',
         overlay ? `On-screen text: ${overlay}` : '',
         visual ? `Visual direction: ${visual}` : '',
         scene?.layout === 'infographic-full'
           ? 'Layout: full-screen animated infographic, no avatar visible.'
-          : 'Layout: selected HeyGen avatar speaking to camera, compact text only in the top-safe area.',
+          : hasMultipleRoles
+            ? 'Layout: show only the avatar for the speaking role in this scene; switch to the next role only on the next scene/cut. Do not show two avatars in the same frame unless HeyGen explicitly supports it.'
+            : 'Layout: selected HeyGen avatar speaking to camera, compact text only in the top-safe area.',
       ].filter(Boolean).join('\n')
     })
     .join('\n\n')
@@ -305,7 +327,12 @@ function buildManualHeygenPrompt(script, options = {}) {
   return [
     'Create a polished vertical 9:16 Korean short-form video in HeyGen.',
     `Target duration: about ${script?.duration || 60} seconds.`,
-    'Use the avatar and voice I select in HeyGen. Keep the same speaker identity, tone, and pacing across the full video.',
+    hasMultipleRoles
+      ? 'This is a multi-character short. Do not create it as one single-avatar Video Agent generation. Build it in HeyGen Editor as separate scenes or clips, assign the correct avatar and voice to each scene, then order the scenes according to this plan.'
+      : 'Use the avatar and voice I select in HeyGen. Keep the same speaker identity, tone, and pacing across the full video.',
+    hasMultipleRoles ? `Role setup:\n${roleLines}` : '',
+    hasMultipleRoles ? 'One-avatar-per-scene rule: show only the avatar for the speaking role in each scene. Use clean cuts between scenes so the viewer understands the conversation or interview exchange.' : '',
+    hasMultipleRoles ? 'Voice rule: use a distinct voice for each role. If HeyGen only allows one avatar in Video Agent, create each role scene manually in the editor or as separate generated clips and combine them in order.' : '',
     'Do not add subtitles or captions inside HeyGen. Leave the bottom 30% of the frame visually clean for captions added later.',
     'Keep all text, labels, charts, and callouts away from the avatar face and mouth.',
     'Use fast but natural pacing, clean mobile composition, and a professional social-short style.',
@@ -1120,6 +1147,10 @@ export default function ExtractionPage() {
     const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
     return Array.isArray(concept?.avatarSlots) && concept.avatarSlots.length > 0 ? concept : null
   })()
+  const promptModeConceptOptions = SHORTS_VIDEO_CONCEPT_OPTIONS.filter((option) => {
+    const concept = findShortsVideoConcept(option.value)
+    return !Array.isArray(concept?.avatarSlots) || concept.avatarSlots.length === 0
+  })
 
   // 슬롯 한 칸 갱신 (avatar 또는 voice).
   const updateSlot = (index, patch) => {
@@ -1205,6 +1236,28 @@ export default function ExtractionPage() {
       : []
   )
 
+  const buildManualPromptRoleOptions = () => {
+    const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+    if (!Array.isArray(concept?.avatarSlots) || concept.avatarSlots.length === 0) return {}
+
+    const roleByAvatarId = {}
+    concept.avatarSlots.forEach((slot, index) => {
+      const role = slot?.role
+      if (!role) return
+
+      const conceptAvatarId = concept.preferredAvatarIds?.[index]
+      if (conceptAvatarId) roleByAvatarId[conceptAvatarId] = role
+
+      const presetAvatarId = findPresetById(slot.defaultPresetId)?.avatarId
+      if (presetAvatarId) roleByAvatarId[presetAvatarId] = role
+    })
+
+    return {
+      roleSlots: concept.avatarSlots,
+      roleByAvatarId,
+    }
+  }
+
   const attachManualHeygenPrompt = (script) => {
     if (!script) return script
     return {
@@ -1214,6 +1267,7 @@ export default function ExtractionPage() {
         extraPrompt: promptSettings.shorts.extra,
         videoStyle: promptSettings.shorts.videoStyle,
         narrationTone: promptSettings.shorts.narrationTone,
+        ...buildManualPromptRoleOptions(),
       }),
     }
   }
@@ -1237,6 +1291,7 @@ export default function ExtractionPage() {
     promptSettings.shorts.extra,
     promptSettings.shorts.videoStyle,
     promptSettings.shorts.narrationTone,
+    promptSettings.shorts.videoConcept,
     shortsScript?.title,
     shortsScript?.duration,
   ])
@@ -3895,6 +3950,12 @@ ${parsedText}
                       setShortsCreationMode(v)
                       if (v === 'prompt') {
                         setShortsVideo(null)
+                        const concept = findShortsVideoConcept(promptSettings.shorts.videoConcept)
+                        if (Array.isArray(concept?.avatarSlots) && concept.avatarSlots.length > 0) {
+                          updatePrompt('shorts', 'videoConcept', '')
+                          updatePrompt('shorts', 'extra', '')
+                          setConceptAvatarSlots([])
+                        }
                         if (shortsScript) setShortsScript(attachManualHeygenPrompt(shortsScript))
                       }
                     },
@@ -3902,15 +3963,21 @@ ${parsedText}
                       { value: 'video', label: '직접 영상까지 생성' },
                       { value: 'prompt', label: '영상 프롬포트만 생성' },
                     ],
-                    hint: '프롬포트만 생성하면 대본과 HeyGen 입력용 프롬포트만 만들고, 영상은 HeyGen 홈페이지에서 직접 제작합니다.',
+                    hint: '프롬포트만 생성은 HeyGen Video Agent용 1인 컨셉만 지원합니다. 2인 이상 컨셉은 직접 영상까지 생성에서 선택하세요.',
                   })}
                   {PF('영상 컨셉', {
                     type: 'select',
                     value: promptSettings.shorts.videoConcept,
                     onChange: (v) => {
+                      const concept = findShortsVideoConcept(v)
+                      if (isShortsPromptMode && Array.isArray(concept?.avatarSlots) && concept.avatarSlots.length > 0) {
+                        updatePrompt('shorts', 'videoConcept', '')
+                        updatePrompt('shorts', 'extra', '')
+                        setConceptAvatarSlots([])
+                        return
+                      }
                       updatePrompt('shorts', 'videoConcept', v)
                       setConceptResetNotice(false)
-                      const concept = findShortsVideoConcept(v)
                       if (concept) {
                         updatePrompt('shorts', 'extra', buildShortsConceptExtra(v))
                         if (Array.isArray(concept.avatarSlots) && concept.avatarSlots.length > 0) {
@@ -3947,8 +4014,10 @@ ${parsedText}
                         setConceptAvatarSlots([])
                       }
                     },
-                    options: SHORTS_VIDEO_CONCEPT_OPTIONS,
-                    hint: '선택 시 영상 추가 지시 + 컨셉에 등장하는 아바타가 자동 선택됩니다. 2인 컨셉은 역할별로 아바타·목소리를 직접 골라야 합니다. 선택하지 않으면 HeyGen 의 자동 연출(Video Agent)에 맡깁니다.',
+                    options: isShortsPromptMode ? promptModeConceptOptions : SHORTS_VIDEO_CONCEPT_OPTIONS,
+                    hint: isShortsPromptMode
+                      ? '프롬포트만 생성에서는 1인 컨셉만 선택할 수 있습니다. 선택하지 않으면 HeyGen Video Agent에 맡기는 기본 프롬포트를 만듭니다.'
+                      : '선택 시 영상 추가 지시 + 컨셉에 등장하는 아바타가 자동 선택됩니다. 2인 컨셉은 역할별로 아바타·목소리를 직접 골라야 합니다. 선택하지 않으면 HeyGen 의 자동 연출(Video Agent)에 맡깁니다.',
                   })}
                   {PF('나레이션 스타일', {
                     type: 'select',
@@ -4661,7 +4730,7 @@ ${parsedText}
                             </div>
                             <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
                               <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
-                                <p className="text-xs text-text-muted">HeyGen 홈페이지에서 영상 생성 프롬포트에 붙여넣으세요.</p>
+                                <p className="text-xs text-text-muted">HeyGen Video Agent에 붙여넣어 제작하세요. 프롬포트만 생성은 1인 컨셉만 지원합니다.</p>
                                 <button
                                   type="button"
                                   onClick={() => copyToClipboard(shortsScript.heygenPrompt)}

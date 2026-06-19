@@ -2312,7 +2312,7 @@ export default function ExtractionResultPage() {
             <div>
               <h4 className="text-sm font-semibold text-text">HeyGen 수동 제작</h4>
               <p className="text-xs text-text-muted mt-0.5">
-                아래 대본과 영상 프롬포트를 HeyGen 홈페이지에 붙여넣어 영상을 직접 제작하세요.
+                아래 대본과 영상 프롬포트를 HeyGen Video Agent에 붙여넣어 영상을 직접 제작하세요.
               </p>
             </div>
             {heygenPrompt && (
