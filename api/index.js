@@ -36,6 +36,25 @@ function vercel(handler) {
   };
 }
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (_err) {
+    return { error: text };
+  }
+}
+
+function getHeygenApiKey(res) {
+  const apiKey = process.env.HEYGEN_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' });
+    return null;
+  }
+  return apiKey;
+}
+
 // Health
 app.get('/api/health', vercel(require('./_lib/health')));
 
@@ -52,6 +71,56 @@ app.delete('/api/extractions/:id', vercel(require('./_lib/extractions/[id]/index
 // Gemini
 app.post('/api/gemini/generate-content', vercel(require('./_lib/gemini/generate-content')));
 app.get('/api/gemini/validate', vercel(require('./_lib/gemini/validate')));
+
+// HeyGen v3 proxy routes used by direct Avatar IV/V shorts generation.
+app.post('/api/heygen/v3/videos', async (req, res) => {
+  const apiKey = getHeygenApiKey(res);
+  if (!apiKey) return;
+  try {
+    const response = await fetch('https://api.heygen.com/v3/videos', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body || {}),
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) return res.status(response.status).json(data);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/heygen/v3/videos/:videoId', async (req, res) => {
+  const apiKey = getHeygenApiKey(res);
+  if (!apiKey) return;
+  try {
+    const videoId = encodeURIComponent(req.params.videoId);
+    const response = await fetch(`https://api.heygen.com/v3/videos/${videoId}`, {
+      headers: { 'X-Api-Key': apiKey },
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) return res.status(response.status).json(data);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/heygen/v3/avatar-look/:lookId', async (req, res) => {
+  const apiKey = getHeygenApiKey(res);
+  if (!apiKey) return;
+  try {
+    const lookId = encodeURIComponent(req.params.lookId);
+    const response = await fetch(`https://api.heygen.com/v3/avatars/looks/${lookId}`, {
+      headers: { 'X-Api-Key': apiKey },
+    });
+    const data = await readJsonResponse(response);
+    if (!response.ok) return res.status(response.status).json(data);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // Instagram
 app.get('/api/instagram/auth-status', vercel(require('./_lib/instagram/auth-status')));
