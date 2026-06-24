@@ -1576,6 +1576,12 @@ export default function ExtractionPage() {
     { key: 'shorts', label: '숏폼 대본', actionLabel: '숏폼 대본', setter: setShortsScript, generate: generateShortsScript },
   ]
   const selectedContentChannels = () => contentChannelConfigs.filter(c => selectedChannels[c.key])
+  const contentGenerationDurationMessage = (() => {
+    if (selectedChannels.shorts) return '콘텐츠 생성은 약 15분 정도 소요됩니다.'
+    if (selectedChannels.blog || selectedChannels.instagram) return '콘텐츠 생성은 약 5분 정도 소요됩니다.'
+    if (selectedChannels.newsletter) return '콘텐츠 생성은 약 1분 정도 소요됩니다.'
+    return ''
+  })()
 
   // 라벨 → API 키 매핑
   const labelToKey = { '네이버 블로그': 'blog', '뉴스레터': 'newsletter', '인스타그램': 'instagram', '숏폼 대본': 'shorts' }
@@ -3879,6 +3885,11 @@ ${parsedText}
             <p className="text-xs text-text-muted mt-0.5">
               선택한 {selectedContentChannels().length}개 채널을 한 번에 병렬로 생성합니다. (쇼츠는 대본{isShortsPromptMode ? ' + 영상 프롬포트' : '까지'})
             </p>
+            {contentGenerationDurationMessage && (
+              <p className="text-xs font-medium text-primary-light mt-1">
+                {contentGenerationDurationMessage}
+              </p>
+            )}
           </div>
           <button
             onClick={runContentGeneration}
