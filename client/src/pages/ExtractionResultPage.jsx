@@ -449,6 +449,9 @@ export default function ExtractionResultPage() {
     const params = new URLSearchParams(location.search || '')
     params.set('id', id)
     const currentState = resolvedState || mergeStateWithDraft(location.state || null) || {}
+    const definedNextState = Object.fromEntries(
+      Object.entries(nextState || {}).filter(([, value]) => value !== undefined)
+    )
     navigate(
       {
         pathname: location.pathname,
@@ -460,7 +463,7 @@ export default function ExtractionResultPage() {
         state: {
           ...currentState,
           ...(location.state || {}),
-          ...nextState,
+          ...definedNextState,
           extractionId: id,
           fromContents: true,
         },
@@ -1656,11 +1659,16 @@ export default function ExtractionResultPage() {
     saveOnceRef.current = true
     saveExtraction(stateData)
       .then((id) => {
-        setExtractionId(id)
-        rememberResultExtractionId(id, {
-          activeChannel: stateData.activeChannel,
+        const nextState = {
+          ...stateData,
+          extractionId: id,
+          activeChannel: stateData.activeChannel || (stateData.shortsCreationMode === 'prompt' && stateData.shortsScript ? 'shorts' : undefined),
           uploadStatus: stateData.uploadStatus || {},
-        })
+          fromContents: true,
+        }
+        setExtractionId(id)
+        setResolvedState(nextState)
+        rememberResultExtractionId(id, nextState)
       })
       .catch(err => console.error('[Supabase 저장 실패]', err))
   }, [state, rememberResultExtractionId])
@@ -1771,7 +1779,11 @@ export default function ExtractionResultPage() {
     const nextMenu = state.activeChannel && nextDataMap[state.activeChannel]
       ? state.activeChannel
       : menuItems.find(m => nextDataMap[m.id])?.id || 'blog'
-    setActiveMenu(prev => (nextDataMap[prev] ? prev : nextMenu))
+    setActiveMenu(prev => (
+      state.activeChannel && nextDataMap[state.activeChannel]
+        ? state.activeChannel
+        : (nextDataMap[prev] ? prev : nextMenu)
+    ))
   }, [state])
 
   useEffect(() => {

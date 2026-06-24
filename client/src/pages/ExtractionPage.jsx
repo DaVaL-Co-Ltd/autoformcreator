@@ -3635,19 +3635,23 @@ ${parsedText}
           cardStyle: promptSettings.media.instagramCardStyle,
         }
       : instagramContent
+    const shortsScriptForResult = isShortsPromptMode
+      ? attachManualHeygenPrompt(shortsScript)
+      : shortsScript
 
     const extractionIdForResult = savedExtractionIdRef.current || await savingExtractionPromiseRef.current?.catch(() => null) || null
 
     const resultState = {
       parsedText, verification, summary,
       blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
-      shortsScript,
+      shortsScript: shortsScriptForResult,
       blogImages: blogImagesForResult, instagramImages, shortsVideo,
       shortsCreationMode,
       blogFooterEnabled: promptSettings.content.includeBlogFooter !== false,
       fileName: file?.name,
       fileBase64,
       extractionId: extractionIdForResult || undefined,
+      activeChannel: selectedChannels.shorts && isShortsPromptMode ? 'shorts' : undefined,
       savedFromExtraction: !extractionIdForResult,
       draftKey: `result_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }
