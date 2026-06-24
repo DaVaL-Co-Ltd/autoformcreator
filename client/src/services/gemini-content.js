@@ -605,6 +605,33 @@ function ensureArray(value) {
   return Array.isArray(value) ? value : []
 }
 
+function clampShortsTargetDuration(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 60
+  return Math.min(120, Math.max(20, Math.round(numeric)))
+}
+
+function formatDurationKorean(seconds) {
+  const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0))
+  if (safeSeconds < 60) return `${safeSeconds}초`
+  const minutes = Math.floor(safeSeconds / 60)
+  const rest = safeSeconds % 60
+  return rest > 0 ? `${minutes}분 ${rest}초` : `${minutes}분`
+}
+
+function buildShortsDurationInstruction(options = {}) {
+  const target = clampShortsTargetDuration(options.targetDurationSeconds)
+  const min = Math.max(10, target - 10)
+  const max = target + 10
+  const mainSceneTarget = Math.max(14, target - 6)
+
+  return `- 사용자가 설정한 목표 영상 길이는 ${target}초(${formatDurationKorean(target)})입니다.
+- 실제 완성 영상은 목표 길이에서 약 10초 내외 차이만 나도록 설계하세요. 허용 범위는 약 ${min}초~${max}초(${formatDurationKorean(min)}~${formatDurationKorean(max)})입니다.
+- 반환하는 duration 필드는 전체 영상 목표 길이인 "${target}"로 작성하세요.
+- hook 과 cta 는 시스템에서 각각 약 3초짜리 씬으로 붙습니다. 따라서 scenes[].duration 합계는 약 ${mainSceneTarget}초가 되도록 분배하세요.
+- scenes[].caption 말 분량도 이 시간에 맞추세요. 짧은 목표 길이에서는 씬당 1문장, 긴 목표 길이에서는 씬 수를 늘리되 반복 문장으로 시간을 채우지 마세요.`
+}
+
 function sanitizeInstagramContent(content, context = {}) {
   if (!content) return content
   const sanitizedCardTopics = Array.isArray(content.cardTopics)
@@ -634,11 +661,15 @@ function sanitizeInstagramContent(content, context = {}) {
   }
 }
 
-function sanitizeShortsContent(content) {
+function sanitizeShortsContent(content, options = {}) {
   if (!content) return content
+  const targetDuration = options.targetDurationSeconds
+    ? String(clampShortsTargetDuration(options.targetDurationSeconds))
+    : stripMarkdownEmphasis(content.duration || '')
   return {
     ...content,
     title: stripMarkdownEmphasis(content.title || ''),
+    duration: targetDuration,
     hook: stripMarkdownEmphasis(content.hook || ''),
     cta: stripMarkdownEmphasis(content.cta || ''),
     uploadTitle: stripMarkdownEmphasis(content.uploadTitle || ''),
@@ -1153,7 +1184,7 @@ ${buildInstagramCaptionRules()}
 - 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
 - scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
 - scenes는 3개 이상으로 구성하세요.
-- 총 길이는 60초(1분)를 넘기지 마세요. 내용 분량이 1분을 초과하면 핵심만 남겨 1분 이내로 줄이세요. 1분보다 짧게 끝나는 것은 자연스러우며, 굳이 1분에 맞추려고 내용을 늘리거나 반복하지 마세요.
+${buildShortsDurationInstruction(options)}
 - uploadTitle은 60자 이내, uploadDescription은 200~400자 사이로 작성하세요.
 - hashtags는 8~12개 배열로 반환하세요.
 
@@ -1261,7 +1292,7 @@ export async function generateAllContent(summary, rawText, emphasis, options = {
     blog: withBlogCategoryMetadata(await finalizeBlogContent(four?.blog || null), blogCategorySelection),
     newsletter: four?.newsletter || null,
     instagram: sanitizeInstagramContent(four?.instagram || null, { summary, rawText }),
-    shorts: sanitizeShortsContent(four?.shorts || null),
+    shorts: sanitizeShortsContent(four?.shorts || null, options),
   }
 }
 
@@ -1303,6 +1334,7 @@ ${buildInstagramCaptionRules()}
 - 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
 - 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
 - scenes[].textOverlay 는 화면에 글자로 표시되는 키워드 카드이므로 1/2, 100p, 30% 같은 원래 표기를 그대로 유지하세요.
+${channels.includes('shorts') ? buildShortsDurationInstruction(options) : ''}
 
 ${buildBlogTitleRules()}
 ## 블로그 규칙
@@ -1329,7 +1361,7 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
   }
   if (output.blog) output.blog = withBlogCategoryMetadata(output.blog, blogCategorySelection)
   if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram, { summary, rawText })
-  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
+  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts, options)
   return output
 }
 
@@ -1349,7 +1381,7 @@ export async function retryFailedChannels(channels, summary, rawText, emphasis, 
 
   if (output.blog) output.blog = await finalizeBlogContent(output.blog)
   if (output.instagram) output.instagram = sanitizeInstagramContent(output.instagram, { summary, rawText })
-  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts)
+  if (output.shorts) output.shorts = sanitizeShortsContent(output.shorts, options)
   if (Object.keys(output).length === 0) throw new Error('콘텐츠 재생성 결과를 파싱하지 못했습니다.')
   return output
 }
@@ -1443,12 +1475,14 @@ ${JSON.stringify(concept.testScript, null, 2)}
 
 export async function generateShortsScript(summary, rawText, emphasis, options = {}) {
   const fewShot = buildShortsConceptFewShot(options.videoConceptId)
-  const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 숏폼 대본을 작성하세요. 총 길이는 60초(1분)를 넘기지 마세요. 내용 분량이 1분을 초과하면 핵심만 남겨 1분 이내로 줄이고, 1분보다 짧게 끝나는 것은 자연스러우니 굳이 1분에 맞추려 내용을 늘리지 마세요.
+  const targetDuration = clampShortsTargetDuration(options.targetDurationSeconds)
+  const prompt = `당신은 유튜브 숏폼 스크립트 작가입니다. 아래 정보를 바탕으로 숏폼 대본을 작성하세요. 사용자가 설정한 목표 길이에 맞춰 장면 수와 말 분량을 조절하세요.
 
 ## 공통 규칙
 - 모든 숫자, 통계, 연도, 수치는 원문 그대로 사용하세요.
 - 없는 사실은 추가하지 마세요.
 - scenes는 3개 이상으로 구성하세요.
+${buildShortsDurationInstruction(options)}
 - hook, scenes[].caption, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
 - 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
@@ -1473,7 +1507,7 @@ ${fewShot}
 ${buildBasePrompt(summary, rawText, emphasis, options)}
 
 ## 출력 스키마
-{"title":"숏폼 제목","duration":"20","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","caption":"화면 자막이자 TTS 입력으로 함께 쓰이는 텍스트(숫자·기호는 원본 표기 그대로)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
+{"title":"숏폼 제목","duration":"${targetDuration}","hook":"첫 문장","scenes":[{"sceneNumber":1,"duration":"6","layout":"full","caption":"화면 자막이자 TTS 입력으로 함께 쓰이는 텍스트(숫자·기호는 원본 표기 그대로)","visualDescription":"Visual description in English","textOverlay":"텍스트 오버레이"}],"cta":"마무리 문구","thumbnailPrompt":"Thumbnail prompt in English","uploadTitle":"YouTube 제목","uploadDescription":"YouTube 설명","hashtags":["#Shorts","#태그"]}`
 
   const result = await callGeminiWithFallback(prompt, { temperature: 0.4, jsonMode: true, signal: options.signal })
   return sanitizeShortsContent(
@@ -1485,5 +1519,6 @@ ${buildBasePrompt(summary, rawText, emphasis, options)}
       uploadDescription: '',
       hashtags: [],
     }),
+    options,
   )
 }

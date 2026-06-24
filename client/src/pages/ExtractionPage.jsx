@@ -51,6 +51,22 @@ const RESULT_DRAFT_STORAGE_PREFIX = 'autoform:result-draft:'
 const SHORTS_AVATAR_ASPECT_RATIO = 9 / 16
 const SHORTS_AVATAR_EXPORT_WIDTH = 1080
 const SHORTS_AVATAR_EXPORT_HEIGHT = 1920
+const SHORTS_DURATION_MIN_SECONDS = 20
+const SHORTS_DURATION_MAX_SECONDS = 120
+
+function clampShortsDurationSeconds(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 60
+  return Math.min(SHORTS_DURATION_MAX_SECONDS, Math.max(SHORTS_DURATION_MIN_SECONDS, Math.round(numeric)))
+}
+
+function formatShortsDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0))
+  if (safeSeconds < 60) return `${safeSeconds}초`
+  const minutes = Math.floor(safeSeconds / 60)
+  const rest = safeSeconds % 60
+  return rest > 0 ? `${minutes}분 ${rest}초` : `${minutes}분`
+}
 
 function pickPortraitLooks(looks = []) {
   const validLooks = Array.isArray(looks) ? looks.filter((look) => look?.id) : []
@@ -683,16 +699,18 @@ export default function ExtractionPage() {
       instagramCardStyle: 'background-text',
       extra: '',
     },
-    shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '', videoConcept: '' },
+    shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '', videoConcept: '', targetDurationSeconds: 60 },
   })
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
   const buildContentPromptOptions = () => {
     const conceptExtra = buildShortsConceptExtra(promptSettings.shorts.videoConcept)
     const manualShortsExtra = promptSettings.content.shortsExtra || ''
+    const targetDurationSeconds = clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds)
     return {
       ...promptSettings.content,
       shortsExtra: [conceptExtra, manualShortsExtra].filter(Boolean).join('\n\n'),
       videoConceptId: promptSettings.shorts.videoConcept || '',
+      targetDurationSeconds,
       enableBlogCategory: selectedChannels.blog,
       blogCategorySelection: promptSettings.content.blogCategoryMode === 'auto'
         ? blogContent?.categoryInfo || recommendedBlogCategory || null
@@ -1651,7 +1669,10 @@ export default function ExtractionPage() {
   ]
   const selectedContentChannels = () => contentChannelConfigs.filter(c => selectedChannels[c.key])
   const contentGenerationDurationMessage = (() => {
-    if (selectedChannels.shorts) return '콘텐츠 생성은 약 15분 정도 소요됩니다.'
+    if (selectedChannels.shorts) {
+      const target = clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds)
+      return `숏폼은 목표 ${formatShortsDuration(target)} 기준으로 생성하며, 실제 영상은 약 ${formatShortsDuration(Math.max(10, target - 10))}~${formatShortsDuration(target + 10)} 범위가 될 수 있습니다. 콘텐츠 생성은 약 15분 정도 소요됩니다.`
+    }
     if (selectedChannels.blog || selectedChannels.instagram) return '콘텐츠 생성은 약 5분 정도 소요됩니다.'
     if (selectedChannels.newsletter) return '콘텐츠 생성은 약 1분 정도 소요됩니다.'
     return ''
@@ -4073,6 +4094,44 @@ ${parsedText}
                     ],
                     hint: '프롬포트만 생성은 HeyGen Video Agent용 1인 컨셉만 지원합니다. 2인 이상 컨셉은 직접 영상까지 생성에서 선택하세요.',
                   })}
+                  <div className="mb-4">
+                    <label className="flex items-center justify-between gap-3 text-sm font-semibold text-text-muted mb-1.5">
+                      <span>목표 영상 길이</span>
+                      <span className="text-xs font-bold text-primary-light">
+                        {formatShortsDuration(promptSettings.shorts.targetDurationSeconds)}
+                      </span>
+                    </label>
+                    <div className="rounded-xl border border-border bg-background px-3 py-3">
+                      <input
+                        type="range"
+                        min={SHORTS_DURATION_MIN_SECONDS}
+                        max={SHORTS_DURATION_MAX_SECONDS}
+                        step="5"
+                        value={clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds)}
+                        onChange={(event) => updatePrompt('shorts', 'targetDurationSeconds', clampShortsDurationSeconds(event.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <span className="text-[11px] text-text-muted">20초</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={SHORTS_DURATION_MIN_SECONDS}
+                            max={SHORTS_DURATION_MAX_SECONDS}
+                            step="5"
+                            value={clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds)}
+                            onChange={(event) => updatePrompt('shorts', 'targetDurationSeconds', clampShortsDurationSeconds(event.target.value))}
+                            className="w-20 rounded-lg border border-border bg-surface px-2 py-1.5 text-right text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary/30"
+                          />
+                          <span className="text-xs text-text-muted">초</span>
+                        </div>
+                        <span className="text-[11px] text-text-muted">2분</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted/60 mt-1">
+                      실제 영상은 목표 길이에서 약 10초 내외 차이가 날 수 있습니다. 예: 20초 설정 시 약 10~30초, 1분 설정 시 약 50초~1분 10초.
+                    </p>
+                  </div>
                   {PF('영상 컨셉', {
                     type: 'select',
                     value: promptSettings.shorts.videoConcept,
