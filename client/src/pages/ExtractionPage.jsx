@@ -1878,8 +1878,7 @@ export default function ExtractionPage() {
   const selectedContentChannels = () => contentChannelConfigs.filter(c => selectedChannels[c.key])
   const contentGenerationDurationMessage = (() => {
     if (selectedChannels.shorts) {
-      const target = clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds)
-      return `숏폼은 목표 ${formatShortsDuration(target)} 기준으로 생성하며, 실제 영상은 약 ${formatShortsDuration(Math.max(10, target - 10))}~${formatShortsDuration(target + 10)} 범위가 될 수 있습니다. 콘텐츠 생성은 약 15분 정도 소요됩니다.`
+      return '콘텐츠 생성은 약 15분 정도 소요됩니다.'
     }
     if (selectedChannels.blog || selectedChannels.instagram) return '콘텐츠 생성은 약 5분 정도 소요됩니다.'
     if (selectedChannels.newsletter) return '콘텐츠 생성은 약 1분 정도 소요됩니다.'
@@ -4713,7 +4712,7 @@ ${parsedText}
                       </div>
                     </div>
                     <p className="text-xs text-text-muted/60 mt-1">
-                      실제 영상은 목표 길이에서 약 10초 내외 차이가 날 수 있습니다. 예: 20초 설정 시 약 10~30초, 1분 설정 시 약 50초~1분 10초.
+                      실제 영상은 약 {formatShortsDuration(Math.max(10, clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds) - 10))}~{formatShortsDuration(clampShortsDurationSeconds(promptSettings.shorts.targetDurationSeconds) + 10)} 범위가 될 수 있습니다.
                     </p>
                   </div>
                   {PF('영상 컨셉', {
