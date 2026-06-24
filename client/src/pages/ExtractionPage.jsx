@@ -53,6 +53,46 @@ const SHORTS_AVATAR_EXPORT_WIDTH = 1080
 const SHORTS_AVATAR_EXPORT_HEIGHT = 1920
 const SHORTS_DURATION_MIN_SECONDS = 20
 const SHORTS_DURATION_MAX_SECONDS = 120
+const ANALYSIS_PROGRESS_STEPS = [
+  { key: 'firstExtraction', label: '1차 문서 추출 결과 확인' },
+  { key: 'secondExtraction', label: '2차 문서 추출 결과 확인' },
+  { key: 'verification', label: '데이터 검증 및 교정' },
+  { key: 'summary', label: '핵심 요약 생성' },
+]
+
+function createAnalysisProgress() {
+  return ANALYSIS_PROGRESS_STEPS.map((step, index) => ({
+    ...step,
+    status: index === 0 ? 'active' : 'pending',
+    detail: index === 0 ? 'LlamaParse와 Gemini 분석을 시작합니다.' : '',
+  }))
+}
+
+function updateAnalysisProgressStep(steps, key, patch) {
+  return steps.map((step) => (step.key === key ? { ...step, ...patch } : step))
+}
+
+function getAnalysisProgressPercent(steps = []) {
+  if (!steps.length) return 0
+  const completed = steps.filter((step) => ['done', 'error', 'skipped'].includes(step.status)).length
+  return Math.round((completed / steps.length) * 100)
+}
+
+function getAnalysisProgressIcon(step) {
+  if (step.status === 'active') return <Loader2 size={13} className="animate-spin" />
+  if (step.status === 'done') return <CheckCircle size={13} />
+  if (step.status === 'error') return <AlertTriangle size={13} />
+  if (step.status === 'skipped') return <CheckCircle size={13} />
+  return <span className="block h-2 w-2 rounded-full bg-current opacity-50" />
+}
+
+function getAnalysisProgressStepClass(status) {
+  if (status === 'active') return 'border-primary/30 bg-primary/5 text-primary-light'
+  if (status === 'done') return 'border-success/25 bg-success/5 text-success'
+  if (status === 'error') return 'border-warning/25 bg-warning/5 text-warning'
+  if (status === 'skipped') return 'border-border bg-surface-light text-text-muted'
+  return 'border-border bg-surface-light/60 text-text-muted'
+}
 
 function clampShortsDurationSeconds(value) {
   const numeric = Number(value)
@@ -722,6 +762,7 @@ export default function ExtractionPage() {
   const [parsedText, setParsedText] = useState('')
   const [verification, setVerification] = useState(null)
   const [summary, setSummary] = useState(null)
+  const [analysisProgress, setAnalysisProgress] = useState(null)
   const savedExtractionIdRef = useRef(null)
   const savingExtractionPromiseRef = useRef(null)
   const [recommendedBlogCategory, setRecommendedBlogCategory] = useState(null)
@@ -1521,7 +1562,7 @@ export default function ExtractionPage() {
   const resetFromStep = (step) => {
     setCurrentStep(step)
     // Step 1 이하(파일 변경 포함) → 모든 후속 단계 초기화
-    if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setRecommendedBlogCategory(null); setEditingText(false) }
+    if (step <= 2) { setParsedText(''); setVerification(null); setSummary(null); setAnalysisProgress(null); setRecommendedBlogCategory(null); setEditingText(false) }
     if (step <= 3) { setBlogContent(null); setBlogImages(null) }
     if (step <= 4) setNewsletterContent(null)
     if (step <= 5) { setInstagramContent(null); setInstagramImages(null) }
@@ -1580,11 +1621,93 @@ export default function ExtractionPage() {
     if (e.target.files[0]) handleFile(e.target.files[0])
   }
 
+  const handleAnalysisParseProgress = (event) => {
+    setAnalysisProgress((current) => {
+      let next = current || createAnalysisProgress()
+      if (event?.type === 'extract-start') {
+        return updateAnalysisProgressStep(next, 'firstExtraction', {
+          status: 'active',
+          detail: 'LlamaParse와 Gemini 분석을 동시에 시작했습니다.',
+        })
+      }
+
+      if (event?.type === 'plain-text') {
+        next = updateAnalysisProgressStep(next, 'firstExtraction', {
+          status: 'done',
+          detail: 'TXT 파일을 읽었습니다.',
+        })
+        next = updateAnalysisProgressStep(next, 'secondExtraction', {
+          status: 'skipped',
+          detail: '추가 문서 추출 엔진이 필요하지 않습니다.',
+        })
+        return updateAnalysisProgressStep(next, 'verification', {
+          status: 'active',
+          detail: '읽어온 텍스트를 검증하고 있습니다.',
+        })
+      }
+
+      if (event?.type === 'image-start') {
+        next = updateAnalysisProgressStep(next, 'firstExtraction', {
+          status: 'active',
+          detail: 'Gemini로 이미지 텍스트를 추출하고 있습니다.',
+        })
+        return updateAnalysisProgressStep(next, 'secondExtraction', {
+          status: 'skipped',
+          detail: '이미지 파일은 LlamaParse 경로를 사용하지 않습니다.',
+        })
+      }
+
+      if (event?.type === 'image-complete') {
+        return updateAnalysisProgressStep(next, 'firstExtraction', {
+          status: event.ok ? 'done' : 'error',
+          detail: event.ok ? 'Gemini 이미지 분석이 완료됐습니다.' : `Gemini 이미지 분석 실패: ${event.message || '알 수 없는 오류'}`,
+        })
+      }
+
+      if (event?.type === 'extract-result') {
+        const targetKey = event.completedCount === 1 ? 'firstExtraction' : 'secondExtraction'
+        next = updateAnalysisProgressStep(next, targetKey, {
+          status: event.ok ? 'done' : 'error',
+          detail: `${event.service} ${event.ok ? '성공' : `실패: ${event.message || '알 수 없는 오류'}`}`,
+        })
+        if (event.completedCount === 1) {
+          next = updateAnalysisProgressStep(next, 'secondExtraction', {
+            status: 'active',
+            detail: '남은 분석 엔진의 결과를 기다리고 있습니다.',
+          })
+        }
+        return next
+      }
+
+      if (event?.type === 'merge-start') {
+        return updateAnalysisProgressStep(next, 'secondExtraction', {
+          status: 'active',
+          detail: 'LlamaParse와 Gemini 결과를 통합하고 있습니다.',
+        })
+      }
+
+      if (event?.type === 'parse-complete') {
+        next = next.map((step) => (
+          ['firstExtraction', 'secondExtraction'].includes(step.key) && step.status === 'active'
+            ? { ...step, status: 'done', detail: step.detail || '문서 추출이 완료됐습니다.' }
+            : step
+        ))
+        return updateAnalysisProgressStep(next, 'verification', {
+          status: 'active',
+          detail: '추출된 텍스트의 데이터와 문장을 검증하고 있습니다.',
+        })
+      }
+
+      return next
+    })
+  }
+
   // Step 2: 문서 분석
   const runAnalysis = async () => {
     setStepLoading('analysis', true)
     clearStepErrors('analysis')
     resetFromStep(2)
+    setAnalysisProgress(createAnalysisProgress())
     const errors = []
 
     if (!file) {
@@ -1596,9 +1719,17 @@ export default function ExtractionPage() {
 
     let text = ''
     try {
-      text = await parsePDF(file)
+      text = await parsePDF(file, { onProgress: handleAnalysisParseProgress })
       setParsedText(text)
     } catch (err) {
+      setAnalysisProgress((current) => {
+        const next = current || createAnalysisProgress()
+        return next.map((step) => (
+          step.status === 'active'
+            ? { ...step, status: 'error', detail: err.message || '문서 분석에 실패했습니다.' }
+            : step
+        ))
+      })
       errors.push({ service: 'gemini', message: `PDF 분석 실패 - ${err.message}` })
       addStepErrors('analysis', errors)
       setStepLoading('analysis', false)
@@ -1607,8 +1738,16 @@ export default function ExtractionPage() {
     }
 
     try {
+      setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'verification', {
+        status: 'active',
+        detail: '추출된 텍스트의 데이터와 문장을 검증하고 있습니다.',
+      }))
       const verified = await verifyParsedContent(text, { focus: promptSettings.analysis.focus, extra: promptSettings.analysis.extra })
       setVerification(verified)
+      setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'verification', {
+        status: 'done',
+        detail: `검증 완료${verified?.confidence != null ? ` · 신뢰도 ${Math.round((verified.confidence || 0) * 100)}%` : ''}`,
+      }))
       // AI 코멘트 제거: "## 발견된 이슈", "## 수정된 텍스트" 등 메타 헤더와 그 직후 빈 줄 제거
       let cleaned = (verified.correctedText || text)
         .replace(/^#{1,3}\s*(발견된\s*이슈|수정된\s*텍스트|수정\s*내역|교정\s*결과|검증\s*결과|이슈\s*수정|오타\s*수정).*\n*/gm, '')
@@ -1620,6 +1759,10 @@ export default function ExtractionPage() {
     } catch (err) {
       errors.push({ service: 'gemini', message: `데이터 검증 실패 - ${err.message}` })
       setVerification({ isValid: false, issues: ['검증을 건너뛰었습니다.'], confidence: 0 })
+      setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'verification', {
+        status: 'error',
+        detail: `검증 실패: ${err.message || '알 수 없는 오류'}`,
+      }))
       showErrorAlert('데이터 검증', err.message)
     }
 
@@ -1641,18 +1784,34 @@ export default function ExtractionPage() {
     setStepLoading('summary', true)
     clearStepErrors('summary')
     setSummary(null)
+    setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'summary', {
+      status: 'active',
+      detail: '핵심 데이터와 인사이트를 요약하고 있습니다.',
+    }))
 
     try {
       const result = await summarizeContent(targetText, { keywords: promptSettings.summary.keywords, style: promptSettings.summary.style, extra: promptSettings.summary.extra })
       if (result.title === '요약 생성 실패') {
+        setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'summary', {
+          status: 'error',
+          detail: 'Gemini 응답을 JSON으로 파싱하지 못했습니다.',
+        }))
         addStepErrors('summary', [{ service: 'gemini', message: 'Gemini 응답을 JSON으로 파싱하지 못했습니다. 재시도해주세요.' }])
         setCurrentStep(2)
       } else {
         setSummary(result)
+        setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'summary', {
+          status: 'done',
+          detail: '핵심 요약이 완료됐습니다.',
+        }))
         setShowSummaryDetail(true)
         setCurrentStep(getFirstContentStep())
       }
     } catch (err) {
+      setAnalysisProgress((current) => updateAnalysisProgressStep(current || createAnalysisProgress(), 'summary', {
+        status: 'error',
+        detail: `요약 실패: ${err.message || '알 수 없는 오류'}`,
+      }))
       addStepErrors('summary', [{ service: 'gemini', message: `요약 생성 실패 - ${err.message}` }])
       showErrorAlert('핵심 요약', err.message)
       setCurrentStep(2)
@@ -3627,6 +3786,7 @@ ${parsedText}
       .filter((image) => image.previewUrl)
       .sort((a, b) => Number(!!b?.isThumbnail) - Number(!!a?.isThumbnail))
   })()
+  const analysisProgressPercent = getAnalysisProgressPercent(analysisProgress || [])
 
   return (
     <div className="w-full">
@@ -3873,15 +4033,52 @@ ${parsedText}
             )}
           </div>
         </div>
-        {(parsedText || verification || summary) && (
+        {(parsedText || verification || summary || loading.analysis || loading.summary || analysisProgress) && (
           <div className="p-5 space-y-3">
             {/* 로딩 상태 */}
-            {(loading.analysis || loading.summary) && (
-              <div className="flex items-center gap-3 p-3 bg-primary/5 rounded-lg">
-                <Loader2 size={16} className="text-primary animate-spin" />
-                <div>
-                  <p className="text-sm font-medium text-text">{loading.analysis ? '자료를 분석하고 있습니다...' : '핵심 요약을 생성하고 있습니다...'}</p>
-                  <p className="text-xs text-text-muted mt-0.5">{loading.analysis ? 'PDF 파싱 → 데이터 검증' : '핵심 데이터 요약 및 인사이트 도출'}</p>
+            {analysisProgress && (
+              <div className="rounded-lg border border-primary/15 bg-primary/5 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {(loading.analysis || loading.summary) ? (
+                      <Loader2 size={16} className="text-primary animate-spin shrink-0" />
+                    ) : (
+                      <CheckCircle size={16} className="text-success shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text">
+                        {loading.analysis ? '자료를 분석하고 있습니다...' : loading.summary ? '핵심 요약을 생성하고 있습니다...' : '문서 분석 및 요약 진행 상황'}
+                      </p>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        LlamaParse/Gemini 추출 결과 확인 → 데이터 검증 → 핵심 요약
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-primary-light shrink-0">{analysisProgressPercent}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-surface-light overflow-hidden border border-border/60">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{ width: `${analysisProgressPercent}%` }}
+                  />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {analysisProgress.map((step, index) => (
+                    <div
+                      key={step.key}
+                      className={`min-w-0 rounded-lg border px-3 py-2 ${getAnalysisProgressStepClass(step.status)}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-current/10">
+                          {getAnalysisProgressIcon(step)}
+                        </span>
+                        <p className="text-xs font-semibold truncate">{index + 1}. {step.label}</p>
+                      </div>
+                      {step.detail && (
+                        <p className="mt-1 text-[11px] leading-4 text-text-muted break-words">{step.detail}</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

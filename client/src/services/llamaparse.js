@@ -170,19 +170,62 @@ ${geminiText}
   }
 }
 
+function emitProgress(onProgress, event) {
+  if (typeof onProgress === 'function') onProgress(event)
+}
+
+function trackExtraction(label, promise, onProgress) {
+  return promise
+    .then((value) => {
+      emitProgress(onProgress, { type: 'extract-result', service: label, ok: true })
+      return value
+    })
+    .catch((error) => {
+      emitProgress(onProgress, {
+        type: 'extract-result',
+        service: label,
+        ok: false,
+        message: error?.message || '분석 실패',
+      })
+      throw error
+    })
+}
+
 // 메인: LlamaParse + Gemini 병렬 분석 후 통합
-export async function parsePDF(file) {
+export async function parsePDF(file, options = {}) {
+  const { onProgress } = options
+
   if (isPlainTextFile(file)) {
+    emitProgress(onProgress, { type: 'plain-text' })
     return await readPlainTextFile(file)
   }
 
   if (isImageFile(file)) {
-    return await geminiParsePDF(file)
+    emitProgress(onProgress, { type: 'image-start' })
+    try {
+      const text = await geminiParsePDF(file)
+      emitProgress(onProgress, { type: 'image-complete', ok: true })
+      return text
+    } catch (error) {
+      emitProgress(onProgress, { type: 'image-complete', ok: false, message: error?.message || '이미지 분석 실패' })
+      throw error
+    }
+  }
+
+  emitProgress(onProgress, { type: 'extract-start', services: ['LlamaParse', 'Gemini'] })
+  let completedCount = 0
+  const onExtractionProgress = (event) => {
+    if (event?.type === 'extract-result') {
+      completedCount += 1
+      emitProgress(onProgress, { ...event, completedCount })
+      return
+    }
+    emitProgress(onProgress, event)
   }
 
   const [llamaResult, geminiResult] = await Promise.allSettled([
-    llamaParsePDF(file),
-    geminiParsePDF(file),
+    trackExtraction('LlamaParse', llamaParsePDF(file), onExtractionProgress),
+    trackExtraction('Gemini', geminiParsePDF(file), onExtractionProgress),
   ])
 
   const llamaText = llamaResult.status === 'fulfilled' ? llamaResult.value : null
@@ -195,8 +238,12 @@ export async function parsePDF(file) {
   }
 
   if (llamaText && geminiText) {
-    return await mergeResults(llamaText, geminiText)
+    emitProgress(onProgress, { type: 'merge-start' })
+    const mergedText = await mergeResults(llamaText, geminiText)
+    emitProgress(onProgress, { type: 'parse-complete' })
+    return mergedText
   }
 
+  emitProgress(onProgress, { type: 'parse-complete' })
   return geminiText || llamaText
 }
