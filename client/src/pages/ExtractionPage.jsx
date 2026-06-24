@@ -2044,6 +2044,36 @@ export default function ExtractionPage() {
     }
   }
 
+  const runShortsScriptGeneration = async () => {
+    const config = contentChannelConfigs.find(channel => channel.key === 'shorts')
+    if (!config) return
+
+    resetFromStep(CONTENT_CHANNEL_STEPS.shorts)
+    setStepLoading('content', true)
+    setContentPreview(null)
+    removeStepError('content', 'gemini', config.label)
+    setRetrying(shortsScript ? 'regen-shorts' : 'content-shorts')
+    setContentGenerationStage('body')
+    const abortController = new AbortController()
+    contentGenerationAbortRef.current = abortController
+
+    try {
+      setShortsVideo(null)
+      const result = await generateContentChannel('shorts', { signal: abortController.signal })
+      if (!result) {
+        addStepErrors('content', [{ service: 'gemini', channel: config.label, message: '숏폼 대본이 생성되지 않았습니다.' }])
+        return
+      }
+      setCurrentStep(getNextVisibleStep(CONTENT_CHANNEL_STEPS.shorts))
+    } catch (err) {
+      if (isContentGenerationCancelledError(err)) return
+      addStepErrors('content', [{ service: 'gemini', channel: config.label, message: err.message || '대본 생성 실패' }])
+      showErrorAlert('숏폼 대본', err.message || '대본 생성 실패')
+    } finally {
+      resetContentGenerationFlowState()
+    }
+  }
+
   // Step 3: 콘텐츠 생성 — 채널별로 별도 API 호출
   const runContentGeneration = async () => {
     const channels = selectedContentChannels()
@@ -4641,7 +4671,7 @@ ${parsedText}
                     ],
                     hint: '프롬포트만 생성은 HeyGen Video Agent용 1인 컨셉만 지원합니다. 2인 이상 컨셉은 직접 영상까지 생성에서 선택하세요.',
                   })}
-                  {PF('HeyGen 아바타 모델', {
+                  {isShortsVideoMode && PF('HeyGen 아바타 모델', {
                     type: 'select',
                     value: normalizeShortsAvatarEngine(promptSettings.shorts.avatarEngine),
                     onChange: updateShortsAvatarEngine,
@@ -4787,21 +4817,23 @@ ${parsedText}
                       <XCircle size={14} /> 실패
                     </span>
                   )}
-                  <button
-                    onClick={() => row.data ? regenerateChannel(row.key) : failed ? retryContentChannel(errObj) : runSingleContentStep(row.key)}
-                    disabled={!isAvailable || generating || loading.content || loading.analysis || loading.summary}
-                    className={`${row.data ? 'px-3 py-1.5 bg-surface-light text-text-muted hover:bg-surface hover:text-text border border-border' : 'px-4 py-2 bg-primary text-white hover:bg-primary-dark'} text-sm font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-2`}
-                  >
-                    {generating
-                      ? <><Loader2 size={14} className="animate-spin" /> {generatingLabel}</>
-                      : row.data
-                        ? <><RefreshCw size={14} /> 재생성</>
-                        : failed
-                          ? <><RefreshCw size={14} /> 재시도</>
-                          : <><Sparkles size={14} /> 생성</>
-                    }
-                  </button>
-                  {generating && (
+                  {row.key !== 'shorts' && (
+                    <button
+                      onClick={() => row.data ? regenerateChannel(row.key) : failed ? retryContentChannel(errObj) : runSingleContentStep(row.key)}
+                      disabled={!isAvailable || generating || loading.content || loading.analysis || loading.summary}
+                      className={`${row.data ? 'px-3 py-1.5 bg-surface-light text-text-muted hover:bg-surface hover:text-text border border-border' : 'px-4 py-2 bg-primary text-white hover:bg-primary-dark'} text-sm font-medium rounded-lg disabled:opacity-50 transition-all flex items-center gap-2`}
+                    >
+                      {generating
+                        ? <><Loader2 size={14} className="animate-spin" /> {generatingLabel}</>
+                        : row.data
+                          ? <><RefreshCw size={14} /> 재생성</>
+                          : failed
+                            ? <><RefreshCw size={14} /> 재시도</>
+                            : <><Sparkles size={14} /> 생성</>
+                      }
+                    </button>
+                  )}
+                  {row.key !== 'shorts' && generating && (
                     <button
                       type="button"
                       onClick={abortContentGeneration}
@@ -5437,22 +5469,33 @@ ${parsedText}
                             </div>
                           ) : (
                             <div className="rounded-xl border border-border bg-surface-light p-3 text-xs text-text-muted">
-                              콘텐츠 생성 버튼을 누르면 숏폼 대본이 먼저 생성됩니다.
+                              대본 생성 버튼을 누르면 숏폼 대본이 먼저 생성됩니다.
                             </div>
                           )}
-                          {isShortsVideoMode && shortsScript && !shortsVideo && (
+                          <button
+                            onClick={failed ? () => retryContentChannel(errObj) : runShortsScriptGeneration}
+                            disabled={!isAvailable || generating || loading.content || loading.analysis || loading.summary}
+                            className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                              shortsScript
+                                ? 'bg-surface-light text-text-muted hover:bg-surface hover:text-text border border-border'
+                                : 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {generating
+                              ? <><Loader2 size={16} className="animate-spin" /> {generatingLabel}</>
+                              : shortsScript
+                                ? <><RefreshCw size={16} /> 대본 재생성</>
+                                : failed
+                                  ? <><RefreshCw size={16} /> 대본 생성 재시도</>
+                                  : <><Sparkles size={16} /> 대본 생성</>}
+                          </button>
+                          {generating && (
                             <button
-                              onClick={() => setCreditConfirm(true)}
-                              disabled={!isShortsVideoReady}
-                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                                isShortsVideoReady
-                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
-                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
-                              }`}
+                              type="button"
+                              onClick={abortContentGeneration}
+                              className="w-full px-4 py-3 rounded-lg border border-danger/30 bg-danger/5 text-sm font-semibold text-danger transition-all hover:bg-danger/10"
                             >
-                              {loading.shorts
-                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
-                                : <><Film size={16} /> 숏폼 영상 생성</>}
+                              작업 중단
                             </button>
                           )}
                         </div>
@@ -5489,6 +5532,21 @@ ${parsedText}
                             <p className="text-base font-semibold text-text">영상 생성</p>
                             {shortsVideo && <CheckCircle size={14} className="text-success" />}
                           </div>
+                          {isShortsVideoMode && shortsScript && !shortsVideo && (
+                            <button
+                              onClick={() => setCreditConfirm(true)}
+                              disabled={!isShortsVideoReady}
+                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                                isShortsVideoReady
+                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
+                              }`}
+                            >
+                              {loading.shorts
+                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
+                                : <><Film size={16} /> 숏폼 영상 생성</>}
+                            </button>
+                          )}
                           {shortsVideo ? (
                             <div className="space-y-3">
                               <div className={`flex items-center gap-3 p-3 rounded-lg border ${
