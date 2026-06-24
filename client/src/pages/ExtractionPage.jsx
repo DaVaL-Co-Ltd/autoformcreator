@@ -84,6 +84,10 @@ function buildUnsupportedAvatarEngineMessage(engine) {
   return `이 아바타는 ${getShortsAvatarEngineLabel(engine)}를 지원하지 않습니다.`
 }
 
+function normalizeHeygenApiEngineToken(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
 function createAnalysisProgress() {
   return ANALYSIS_PROGRESS_STEPS.map((step, index) => ({
     ...step,
@@ -2440,15 +2444,31 @@ DO NOT:
     const lookRes = await apiFetch(`/api/heygen/v3/avatar-look/${encodeURIComponent(lookId)}`)
     const lookData = await readApiResponse(lookRes)
     if (!lookRes.ok) {
-      throw new Error(buildUnsupportedAvatarEngineMessage(normalizedEngine))
+      console.warn('[shorts] HeyGen avatar engine support lookup failed; continuing with /v3/videos request', {
+        lookId,
+        engine: normalizedEngine,
+        status: lookRes.status,
+        response: lookData,
+      })
+      return true
     }
 
-    const look = lookData?.data || lookData
+    const look = lookData?.data?.look || lookData?.data || lookData
     const supportedEngines = Array.isArray(look?.supported_api_engines)
       ? look.supported_api_engines
       : []
 
-    if (!supportedEngines.includes(normalizedEngine)) {
+    if (supportedEngines.length === 0) {
+      console.warn('[shorts] HeyGen avatar engine support list missing; continuing with /v3/videos request', {
+        lookId,
+        engine: normalizedEngine,
+        response: lookData,
+      })
+      return true
+    }
+
+    const normalizedSupportedEngines = supportedEngines.map(normalizeHeygenApiEngineToken)
+    if (!normalizedSupportedEngines.includes(normalizedEngine)) {
       throw new Error(buildUnsupportedAvatarEngineMessage(normalizedEngine))
     }
 
