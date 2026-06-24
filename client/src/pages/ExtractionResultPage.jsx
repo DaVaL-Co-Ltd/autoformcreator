@@ -141,6 +141,13 @@ const escapeHtml = (value = '') => String(value)
   .replace(/'/g, '&#39;')
 
 const nlToBr = (value = '') => escapeHtml(value).replace(/\n/g, '<br />')
+const sanitizeDownloadFilename = (value = 'content') => {
+  const trimmed = String(value || '').trim()
+  return (trimmed || 'content')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80)
+}
 const FIXED_NEWSLETTER_GREETING = '안녕하세요 구독자 여러분.'
 const buildBlogTagText = (tags = []) => ensureArray(tags)
   .map((tag) => String(tag || '').trim().replace(/^#+/, ''))
@@ -1003,6 +1010,175 @@ export default function ExtractionResultPage() {
     setDownloading(false)
   }
 
+  const downloadHtmlFile = (html, filename) => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(objectUrl)
+  }
+
+  const getContentImageUrl = (image) => {
+    if (!image) return null
+    if (typeof image === 'string') return image
+    return image.renderedImageUrl || image.pngUrl || image.imageUrl || image.url || null
+  }
+
+  const buildHtmlDocument = ({ title, eyebrow, body }) => `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title || '콘텐츠')}</title>
+  <style>
+    body{margin:0;background:#f6f7fb;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Noto Sans KR",sans-serif;line-height:1.72;}
+    main{max-width:860px;margin:0 auto;padding:40px 20px 64px;}
+    article{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:34px;box-shadow:0 12px 36px rgba(15,23,42,.06);}
+    .eyebrow{font-size:12px;font-weight:800;color:#64748b;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;}
+    h1{font-size:32px;line-height:1.25;margin:0 0 24px;color:#0f172a;}
+    h2{font-size:22px;line-height:1.35;margin:34px 0 12px;color:#111827;}
+    h3{font-size:17px;line-height:1.4;margin:22px 0 8px;color:#334155;}
+    p{margin:0 0 16px;white-space:pre-wrap;}
+    img{display:block;max-width:100%;height:auto;border-radius:14px;margin:18px 0;border:1px solid #e5e7eb;}
+    .caption{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin:24px 0;white-space:pre-wrap;}
+    .tags{margin-top:28px;color:#2563eb;font-weight:700;}
+    .card{border-top:1px solid #e5e7eb;padding-top:26px;margin-top:26px;}
+    .meta{font-size:13px;color:#64748b;margin-top:6px;}
+  </style>
+</head>
+<body>
+  <main>
+    <article>
+      ${eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : ''}
+      ${body}
+    </article>
+  </main>
+</body>
+</html>`
+
+  const downloadBlogHtml = async () => {
+    if (!blogContent) return
+    setDownloading(true)
+    try {
+      let renderedBlogUrls = blogPngUrls
+      if (!renderedBlogUrls.some(Boolean) && blogImagesRef.current.some(Boolean)) {
+        renderedBlogUrls = await convertBlogImagesToPng()
+      }
+
+      const tags = normalizeBlogTags(blogContent)
+      const thumbnailImage = ensureArray(blogImages).find((image) => image?.isThumbnail)
+      const thumbnailUrl = getContentImageUrl(thumbnailImage)
+      const sectionImages = ensureArray(blogImages).filter((image) => !image?.isThumbnail)
+      const sections = ensureArray(blogContent.sections)
+      const intro = String(blogContent.introduction || '').trim()
+      const footerText = blogFooterEnabled
+        ? appendBlogFooterText('', blogFooterConfig).trim()
+        : ''
+
+      const sectionHtml = sections.map((section, index) => {
+        const heading = String(section?.heading || '').trim()
+        const body = composeBlogSectionBody(section, {
+          headingStyle: blogHeadingStyle,
+          automaticQuote: usesAutomaticBlogQuote,
+        })
+        const matchingImages = sectionImages.filter((image, imageIndex) => (
+          image?.heading && heading
+            ? image.heading === heading
+            : imageIndex === index
+        ))
+        const imageHtml = matchingImages
+          .map((image, imageIndex) => getContentImageUrl(image) || renderedBlogUrls[index + imageIndex])
+          .filter(Boolean)
+          .map((url, imageIndex) => `<img src="${escapeHtml(url)}" alt="${escapeHtml(heading || `블로그 이미지 ${index + imageIndex + 1}`)}" />`)
+          .join('\n')
+
+        return `
+          <section>
+            ${heading ? `<h2>${escapeHtml(heading)}</h2>` : ''}
+            ${imageHtml}
+            <p>${nlToBr(body)}</p>
+          </section>`
+      }).join('\n')
+
+      const html = buildHtmlDocument({
+        title: blogContent.title || '블로그 콘텐츠',
+        eyebrow: 'Naver Blog',
+        body: `
+          <h1>${escapeHtml(blogContent.title || '블로그 콘텐츠')}</h1>
+          ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(blogContent.title || '블로그 썸네일')}" />` : ''}
+          ${intro ? `<p>${nlToBr(intro)}</p>` : ''}
+          ${sectionHtml}
+          ${tags.length > 0 ? `<p class="tags">${escapeHtml(buildBlogTagText(tags))}</p>` : ''}
+          ${footerText ? `<div class="caption">${nlToBr(footerText)}</div>` : ''}
+        `,
+      })
+
+      downloadHtmlFile(html, `${sanitizeDownloadFilename(blogContent.title || '블로그_콘텐츠')}.html`)
+    } catch (err) {
+      console.error('블로그 HTML 저장 실패:', err)
+      window.alert('블로그 HTML 저장에 실패했습니다. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  const downloadInstagramHtml = async () => {
+    if (!instagramContent) return
+    setDownloading(true)
+    try {
+      const cards = buildInstagramDisplayCards(instagramContent)
+      let renderedInstaUrls = instaPngUrls
+      if (!renderedInstaUrls.some(Boolean) && cards.length > 0) {
+        renderedInstaUrls = await convertInstaCardsToPng()
+      }
+
+      const caption = stripResultCtaText(buildInstagramCaption(instagramContent))
+      const hashtags = ensureArray(instagramContent?.hashtags)
+      const cardHtml = cards.map((card, index) => {
+        const cardNumber = getInstagramCardNumber(card, index)
+        const image = ensureArray(instagramImages).find((item, imageIndex) => {
+          const imageCardNumber = item?.cardNumber || item?.card_number || imageIndex + 1
+          return imageCardNumber === cardNumber
+        })
+        const imageUrl = getContentImageUrl(image) || renderedInstaUrls[index] || null
+        const title = getInstagramOverlayTitle(card, index) || card?.title || card?.heading || `카드 ${cardNumber}`
+        const body = [card?.subtitle, card?.content, card?.summary, card?.dataPoint].filter(Boolean).join('\n\n')
+        const bullets = buildInstagramKnowledgeBullets(card)
+
+        return `
+          <section class="card">
+            <h2>${escapeHtml(title)}</h2>
+            <p class="meta">카드 ${escapeHtml(cardNumber)}</p>
+            ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" />` : ''}
+            ${body ? `<p>${nlToBr(body)}</p>` : ''}
+            ${bullets.length > 0 ? `<ul>${bullets.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : ''}
+          </section>`
+      }).join('\n')
+
+      const html = buildHtmlDocument({
+        title: instagramContent.title || '인스타그램 콘텐츠',
+        eyebrow: 'Instagram',
+        body: `
+          <h1>${escapeHtml(instagramContent.title || '인스타그램 콘텐츠')}</h1>
+          ${cardHtml}
+          <h2>캡션</h2>
+          <div class="caption">${nlToBr([caption, hashtags.join(' ')].filter(Boolean).join('\n\n'))}</div>
+        `,
+      })
+
+      downloadHtmlFile(html, `${sanitizeDownloadFilename(instagramContent.title || '인스타그램_콘텐츠')}.html`)
+    } catch (err) {
+      console.error('인스타그램 HTML 저장 실패:', err)
+      window.alert('인스타그램 HTML 저장에 실패했습니다. 잠시 후 다시 시도해주세요.')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   const downloadShortsVideo = async (videoUrl, filename = '쇼츠_영상.webm') => {
     if (!videoUrl) return
     setDownloading(true)
@@ -1645,6 +1821,15 @@ export default function ExtractionResultPage() {
             {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             이미지 저장
           </button>
+          <button
+            type="button"
+            onClick={downloadBlogHtml}
+            disabled={downloading}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors disabled:opacity-60"
+          >
+            {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            HTML 저장
+          </button>
           </div>
         </div>
 
@@ -1999,6 +2184,15 @@ export default function ExtractionResultPage() {
           >
             {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             카드 저장
+            </button>
+            <button
+              type="button"
+              onClick={downloadInstagramHtml}
+              disabled={downloading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm hover:bg-primary-dark transition-colors disabled:opacity-60"
+            >
+              {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+              HTML 저장
             </button>
           </div>
         </div>

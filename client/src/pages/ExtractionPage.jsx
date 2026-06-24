@@ -14,7 +14,7 @@ import {
   generateInstagramContent, generateShortsScript, recommendBlogCategory
 } from '../services/gemini-content'
 import { generateBlogImages, generateInstagramImages } from '../services/cardImage'
-import { uploadShortsVideoIfLocal } from '../services/storage'
+import { saveExtraction, updateExtractionContent, updateExtractionMedia, uploadShortsVideoIfLocal } from '../services/storage'
 import { BlogImageArtwork } from '../components/contentImageOverlays'
 import KnowledgeInsightCard from '../components/KnowledgeInsightCard'
 import { PRESET_SHORTS_AVATARS, findPresetShortsAvatar, findPresetById, getPresetCategory, getPresetsByCategory } from '../utils/presetShortsAvatars'
@@ -704,6 +704,8 @@ export default function ExtractionPage() {
   const [parsedText, setParsedText] = useState('')
   const [verification, setVerification] = useState(null)
   const [summary, setSummary] = useState(null)
+  const savedExtractionIdRef = useRef(null)
+  const savingExtractionPromiseRef = useRef(null)
   const [recommendedBlogCategory, setRecommendedBlogCategory] = useState(null)
   const [loadingBlogCategoryRecommendation, setLoadingBlogCategoryRecommendation] = useState(false)
   const [blogContent, setBlogContent] = useState(null)
@@ -1320,6 +1322,78 @@ export default function ExtractionPage() {
     error?.name === 'AbortError' || /aborted|abort|취소/i.test(String(error?.message || ''))
   )
 
+  const ensureSavedExtraction = async () => {
+    if (savedExtractionIdRef.current) return savedExtractionIdRef.current
+    if (savingExtractionPromiseRef.current) return savingExtractionPromiseRef.current
+
+    savingExtractionPromiseRef.current = saveExtraction({
+      fileName: file?.name,
+      parsedText,
+      verification,
+      summary,
+    })
+      .then((id) => {
+        if (!id) throw new Error('저장된 콘텐츠 ID를 받지 못했습니다.')
+        savedExtractionIdRef.current = id
+        return id
+      })
+      .finally(() => {
+        savingExtractionPromiseRef.current = null
+      })
+
+    return savingExtractionPromiseRef.current
+  }
+
+  const persistGeneratedChannel = async (channelKey, generatedContent, media = {}) => {
+    if (!generatedContent) return null
+
+    const id = await ensureSavedExtraction()
+    const contentPatch = {}
+    if (channelKey === 'blog') {
+      contentPatch.blogContent = {
+        ...generatedContent,
+        imageStyle: promptSettings.media.blogImageStyle,
+        imageTextOverlay: promptSettings.media.blogTextOverlay,
+        imageMode: [
+          promptSettings.media.blogGenerateImages ? 'generate' : null,
+          promptSettings.media.blogAttachImages ? 'upload' : null,
+        ].filter(Boolean),
+      }
+    }
+    if (channelKey === 'newsletter') contentPatch.newsletterContent = generatedContent
+    if (channelKey === 'instagram') {
+      contentPatch.instagramContent = {
+        ...generatedContent,
+        cardStyle: promptSettings.media.instagramCardStyle,
+      }
+    }
+    if (channelKey === 'shorts') contentPatch.shortsScript = generatedContent
+
+    if (Object.keys(contentPatch).length > 0) {
+      await updateExtractionContent(id, contentPatch)
+    }
+
+    const mediaPatch = {}
+    if (Array.isArray(media.blogImages)) mediaPatch.blogImages = media.blogImages
+    if (Array.isArray(media.instagramImages)) mediaPatch.instagramImages = media.instagramImages
+    if (media.shortsVideo) mediaPatch.shortsVideo = media.shortsVideo
+    if (Object.keys(mediaPatch).length > 0) {
+      await updateExtractionMedia(id, mediaPatch)
+    }
+
+    return id
+  }
+
+  const persistShortsVideo = async (video) => {
+    if (!video) return null
+    const id = await ensureSavedExtraction()
+    if (shortsScript) {
+      await updateExtractionContent(id, { shortsScript })
+    }
+    await updateExtractionMedia(id, { shortsVideo: video })
+    return id
+  }
+
   const resetContentGenerationFlowState = () => {
     setRetrying(null)
     setContentGenerationStage('')
@@ -1605,11 +1679,13 @@ export default function ExtractionPage() {
     if (options.clearError !== false) {
       removeStepError('content', 'gemini', config.label)
     }
+    let generatedImagesForSave = null
     if (channelKey === 'blog' && result?.sections?.length && promptSettings.media.blogGenerateImages) {
       setContentGenerationStage('image')
       const generatedImages = await triggerBlogImageGenerationInBackground(result, options.signal)
       if (Array.isArray(generatedImages)) {
         setBlogImages(generatedImages)
+        generatedImagesForSave = generatedImages.map((image) => ({ ...image, source: image?.source || 'generated' }))
       }
     }
     if (channelKey === 'instagram' && Array.isArray(result?.cardTopics) && result.cardTopics.length > 0) {
@@ -1617,8 +1693,13 @@ export default function ExtractionPage() {
       const generatedInstagramImages = await triggerInstagramImageGenerationInBackground(result, options.signal)
       if (Array.isArray(generatedInstagramImages)) {
         setInstagramImages(generatedInstagramImages)
+        generatedImagesForSave = generatedInstagramImages
       }
     }
+    await persistGeneratedChannel(channelKey, result, {
+      blogImages: channelKey === 'blog' ? generatedImagesForSave : undefined,
+      instagramImages: channelKey === 'instagram' ? generatedImagesForSave : undefined,
+    })
     return result
   }
 
@@ -2311,7 +2392,9 @@ DO NOT:
           mergeAvatarSegments: true,
         })
         if (!finalVideo) throw new Error('무컨셉 하이브리드 영상 생성 실패')
-        setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
+        const savedVideo = (await uploadShortsVideoIfLocal(finalVideo)) || finalVideo
+        setShortsVideo(savedVideo)
+        await persistShortsVideo(savedVideo)
         setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
         setStepLoading('shorts', false)
         return
@@ -2328,7 +2411,9 @@ DO NOT:
         })
         if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
         // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
-        setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
+        const savedVideo = (await uploadShortsVideoIfLocal(finalVideo)) || finalVideo
+        setShortsVideo(savedVideo)
+        await persistShortsVideo(savedVideo)
         setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
         setStepLoading('shorts', false)
         return
@@ -2693,7 +2778,9 @@ DO NOT:
       }
 
       // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
-      setShortsVideo((await uploadShortsVideoIfLocal(finalVideo)) || finalVideo)
+      const savedVideo = (await uploadShortsVideoIfLocal(finalVideo)) || finalVideo
+      setShortsVideo(savedVideo)
+      await persistShortsVideo(savedVideo)
     } catch (err) {
       addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠 영상', message: err.message || '쇼츠 생성 실패' }])
       showErrorAlert('쇼츠 생성', err.message)
@@ -2947,6 +3034,8 @@ ${parsedText}
         }
       : instagramContent
 
+    const extractionIdForResult = savedExtractionIdRef.current || await savingExtractionPromiseRef.current?.catch(() => null) || null
+
     const resultState = {
       parsedText, verification, summary,
       blogContent: blogContentForResult, newsletterContent, instagramContent: instagramContentForResult,
@@ -2956,7 +3045,8 @@ ${parsedText}
       blogFooterEnabled: promptSettings.content.includeBlogFooter !== false,
       fileName: file?.name,
       fileBase64,
-      savedFromExtraction: true,
+      extractionId: extractionIdForResult || undefined,
+      savedFromExtraction: !extractionIdForResult,
       draftKey: `result_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     }
 

@@ -311,6 +311,9 @@ async function updateExtractionMedia(id, media, req) {
   if (Array.isArray(media?.instagramImages)) {
     patch.instagram_images = await uploadImageArray(media.instagramImages, 'insta', requestOrigin)
   }
+  if (media?.shortsVideo !== undefined) {
+    patch.shorts_video = await normalizeShortsVideo(media.shortsVideo, requestOrigin)
+  }
 
   if (Object.keys(patch).length === 0) {
     return fetchExtractionById(id)
