@@ -1381,9 +1381,10 @@ export default function ExtractionResultPage() {
       })
       if (!uploadedVideo) throw new Error('영상 업로드 결과가 비어 있습니다.')
 
-      let targetExtractionId = extractionId
+      let targetExtractionId = extractionId || state.extractionId || queryExtractionId
+      let savedExtraction = null
       if (targetExtractionId) {
-        await updateExtractionMedia(targetExtractionId, { shortsVideo: uploadedVideo })
+        savedExtraction = await updateExtractionMedia(targetExtractionId, { shortsVideo: uploadedVideo })
       } else {
         targetExtractionId = await saveExtraction({
           fileName: state.fileName,
@@ -1401,17 +1402,19 @@ export default function ExtractionResultPage() {
         if (targetExtractionId) setExtractionId(targetExtractionId)
       }
       if (targetExtractionId) {
+        const savedVideo = savedExtraction?.data?.shortsVideo || uploadedVideo
         const baseState = resolvedState || state || location.state || {}
         const nextResolvedState = {
           ...baseState,
           extractionId: targetExtractionId,
-          shortsVideo: uploadedVideo,
+          shortsVideo: savedVideo,
           shortsCreationMode: baseState.shortsCreationMode || 'prompt',
           activeChannel: baseState.activeChannel || 'shorts',
           uploadStatus: baseState.uploadStatus || {},
           fromContents: true,
         }
-        setShortsVideo(uploadedVideo)
+        setExtractionId(targetExtractionId)
+        setShortsVideo(savedVideo)
         setResolvedState(nextResolvedState)
         rememberResultExtractionId(targetExtractionId, nextResolvedState)
       } else {
