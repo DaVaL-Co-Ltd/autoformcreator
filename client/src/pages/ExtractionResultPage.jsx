@@ -283,6 +283,24 @@ function getDistinctRawShortsUrl(videoData = {}) {
   return rawUrl
 }
 
+function extractBlogSectionText(section) {
+  if (typeof section === 'string') return section
+  if (!section || typeof section !== 'object') return ''
+  const direct = section.content || section.body || section.text || section.description || section.summary
+  if (typeof direct === 'string') return direct
+  if (Array.isArray(section.paragraphs)) {
+    return section.paragraphs.map((paragraph) => String(paragraph || '').trim()).filter(Boolean).join('\n\n')
+  }
+  if (Array.isArray(section.items)) {
+    return section.items.map((item) => (
+      typeof item === 'string'
+        ? item
+        : [item?.label, item?.value || item?.text || item?.description].filter(Boolean).join(': ')
+    )).map((line) => String(line || '').trim()).filter(Boolean).join('\n')
+  }
+  return ''
+}
+
 function getVideoDurationSeconds(file) {
   if (!file || typeof document === 'undefined') return Promise.resolve(null)
   return new Promise((resolve) => {
@@ -989,6 +1007,35 @@ export default function ExtractionResultPage() {
   const downloadAllImages = async (type) => {
     setDownloading(true)
     try {
+      const downloadUrl = async (url, filename) => {
+        if (!url) return false
+        try {
+          const response = await fetch(url)
+          if (!response.ok) throw new Error(`image fetch failed (${response.status})`)
+          const blob = await response.blob()
+          const objectUrl = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.download = filename
+          link.href = objectUrl
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          URL.revokeObjectURL(objectUrl)
+          return true
+        } catch (err) {
+          console.warn('[이미지 직접 다운로드 실패, 링크 다운로드로 대체]', err)
+          const link = document.createElement('a')
+          link.download = filename
+          link.href = url
+          link.target = '_blank'
+          link.rel = 'noopener noreferrer'
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          return true
+        }
+      }
+
       const captureElement = async (el, filename) => {
         const dataUrl = await captureElementPng(el, `Download capture ${filename}`)
         const link = document.createElement('a')
@@ -1000,25 +1047,35 @@ export default function ExtractionResultPage() {
       }
 
       if (type === 'blog') {
-        if (blogPngUrls.length > 0) {
-          // 캐시된 PNG 사용
-          for (let idx = 0; idx < blogPngUrls.length; idx++) {
-            if (!blogPngUrls[idx]) continue
-            const link = document.createElement('a')
-            link.download = `블로그_${idx + 1}.png`
-            link.href = blogPngUrls[idx]
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
+        let downloadedCount = 0
+        const images = ensureArray(blogImages)
+        const downloadableImages = images
+          .map((image, index) => ({
+            url: getContentImageUrl(image) || blogPngUrls[index] || null,
+            filename: image?.isThumbnail ? '블로그_썸네일.png' : `블로그_${index + 1}.png`,
+          }))
+          .filter((item) => item.url)
+
+        if (downloadableImages.length > 0) {
+          for (const item of downloadableImages) {
+            await downloadUrl(item.url, item.filename)
+            downloadedCount += 1
             await new Promise(r => setTimeout(r, 300))
           }
-        } else {
+        }
+
+        if (downloadedCount === 0) {
           for (let idx = 0; idx < blogImagesRef.current.length; idx++) {
             const el = blogImagesRef.current[idx]
             if (!el) continue
             await captureElement(el, `블로그_${idx + 1}.png`)
+            downloadedCount += 1
             await new Promise(r => setTimeout(r, 500))
           }
+        }
+
+        if (downloadedCount === 0) {
+          window.alert('저장할 블로그 이미지가 없습니다.')
         }
       } else {
         // 인스타그램: 숨겨진 컨테이너에 모든 카드가 마운트되어 있으므로 슬라이드 이동 없이 순서대로 캡처
@@ -1107,7 +1164,7 @@ export default function ExtractionResultPage() {
 
       const sectionHtml = sections.map((section, index) => {
         const heading = String(section?.heading || '').trim()
-        const body = composeBlogSectionBody(section, {
+        const body = composeBlogSectionBody(extractBlogSectionText(section), {
           headingStyle: blogHeadingStyle,
           automaticQuote: usesAutomaticBlogQuote,
         })
@@ -1126,7 +1183,7 @@ export default function ExtractionResultPage() {
           <section>
             ${heading ? `<h2>${escapeHtml(heading)}</h2>` : ''}
             ${imageHtml}
-            <p>${nlToBr(body)}</p>
+            ${body ? `<p>${nlToBr(body)}</p>` : ''}
           </section>`
       }).join('\n')
 
@@ -1172,16 +1229,10 @@ export default function ExtractionResultPage() {
         })
         const imageUrl = getContentImageUrl(image) || renderedInstaUrls[index] || null
         const title = getInstagramOverlayTitle(card, index) || card?.title || card?.heading || `카드 ${cardNumber}`
-        const body = [card?.subtitle, card?.content, card?.summary, card?.dataPoint].filter(Boolean).join('\n\n')
-        const bullets = buildInstagramKnowledgeBullets(card)
 
         return `
           <section class="card">
-            <h2>${escapeHtml(title)}</h2>
-            <p class="meta">카드 ${escapeHtml(cardNumber)}</p>
             ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(title)}" />` : ''}
-            ${body ? `<p>${nlToBr(body)}</p>` : ''}
-            ${bullets.length > 0 ? `<ul>${bullets.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul>` : ''}
           </section>`
       }).join('\n')
 
@@ -1274,11 +1325,6 @@ export default function ExtractionResultPage() {
       window.alert('영상 파일만 첨부할 수 있습니다.')
       return
     }
-    if (!extractionId) {
-      window.alert('저장된 콘텐츠 ID가 없어 영상을 DB에 저장할 수 없습니다. 콘텐츠를 다시 생성한 뒤 시도해주세요.')
-      return
-    }
-
     setManualShortsVideoUploading(true)
     try {
       const duration = await getVideoDurationSeconds(file)
@@ -1290,13 +1336,32 @@ export default function ExtractionResultPage() {
       })
       if (!uploadedVideo) throw new Error('영상 업로드 결과가 비어 있습니다.')
 
-      await updateExtractionMedia(extractionId, { shortsVideo: uploadedVideo })
+      let targetExtractionId = extractionId
+      if (targetExtractionId) {
+        await updateExtractionMedia(targetExtractionId, { shortsVideo: uploadedVideo })
+      } else {
+        targetExtractionId = await saveExtraction({
+          fileName: state.fileName,
+          summary: state.summary,
+          blogContent,
+          newsletterContent,
+          instagramContent,
+          shortsScript,
+          blogImages,
+          instagramImages,
+          shortsVideo: uploadedVideo,
+          parsedText: state.parsedText,
+          uploadStatus: state.uploadStatus || {},
+        })
+        if (targetExtractionId) setExtractionId(targetExtractionId)
+      }
       setShortsVideo(uploadedVideo)
       setResolvedState((prev) => {
         const baseState = prev || location.state
         if (!baseState) return prev
         return {
           ...baseState,
+          extractionId: targetExtractionId || baseState.extractionId,
           shortsVideo: uploadedVideo,
           shortsCreationMode: baseState.shortsCreationMode || 'prompt',
         }
@@ -2568,6 +2633,23 @@ export default function ExtractionResultPage() {
         initialDatetime: scheduleInfo[schedulePlatform]?.scheduledAt || shortsPlatforms[platformKey]?.scheduledAt || null,
       })
     }
+    const heygenPromptPanel = heygenPrompt ? (
+      <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
+          <p className="text-xs font-semibold text-text-muted">영상 프롬포트</p>
+          <button
+            type="button"
+            onClick={() => copy(heygenPrompt)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-xs font-medium text-text-muted hover:text-text hover:border-primary/40 transition-colors"
+          >
+            <Copy size={12} /> 프롬포트 복사
+          </button>
+        </div>
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words p-3 text-xs leading-5 text-text">
+          {heygenPrompt}
+        </pre>
+      </div>
+    ) : null
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
@@ -2579,23 +2661,7 @@ export default function ExtractionResultPage() {
                 아래 대본과 영상 프롬포트를 HeyGen Video Agent에 붙여넣어 영상을 직접 제작하세요.
               </p>
             </div>
-            {heygenPrompt && (
-              <div className="rounded-xl border border-border bg-surface-light overflow-hidden">
-                <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-2.5">
-                  <p className="text-xs font-semibold text-text-muted">영상 프롬포트</p>
-                  <button
-                    type="button"
-                    onClick={() => copy(heygenPrompt)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-xs font-medium text-text-muted hover:text-text hover:border-primary/40 transition-colors"
-                  >
-                    <Copy size={12} /> 프롬포트 복사
-                  </button>
-                </div>
-                <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words p-3 text-xs leading-5 text-text">
-                  {heygenPrompt}
-                </pre>
-              </div>
-            )}
+            {!shortsVideoUrl && heygenPromptPanel}
             <div className="rounded-xl border border-border bg-surface-light/50 p-4 space-y-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -2819,6 +2885,7 @@ export default function ExtractionResultPage() {
             </div>
           </div>
         </div>
+        {shortsPromptMode && shortsVideoUrl && heygenPromptPanel}
       </div>
     )
   }
