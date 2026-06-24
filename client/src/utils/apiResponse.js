@@ -37,6 +37,7 @@ export function getApiErrorMessage(data, fallbackMessage) {
 
 const HEYGEN_ERROR_MESSAGES = {
   unauthorized: 'HeyGen API 키가 유효하지 않거나 만료되었습니다. 서버의 HeyGen API 키 설정을 확인해주세요.',
+  authentication_failed: 'HeyGen API 키 인증에 실패했습니다. 서버의 HeyGen API 키 설정을 확인해주세요.',
   forbidden: '현재 HeyGen API 키에는 이 작업을 실행할 권한이 없습니다.',
   resource_access_denied: '선택한 HeyGen 리소스에 접근할 수 없습니다. 아바타/목소리가 같은 계정에 있는지 확인해주세요.',
   ai_vendor_access_restricted: 'HeyGen 워크스페이스 정책상 이 AI 기능 사용이 제한되어 있습니다. 관리자 설정을 확인해주세요.',

@@ -59,6 +59,29 @@ const ANALYSIS_PROGRESS_STEPS = [
   { key: 'verification', label: '데이터 검증 및 교정' },
   { key: 'summary', label: '핵심 요약 생성' },
 ]
+const SHORTS_AVATAR_ENGINE_OPTIONS = [
+  { value: 'avatar_iii', label: 'Avatar III (기존)' },
+  { value: 'avatar_iv', label: 'Avatar IV (/v3/videos 기본)' },
+  { value: 'avatar_v', label: 'Avatar V (/v3/videos)' },
+]
+
+const SHORTS_AVATAR_ENGINE_LABELS = {
+  avatar_iii: 'Avatar III',
+  avatar_iv: 'Avatar IV',
+  avatar_v: 'Avatar V',
+}
+
+function normalizeShortsAvatarEngine(value) {
+  return SHORTS_AVATAR_ENGINE_OPTIONS.some((option) => option.value === value) ? value : 'avatar_iii'
+}
+
+function getShortsAvatarEngineLabel(value) {
+  return SHORTS_AVATAR_ENGINE_LABELS[normalizeShortsAvatarEngine(value)] || 'Avatar III'
+}
+
+function buildUnsupportedAvatarEngineMessage(engine) {
+  return `이 아바타는 ${getShortsAvatarEngineLabel(engine)}를 지원하지 않습니다.`
+}
 
 function createAnalysisProgress() {
   return ANALYSIS_PROGRESS_STEPS.map((step, index) => ({
@@ -646,6 +669,31 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   )
 }
 
+function InfoDialog({ title = '안내', message, onClose }) {
+  if (!message) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="bg-surface rounded-xl border border-primary/30 shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+        <div className="flex items-center gap-3 p-4 bg-primary/10 border-b border-primary/20">
+          <AlertCircle size={20} className="text-primary-light shrink-0" />
+          <h3 className="font-semibold text-primary-light text-sm">{title}</h3>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-text leading-relaxed whitespace-pre-line">{message}</p>
+        </div>
+        <div className="flex justify-end p-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-primary/10 text-primary-light text-sm font-medium rounded-lg hover:bg-primary/20 transition-all"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ErrorPanel({ errors, onRetry, retrying }) {
   if (!errors || errors.length === 0) return null
   return (
@@ -705,6 +753,7 @@ export default function ExtractionPage() {
   // Popup states
   const [errorAlert, setErrorAlert] = useState(null)
   const [confirmDialog, setConfirmDialog] = useState(null)
+  const [infoDialog, setInfoDialog] = useState(null)
   const [creditConfirm, setCreditConfirm] = useState(false) // 크레딧 소모 확인 팝업
   const [previewImage, setPreviewImage] = useState(null)
   const [contentPreview, setContentPreview] = useState(null) // 'blog' | 'instagram' | 'shorts' | null
@@ -739,7 +788,7 @@ export default function ExtractionPage() {
       instagramCardStyle: 'background-text',
       extra: '',
     },
-    shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '', videoConcept: '', targetDurationSeconds: 60 },
+    shorts: { videoStyle: 'avatar', narrationTone: 'auto', voiceStyle: 'auto', extra: '', videoConcept: '', avatarEngine: 'avatar_iii', targetDurationSeconds: 60 },
   })
   const updatePrompt = (step, field, value) => setPromptSettings(p => ({ ...p, [step]: { ...p[step], [field]: value } }))
   const buildContentPromptOptions = () => {
@@ -2326,15 +2375,119 @@ DO NOT:
     }
   }
 
+  const ensureHeygenAvatarEngineSupported = async (lookId, engine) => {
+    const normalizedEngine = normalizeShortsAvatarEngine(engine)
+    if (normalizedEngine === 'avatar_iii') return true
+    if (!lookId) {
+      throw new Error(buildUnsupportedAvatarEngineMessage(normalizedEngine))
+    }
+
+    setMediaItemLoading((prev) => ({
+      ...prev,
+      '쇼츠 영상': `${getShortsAvatarEngineLabel(normalizedEngine)} 지원 여부 확인 중...`,
+    }))
+
+    const lookRes = await apiFetch(`/api/heygen/v3/avatar-look/${encodeURIComponent(lookId)}`)
+    const lookData = await readApiResponse(lookRes)
+    if (!lookRes.ok) {
+      throw new Error(buildUnsupportedAvatarEngineMessage(normalizedEngine))
+    }
+
+    const look = lookData?.data || lookData
+    const supportedEngines = Array.isArray(look?.supported_api_engines)
+      ? look.supported_api_engines
+      : []
+
+    if (!supportedEngines.includes(normalizedEngine)) {
+      throw new Error(buildUnsupportedAvatarEngineMessage(normalizedEngine))
+    }
+
+    return true
+  }
+
+  const createHeygenV3AvatarVideo = async ({ avatarId, voiceId, text, engine, backgroundColor, progressLabel }) => {
+    const normalizedEngine = normalizeShortsAvatarEngine(engine)
+    if (normalizedEngine === 'avatar_iii') {
+      throw new Error('Avatar III는 기존 영상 생성 경로를 사용합니다.')
+    }
+    const script = String(text || '').trim()
+    if (!avatarId || !voiceId || !script) {
+      throw new Error('아바타, 목소리 또는 대본이 비어있어 영상을 만들 수 없습니다.')
+    }
+
+    await ensureHeygenAvatarEngineSupported(avatarId, normalizedEngine)
+
+    if (progressLabel) {
+      setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': progressLabel }))
+    }
+
+    const body = {
+      type: 'avatar',
+      avatar_id: avatarId,
+      script: toSpokenText(script),
+      voice_id: voiceId,
+      resolution: '720p',
+      aspect_ratio: '9:16',
+      engine: { type: normalizedEngine },
+    }
+    if (backgroundColor) {
+      body.background = { type: 'color', value: backgroundColor }
+    }
+
+    const createRes = await apiFetch('/api/heygen/v3/videos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const createData = await readApiResponse(createRes)
+    if (!createRes.ok) {
+      throw new Error(getHeygenErrorMessage(createData, `HeyGen ${getShortsAvatarEngineLabel(normalizedEngine)} 영상 요청 실패 (${createRes.status})`))
+    }
+
+    const videoId =
+      createData.data?.video_id ||
+      createData.data?.id ||
+      createData.video_id ||
+      createData.id
+    if (!videoId) throw new Error('HeyGen video_id를 받지 못했습니다.')
+
+    for (let i = 0; i < 240; i++) {
+      await delay(5000)
+      const pollRes = await apiFetch(`/api/heygen/v3/videos/${videoId}`)
+      const pollData = await readApiResponse(pollRes)
+      if (!pollRes.ok) continue
+
+      const status = pollData.data?.status
+      if (status === 'completed') {
+        const url = resolveMediaUrl(pollData.data?.video_url || pollData.video_url)
+        if (!url) throw new Error('HeyGen 영상 URL이 없습니다.')
+        return { videoId, url }
+      }
+      if (status === 'failed') {
+        const errDetail = pollData.data?.error
+        const errMsg = getHeygenErrorMessage(
+          errDetail && typeof errDetail === 'object'
+            ? { error: errDetail }
+            : { message: errDetail || pollData.data?.failure_message || pollData.data?.error_message },
+          '알 수 없는 오류',
+        )
+        throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
+      }
+    }
+
+    throw new Error('HeyGen 렌더 타임아웃')
+  }
+
   // 하이브리드 컨셉(인포그래픽 + verbatim): 아바타 씬은 표준 엔드포인트(우리 대본 그대로),
   // 인포그래픽 씬은 Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다.
   // infographic-full 이지만 보여줄 데이터(숫자)가 없는 씬은 아바타 씬으로 폴백한다.
   // 자막은 아바타 씬에만 (server 가 infographic-full 씬은 skip).
-  const runHybridSegmentedShorts = async ({ targetScript, avatarId, avatarKind = 'talking_photo', voiceId, mergeAvatarSegments = false }) => {
+  const runHybridSegmentedShorts = async ({ targetScript, avatarId, avatarKind = 'talking_photo', voiceId, mergeAvatarSegments = false, avatarEngine = 'avatar_iii' }) => {
     const scenes = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
     if (scenes.length === 0) throw new Error('쇼츠 대본에 씬이 없습니다.')
     const sceneText = (s) => String(s?.caption || s?.narration || '')
     const typeOf = (s) => (sceneHasEnoughInfographicData(s) ? 'info' : 'avatar')
+    const normalizedAvatarEngine = normalizeShortsAvatarEngine(avatarEngine)
 
     // 연속 동일 타입을 세그먼트로 묶는다(순서 유지).
     const segments = []
@@ -2376,17 +2529,42 @@ DO NOT:
       const seg = segments[si]
       setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `세그먼트 ${si + 1}/${segments.length} 생성 중 (${seg.type === 'info' ? '인포그래픽' : '아바타'})...` }))
       if (seg.type === 'avatar') {
+        const avatarSegmentText = mergeAvatarSegments
+          ? seg.scenes
+              .map((scene) => sceneText(scene).trim())
+              .filter(Boolean)
+              .join(' ')
+          : null
+        if (normalizedAvatarEngine !== 'avatar_iii') {
+          if (mergeAvatarSegments) {
+            const clip = await createHeygenV3AvatarVideo({
+              avatarId,
+              voiceId,
+              text: avatarSegmentText,
+              engine: normalizedAvatarEngine,
+              progressLabel: `아바타 세그먼트 ${si + 1}/${segments.length} 생성 중 (${getShortsAvatarEngineLabel(normalizedAvatarEngine)})...`,
+            })
+            segmentUrls.push(clip.url)
+          } else {
+            for (let sceneIndex = 0; sceneIndex < seg.scenes.length; sceneIndex++) {
+              const clip = await createHeygenV3AvatarVideo({
+                avatarId,
+                voiceId,
+                text: sceneText(seg.scenes[sceneIndex]).trim(),
+                engine: normalizedAvatarEngine,
+                progressLabel: `아바타 세그먼트 ${si + 1}/${segments.length}-${sceneIndex + 1} 생성 중 (${getShortsAvatarEngineLabel(normalizedAvatarEngine)})...`,
+              })
+              segmentUrls.push(clip.url)
+            }
+          }
+          continue
+        }
+
         const character = buildHeygenCharacter(avatarId, avatarKind)
         const video_inputs = mergeAvatarSegments
           ? [{
               character,
-              voice: buildHeygenTextVoice(
-                seg.scenes
-                  .map((scene) => sceneText(scene).trim())
-                  .filter(Boolean)
-                  .join(' '),
-                voiceId,
-              ),
+              voice: buildHeygenTextVoice(avatarSegmentText, voiceId),
             }].filter((v) => v.voice.input_text && v.voice.voice_id)
           : seg.scenes
               .map((scene) => ({
@@ -2494,7 +2672,7 @@ DO NOT:
       console.warn('[하이브리드 자막 합성] 실패:', burnErr.message)
       subtitleStatus = 'failed'
     }
-    return { url: finalUrl, rawUrl, srtUrl, duration: targetScript.duration, mode: 'hybrid', subtitleStatus }
+    return { url: finalUrl, rawUrl, srtUrl, duration: targetScript.duration, mode: 'hybrid', avatarEngine: normalizedAvatarEngine, subtitleStatus }
   }
 
   const runShortsGeneration = async (options = {}) => {
@@ -2564,12 +2742,14 @@ DO NOT:
         && Array.isArray(targetScript?.scenes)
         && targetScript.scenes.some(sceneHasEnoughInfographicData)
       if (noConceptHasInfographicScenes) {
+        const avatarEngineForHybrid = normalizeShortsAvatarEngine(promptSettings.shorts.avatarEngine)
         const finalVideo = await runHybridSegmentedShorts({
           targetScript,
           avatarId: resolvedAvatarId,
           avatarKind: resolvedAvatarKind,
           voiceId: selectedVoiceId,
           mergeAvatarSegments: true,
+          avatarEngine: avatarEngineForHybrid,
         })
         if (!finalVideo) throw new Error('무컨셉 하이브리드 영상 생성 실패')
         const savedVideo = (await uploadShortsVideoIfLocal(finalVideo)) || finalVideo
@@ -2583,11 +2763,13 @@ DO NOT:
       // 하이브리드 컨셉(인포그래픽+verbatim): 세그먼트 렌더+합치기 경로로 처리하고 종료.
       if (conceptForRun?.hybridSegments) {
         const fbPreset = findPresetShortsAvatar(conceptForRun.preferredAvatarIds?.[0])
+        const avatarEngineForHybrid = normalizeShortsAvatarEngine(promptSettings.shorts.avatarEngine)
         const finalVideo = await runHybridSegmentedShorts({
           targetScript,
           avatarId: resolvedAvatarId,
           avatarKind: resolvedAvatarKind,
           voiceId: selectedVoiceId || fbPreset?.defaultVoiceId,
+          avatarEngine: avatarEngineForHybrid,
         })
         if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
         // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
@@ -2640,8 +2822,14 @@ DO NOT:
       }
 
       let generateRes
+      let generateData = null
       let generatedVideoPrompt = null
+      let useV3VideoStatus = false
+      let preRenderedRawUrl = null
+      let preRenderedVideoId = null
+      let generatedAvatarEngine = 'avatar_iii'
       if (useStandardEndpoint) {
+        const requestedAvatarEngine = normalizeShortsAvatarEngine(promptSettings.shorts.avatarEngine)
         const scenesForStandard = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
         if (scenesForStandard.length === 0) {
           throw new Error('쇼츠 대본에 씬이 없어 영상을 만들 수 없습니다.')
@@ -2697,7 +2885,9 @@ DO NOT:
 
         // quiz-countdown: 3→2→1 카운트다운 배경 영상. 영상당 1회만 fetch (서버에서 생성·캐시).
         let quizCountdownAssetId = null
+        let quizCountdownUrl = null
         const hasCountdownScene = scenesForStandard.some((s) => s?.layout === 'quiz-countdown')
+        const selectedAvatarEngine = requestedAvatarEngine
         if (hasCountdownScene) {
           setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '카운트다운 영상 준비 중...' }))
           try {
@@ -2709,6 +2899,9 @@ DO NOT:
             const cdData = await readApiResponse(cdRes)
             if (cdRes.ok && cdData?.video_asset_id) {
               quizCountdownAssetId = cdData.video_asset_id
+            }
+            if (cdRes.ok && cdData?.url) {
+              quizCountdownUrl = resolveMediaUrl(cdData.url)
             }
           } catch (err) {
             console.warn('[quiz countdown] 실패:', err.message)
@@ -2733,7 +2926,78 @@ DO NOT:
         const overrideVoiceId = !useMultiAvatar ? selectedVoiceId : null
 
         let video_inputs
-        if (canMergeSoloTake) {
+        if (selectedAvatarEngine !== 'avatar_iii' && !canMergeSoloTake) {
+          const segmentUrls = []
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `${getShortsAvatarEngineLabel(selectedAvatarEngine)} 세그먼트 영상 준비 중...` }))
+          for (let idx = 0; idx < scenesForStandard.length; idx++) {
+            const scene = scenesForStandard[idx]
+            if (scene?.layout === 'quiz-countdown') {
+              if (!quizCountdownUrl) {
+                throw new Error('카운트다운 클립 URL을 준비하지 못했습니다.')
+              }
+              segmentUrls.push(quizCountdownUrl)
+              continue
+            }
+
+            let avatarId = scene?.avatarId || conceptAvatarIds[idx % conceptAvatarIds.length]
+            if (slotRoleRemap && slotRoleRemap[avatarId]) avatarId = slotRoleRemap[avatarId]
+            const preset = findPresetShortsAvatar(avatarId) || fallbackPreset
+            const voiceId =
+              (slotVoiceByAvatarId && slotVoiceByAvatarId[avatarId]) ||
+              overrideVoiceId ||
+              preset?.defaultVoiceId
+            const text = String(scene?.caption || scene?.narration || '').trim()
+            if (!text) continue
+
+            const clip = await createHeygenV3AvatarVideo({
+              avatarId,
+              voiceId,
+              text,
+              engine: selectedAvatarEngine,
+              backgroundColor: selectedConcept?.backgroundColor,
+              progressLabel: `${getShortsAvatarEngineLabel(selectedAvatarEngine)} 세그먼트 ${idx + 1}/${scenesForStandard.length} 생성 중...`,
+            })
+            segmentUrls.push(clip.url)
+          }
+
+          if (segmentUrls.length === 0) {
+            throw new Error('생성할 수 있는 멀티 아바타 세그먼트가 없습니다.')
+          }
+
+          if (segmentUrls.length === 1) {
+            preRenderedRawUrl = segmentUrls[0]
+          } else {
+            setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '세그먼트 합치는 중...' }))
+            const concatRes = await apiFetch('/api/video/concat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ videoUrls: segmentUrls }),
+            })
+            const concatData = await readApiResponse(concatRes)
+            if (!concatRes.ok || !concatData?.jobId) {
+              throw new Error(getServerErrorMessage(concatData, `합치기 요청 실패 (${concatRes.status})`, concatRes.status))
+            }
+
+            let done = null
+            for (let i = 0; i < 120; i++) {
+              await delay(5000)
+              const statusRes = await apiFetch(`/api/video/concat/status/${concatData.jobId}`)
+              const statusData = await readApiResponse(statusRes)
+              if (!statusRes.ok) continue
+              if (statusData?.status === 'done') { done = statusData; break }
+              if (statusData?.status === 'failed') throw new Error(getServerErrorMessage(statusData, '합치기 실패'))
+            }
+            if (!done?.url) throw new Error('합치기 시간 초과 또는 결과 URL 없음')
+            preRenderedRawUrl = resolveMediaUrl(done.url)
+          }
+
+          preRenderedVideoId = `v3-segments-${Date.now()}`
+          generatedAvatarEngine = selectedAvatarEngine
+          generateRes = { ok: true, status: 200 }
+          generateData = { data: { video_id: preRenderedVideoId } }
+          video_inputs = []
+          console.log(`[shorts] ${selectedConcept?.id || 'no-concept'}: ${selectedAvatarEngine} 세그먼트 ${segmentUrls.length}개 생성 후 concat`)
+        } else if (canMergeSoloTake) {
           setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '연속 테이크 영상 준비 중...' }))
           const soloAvatarId = conceptAvatarIds[0]
           const soloPreset = findPresetShortsAvatar(soloAvatarId) || fallbackPreset
@@ -2743,18 +3007,57 @@ DO NOT:
             .map((s) => String(s?.caption || s?.narration || '').trim())
             .filter(Boolean)
             .join(' ')
-          const mergedInput = {
-            character: buildHeygenCharacter(soloAvatarId, conceptAvatarKindsById[soloAvatarId]),
-            voice: buildHeygenTextVoice(mergedText, overrideVoiceId || soloPreset?.defaultVoiceId),
+          const soloVoiceId = overrideVoiceId || soloPreset?.defaultVoiceId
+          if (selectedAvatarEngine !== 'avatar_iii') {
+            if (!mergedText || !soloVoiceId) {
+              throw new Error('대본 또는 voice_id 가 비어있어 영상을 만들 수 없습니다.')
+            }
+            await ensureHeygenAvatarEngineSupported(soloAvatarId, selectedAvatarEngine)
+            const v3Body = {
+              type: 'avatar',
+              avatar_id: soloAvatarId,
+              script: toSpokenText(mergedText),
+              voice_id: soloVoiceId,
+              resolution: '720p',
+              aspect_ratio: '9:16',
+            }
+            if (selectedAvatarEngine === 'avatar_iv') {
+              v3Body.engine = { type: 'avatar_iv' }
+            } else if (selectedAvatarEngine === 'avatar_v') {
+              v3Body.engine = { type: 'avatar_v' }
+            }
+            if (selectedConcept?.backgroundColor) {
+              v3Body.background = { type: 'color', value: selectedConcept.backgroundColor }
+            }
+
+            setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `HeyGen ${getShortsAvatarEngineLabel(selectedAvatarEngine)} 영상 생성 요청 중...` }))
+            generateRes = await apiFetch('/api/heygen/v3/videos', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(v3Body),
+            })
+            generateData = await readApiResponse(generateRes)
+            if (!generateRes.ok) {
+              throw new Error(getHeygenErrorMessage(generateData, `HeyGen ${getShortsAvatarEngineLabel(selectedAvatarEngine)} 영상 요청 실패 (${generateRes.status})`))
+            }
+            useV3VideoStatus = true
+            generatedAvatarEngine = selectedAvatarEngine
+            video_inputs = []
+            console.log(`[shorts] ${selectedConcept?.id || 'no-concept'}: ${selectedAvatarEngine} /v3/videos 생성 요청`)
+          } else {
+            const mergedInput = {
+              character: buildHeygenCharacter(soloAvatarId, conceptAvatarKindsById[soloAvatarId]),
+              voice: buildHeygenTextVoice(mergedText, soloVoiceId),
+            }
+            if (selectedConcept?.backgroundColor) {
+              mergedInput.background = { type: 'color', value: selectedConcept.backgroundColor }
+            }
+            video_inputs = [mergedInput]
+            console.log(`[shorts] ${selectedConcept?.id || 'no-concept'}: 솔로 연속 테이크 — 씬 ${scenesForStandard.length}개를 video_input 1개로 병합`)
           }
-          if (selectedConcept?.backgroundColor) {
-            mergedInput.background = { type: 'color', value: selectedConcept.backgroundColor }
-          }
-          video_inputs = [mergedInput]
-          console.log(`[shorts] ${selectedConcept?.id || 'no-concept'}: 솔로 연속 테이크 — 씬 ${scenesForStandard.length}개를 video_input 1개로 병합`)
         } else {
           // 씬별 layout 분기.
-          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '씬별 배경 준비 중...' }))
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '씬별 영상 입력 준비 중...' }))
           video_inputs = await Promise.all(scenesForStandard.map(async (scene, idx) => {
             // 씬이 avatarId 를 직접 지정하면 우선 사용 (ox_quiz 처럼 한 문제의 질문/대기/정답
             // 씬을 같은 인물로 고정할 때). 없으면 conceptAvatarIds 순환.
@@ -2782,7 +3085,7 @@ DO NOT:
                 video_asset_id: quizCountdownAssetId,
               }
             }
-            // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 단색 배경 적용
+            // 컨셉이 backgroundColor 를 지정했고 위 layout 분기에서 배경이 안 깔렸으면 컨셉 공통 단색 배경 적용
             // (아바타가 9:16 을 못 채울 때 여백을 일관된 색으로 — study_dialogue 영상 통화 프레이밍 통일).
             if (!baseInput.background && selectedConcept?.backgroundColor) {
               baseInput.background = { type: 'color', value: selectedConcept.backgroundColor }
@@ -2796,21 +3099,23 @@ DO NOT:
             : (input.voice?.input_text && input.voice?.voice_id)
         )
 
-        if (filteredInputs.length === 0) {
+        if (!useV3VideoStatus && !preRenderedRawUrl && filteredInputs.length === 0) {
           throw new Error('씬 narration 또는 voice_id 가 비어있어 영상을 만들 수 없습니다.')
         }
 
         const modeLabel = useMultiAvatar ? '멀티 아바타' : '표준'
-        setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `HeyGen ${modeLabel} 영상 생성 요청 중 (씬 ${filteredInputs.length}개)...` }))
+        if (!useV3VideoStatus && !preRenderedRawUrl) {
+          setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `HeyGen ${modeLabel} 영상 생성 요청 중 (씬 ${filteredInputs.length}개)...` }))
 
-        generateRes = await apiFetch('/api/heygen/video/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_inputs: filteredInputs,
-            dimension: { width: 720, height: 1280 },
-          }),
-        })
+          generateRes = await apiFetch('/api/heygen/video/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              video_inputs: filteredInputs,
+              dimension: { width: 720, height: 1280 },
+            }),
+          })
+        }
       } else {
         generatedVideoPrompt = buildShortsVideoAgentPrompt({
           script: targetScript,
@@ -2842,7 +3147,9 @@ DO NOT:
         })
       }
 
-      const generateData = await readApiResponse(generateRes)
+      if (!generateData) {
+        generateData = await readApiResponse(generateRes)
+      }
       if (!generateRes.ok) {
         throw new Error(getHeygenErrorMessage(generateData, `HeyGen ${useStandardEndpoint ? (useMultiAvatar ? '멀티 아바타 영상' : '표준 영상') : 'Video Agent'} 요청 실패 (${generateRes.status})`))
       }
@@ -2861,15 +3168,22 @@ DO NOT:
 
       let finalVideo = null
       for (let i = 0; i < 240; i++) {
-        await delay(5000)
+        if (!preRenderedRawUrl) {
+          await delay(5000)
+        }
 
-        const pollRes = await apiFetch(`/api/heygen/video/status/${videoId}`)
-        const pollData = await readApiResponse(pollRes)
-        if (!pollRes.ok) continue
+        let pollData
+        if (preRenderedRawUrl) {
+          pollData = { data: { status: 'completed', video_url: preRenderedRawUrl } }
+        } else {
+          const pollRes = await apiFetch(useV3VideoStatus ? `/api/heygen/v3/videos/${videoId}` : `/api/heygen/video/status/${videoId}`)
+          pollData = await readApiResponse(pollRes)
+          if (!pollRes.ok) continue
+        }
 
         const status = pollData.data?.status
         if (status === 'completed') {
-          const rawUrl = resolveMediaUrl(pollData.data?.video_url)
+          const rawUrl = resolveMediaUrl(pollData.data?.video_url || pollData.video_url)
           if (!rawUrl) {
             throw new Error('HeyGen 영상 URL이 없습니다.')
           }
@@ -2886,6 +3200,7 @@ DO NOT:
             duration: targetScript.duration,
             videoId,
             prompt: generatedVideoPrompt,
+            avatarEngine: generatedAvatarEngine,
             mode: 'recommended',
           }
           setShortsVideo({ ...baseVideo, subtitleStatus: 'processing' })
@@ -2946,7 +3261,7 @@ DO NOT:
           const errMsg = getHeygenErrorMessage(
             errDetail && typeof errDetail === 'object'
               ? { error: errDetail }
-              : { message: errDetail || pollData.data?.error_message },
+              : { message: errDetail || pollData.data?.failure_message || pollData.data?.error_message },
             '알 수 없는 오류',
           )
           throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
@@ -3289,6 +3604,30 @@ ${parsedText}
     </div>
   )
 
+
+  const getAvatarEngineCostNotice = (engine) => {
+    const normalizedEngine = normalizeShortsAvatarEngine(engine)
+    const modelLabel = getShortsAvatarEngineLabel(normalizedEngine)
+    const estimate = normalizedEngine === 'avatar_iii'
+      ? '1분당 약 1~2달러'
+      : '1분당 약 3~4달러'
+
+    return `${modelLabel} 모델을 선택했습니다.
+
+예상 비용은 API 기준 ${estimate} 정도입니다.
+
+실제 비용은 최종 영상 길이, 생성된 세그먼트 수, Video Agent 사용 여부, 재시도 여부, HeyGen 과금 기준에 따라 달라질 수 있습니다.
+예상보다 더 많이 나오거나 더 적게 나올 수 있으니 생성 전에 참고해주세요.`
+  }
+
+  const updateShortsAvatarEngine = (value) => {
+    const normalizedEngine = normalizeShortsAvatarEngine(value)
+    updatePrompt('shorts', 'avatarEngine', normalizedEngine)
+    setInfoDialog({
+      title: 'HeyGen 아바타 모델 비용 안내',
+      message: getAvatarEngineCostNotice(normalizedEngine),
+    })
+  }
 
   const hasAnyContent = blogContent || newsletterContent || instagramContent || shortsScript
   const selectedBlogCategoryProfile = getBlogCategoryProfile(promptSettings.content.blogCategoryId)
@@ -3793,6 +4132,7 @@ ${parsedText}
       <NavigationBlockerModal when={isBusy} />
       {/* 팝업들 (고정 위치, 레이아웃 밖) */}
       <ErrorAlert message={errorAlert} onClose={() => setErrorAlert(null)} />
+      <InfoDialog title={infoDialog?.title} message={infoDialog?.message} onClose={() => setInfoDialog(null)} />
       <ImagePreviewModal previewImage={previewImage} onClose={() => setPreviewImage(null)} />
       <ConfirmDialog message={confirmDialog} onConfirm={() => { setConfirmDialog(null); navigateToResults() }} onCancel={() => setConfirmDialog(null)} />
       {/* 크레딧 소모 확인 팝업 */}
@@ -4300,6 +4640,13 @@ ${parsedText}
                       { value: 'prompt', label: '영상 프롬포트만 생성' },
                     ],
                     hint: '프롬포트만 생성은 HeyGen Video Agent용 1인 컨셉만 지원합니다. 2인 이상 컨셉은 직접 영상까지 생성에서 선택하세요.',
+                  })}
+                  {PF('HeyGen 아바타 모델', {
+                    type: 'select',
+                    value: normalizeShortsAvatarEngine(promptSettings.shorts.avatarEngine),
+                    onChange: updateShortsAvatarEngine,
+                    options: SHORTS_AVATAR_ENGINE_OPTIONS,
+                    hint: 'Avatar III는 기존 표준 경로입니다. Avatar IV/V는 단일 영상은 /v3/videos로 만들고, 멀티 아바타·퀴즈·하이브리드는 여러 클립을 만든 뒤 이어붙입니다.',
                   })}
                   <div className="mb-4">
                     <label className="flex items-center justify-between gap-3 text-sm font-semibold text-text-muted mb-1.5">

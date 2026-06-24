@@ -487,12 +487,64 @@ app.post('/api/heygen/video-agent/generate', async (req, res) => {
   }
 })
 
+// ===== HeyGen v3 Video Generate Proxy (Avatar IV/V) =====
+app.post('/api/heygen/v3/videos', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  try {
+    const response = await fetch('https://api.heygen.com/v3/videos', {
+      method: 'POST',
+      headers: { 'X-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ===== HeyGen Video Status Proxy =====
 app.get('/api/heygen/video/status/:videoId', async (req, res) => {
   const apiKey = process.env.HEYGEN_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
   try {
     const response = await fetch(`https://api.heygen.com/v1/video_status.get?video_id=${req.params.videoId}`, {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen v3 Video Status Proxy =====
+app.get('/api/heygen/v3/videos/:videoId', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  try {
+    const videoId = encodeURIComponent(req.params.videoId)
+    const response = await fetch(`https://api.heygen.com/v3/videos/${videoId}`, {
+      headers: { 'X-Api-Key': apiKey },
+    })
+    const data = await response.json()
+    if (!response.ok) return res.status(response.status).json(data)
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ===== HeyGen v3 avatar look lookup (supported_api_engines) =====
+app.get('/api/heygen/v3/avatar-look/:lookId', async (req, res) => {
+  const apiKey = process.env.HEYGEN_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'HEYGEN_API_KEY not configured on server' })
+  try {
+    const lookId = encodeURIComponent(req.params.lookId)
+    const response = await fetch(`https://api.heygen.com/v3/avatars/looks/${lookId}`, {
       headers: { 'X-Api-Key': apiKey },
     })
     const data = await response.json()
@@ -853,18 +905,23 @@ app.post('/api/heygen/quiz-countdown', async (req, res) => {
     const outputDir2 = path.join(__dirname, '..', 'output')
     if (!fs.existsSync(outputDir2)) fs.mkdirSync(outputDir2, { recursive: true })
     const cacheFile = path.join(outputDir2, '.quiz-countdown-asset.json')
+    const videoPath = path.join(outputDir2, 'quiz_countdown.mp4')
+    const videoUrl = '/output/quiz_countdown.mp4'
 
     // 메모리 캐시
     if (quizCountdownAssetCache) {
-      return res.json({ video_asset_id: quizCountdownAssetCache, cached: 'memory' })
+      if (fs.existsSync(videoPath)) {
+        return res.json({ video_asset_id: quizCountdownAssetCache, url: videoUrl, cached: 'memory' })
+      }
+      quizCountdownAssetCache = null
     }
     // 디스크 캐시
     if (fs.existsSync(cacheFile)) {
       try {
         const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
-        if (cached?.videoAssetId) {
+        if (cached?.videoAssetId && fs.existsSync(videoPath)) {
           quizCountdownAssetCache = cached.videoAssetId
-          return res.json({ video_asset_id: cached.videoAssetId, cached: 'disk' })
+          return res.json({ video_asset_id: cached.videoAssetId, url: cached.url || videoUrl, cached: 'disk' })
         }
       } catch { /* 캐시 파손 시 재생성 */ }
     }
@@ -898,7 +955,6 @@ app.post('/api/heygen/quiz-countdown', async (req, res) => {
     })
 
     // 2) ffmpeg 로 3초 mp4 합성 (프레임당 1초)
-    const videoPath = path.join(outputDir2, 'quiz_countdown.mp4')
     await new Promise((resolve, reject) => {
       execFile(ffmpegPath, [
         '-y',
@@ -936,9 +992,9 @@ app.post('/api/heygen/quiz-countdown', async (req, res) => {
 
     // 4) 캐시 저장 (카운트다운은 항상 동일하므로 영구 캐시)
     quizCountdownAssetCache = videoAssetId
-    fs.writeFileSync(cacheFile, JSON.stringify({ videoAssetId, createdAt: Date.now() }, null, 2), 'utf8')
+    fs.writeFileSync(cacheFile, JSON.stringify({ videoAssetId, url: videoUrl, createdAt: Date.now() }, null, 2), 'utf8')
 
-    res.json({ video_asset_id: videoAssetId, cached: false })
+    res.json({ video_asset_id: videoAssetId, url: videoUrl, cached: false })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

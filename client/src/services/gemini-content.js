@@ -632,6 +632,27 @@ function buildShortsDurationInstruction(options = {}) {
 - scenes[].caption 말 분량도 이 시간에 맞추세요. 짧은 목표 길이에서는 씬당 1문장, 긴 목표 길이에서는 씬 수를 늘리되 반복 문장으로 시간을 채우지 마세요.`
 }
 
+function getOxQuizQuestionCount(targetDurationSeconds) {
+  const target = clampShortsTargetDuration(targetDurationSeconds)
+  if (target <= 70) return 3
+  if (target <= 95) return 4
+  return 5
+}
+
+function buildOxQuizDurationInstruction(options = {}) {
+  if (options.videoConceptId !== 'ox_quiz') return ''
+
+  const target = clampShortsTargetDuration(options.targetDurationSeconds)
+  const questionCount = getOxQuizQuestionCount(target)
+  const avatarLabel = questionCount === 3 ? '첫 3명' : questionCount === 4 ? '첫 4명' : '5명 모두'
+
+  return `
+- ox_quiz 컨셉의 목표 길이는 ${target}초이므로 문제는 정확히 ${questionCount}개만 작성하세요. 문제 1개는 질문 씬 → quiz-countdown 씬 → 정답 씬의 3개 씬입니다.
+- ox_quiz 에서는 ${avatarLabel}의 avatarId 만 사용하세요. 1분 내외 영상에서 문제 3개를 만들면 3명의 아바타만 등장해야 하며, 남은 아바타를 억지로 등장시키지 마세요.
+- ox_quiz 의 sceneNumber 는 1부터 ${questionCount * 3}까지 순서대로 작성하고, 각 문제의 3개 씬은 같은 avatarId 를 사용하세요.
+`
+}
+
 function sanitizeInstagramContent(content, context = {}) {
   if (!content) return content
   const sanitizedCardTopics = Array.isArray(content.cardTopics)
@@ -1483,6 +1504,7 @@ export async function generateShortsScript(summary, rawText, emphasis, options =
 - 없는 사실은 추가하지 마세요.
 - scenes는 3개 이상으로 구성하세요.
 ${buildShortsDurationInstruction(options)}
+${buildOxQuizDurationInstruction(options)}
 - hook, scenes[].caption, scenes[].textOverlay, cta, uploadTitle, uploadDescription에는 markdown bold/emphasis(**, *, __, _)를 절대 사용하지 마세요.
 - 각 씬에는 scenes[].caption 을 작성하세요. **caption은 화면 자막으로 표시되는 동시에 HeyGen TTS 음성으로도 그대로 읽힙니다.** 따라서 자막 가독성을 우선해 숫자·분수·단위·기호는 원래 표기(12.3, 30%, $100, 5:3, 12.21.(월), 오후 3시 30분 등)를 그대로 유지하세요. HeyGen TTS 는 이 원본 표기를 한국어로 알아서 자연스럽게 읽습니다. 한글 발음형으로 풀어 쓰지 마세요(예: "십이 점 삼 퍼센트" 같이 쓰지 말 것).
 - 단 분수(1/2), 영문 약어(A4, 5G, AI 등)는 HeyGen 이 잘못 읽을 수 있어 별도 변환 처리되니, caption 에는 그대로 1/2, A4, 5G 같이 원본 표기를 쓰세요.
