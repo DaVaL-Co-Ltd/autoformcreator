@@ -34,7 +34,7 @@ import {
 } from '../utils/instagramCarousel'
 import { stripMarkdownEmphasis } from '../utils/platformFormatter'
 import NavigationBlockerModal from '../components/NavigationBlockerModal'
-import { getApiErrorMessage, readApiResponse } from '../utils/apiResponse.js'
+import { getHeygenErrorMessage, getServerErrorMessage, readApiResponse } from '../utils/apiResponse.js'
 import { absorbHookIntoFirstScene, appendCtaAsLastScene, buildShortsVideoAgentPrompt, mapShortsSubtitleStyleToBurnStyle } from '../utils/shortsVideoAgent.js'
 import { buildHeygenTextVoice, toSpokenText } from '../utils/shortsTtsText.js'
 import { callGeminiWithFallback, findInlineDataPart, requestGeminiContent } from '../services/gemini-core'
@@ -1992,7 +1992,7 @@ DO NOT:
       })
       const uploadData = await readApiResponse(uploadRes)
       if (!uploadRes.ok) {
-        throw new Error(getApiErrorMessage(uploadData, `아바타 업로드 실패 (${uploadRes.status})`))
+        throw new Error(getHeygenErrorMessage(uploadData, `아바타 업로드 실패 (${uploadRes.status})`))
       }
 
       const imageKey = uploadData.data?.image_key
@@ -2007,7 +2007,7 @@ DO NOT:
       })
       const groupData = await readApiResponse(groupRes)
       if (!groupRes.ok) {
-        throw new Error(getApiErrorMessage(groupData, `아바타 등록 실패 (${groupRes.status})`))
+        throw new Error(getHeygenErrorMessage(groupData, `아바타 등록 실패 (${groupRes.status})`))
       }
 
       const groupId = groupData.data?.group_id
@@ -2090,7 +2090,16 @@ DO NOT:
           if (!u) throw new Error('HeyGen 영상 URL이 비어 있습니다.')
           return u
         }
-        if (st === 'failed') throw new Error('HeyGen 렌더 실패')
+        if (st === 'failed') {
+          const errDetail = d.data?.error
+          const errMsg = getHeygenErrorMessage(
+            errDetail && typeof errDetail === 'object'
+              ? { error: errDetail }
+              : { message: errDetail || d.data?.error_message },
+            '알 수 없는 오류',
+          )
+          throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
+        }
       }
       throw new Error('HeyGen 렌더 타임아웃')
     }
@@ -2125,7 +2134,7 @@ DO NOT:
           body: JSON.stringify({ video_inputs, dimension: { width: 720, height: 1280 } }),
         })
         const d = await readApiResponse(r)
-        if (!r.ok) throw new Error(getApiErrorMessage(d, `아바타 세그먼트 생성 실패 (${r.status})`))
+        if (!r.ok) throw new Error(getHeygenErrorMessage(d, `아바타 세그먼트 생성 실패 (${r.status})`))
         const vid = d.data?.video_id || d.data?.id || d.video_id || d.id
         if (!vid) throw new Error('아바타 세그먼트 video_id 를 받지 못했습니다.')
         segmentUrls.push(await pollVideoUrl(vid))
@@ -2145,7 +2154,7 @@ DO NOT:
           body: JSON.stringify({ prompt, config: { avatar_id: avatarId, voice_id: voiceId } }),
         })
         const d = await readApiResponse(r)
-        if (!r.ok) throw new Error(getApiErrorMessage(d, `인포그래픽 세그먼트 생성 실패 (${r.status})`))
+        if (!r.ok) throw new Error(getHeygenErrorMessage(d, `인포그래픽 세그먼트 생성 실패 (${r.status})`))
         const vid = d.data?.video_id || d.data?.id || d.video_id || d.id
         if (!vid) throw new Error('인포그래픽 세그먼트 video_id 를 받지 못했습니다.')
         segmentUrls.push(await pollVideoUrl(vid))
@@ -2164,7 +2173,7 @@ DO NOT:
         body: JSON.stringify({ videoUrls: segmentUrls }),
       })
       const cd = await readApiResponse(cr)
-      if (!cr.ok || !cd?.jobId) throw new Error(cd?.error || `합치기 요청 실패 (${cr.status})`)
+      if (!cr.ok || !cd?.jobId) throw new Error(getServerErrorMessage(cd, `합치기 요청 실패 (${cr.status})`, cr.status))
       let done = null
       for (let i = 0; i < 120; i++) {
         await delay(5000)
@@ -2172,7 +2181,7 @@ DO NOT:
         const sd = await readApiResponse(sr)
         if (!sr.ok) continue
         if (sd?.status === 'done') { done = sd; break }
-        if (sd?.status === 'failed') throw new Error(sd?.error || '합치기 실패')
+        if (sd?.status === 'failed') throw new Error(getServerErrorMessage(sd, '합치기 실패'))
       }
       if (!done?.url) throw new Error('합치기 시간 초과 또는 결과 URL 없음')
       rawUrl = resolveMediaUrl(done.url)
@@ -2199,7 +2208,7 @@ DO NOT:
       })
       const burnStartData = await readApiResponse(burnStartRes)
       if (!burnStartRes.ok || !burnStartData?.jobId) {
-        throw new Error(burnStartData?.error?.message || burnStartData?.error || `자막 번인 요청 실패 (${burnStartRes.status})`)
+        throw new Error(getServerErrorMessage(burnStartData, `자막 번인 요청 실패 (${burnStartRes.status})`, burnStartRes.status))
       }
       let burnData = null
       for (let bi = 0; bi < 120; bi++) {
@@ -2208,7 +2217,7 @@ DO NOT:
         const stData = await readApiResponse(stRes)
         if (!stRes.ok) continue
         if (stData?.status === 'done') { burnData = stData; break }
-        if (stData?.status === 'failed') throw new Error(stData?.error || '자막 번인 실패')
+        if (stData?.status === 'failed') throw new Error(getServerErrorMessage(stData, '자막 번인 실패'))
       }
       if (!burnData?.url) throw new Error('자막 번인 시간 초과 또는 결과 URL 없음')
       finalUrl = resolveMediaUrl(burnData.url)
@@ -2564,7 +2573,7 @@ DO NOT:
 
       const generateData = await readApiResponse(generateRes)
       if (!generateRes.ok) {
-        throw new Error(getApiErrorMessage(generateData, `HeyGen ${useStandardEndpoint ? (useMultiAvatar ? '멀티 아바타 영상' : '표준 영상') : 'Video Agent'} 요청 실패 (${generateRes.status})`))
+        throw new Error(getHeygenErrorMessage(generateData, `HeyGen ${useStandardEndpoint ? (useMultiAvatar ? '멀티 아바타 영상' : '표준 영상') : 'Video Agent'} 요청 실패 (${generateRes.status})`))
       }
 
       const videoId =
@@ -2626,11 +2635,7 @@ DO NOT:
             })
             const burnStartData = await readApiResponse(burnStartRes)
             if (!burnStartRes.ok || !burnStartData?.jobId) {
-              throw new Error(
-                burnStartData?.error?.message ||
-                burnStartData?.error ||
-                `자막 번인 요청 실패 (${burnStartRes.status})`
-              )
+              throw new Error(getServerErrorMessage(burnStartData, `자막 번인 요청 실패 (${burnStartRes.status})`, burnStartRes.status))
             }
             // jobId 폴링 — 5초 간격, 최대 ~10분.
             let burnData = null
@@ -2641,7 +2646,7 @@ DO NOT:
               if (!stRes.ok) continue
               if (stData?.status === 'done') { burnData = stData; break }
               if (stData?.status === 'failed') {
-                throw new Error(stData?.error || '자막 번인 실패')
+                throw new Error(getServerErrorMessage(stData, '자막 번인 실패'))
               }
             }
             if (!burnData?.url) {
@@ -2667,10 +2672,12 @@ DO NOT:
 
         if (status === 'failed') {
           const errDetail = pollData.data?.error
-          const errMsg =
-            typeof errDetail === 'object'
-              ? (errDetail.message || errDetail.detail || JSON.stringify(errDetail))
-              : (errDetail || pollData.data?.error_message || '알 수 없는 오류')
+          const errMsg = getHeygenErrorMessage(
+            errDetail && typeof errDetail === 'object'
+              ? { error: errDetail }
+              : { message: errDetail || pollData.data?.error_message },
+            '알 수 없는 오류',
+          )
           throw new Error(`HeyGen 렌더 실패: ${errMsg}`)
         }
       }
