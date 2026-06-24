@@ -448,6 +448,7 @@ export default function ExtractionResultPage() {
     if (!id) return
     const params = new URLSearchParams(location.search || '')
     params.set('id', id)
+    const currentState = resolvedState || mergeStateWithDraft(location.state || null) || {}
     navigate(
       {
         pathname: location.pathname,
@@ -457,6 +458,7 @@ export default function ExtractionResultPage() {
       {
         replace: true,
         state: {
+          ...currentState,
           ...(location.state || {}),
           ...nextState,
           extractionId: id,
@@ -464,7 +466,7 @@ export default function ExtractionResultPage() {
         },
       },
     )
-  }, [location.hash, location.pathname, location.search, location.state, navigate])
+  }, [location.hash, location.pathname, location.search, location.state, navigate, resolvedState])
 
   useEffect(() => {
     if (!previewImage) return undefined
@@ -533,9 +535,20 @@ export default function ExtractionResultPage() {
         if (cancelled) return
 
         if (extraction?.data) {
-          setResolvedState({
+          const mergedData = {
+            ...(stateData || {}),
             ...extraction.data,
-            activeChannel: stateData?.activeChannel,
+            blogContent: extraction.data.blogContent ?? stateData?.blogContent,
+            newsletterContent: extraction.data.newsletterContent ?? stateData?.newsletterContent,
+            instagramContent: extraction.data.instagramContent ?? stateData?.instagramContent,
+            shortsScript: extraction.data.shortsScript ?? stateData?.shortsScript,
+            blogImages: extraction.data.blogImages ?? stateData?.blogImages,
+            instagramImages: extraction.data.instagramImages ?? stateData?.instagramImages,
+            shortsVideo: extraction.data.shortsVideo ?? stateData?.shortsVideo,
+          }
+          setResolvedState({
+            ...mergedData,
+            activeChannel: stateData?.activeChannel || mergedData.activeChannel,
             extractionId: lookupId,
             uploadStatus: stateData?.uploadStatus || extraction.uploadStatus || {},
             fromContents: true,
@@ -1385,22 +1398,31 @@ export default function ExtractionResultPage() {
         if (targetExtractionId) setExtractionId(targetExtractionId)
       }
       if (targetExtractionId) {
-        rememberResultExtractionId(targetExtractionId, {
-          activeChannel: state.activeChannel || 'shorts',
-          uploadStatus: state.uploadStatus || {},
-        })
-      }
-      setShortsVideo(uploadedVideo)
-      setResolvedState((prev) => {
-        const baseState = prev || location.state
-        if (!baseState) return prev
-        return {
+        const baseState = resolvedState || state || location.state || {}
+        const nextResolvedState = {
           ...baseState,
-          extractionId: targetExtractionId || baseState.extractionId,
+          extractionId: targetExtractionId,
           shortsVideo: uploadedVideo,
           shortsCreationMode: baseState.shortsCreationMode || 'prompt',
+          activeChannel: baseState.activeChannel || 'shorts',
+          uploadStatus: baseState.uploadStatus || {},
+          fromContents: true,
         }
-      })
+        setShortsVideo(uploadedVideo)
+        setResolvedState(nextResolvedState)
+        rememberResultExtractionId(targetExtractionId, nextResolvedState)
+      } else {
+        setShortsVideo(uploadedVideo)
+        setResolvedState((prev) => {
+          const baseState = prev || location.state
+          if (!baseState) return prev
+          return {
+            ...baseState,
+            shortsVideo: uploadedVideo,
+            shortsCreationMode: baseState.shortsCreationMode || 'prompt',
+          }
+        })
+      }
     } catch (err) {
       console.error('수동 숏폼 영상 저장 실패:', err)
       window.alert(`영상 저장에 실패했습니다: ${err.message}`)
