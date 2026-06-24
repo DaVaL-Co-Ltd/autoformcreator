@@ -3580,7 +3580,17 @@ ${parsedText}
     { key: 'blog', stepId: 3, label: '네이버 블로그', icon: FileText, color: 'text-emerald-500 bg-emerald-500/10', data: blogContent, detail: blogContent ? `${blogContent.sections?.length || 0}개 섹션` : null },
     { key: 'newsletter', stepId: 4, label: '뉴스레터', icon: Mail, color: 'text-blue-500 bg-blue-500/10', data: newsletterContent, detail: newsletterContent ? `${newsletterContent.keyPoints?.length || 0}개 포인트` : null },
     { key: 'instagram', stepId: 5, label: '인스타그램', icon: ImageIcon, color: 'text-pink-400 bg-pink-400/10', data: instagramContent, detail: instagramContent ? '본문 작성' : null },
-    { key: 'shorts', stepId: 6, label: '숏폼', errorLabel: '숏폼 대본', icon: Film, color: 'text-red-500 bg-red-500/10', data: shortsScript, detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null },
+    {
+      key: 'shorts',
+      stepId: 6,
+      label: '숏폼',
+      errorLabel: '숏폼 대본',
+      icon: Film,
+      color: 'text-red-500 bg-red-500/10',
+      data: shortsScript,
+      completionLabel: shortsVideo ? '영상 생성 완료' : '대본 생성 완료',
+      detail: shortsScript ? `${shortsScript.scenes?.length || 0}씬 · ${shortsScript.duration || 0}초` : null,
+    },
   ].filter(row => selectedChannels[row.key])
 
   const displayStepNum = (id) => {
@@ -4220,7 +4230,7 @@ ${parsedText}
                 <div className="flex items-center gap-2">
                   {row.data && (
                     <span className="text-xs font-medium flex items-center gap-1 text-success">
-                      <CheckCircle size={14} /> 완료 {row.detail ? `· ${row.detail}` : ''}
+                      <CheckCircle size={14} /> {row.completionLabel || '완료'} {row.detail ? `· ${row.detail}` : ''}
                     </span>
                   )}
                   {(row.key === 'blog' || row.key === 'instagram') && generating && contentGenerationStage === 'image' && (
@@ -4886,6 +4896,21 @@ ${parsedText}
                               콘텐츠 생성 버튼을 누르면 숏폼 대본이 먼저 생성됩니다.
                             </div>
                           )}
+                          {isShortsVideoMode && shortsScript && !shortsVideo && (
+                            <button
+                              onClick={() => setCreditConfirm(true)}
+                              disabled={!isShortsVideoReady}
+                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
+                                isShortsVideoReady
+                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
+                              }`}
+                            >
+                              {loading.shorts
+                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
+                                : <><Film size={16} /> 숏폼 영상 생성</>}
+                            </button>
+                          )}
                         </div>
 
                         {isShortsPromptMode && shortsScript?.heygenPrompt && (
@@ -4985,21 +5010,7 @@ ${parsedText}
                                 </div>
                               )}
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => setCreditConfirm(true)}
-                              disabled={!isShortsVideoReady}
-                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                                isShortsVideoReady
-                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
-                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
-                              }`}
-                            >
-                              {loading.shorts
-                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
-                                : <><Film size={16} /> 숏폼 영상 생성</>}
-                            </button>
-                          )}
+                          ) : null}
                           {activeSlotConcept ? (
                             !shortsVideo && !loading.shorts && (
                               isShortsAvatarVoiceReady ? (

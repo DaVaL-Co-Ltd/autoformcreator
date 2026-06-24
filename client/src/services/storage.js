@@ -130,6 +130,46 @@ export async function uploadShortsVideoIfLocal(shortsVideo) {
   }
 }
 
+export async function uploadShortsVideoFile(file, metadata = {}) {
+  if (!file) return null
+
+  if (!supabase) {
+    throw new Error('Supabase 클라이언트가 초기화되지 않아 영상을 저장할 수 없습니다.')
+  }
+
+  const rawName = String(file.name || 'manual_shorts_video').trim()
+  const nameParts = rawName.split('.')
+  const extFromName = nameParts.length > 1 ? nameParts.pop() : ''
+  const extFromType = file.type?.split('/')[1] || ''
+  const ext = (extFromName || extFromType || 'mp4')
+    .replace('quicktime', 'mov')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase() || 'mp4'
+  const objectPath = `shorts_manual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
+
+  const { error: uploadError } = await supabase.storage.from(BUCKETS.VIDEOS).upload(objectPath, file, {
+    contentType: file.type || 'video/mp4',
+    upsert: false,
+  })
+  if (uploadError) throw new Error(uploadError.message)
+
+  const { data: pub } = supabase.storage.from(BUCKETS.VIDEOS).getPublicUrl(objectPath)
+  const publicUrl = pub?.publicUrl
+  if (!publicUrl) throw new Error('Supabase Storage public URL을 가져오지 못했습니다.')
+
+  return {
+    ...metadata,
+    url: publicUrl,
+    videoUrl: publicUrl,
+    combinedVideoUrl: publicUrl,
+    source: metadata.source || 'manual_heygen_upload',
+    fileName: rawName,
+    fileSize: file.size || null,
+    contentType: file.type || 'video/mp4',
+    uploadedAt: new Date().toISOString(),
+  }
+}
+
 export async function saveExtraction(data) {
   const payload = { ...(data || {}) }
   if (payload.shortsVideo) {

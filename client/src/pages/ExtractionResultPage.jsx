@@ -12,7 +12,7 @@ import { domToPng } from 'modern-screenshot'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus, updateExtractionContent } from '../services/storage'
+import { saveExtraction, getExtractionById, updateExtractionMedia, updateUploadStatus, updateExtractionContent, uploadShortsVideoFile } from '../services/storage'
 import { create as createScheduledUpload, getAll as getAllScheduledUploads, remove as removeScheduledUpload } from '../utils/scheduledUploads'
 import { formatInstagramReelsRequest, formatInstagramRequest, formatYouTubeRequest, stripMarkdownEmphasis } from '../utils/platformFormatter'
 import { buildInstagramCaption, buildInstagramScheduledContent, buildInstagramScheduledUploadContent } from '../utils/scheduledPayloads'
@@ -283,6 +283,30 @@ function getDistinctRawShortsUrl(videoData = {}) {
   return rawUrl
 }
 
+function getVideoDurationSeconds(file) {
+  if (!file || typeof document === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    const objectUrl = URL.createObjectURL(file)
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl)
+      video.removeAttribute('src')
+      video.load()
+    }
+    video.preload = 'metadata'
+    video.onloadedmetadata = () => {
+      const duration = Number.isFinite(video.duration) ? Math.round(video.duration) : null
+      cleanup()
+      resolve(duration)
+    }
+    video.onerror = () => {
+      cleanup()
+      resolve(null)
+    }
+    video.src = objectUrl
+  })
+}
+
 // 캡처 대상 element 안의 <img> 들이 모두 디코딩 완료되도록 대기.
 // 외부 이미지가 비동기 로딩 중이면 modern-screenshot 이 빈 자리로 그려 카드가 깨진다.
 async function waitForInnerImagesReady(el) {
@@ -393,6 +417,8 @@ export default function ExtractionResultPage() {
   // 숏폼 업로드 대상 기본값 (플랫폼별 패널에서 명시적으로 targets 를 넘기지 않을 때의 폴백)
   const [shortsUploadTargets] = useState({ instagram: true, youtube: true })
   const [shortsBusy, setShortsBusy] = useState({ instagram: false, youtube: false })
+  const [manualShortsVideoUploading, setManualShortsVideoUploading] = useState(false)
+  const manualShortsVideoInputRef = useRef(null)
   const [accountUploadTarget, setAccountUploadTarget] = useState(null)
   const [previewImage, setPreviewImage] = useState(null) // { url, alt } | null
 
@@ -1220,7 +1246,7 @@ export default function ExtractionResultPage() {
   const [shortsNarration, setShortsNarration] = useState(initialShortsNarration || null)
   const shortsPromptMode = initialShortsCreationMode
     ? initialShortsCreationMode === 'prompt'
-    : (!!shortsScript?.heygenPrompt && !initialShortsVideo)
+    : Boolean(shortsScript?.heygenPrompt)
   // 카드뉴스 시각화는 카테고리 + 실제 이미지 생성 결과가 모두 있을 때만 적용한다.
   // 사용자가 이미지 생성 옵션을 끄고 본문만 만든 경우 일반 섹션 렌더로 폴백된다.
   const hasGeneratedBlogImages = Array.isArray(blogImages)
@@ -1239,6 +1265,49 @@ export default function ExtractionResultPage() {
     setShortsVideo(initialShortsVideo || null)
     setShortsNarration(initialShortsNarration || null)
   }, [initialBlogImages, initialInstagramImages, initialShortsVideo, initialShortsNarration])
+
+  const handleManualShortsVideoUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (event.target) event.target.value = ''
+    if (!file) return
+    if (!file.type?.startsWith('video/')) {
+      window.alert('영상 파일만 첨부할 수 있습니다.')
+      return
+    }
+    if (!extractionId) {
+      window.alert('저장된 콘텐츠 ID가 없어 영상을 DB에 저장할 수 없습니다. 콘텐츠를 다시 생성한 뒤 시도해주세요.')
+      return
+    }
+
+    setManualShortsVideoUploading(true)
+    try {
+      const duration = await getVideoDurationSeconds(file)
+      const uploadedVideo = await uploadShortsVideoFile(file, {
+        duration,
+        mode: 'manual_heygen',
+        promptMode: true,
+        prompt: shortsScript?.heygenPrompt || '',
+      })
+      if (!uploadedVideo) throw new Error('영상 업로드 결과가 비어 있습니다.')
+
+      await updateExtractionMedia(extractionId, { shortsVideo: uploadedVideo })
+      setShortsVideo(uploadedVideo)
+      setResolvedState((prev) => {
+        const baseState = prev || location.state
+        if (!baseState) return prev
+        return {
+          ...baseState,
+          shortsVideo: uploadedVideo,
+          shortsCreationMode: baseState.shortsCreationMode || 'prompt',
+        }
+      })
+    } catch (err) {
+      console.error('수동 숏폼 영상 저장 실패:', err)
+      window.alert(`영상 저장에 실패했습니다: ${err.message}`)
+    } finally {
+      setManualShortsVideoUploading(false)
+    }
+  }
 
   // 블로그 이미지 HTML -> PNG 변환
   const convertBlogImagesToPng = useCallback(async () => {
@@ -2469,6 +2538,7 @@ export default function ExtractionResultPage() {
     const shortsVideoUrl = shortsVideo?.combinedVideoUrl || shortsVideo?.url || shortsVideo?.videoUrl
     const rawShortsVideoUrl = getDistinctRawShortsUrl(shortsVideo)
     const heygenPrompt = shortsScript?.heygenPrompt || ''
+    const showShortsUploadPanel = !shortsPromptMode || Boolean(shortsVideoUrl)
     const shortsTitle = shortsScript?.uploadTitle || shortsScript?.title || ''
     const shortsHashtags = ensureArray(shortsScript?.hashtags)
     const sanitizedShortsDescription = stripResultCtaText(
@@ -2501,7 +2571,7 @@ export default function ExtractionResultPage() {
 
     return (
       <div className="max-w-5xl mx-auto space-y-6">
-        {shortsPromptMode ? (
+        {shortsPromptMode && (
           <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
             <div>
               <h4 className="text-sm font-semibold text-text">HeyGen 수동 제작</h4>
@@ -2526,8 +2596,54 @@ export default function ExtractionResultPage() {
                 </pre>
               </div>
             )}
+            <div className="rounded-xl border border-border bg-surface-light/50 p-4 space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-text">HeyGen 완성 영상 첨부</p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    HeyGen 홈페이지에서 만든 영상을 첨부하면 DB에 저장되고, 일반 숏폼 결과처럼 업로드할 수 있습니다.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    ref={manualShortsVideoInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={handleManualShortsVideoUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => manualShortsVideoInputRef.current?.click()}
+                    disabled={manualShortsVideoUploading}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-60"
+                  >
+                    {manualShortsVideoUploading ? (
+                      <><Loader2 size={14} className="animate-spin" /> 저장 중...</>
+                    ) : shortsVideoUrl ? (
+                      <><RefreshCw size={14} /> 영상 교체</>
+                    ) : (
+                      <><Upload size={14} /> 영상 첨부</>
+                    )}
+                  </button>
+                </div>
+              </div>
+              {shortsVideoUrl ? (
+                <div className="flex items-center gap-2 rounded-lg border border-success/20 bg-success/5 px-3 py-2 text-xs text-success">
+                  <CheckCircle size={14} />
+                  <span>첨부 영상 저장 완료. 아래에서 미리보기와 플랫폼 업로드를 진행할 수 있습니다.</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning">
+                  <AlertCircle size={14} />
+                  <span>아직 첨부된 영상이 없습니다. 영상을 첨부해야 유튜브 쇼츠/인스타그램 릴스 업로드가 가능합니다.</span>
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
+        )}
+
+        {showShortsUploadPanel && (
         <div className="bg-surface rounded-2xl border border-border p-5 space-y-3">
           <div>
             <h4 className="text-sm font-semibold text-text">플랫폼별 업로드</h4>
@@ -2641,7 +2757,7 @@ export default function ExtractionResultPage() {
             >
               <Copy size={14} /> 상세정보 복사
             </button>
-            {!shortsPromptMode && shortsVideoUrl ? (
+            {shortsVideoUrl ? (
               <button
                 type="button"
                 onClick={() => downloadShortsVideo(shortsVideoUrl)}
@@ -2651,7 +2767,7 @@ export default function ExtractionResultPage() {
                 {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
                 영상 저장
               </button>
-            ) : !shortsPromptMode ? (
+            ) : (
               <button
                 type="button"
                 disabled
@@ -2659,13 +2775,13 @@ export default function ExtractionResultPage() {
               >
                 <Download size={14} /> 영상 저장
               </button>
-            ) : null}
+            )}
         </div>
 
         <div className="flex flex-col gap-6 lg:flex-row lg:flex-wrap lg:items-start">
           {/* 자막 포함 영상만 노출. 자막 번인이 성공하면 combinedVideoUrl 이 자막본,
               실패하면 raw 로 fallback 돼 있으므로 단일 패널로 항상 올바른 영상이 뜬다. */}
-          {!shortsPromptMode && renderVideoPanel(shortsVideo, rawShortsVideoUrl ? '자막 포함 최종본' : '영상')}
+          {shortsVideoUrl && renderVideoPanel(shortsVideo, rawShortsVideoUrl ? '자막 포함 최종본' : '영상')}
 
           <div className="space-y-3 min-w-0 flex-1">
             <div className="bg-surface rounded-2xl border border-border p-5 space-y-4">
