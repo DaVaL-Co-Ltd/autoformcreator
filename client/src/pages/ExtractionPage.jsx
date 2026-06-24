@@ -609,7 +609,25 @@ function ImagePreviewModal({ previewImage, onClose }) {
   )
 }
 
-const delay = (ms) => new Promise(r => setTimeout(r, ms))
+function createAbortError() {
+  return new DOMException('작업이 중단되었습니다.', 'AbortError')
+}
+
+function throwIfAborted(signal) {
+  if (signal?.aborted) throw createAbortError()
+}
+
+const delay = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(createAbortError())
+    return
+  }
+  const timer = setTimeout(resolve, ms)
+  signal?.addEventListener('abort', () => {
+    clearTimeout(timer)
+    reject(createAbortError())
+  }, { once: true })
+})
 
 // 에러 경고 팝업
 function ErrorAlert({ message, onClose }) {
@@ -1515,6 +1533,8 @@ export default function ExtractionPage() {
   const abortContentGeneration = () => {
     contentGenerationAbortRef.current?.abort()
     resetContentGenerationFlowState()
+    setStepLoading('shorts', false)
+    setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
   }
   const shortsVoicePresetValue = SHORTS_VOICE_PRESET_OPTIONS.find(option => (
     option.narrationTone === promptSettings.shorts.narrationTone &&
@@ -2027,7 +2047,7 @@ export default function ExtractionPage() {
       if (channelKey === 'shorts') {
         if (isShortsVideoMode) {
           setContentGenerationStage('video')
-          await runShortsGeneration({ scriptOverride: result })
+          await runShortsGeneration({ scriptOverride: result, signal: abortController.signal })
         } else {
           setShortsScript(attachManualHeygenPrompt(result))
           setShortsVideo(null)
@@ -2434,7 +2454,8 @@ DO NOT:
     return true
   }
 
-  const createHeygenV3AvatarVideo = async ({ avatarId, voiceId, text, engine, backgroundColor, progressLabel }) => {
+  const createHeygenV3AvatarVideo = async ({ avatarId, voiceId, text, engine, backgroundColor, progressLabel, signal }) => {
+    throwIfAborted(signal)
     const normalizedEngine = normalizeShortsAvatarEngine(engine)
     if (normalizedEngine === 'avatar_iii') {
       throw new Error('Avatar III는 기존 영상 생성 경로를 사용합니다.')
@@ -2465,6 +2486,7 @@ DO NOT:
 
     const createRes = await apiFetch('/api/heygen/v3/videos', {
       method: 'POST',
+      signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
@@ -2481,8 +2503,8 @@ DO NOT:
     if (!videoId) throw new Error('HeyGen video_id를 받지 못했습니다.')
 
     for (let i = 0; i < 240; i++) {
-      await delay(5000)
-      const pollRes = await apiFetch(`/api/heygen/v3/videos/${videoId}`)
+      await delay(5000, signal)
+      const pollRes = await apiFetch(`/api/heygen/v3/videos/${videoId}`, { signal })
       const pollData = await readApiResponse(pollRes)
       if (!pollRes.ok) continue
 
@@ -2511,7 +2533,8 @@ DO NOT:
   // 인포그래픽 씬은 Video Agent(HeyGen 차트 연출)로 따로 렌더해 씬 순서대로 합친다.
   // infographic-full 이지만 보여줄 데이터(숫자)가 없는 씬은 아바타 씬으로 폴백한다.
   // 자막은 아바타 씬에만 (server 가 infographic-full 씬은 skip).
-  const runHybridSegmentedShorts = async ({ targetScript, avatarId, avatarKind = 'talking_photo', voiceId, mergeAvatarSegments = false, avatarEngine = 'avatar_iii' }) => {
+  const runHybridSegmentedShorts = async ({ targetScript, avatarId, avatarKind = 'talking_photo', voiceId, mergeAvatarSegments = false, avatarEngine = 'avatar_iii', signal }) => {
+    throwIfAborted(signal)
     const scenes = Array.isArray(targetScript?.scenes) ? targetScript.scenes : []
     if (scenes.length === 0) throw new Error('쇼츠 대본에 씬이 없습니다.')
     const sceneText = (s) => String(s?.caption || s?.narration || '')
@@ -2529,8 +2552,8 @@ DO NOT:
 
     const pollVideoUrl = async (videoId) => {
       for (let i = 0; i < 240; i++) {
-        await delay(5000)
-        const r = await apiFetch(`/api/heygen/video/status/${videoId}`)
+        await delay(5000, signal)
+        const r = await apiFetch(`/api/heygen/video/status/${videoId}`, { signal })
         const d = await readApiResponse(r)
         if (!r.ok) continue
         const st = d.data?.status
@@ -2555,6 +2578,7 @@ DO NOT:
 
     const segmentUrls = []
     for (let si = 0; si < segments.length; si++) {
+      throwIfAborted(signal)
       const seg = segments[si]
       setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `세그먼트 ${si + 1}/${segments.length} 생성 중 (${seg.type === 'info' ? '인포그래픽' : '아바타'})...` }))
       if (seg.type === 'avatar') {
@@ -2572,6 +2596,7 @@ DO NOT:
               text: avatarSegmentText,
               engine: normalizedAvatarEngine,
               progressLabel: `아바타 세그먼트 ${si + 1}/${segments.length} 생성 중 (${getShortsAvatarEngineLabel(normalizedAvatarEngine)})...`,
+              signal,
             })
             segmentUrls.push(clip.url)
           } else {
@@ -2582,6 +2607,7 @@ DO NOT:
                 text: sceneText(seg.scenes[sceneIndex]).trim(),
                 engine: normalizedAvatarEngine,
                 progressLabel: `아바타 세그먼트 ${si + 1}/${segments.length}-${sceneIndex + 1} 생성 중 (${getShortsAvatarEngineLabel(normalizedAvatarEngine)})...`,
+                signal,
               })
               segmentUrls.push(clip.url)
             }
@@ -2604,6 +2630,7 @@ DO NOT:
         if (video_inputs.length === 0) continue
         const r = await apiFetch('/api/heygen/video/generate', {
           method: 'POST',
+          signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ video_inputs, dimension: { width: 720, height: 1280 } }),
         })
@@ -2624,6 +2651,7 @@ DO NOT:
         })
         const r = await apiFetch('/api/heygen/video-agent/generate', {
           method: 'POST',
+          signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, config: { avatar_id: avatarId, voice_id: voiceId } }),
         })
@@ -2643,6 +2671,7 @@ DO NOT:
       setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '세그먼트 합치는 중...' }))
       const cr = await apiFetch('/api/video/concat', {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoUrls: segmentUrls }),
       })
@@ -2650,8 +2679,8 @@ DO NOT:
       if (!cr.ok || !cd?.jobId) throw new Error(getServerErrorMessage(cd, `합치기 요청 실패 (${cr.status})`, cr.status))
       let done = null
       for (let i = 0; i < 120; i++) {
-        await delay(5000)
-        const sr = await apiFetch(`/api/video/concat/status/${cd.jobId}`)
+        await delay(5000, signal)
+        const sr = await apiFetch(`/api/video/concat/status/${cd.jobId}`, { signal })
         const sd = await readApiResponse(sr)
         if (!sr.ok) continue
         if (sd?.status === 'done') { done = sd; break }
@@ -2670,6 +2699,7 @@ DO NOT:
     try {
       const burnStartRes = await apiFetch('/api/subtitle/burn', {
         method: 'POST',
+        signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoUrl: rawUrl,
@@ -2686,8 +2716,8 @@ DO NOT:
       }
       let burnData = null
       for (let bi = 0; bi < 120; bi++) {
-        await delay(5000)
-        const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`)
+        await delay(5000, signal)
+        const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`, { signal })
         const stData = await readApiResponse(stRes)
         if (!stRes.ok) continue
         if (stData?.status === 'done') { burnData = stData; break }
@@ -2705,6 +2735,13 @@ DO NOT:
   }
 
   const runShortsGeneration = async (options = {}) => {
+    const ownsAbortController = !options.signal
+    const abortController = ownsAbortController ? new AbortController() : null
+    const signal = options.signal || abortController.signal
+    if (ownsAbortController) {
+      contentGenerationAbortRef.current = abortController
+    }
+    throwIfAborted(signal)
     // 오프닝 훅을 첫 씬에 미리 흡수시키고, 마무리 cta 는 진짜 마지막 씬으로 append.
     // 두 단계 모두 영상 생성용 사본에서만 수행 — 원본 shortsScript(편집/저장 데이터) 는 그대로.
     // 단 dropClosingCtaScene 컨셉(동완쌤 데이터 브리핑)은 CTA 아바타 씬을 추가하지 않는다.
@@ -2744,15 +2781,18 @@ DO NOT:
     setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': true }))
 
     try {
+      throwIfAborted(signal)
       const selectedAvatarId = slotConcept
         ? (findPresetById(conceptAvatarSlots[0]?.presetId)?.avatarId || null)
         : (heygenAvatarId || await uploadAvatarToHeyGen())
+      throwIfAborted(signal)
       const selectedAvatarKind = slotConcept ? 'talking_photo' : heygenAvatarKind
       const avatarReady = slotConcept ? true : (heygenReady || await waitForHeygenAvatarReady(selectedAvatarId, {
         attempts: 24,
         intervalMs: 5000,
         progressLabel: '아바타 준비 확인 중...',
       }))
+      throwIfAborted(signal)
 
       if (!avatarReady) {
         throw new Error('HeyGen 아바타가 아직 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')
@@ -2779,6 +2819,7 @@ DO NOT:
           voiceId: selectedVoiceId,
           mergeAvatarSegments: true,
           avatarEngine: avatarEngineForHybrid,
+          signal,
         })
         if (!finalVideo) throw new Error('무컨셉 하이브리드 영상 생성 실패')
         const savedVideo = (await uploadShortsVideoIfLocal(finalVideo)) || finalVideo
@@ -2799,6 +2840,7 @@ DO NOT:
           avatarKind: resolvedAvatarKind,
           voiceId: selectedVoiceId || fbPreset?.defaultVoiceId,
           avatarEngine: avatarEngineForHybrid,
+          signal,
         })
         if (!finalVideo) throw new Error('하이브리드 영상 생성 실패')
         // 생성 직후(로컬 파일 존재 시) Supabase 로 영구화 — 서버 재시작/슬립으로 /output 이 사라져도 저장 가능.
@@ -2922,6 +2964,7 @@ DO NOT:
           try {
             const cdRes = await apiFetch('/api/heygen/quiz-countdown', {
               method: 'POST',
+              signal,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({}),
             })
@@ -2985,6 +3028,7 @@ DO NOT:
               engine: selectedAvatarEngine,
               backgroundColor: selectedConcept?.backgroundColor,
               progressLabel: `${getShortsAvatarEngineLabel(selectedAvatarEngine)} 세그먼트 ${idx + 1}/${scenesForStandard.length} 생성 중...`,
+              signal,
             })
             segmentUrls.push(clip.url)
           }
@@ -2999,6 +3043,7 @@ DO NOT:
             setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': '세그먼트 합치는 중...' }))
             const concatRes = await apiFetch('/api/video/concat', {
               method: 'POST',
+              signal,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ videoUrls: segmentUrls }),
             })
@@ -3009,8 +3054,8 @@ DO NOT:
 
             let done = null
             for (let i = 0; i < 120; i++) {
-              await delay(5000)
-              const statusRes = await apiFetch(`/api/video/concat/status/${concatData.jobId}`)
+              await delay(5000, signal)
+              const statusRes = await apiFetch(`/api/video/concat/status/${concatData.jobId}`, { signal })
               const statusData = await readApiResponse(statusRes)
               if (!statusRes.ok) continue
               if (statusData?.status === 'done') { done = statusData; break }
@@ -3062,6 +3107,7 @@ DO NOT:
             setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': `HeyGen ${getShortsAvatarEngineLabel(selectedAvatarEngine)} 영상 생성 요청 중...` }))
             generateRes = await apiFetch('/api/heygen/v3/videos', {
               method: 'POST',
+              signal,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(v3Body),
             })
@@ -3138,6 +3184,7 @@ DO NOT:
 
           generateRes = await apiFetch('/api/heygen/video/generate', {
             method: 'POST',
+            signal,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               video_inputs: filteredInputs,
@@ -3166,6 +3213,7 @@ DO NOT:
 
         generateRes = await apiFetch('/api/heygen/video-agent/generate', {
           method: 'POST',
+          signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: generatedVideoPrompt,
@@ -3198,14 +3246,14 @@ DO NOT:
       let finalVideo = null
       for (let i = 0; i < 240; i++) {
         if (!preRenderedRawUrl) {
-          await delay(5000)
+          await delay(5000, signal)
         }
 
         let pollData
         if (preRenderedRawUrl) {
           pollData = { data: { status: 'completed', video_url: preRenderedRawUrl } }
         } else {
-          const pollRes = await apiFetch(useV3VideoStatus ? `/api/heygen/v3/videos/${videoId}` : `/api/heygen/video/status/${videoId}`)
+          const pollRes = await apiFetch(useV3VideoStatus ? `/api/heygen/v3/videos/${videoId}` : `/api/heygen/video/status/${videoId}`, { signal })
           pollData = await readApiResponse(pollRes)
           if (!pollRes.ok) continue
         }
@@ -3240,6 +3288,7 @@ DO NOT:
             // (동기 요청이 약한 Render 인스턴스를 타임아웃시켜 502 가 나던 문제 해결.)
             const burnStartRes = await apiFetch('/api/subtitle/burn', {
               method: 'POST',
+              signal,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 videoUrl: rawUrl,
@@ -3255,8 +3304,8 @@ DO NOT:
             // jobId 폴링 — 5초 간격, 최대 ~10분.
             let burnData = null
             for (let bi = 0; bi < 120; bi++) {
-              await delay(5000)
-              const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`)
+              await delay(5000, signal)
+              const stRes = await apiFetch(`/api/subtitle/burn/status/${burnStartData.jobId}`, { signal })
               const stData = await readApiResponse(stRes)
               if (!stRes.ok) continue
               if (stData?.status === 'done') { burnData = stData; break }
@@ -3306,8 +3355,14 @@ DO NOT:
       setShortsVideo(savedVideo)
       await persistShortsVideo(savedVideo)
     } catch (err) {
-      addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠 영상', message: err.message || '쇼츠 생성 실패' }])
-      showErrorAlert('쇼츠 생성', err.message)
+      if (!isContentGenerationCancelledError(err)) {
+        addStepErrors('shorts', [{ service: 'heygen', channel: '쇼츠 영상', message: err.message || '쇼츠 생성 실패' }])
+        showErrorAlert('쇼츠 생성', err.message)
+      }
+    } finally {
+      if (ownsAbortController && contentGenerationAbortRef.current === abortController) {
+        contentGenerationAbortRef.current = null
+      }
     }
 
     setMediaItemLoading((prev) => ({ ...prev, '쇼츠 영상': false }))
@@ -4581,11 +4636,11 @@ ${parsedText}
           <button
             onClick={runContentGeneration}
             disabled={loading.content || loading.analysis || loading.summary || selectedContentChannels().length === 0}
-            className="px-4 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-all shrink-0 bg-primary text-white hover:bg-primary-dark disabled:opacity-50"
+            className="inline-flex min-w-[11.5rem] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-dark disabled:opacity-50"
           >
             {loading.content
-              ? <><Loader2 size={14} className="animate-spin" /> 생성 중...</>
-              : <><Sparkles size={14} /> 선택 채널 전체 생성</>}
+              ? <><Loader2 size={14} className="shrink-0 animate-spin" /><span>{contentGenerationButtonLabel}</span></>
+              : <><Sparkles size={14} className="shrink-0" /><span>선택 채널 전체 생성</span></>}
           </button>
         </div>
       )}
@@ -5532,19 +5587,30 @@ ${parsedText}
                             {shortsVideo && <CheckCircle size={14} className="text-success" />}
                           </div>
                           {isShortsVideoMode && shortsScript && !shortsVideo && (
-                            <button
-                              onClick={() => setCreditConfirm(true)}
-                              disabled={!isShortsVideoReady}
-                              className={`w-full px-4 py-3 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
-                                isShortsVideoReady
-                                  ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
-                                  : 'bg-primary text-white opacity-50 cursor-not-allowed'
-                              }`}
-                            >
-                              {loading.shorts
-                                ? <><Loader2 size={16} className="animate-spin" /> HeyGen 영상 생성 중...</>
-                                : <><Film size={16} /> 숏폼 영상 생성</>}
-                            </button>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                onClick={() => setCreditConfirm(true)}
+                                disabled={!isShortsVideoReady}
+                                className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition-all ${
+                                  isShortsVideoReady
+                                    ? 'bg-primary text-white hover:bg-primary-dark hover:shadow-lg hover:shadow-primary/25'
+                                    : 'bg-primary text-white opacity-50 cursor-not-allowed'
+                                }`}
+                              >
+                                {loading.shorts
+                                  ? <><Loader2 size={16} className="shrink-0 animate-spin" /><span>HeyGen 영상 생성 중...</span></>
+                                  : <><Film size={16} className="shrink-0" /><span>숏폼 영상 생성</span></>}
+                              </button>
+                              {loading.shorts && (
+                                <button
+                                  type="button"
+                                  onClick={abortContentGeneration}
+                                  className="shrink-0 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-sm font-semibold text-danger transition-all hover:bg-danger/10"
+                                >
+                                  작업 중단
+                                </button>
+                              )}
+                            </div>
                           )}
                           {shortsVideo ? (
                             <div className="space-y-3">
