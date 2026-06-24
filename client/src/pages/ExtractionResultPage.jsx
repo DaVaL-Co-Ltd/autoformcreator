@@ -1184,7 +1184,9 @@ export default function ExtractionResultPage() {
       const thumbnailUrl = getContentImageUrl(thumbnailImage)
       const sectionImages = ensureArray(blogImages).filter((image) => !image?.isThumbnail)
       const sections = ensureArray(blogContent.sections)
-      const intro = String(blogContent.introduction || '').trim()
+      const intro = (usesAutomaticBlogQuote || isLectureEventBlog)
+        ? String(blogContent.introduction || '').trim()
+        : ''
       const footerText = blogFooterEnabled
         ? appendBlogFooterText('', blogFooterConfig).trim()
         : ''
@@ -1220,7 +1222,7 @@ export default function ExtractionResultPage() {
         body: `
           <h1>${escapeHtml(blogContent.title || '블로그 콘텐츠')}</h1>
           ${thumbnailUrl ? `<img src="${escapeHtml(thumbnailUrl)}" alt="${escapeHtml(blogContent.title || '블로그 썸네일')}" />` : ''}
-          ${intro ? `<p>${nlToBr(intro)}</p>` : ''}
+          ${intro ? `<p>${nlToBr(composeBlogSectionBody(intro, { prose: usesAutomaticBlogQuote }))}</p>` : ''}
           ${sectionHtml}
           ${tags.length > 0 ? `<p class="tags">${escapeHtml(buildBlogTagText(tags))}</p>` : ''}
           ${footerText ? `<div class="caption">${nlToBr(footerText)}</div>` : ''}
