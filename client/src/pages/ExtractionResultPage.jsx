@@ -399,9 +399,13 @@ const menuItems = [
 export default function ExtractionResultPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const queryExtractionId = useMemo(() => {
+    const params = new URLSearchParams(location.search || '')
+    return String(params.get('id') || '').trim()
+  }, [location.search])
   const [resolvedState, setResolvedState] = useState(() => mergeStateWithDraft(location.state || null))
   const [isPageLoading, setIsPageLoading] = useState(
-    Boolean(location.state?.fromContents && location.state?.extractionId)
+    Boolean(queryExtractionId || (location.state?.fromContents && location.state?.extractionId))
   )
   const state = useMemo(
     () => resolvedState || mergeStateWithDraft(location.state || null) || {},
@@ -439,6 +443,28 @@ export default function ExtractionResultPage() {
   const manualShortsVideoInputRef = useRef(null)
   const [accountUploadTarget, setAccountUploadTarget] = useState(null)
   const [previewImage, setPreviewImage] = useState(null) // { url, alt } | null
+
+  const rememberResultExtractionId = useCallback((id, nextState = {}) => {
+    if (!id) return
+    const params = new URLSearchParams(location.search || '')
+    params.set('id', id)
+    navigate(
+      {
+        pathname: location.pathname,
+        search: `?${params.toString()}`,
+        hash: location.hash,
+      },
+      {
+        replace: true,
+        state: {
+          ...(location.state || {}),
+          ...nextState,
+          extractionId: id,
+          fromContents: true,
+        },
+      },
+    )
+  }, [location.hash, location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     if (!previewImage) return undefined
@@ -484,15 +510,16 @@ export default function ExtractionResultPage() {
 
   useEffect(() => {
     const stateData = mergeStateWithDraft(location.state || null)
+    const lookupId = stateData?.extractionId || queryExtractionId
     let cancelled = false
 
-    if (!stateData) {
+    if (!stateData && !lookupId) {
       setResolvedState(null)
       setIsPageLoading(false)
       return () => { cancelled = true }
     }
 
-    if (!stateData.fromContents || !stateData.extractionId) {
+    if (!lookupId || (!stateData?.fromContents && !queryExtractionId)) {
       setResolvedState(stateData)
       setIsPageLoading(false)
       return () => { cancelled = true }
@@ -502,15 +529,15 @@ export default function ExtractionResultPage() {
 
     ;(async () => {
       try {
-        const extraction = await getExtractionById(stateData.extractionId)
+        const extraction = await getExtractionById(lookupId)
         if (cancelled) return
 
         if (extraction?.data) {
           setResolvedState({
             ...extraction.data,
-            activeChannel: stateData.activeChannel,
-            extractionId: stateData.extractionId,
-            uploadStatus: stateData.uploadStatus || extraction.uploadStatus || {},
+            activeChannel: stateData?.activeChannel,
+            extractionId: lookupId,
+            uploadStatus: stateData?.uploadStatus || extraction.uploadStatus || {},
             fromContents: true,
           })
         } else {
@@ -519,7 +546,7 @@ export default function ExtractionResultPage() {
       } catch (err) {
         if (!cancelled) {
           console.error('[ExtractionResultPage 상세 데이터 복원 실패]', err)
-          setResolvedState(stateData)
+          setResolvedState(stateData || null)
         }
       } finally {
         if (!cancelled) setIsPageLoading(false)
@@ -527,7 +554,7 @@ export default function ExtractionResultPage() {
     })()
 
     return () => { cancelled = true }
-  }, [location.state])
+  }, [location.state, queryExtractionId])
 
   useEffect(() => {
     let active = true
@@ -1355,6 +1382,12 @@ export default function ExtractionResultPage() {
         })
         if (targetExtractionId) setExtractionId(targetExtractionId)
       }
+      if (targetExtractionId) {
+        rememberResultExtractionId(targetExtractionId, {
+          activeChannel: state.activeChannel || 'shorts',
+          uploadStatus: state.uploadStatus || {},
+        })
+      }
       setShortsVideo(uploadedVideo)
       setResolvedState((prev) => {
         const baseState = prev || location.state
@@ -1597,8 +1630,16 @@ export default function ExtractionResultPage() {
     if (!hasContent) return
 
     saveOnceRef.current = true
-    saveExtraction(stateData).then(setExtractionId).catch(err => console.error('[Supabase 저장 실패]', err))
-  }, [state])
+    saveExtraction(stateData)
+      .then((id) => {
+        setExtractionId(id)
+        rememberResultExtractionId(id, {
+          activeChannel: stateData.activeChannel,
+          uploadStatus: stateData.uploadStatus || {},
+        })
+      })
+      .catch(err => console.error('[Supabase 저장 실패]', err))
+  }, [state, rememberResultExtractionId])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !extractionId || !state?.draftKey) return
