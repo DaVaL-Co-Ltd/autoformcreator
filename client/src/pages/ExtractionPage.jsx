@@ -70,6 +70,7 @@ const SHORTS_AVATAR_ENGINE_LABELS = {
   avatar_iv: 'Avatar IV',
   avatar_v: 'Avatar V',
 }
+const SHORTS_AVATAR_VIDEO_FIT = 'cover'
 
 function normalizeShortsAvatarEngine(value) {
   return SHORTS_AVATAR_ENGINE_OPTIONS.some((option) => option.value === value) ? value : 'avatar_iii'
@@ -2478,6 +2479,7 @@ DO NOT:
       voice_id: voiceId,
       resolution: '720p',
       aspect_ratio: '9:16',
+      fit: SHORTS_AVATAR_VIDEO_FIT,
       engine: { type: normalizedEngine },
     }
     if (backgroundColor) {
@@ -3094,6 +3096,7 @@ DO NOT:
               voice_id: soloVoiceId,
               resolution: '720p',
               aspect_ratio: '9:16',
+              fit: SHORTS_AVATAR_VIDEO_FIT,
             }
             if (selectedAvatarEngine === 'avatar_iv') {
               v3Body.engine = { type: 'avatar_iv' }
