@@ -4660,15 +4660,17 @@ ${parsedText}
               </p>
             )}
           </div>
-          <button
-            onClick={runContentGeneration}
-            disabled={loading.content || loading.analysis || loading.summary || selectedContentChannels().length === 0}
-            className="inline-flex min-w-[11.5rem] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-primary-dark disabled:opacity-50"
-          >
-            {loading.content
-              ? <><Loader2 size={14} className="shrink-0 animate-spin" /><span>{contentGenerationButtonLabel}</span></>
-              : <><Sparkles size={14} className="shrink-0" /><span>선택 채널 전체 생성</span></>}
-          </button>
+          <div className="flex w-full justify-end sm:w-auto">
+            <button
+              onClick={runContentGeneration}
+              disabled={loading.content || loading.analysis || loading.summary || selectedContentChannels().length === 0}
+              className="inline-flex w-full min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-primary px-4 py-2.5 text-sm font-medium leading-5 text-white transition-all hover:bg-primary-dark disabled:opacity-50 sm:w-auto sm:min-w-[13rem]"
+            >
+              {loading.content
+                ? <><Loader2 size={14} className="shrink-0 animate-spin" /><span className="min-w-0 text-center">{contentGenerationButtonLabel}</span></>
+                : <><Sparkles size={14} className="shrink-0" /><span className="min-w-0 text-center">선택 채널 전체 생성</span></>}
+            </button>
+          </div>
         </div>
       )}
       {contentStepRows.map((row) => {
